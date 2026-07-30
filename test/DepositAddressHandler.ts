@@ -1065,6 +1065,20 @@ describe("DepositAddressHandler._publishDepositExecuted", function () {
   });
 });
 
+/** Fake of the Redis hash commands the claim store uses, backed by `hashKey -> field -> value`. */
+function redisHashFake(hashes: Map<string, Map<string, string>>) {
+  return {
+    hSet: async (key: string, field: string, val: string) => {
+      const hash = hashes.get(key) ?? new Map<string, string>();
+      hash.set(field, val);
+      hashes.set(key, hash);
+      return 1;
+    },
+    hGetAll: async (key: string) => Object.fromEntries(hashes.get(key) ?? new Map<string, string>()),
+    hDel: async (key: string, field: string) => (hashes.get(key)?.delete(field) ? 1 : 0),
+  };
+}
+
 /**
  * Regression cover for the duplicate-sweep failure mode: a run broadcasts an execute, is evicted
  * mid-confirmation (routine — the handler is handed over on a fixed cadence), and its successor has
@@ -1077,10 +1091,11 @@ describe("DepositAddressHandler pending-execute claim", function () {
   const refTxHash = "0x" + "3".repeat(64); // depositMessageV3().erc20Transfer.transactionHash
   const depositKey = `${DEPOSIT_ADDRESS}:${refTxHash}`;
   const executeTxHash = "0x" + "e".repeat(64);
-  const redisKey = "deposit-address:pending-executes:test-bot";
+  const redisKey = "deposit-address:pending-execute-claims:test-bot";
 
   let handler: DepositAddressHandler;
   let store: Map<string, string>;
+  let hashes: Map<string, Map<string, string>>;
   let getReceiptStub: sinon.SinonStub;
   let publishStub: sinon.SinonStub;
   let executeStub: sinon.SinonStub;
@@ -1134,8 +1149,16 @@ describe("DepositAddressHandler pending-execute claim", function () {
     } as unknown as TransactionReceipt;
   }
 
+  /** Seeds a claim directly into the persisted hash, as a previous run would have left it. */
+  function seedClaim(pending: PendingExecute, key = depositKey): void {
+    const hash = hashes.get(redisKey) ?? new Map<string, string>();
+    hash.set(key, JSON.stringify(pending));
+    hashes.set(redisKey, hash);
+  }
+
   beforeEach(function () {
     store = new Map<string, string>();
+    hashes = new Map<string, Map<string, string>>();
     warnStub = sinon.stub();
     const logger = {
       warn: warnStub,
@@ -1158,6 +1181,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
         store.set(key, String(val));
         return "OK";
       },
+      ...redisHashFake(hashes),
       acquireLock: acquireLockStub,
       releaseLock: releaseLockStub,
     };
@@ -1181,7 +1205,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
 
   it("persists the claim so a later run can read it back", async function () {
     await (handler as unknown as Internals)._recordPendingExecute(depositKey, pendingRecord());
-    expect(store.has(redisKey)).to.equal(true);
+    expect(hashes.get(redisKey)?.has(depositKey)).to.equal(true);
     const persisted = await (handler as unknown as Internals)._readPendingExecutesFromRedis();
     expect(persisted[depositKey].txHash).to.equal(executeTxHash);
     expect(persisted[depositKey].refTxHash).to.equal(refTxHash);
@@ -1194,7 +1218,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
   });
 
   it("adopts an inherited execute that confirmed on-chain and emits the missed lifecycle event", async function () {
-    store.set(redisKey, JSON.stringify({ [depositKey]: pendingRecord() }));
+    seedClaim(pendingRecord());
     getReceiptStub.resolves(sweepReceipt(1));
 
     await (handler as unknown as Internals)._resolvePendingExecutesFromRedis();
@@ -1211,7 +1235,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
   });
 
   it("clears the claim when the inherited execute reverted, so the deposit is re-attempted", async function () {
-    store.set(redisKey, JSON.stringify({ [depositKey]: pendingRecord() }));
+    seedClaim(pendingRecord());
     getReceiptStub.resolves(sweepReceipt(0));
 
     await (handler as unknown as Internals)._resolvePendingExecutesFromRedis();
@@ -1223,7 +1247,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
   });
 
   it("keeps the claim while the transaction is still unmined", async function () {
-    store.set(redisKey, JSON.stringify({ [depositKey]: pendingRecord() }));
+    seedClaim(pendingRecord());
     getReceiptStub.resolves(null);
 
     await (handler as unknown as Internals)._resolvePendingExecutesFromRedis();
@@ -1236,12 +1260,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
   });
 
   it("discards a claim whose transaction never appeared within the stale window", async function () {
-    store.set(
-      redisKey,
-      JSON.stringify({
-        [depositKey]: pendingRecord({ submittedAt: getCurrentTime() - PENDING_EXECUTE_STALE_SECONDS - 1 }),
-      })
-    );
+    seedClaim(pendingRecord({ submittedAt: getCurrentTime() - PENDING_EXECUTE_STALE_SECONDS - 1 }));
     getReceiptStub.resolves(null);
 
     await (handler as unknown as Internals)._resolvePendingExecutesFromRedis();
@@ -1260,7 +1279,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
   it("blocks submission when another instance claimed the transfer during the quote round trip", async function () {
     // Written to Redis only: the in-memory mirror predates it, exactly as it would for a successor
     // that snapshotted state before the incumbent broadcast.
-    store.set(redisKey, JSON.stringify({ [depositKey]: pendingRecord() }));
+    seedClaim(pendingRecord());
     const warranted = await (handler as unknown as Internals)._executeStillWarranted(depositMessageV3(), depositKey);
     expect(warranted).to.equal(false);
     expect(warnStub.firstCall.firstArg.message).to.contain("already been broadcast");
@@ -1322,6 +1341,7 @@ describe("DepositAddressHandler pending-execute claim on Tron", function () {
 
   let handler: DepositAddressHandler;
   let store: Map<string, string>;
+  let hashes: Map<string, Map<string, string>>;
   let getReceiptStub: sinon.SinonStub;
   let warnStub: sinon.SinonStub;
 
@@ -1346,6 +1366,7 @@ describe("DepositAddressHandler pending-execute claim on Tron", function () {
 
   beforeEach(function () {
     store = new Map<string, string>();
+    hashes = new Map<string, Map<string, string>>();
     warnStub = sinon.stub();
     const logger = {
       warn: warnStub,
@@ -1364,6 +1385,7 @@ describe("DepositAddressHandler pending-execute claim on Tron", function () {
         store.set(key, String(val));
         return "OK";
       },
+      ...redisHashFake(hashes),
     };
     getReceiptStub = sinon.stub().resolves(null);
     (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
@@ -1465,5 +1487,45 @@ describe("TransactionClient onBroadcast hook", function () {
     expect(events).to.deep.equal(["wait"]);
     expect(warnStub.calledOnce).to.equal(true);
     expect(warnStub.firstCall.firstArg.message).to.contain("onBroadcast hook failed");
+  });
+
+  // Regression: the "repriced" branch adopts a replacement whose hash differs from the one already
+  // broadcast, and only that replacement will ever have a receipt. Without re-notifying, a durably
+  // recorded claim points at a hash that never mines — on EVM it ages out and the (already swept)
+  // transfer becomes re-attemptable; on TVM it is retained and escalates forever.
+  it("re-invokes the hook with the replacement hash when a repriced transaction is adopted", async function () {
+    const replacementHash = "0x" + "c".repeat(64);
+    class RepricedTransactionClient extends TransactionClient {
+      protected _getTransactionPromise(): Promise<TransactionResponse> {
+        return Promise.resolve({
+          hash: broadcastHash,
+          nonce: 7,
+          wait: async () => {
+            const error = new Error("repriced") as Error & Record<string, unknown>;
+            error.code = "TRANSACTION_REPLACED";
+            error.reason = "repriced";
+            error.receipt = { blockNumber: 10, status: 1 };
+            error.replacement = { hash: replacementHash };
+            throw error;
+          },
+        } as unknown as TransactionResponse);
+      }
+    }
+
+    const client = new RepricedTransactionClient({
+      warn: sinon.stub(),
+      debug: sinon.stub(),
+    } as unknown as winston.Logger);
+    const seen: string[] = [];
+    const response = await (client as unknown as Internals)._submit(
+      transaction(async (r) => {
+        seen.push(r.hash);
+      }),
+      { nonce: null }
+    );
+
+    expect(response.hash).to.equal(replacementHash);
+    // The original at broadcast, then the replacement that actually mined.
+    expect(seen).to.deep.equal([broadcastHash, replacementHash]);
   });
 });

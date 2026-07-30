@@ -50,7 +50,7 @@ import {
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 import { GcpPubSubPublisher, getGcpPubSubPublisher } from "../messaging/gcp";
 import { buildDepositExecutedPayload, buildWithdrawExecutedPayload, DepositExecutedSource } from "./withdrawPayload";
-import { parsePendingExecutes, PendingExecute, PENDING_EXECUTE_STALE_SECONDS } from "./pendingExecutes";
+import { parsePendingExecute, PendingExecute, PENDING_EXECUTE_STALE_SECONDS } from "./pendingExecutes";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
 /**
@@ -279,8 +279,10 @@ export class DepositAddressHandler {
     return `deposit-address:skipped-withdraw-keys:${this.config.botIdentifier}`;
   }
 
+  // A Redis hash, so it cannot reuse the `pending-executes` name an earlier revision of this branch
+  // wrote a serialized map to: hash commands against a string key fail with WRONGTYPE.
   private getPendingExecutesRedisKey(): string {
-    return `deposit-address:pending-executes:${this.config.botIdentifier}`;
+    return `deposit-address:pending-execute-claims:${this.config.botIdentifier}`;
   }
 
   private getExecuteReservationRedisKey(depositKey: string): string {
@@ -417,14 +419,20 @@ export class DepositAddressHandler {
     });
   }
 
-  /** Reads the persisted `depositKey -> PendingExecute` map. Throws on a malformed payload. */
+  /**
+   * Reads every persisted claim (one Redis hash field per `depositKey`). Throws on a malformed
+   * payload, which callers treat as "claimed" rather than risking a duplicate sweep on unverified
+   * state.
+   */
   private async _readPendingExecutesFromRedis(): Promise<Record<string, PendingExecute>> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const { redisCache } = this;
     const redisKey = this.getPendingExecutesRedisKey();
-    const raw = await redisCache.get<string>(redisKey);
+    const raw = await redisCache.hGetAll(redisKey);
     try {
-      return raw ? parsePendingExecutes(raw) : {};
+      return Object.fromEntries(
+        Object.entries(raw).map(([depositKey, claim]) => [depositKey, parsePendingExecute(claim)])
+      );
     } catch (err) {
       this.logger.error({
         at: "DepositAddressHandler#_readPendingExecutesFromRedis",
@@ -438,21 +446,18 @@ export class DepositAddressHandler {
     }
   }
 
-  private async _persistPendingExecutesRedis(): Promise<void> {
-    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
-    const { redisCache } = this;
-    await redisCache.set(this.getPendingExecutesRedisKey(), JSON.stringify(this.pendingExecutes));
-  }
-
   /**
    * Durably records that an execute has been broadcast for `depositKey`, before its confirmation is
    * awaited. Invoked from the TransactionClient's `onBroadcast` hook, so the unprotected window
    * shrinks from the seconds-long confirmation wait to a single Redis write.
+   *
+   * Writes only this transfer's field, so a concurrent writer recording a different transfer — the
+   * norm during a handover overlap, where two instances poll simultaneously — cannot drop it.
    */
   private async _recordPendingExecute(depositKey: string, pending: PendingExecute): Promise<void> {
-    await this._mergePersistedClaims();
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    await this.redisCache.hSet(this.getPendingExecutesRedisKey(), depositKey, JSON.stringify(pending));
     this.pendingExecutes[depositKey] = pending;
-    await this._persistPendingExecutesRedis();
     this.logger.debug({
       at: "DepositAddressHandler#_recordPendingExecute",
       message: "Recorded in-flight execute before awaiting confirmation",
@@ -463,22 +468,9 @@ export class DepositAddressHandler {
   }
 
   private async _clearPendingExecute(depositKey: string): Promise<void> {
-    await this._mergePersistedClaims();
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    await this.redisCache.hDel(this.getPendingExecutesRedisKey(), depositKey);
     delete this.pendingExecutes[depositKey];
-    await this._persistPendingExecutesRedis();
-  }
-
-  /**
-   * Folds claims present in Redis but missing locally into `this.pendingExecutes`, mutated in place
-   * rather than reassigned: concurrent broadcasts (polls run under `Promise.all`) must not drop each
-   * other's freshly-added claim. Locally-known claims win over persisted ones; a claim resurrected
-   * from a stale cross-process read is harmless, since claims are resolved against the chain anyway.
-   */
-  private async _mergePersistedClaims(): Promise<void> {
-    const persisted = await this._readPendingExecutesFromRedis();
-    for (const [depositKey, claim] of Object.entries(persisted)) {
-      this.pendingExecutes[depositKey] ??= claim;
-    }
   }
 
   /**

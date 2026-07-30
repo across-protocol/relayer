@@ -151,6 +151,29 @@ export class TransactionClient {
     return transactionHandler(this.logger, contract, method, args, value, gasLimit, nonce);
   }
 
+  /**
+   * Runs the caller's `onBroadcast` hook for `response`. The transaction is already on the wire, so a
+   * rejection is logged and swallowed rather than aborting the submission. Called again whenever the
+   * hash a caller should be tracking changes, so a durably-recorded hash stays resolvable on-chain.
+   */
+  protected async _notifyBroadcast(txn: AugmentedTransaction, response: TransactionResponse): Promise<void> {
+    if (!isDefined(txn.onBroadcast)) {
+      return;
+    }
+    try {
+      await txn.onBroadcast(response);
+    } catch (error) {
+      this.logger.warn({
+        at: "TransactionClient#_submit",
+        message: "onBroadcast hook failed; continuing to await confirmation",
+        chainId: txn.chainId,
+        method: txn.method,
+        txnRef: blockExplorerLink(response.hash, txn.chainId),
+        error: stringifyThrownValue(error),
+      });
+    }
+  }
+
   protected async _submit(
     txn: AugmentedTransaction,
     opts: { nonce: number | null; maxTries?: number }
@@ -160,21 +183,9 @@ export class TransactionClient {
     const txnPromise = this._getTransactionPromise(txn, nonce);
 
     if (isDefined(txn.onBroadcast)) {
-      // Awaited outside the try/catch so a failed broadcast still propagates to the caller as
-      // before; only the hook itself is best-effort.
-      const broadcast = await txnPromise;
-      try {
-        await txn.onBroadcast(broadcast);
-      } catch (error) {
-        this.logger.warn({
-          at: "TransactionClient#_submit",
-          message: "onBroadcast hook failed; continuing to await confirmation",
-          chainId,
-          method: txn.method,
-          txnRef: blockExplorerLink(broadcast.hash, chainId),
-          error: stringifyThrownValue(error),
-        });
-      }
+      // Awaited outside _notifyBroadcast's try/catch so a failed broadcast still propagates to the
+      // caller as before; only the hook itself is best-effort.
+      await this._notifyBroadcast(txn, await txnPromise);
     }
 
     if (txn.ensureConfirmation) {
@@ -224,6 +235,10 @@ export class TransactionClient {
                   this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
                   throw error;
                 }
+                // The adopted replacement carries a different hash than the one already broadcast, and
+                // only the replacement will ever have a receipt. Re-notify so a caller that durably
+                // recorded the original can still resolve its claim against the chain.
+                await this._notifyBroadcast(txn, error.replacement);
                 return error.replacement;
               }
               this.logger.warn({

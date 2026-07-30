@@ -234,10 +234,10 @@ Four keys persist across runs so handover does not double-spend, double-refund, 
 - `deposit-address:executed:<botIdentifier>` — set of `erc20Transfer.transactionHash` for successfully executed deposits.
 - `deposit-address:withdrawn-deposit-keys:<botIdentifier>` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
 - `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
-- `deposit-address:pending-executes:<botIdentifier>` — map of `depositKey` → in-flight execute claim (see below).
+- `deposit-address:pending-execute-claims:<botIdentifier>` — Redis **hash**, one field per `depositKey` → in-flight execute claim (see below).
 - `deposit-address:execute-reservation:<botIdentifier>:<depositKey>` — short-lived (`SET NX PX`, 120s) submission reservation, held only across the pre-submit checks and the broadcast.
 
-On each poll, entries in the first three whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages. The claim map is **not** pruned this way: it is resolved against the chain, since a claim's whole purpose is to outlive the message that produced it.
+On each poll, entries in the first three whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages. The claim hash is **not** pruned this way: it is resolved against the chain, since a claim's whole purpose is to outlive the message that produced it. It also carries no TTL, unlike the three `set`-written keys above (which inherit the SDK's 7-day default), because a claim must survive until its transaction's outcome is known.
 
 ### In-flight execute claims
 
@@ -253,6 +253,17 @@ records `txHash`, `chainId`, `refTxHash`, `submittedAt` and an `erc20Transfer` p
 from the `TransactionClient` `onBroadcast` hook so the unprotected interval shrinks to a single Redis
 write. It carries the transfer projection so a successor can rebuild the `deposit_executed` payload
 without the original indexer message, which may no longer be served by then.
+
+Each claim is an independent hash field (`hSet`/`hDel`), never a serialized map behind one `set`.
+That matters because handover is cooperative and polled on a 1s interval, and the incumbent then
+drains for up to 30s more — so two instances are routinely live and recording claims at the same
+time. A read-modify-write of one blob would let either instance's write drop the other's claim, and
+losing a claim for a transaction already on the wire is exactly the failure this mechanism exists to
+prevent. Per-field writes make concurrent claims for different transfers independent by construction.
+
+The recorded hash is also refreshed whenever the hash a caller should track changes: if the
+confirmation path adopts a repriced replacement, `onBroadcast` fires again with the replacement's
+hash, since only that transaction will ever have a receipt.
 
 At startup — right after handover, so a successor inherits the incumbent's work — every claim is
 resolved against the chain via `getTransactionReceipt` (`_settlePendingExecute`):

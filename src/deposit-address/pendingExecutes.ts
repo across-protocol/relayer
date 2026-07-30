@@ -1,4 +1,4 @@
-import { create, number, object, record, string } from "superstruct";
+import { create, number, object, string } from "superstruct";
 
 /**
  * A deposit execute that has been broadcast but whose outcome this process never observed. Written
@@ -33,11 +33,14 @@ const PendingExecuteStruct = object({
   logIndex: number(),
 });
 
-const PendingExecutesStruct = record(string(), PendingExecuteStruct);
-
-/** Parse the persisted `depositKey -> PendingExecute` map. Throws on a malformed payload. */
-export function parsePendingExecutes(json = "{}"): Record<string, PendingExecute> {
-  return create(JSON.parse(json), PendingExecutesStruct);
+/**
+ * Parse one persisted claim (a single Redis hash field). Throws on a malformed payload.
+ *
+ * Claims are stored per-field rather than as one serialized map so that two processes recording
+ * different transfers cannot drop each other's claim — see the module README.
+ */
+export function parsePendingExecute(json: string): PendingExecute {
+  return create(JSON.parse(json), PendingExecuteStruct);
 }
 
 /**

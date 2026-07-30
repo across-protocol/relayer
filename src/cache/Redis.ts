@@ -11,6 +11,9 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   decr(key: string): Promise<number>;
   decrBy(key: string, amount: number): Promise<number>;
   del(key: string): Promise<number>;
+  hDel(key: string, field: string): Promise<number>;
+  hGetAll(key: string): Promise<Record<string, string>>;
+  hSet(key: string, field: string, value: string): Promise<number>;
   releaseLock(key: string, token: string): Promise<boolean>;
   renewLock(key: string, token: string, ttlMs: number): Promise<boolean>;
   incr(key: string): Promise<number>;
@@ -104,6 +107,20 @@ export class RedisCache implements RedisCacheInterface {
       }
     );
     return reply === 1;
+  }
+
+  // Hash fields are written and deleted independently, so concurrent writers touching different
+  // fields cannot clobber each other the way a read-modify-write of one serialized blob can.
+  hSet(key: string, field: string, value: string): Promise<number> {
+    return this.client.hSet(this.getNamespacedKey(key), field, value);
+  }
+
+  hGetAll(key: string): Promise<Record<string, string>> {
+    return this.client.hGetAll(this.getNamespacedKey(key));
+  }
+
+  hDel(key: string, field: string): Promise<number> {
+    return this.client.hDel(this.getNamespacedKey(key), field);
   }
 
   sAdd(key: string, value: string): Promise<number> {
