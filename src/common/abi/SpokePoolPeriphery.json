@@ -1,755 +1,765 @@
 [
   {
-    "inputs": [{ "internalType": "contract IPermit2", "name": "_permit2", "type": "address" }],
-    "stateMutability": "nonpayable",
-    "type": "constructor"
-  },
-  { "inputs": [], "name": "InvalidMinExpectedInputAmount", "type": "error" },
-  { "inputs": [], "name": "InvalidMsgValue", "type": "error" },
-  { "inputs": [], "name": "InvalidNonce", "type": "error" },
-  { "inputs": [], "name": "InvalidShortString", "type": "error" },
-  { "inputs": [], "name": "InvalidSignature", "type": "error" },
-  { "inputs": [], "name": "MinimumExpectedInputAmount", "type": "error" },
-  {
-    "inputs": [{ "internalType": "string", "name": "str", "type": "string" }],
-    "name": "StringTooLong",
-    "type": "error"
-  },
-  { "anonymous": false, "inputs": [], "name": "EIP712DomainChanged", "type": "event" },
-  {
-    "anonymous": false,
+    "type": "constructor",
     "inputs": [
-      { "indexed": false, "internalType": "address", "name": "exchange", "type": "address" },
-      { "indexed": false, "internalType": "bytes", "name": "exchangeCalldata", "type": "bytes" },
-      { "indexed": true, "internalType": "address", "name": "swapToken", "type": "address" },
-      { "indexed": true, "internalType": "address", "name": "acrossInputToken", "type": "address" },
-      { "indexed": false, "internalType": "uint256", "name": "swapTokenAmount", "type": "uint256" },
-      { "indexed": false, "internalType": "uint256", "name": "acrossInputAmount", "type": "uint256" },
-      { "indexed": true, "internalType": "bytes32", "name": "acrossOutputToken", "type": "bytes32" },
-      { "indexed": false, "internalType": "uint256", "name": "acrossOutputAmount", "type": "uint256" }
+      { "name": "_permit2", "type": "address", "internalType": "contract IPermit2" },
+      { "name": "_multicall3", "type": "address", "internalType": "address" }
     ],
-    "name": "SwapBeforeBridge",
-    "type": "event"
+    "stateMutability": "nonpayable"
   },
   {
-    "inputs": [],
+    "type": "function",
     "name": "AUTHORIZATION_NONCE_IDENTIFIER",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "view"
   },
   {
-    "inputs": [],
+    "type": "function",
     "name": "BRIDGE_AND_SWAP_WITNESS_IDENTIFIER",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "view"
   },
   {
-    "inputs": [],
+    "type": "function",
     "name": "BRIDGE_WITNESS_IDENTIFIER",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "view"
   },
   {
-    "inputs": [],
+    "type": "function",
     "name": "DEPOSIT_NONCE_IDENTIFIER",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "view"
   },
   {
-    "inputs": [],
+    "type": "function",
     "name": "PERMIT2_NONCE_IDENTIFIER",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "view"
   },
   {
-    "inputs": [],
+    "type": "function",
     "name": "PERMIT_NONCE_IDENTIFIER",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "view"
   },
   {
-    "inputs": [
-      { "internalType": "address", "name": "spokePool", "type": "address" },
-      { "internalType": "address", "name": "depositor", "type": "address" },
-      { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
-      { "internalType": "address", "name": "inputToken", "type": "address" },
-      { "internalType": "uint256", "name": "inputAmount", "type": "uint256" },
-      { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
-      { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
-      { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
-      { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
-      { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
-      { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
-      { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
-      { "internalType": "bytes", "name": "message", "type": "bytes" }
-    ],
+    "type": "function",
     "name": "depositNative",
+    "inputs": [
+      { "name": "spokePool", "type": "address", "internalType": "address" },
+      { "name": "depositor", "type": "address", "internalType": "address" },
+      { "name": "recipient", "type": "bytes32", "internalType": "bytes32" },
+      { "name": "inputToken", "type": "address", "internalType": "address" },
+      { "name": "inputAmount", "type": "uint256", "internalType": "uint256" },
+      { "name": "outputToken", "type": "bytes32", "internalType": "bytes32" },
+      { "name": "outputAmount", "type": "uint256", "internalType": "uint256" },
+      { "name": "destinationChainId", "type": "uint256", "internalType": "uint256" },
+      { "name": "exclusiveRelayer", "type": "bytes32", "internalType": "bytes32" },
+      { "name": "quoteTimestamp", "type": "uint32", "internalType": "uint32" },
+      { "name": "fillDeadline", "type": "uint32", "internalType": "uint32" },
+      { "name": "exclusivityParameter", "type": "uint32", "internalType": "uint32" },
+      { "name": "message", "type": "bytes", "internalType": "bytes" }
+    ],
     "outputs": [],
-    "stateMutability": "payable",
-    "type": "function"
+    "stateMutability": "payable"
   },
   {
-    "inputs": [
-      { "internalType": "address", "name": "signatureOwner", "type": "address" },
-      {
-        "components": [
-          {
-            "components": [
-              { "internalType": "uint256", "name": "amount", "type": "uint256" },
-              { "internalType": "address", "name": "recipient", "type": "address" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.Fees",
-            "name": "submissionFees",
-            "type": "tuple"
-          },
-          {
-            "components": [
-              { "internalType": "address", "name": "inputToken", "type": "address" },
-              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
-              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
-              { "internalType": "address", "name": "depositor", "type": "address" },
-              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
-              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
-              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
-              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
-              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
-              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
-              { "internalType": "bytes", "name": "message", "type": "bytes" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
-            "name": "baseDepositData",
-            "type": "tuple"
-          },
-          { "internalType": "uint256", "name": "inputAmount", "type": "uint256" },
-          { "internalType": "address", "name": "spokePool", "type": "address" },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
-        ],
-        "internalType": "struct SpokePoolPeripheryInterface.DepositData",
-        "name": "depositData",
-        "type": "tuple"
-      },
-      { "internalType": "uint256", "name": "validAfter", "type": "uint256" },
-      { "internalType": "uint256", "name": "validBefore", "type": "uint256" },
-      { "internalType": "bytes", "name": "receiveWithAuthSignature", "type": "bytes" }
-    ],
+    "type": "function",
     "name": "depositWithAuthorization",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
     "inputs": [
-      { "internalType": "address", "name": "signatureOwner", "type": "address" },
+      { "name": "signatureOwner", "type": "address", "internalType": "address" },
       {
+        "name": "depositData",
+        "type": "tuple",
+        "internalType": "struct SpokePoolPeripheryInterface.DepositData",
         "components": [
           {
-            "components": [
-              { "internalType": "uint256", "name": "amount", "type": "uint256" },
-              { "internalType": "address", "name": "recipient", "type": "address" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.Fees",
             "name": "submissionFees",
-            "type": "tuple"
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.Fees",
+            "components": [
+              { "name": "amount", "type": "uint256", "internalType": "uint256" },
+              { "name": "recipient", "type": "address", "internalType": "address" }
+            ]
           },
           {
-            "components": [
-              { "internalType": "address", "name": "inputToken", "type": "address" },
-              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
-              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
-              { "internalType": "address", "name": "depositor", "type": "address" },
-              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
-              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
-              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
-              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
-              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
-              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
-              { "internalType": "bytes", "name": "message", "type": "bytes" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
             "name": "baseDepositData",
-            "type": "tuple"
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
+            "components": [
+              { "name": "inputToken", "type": "address", "internalType": "address" },
+              { "name": "outputToken", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "outputAmount", "type": "uint256", "internalType": "uint256" },
+              { "name": "depositor", "type": "address", "internalType": "address" },
+              { "name": "recipient", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "destinationChainId", "type": "uint256", "internalType": "uint256" },
+              { "name": "exclusiveRelayer", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "quoteTimestamp", "type": "uint32", "internalType": "uint32" },
+              { "name": "fillDeadline", "type": "uint32", "internalType": "uint32" },
+              { "name": "exclusivityParameter", "type": "uint32", "internalType": "uint32" },
+              { "name": "message", "type": "bytes", "internalType": "bytes" }
+            ]
           },
-          { "internalType": "uint256", "name": "inputAmount", "type": "uint256" },
-          { "internalType": "address", "name": "spokePool", "type": "address" },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
-        ],
-        "internalType": "struct SpokePoolPeripheryInterface.DepositData",
-        "name": "depositData",
-        "type": "tuple"
+          { "name": "inputAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "spokePool", "type": "address", "internalType": "address" },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" }
+        ]
       },
-      { "internalType": "uint256", "name": "validAfter", "type": "uint256" },
-      { "internalType": "uint256", "name": "validBefore", "type": "uint256" },
-      { "internalType": "bytes", "name": "receiveWithAuthSignature", "type": "bytes" }
+      { "name": "validAfter", "type": "uint256", "internalType": "uint256" },
+      { "name": "validBefore", "type": "uint256", "internalType": "uint256" },
+      { "name": "receiveWithAuthSignature", "type": "bytes", "internalType": "bytes" }
     ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "depositWithAuthorizationBytes",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
     "inputs": [
-      { "internalType": "address", "name": "signatureOwner", "type": "address" },
+      { "name": "signatureOwner", "type": "address", "internalType": "address" },
       {
+        "name": "depositData",
+        "type": "tuple",
+        "internalType": "struct SpokePoolPeripheryInterface.DepositData",
         "components": [
           {
-            "components": [
-              { "internalType": "uint256", "name": "amount", "type": "uint256" },
-              { "internalType": "address", "name": "recipient", "type": "address" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.Fees",
             "name": "submissionFees",
-            "type": "tuple"
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.Fees",
+            "components": [
+              { "name": "amount", "type": "uint256", "internalType": "uint256" },
+              { "name": "recipient", "type": "address", "internalType": "address" }
+            ]
           },
           {
-            "components": [
-              { "internalType": "address", "name": "inputToken", "type": "address" },
-              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
-              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
-              { "internalType": "address", "name": "depositor", "type": "address" },
-              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
-              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
-              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
-              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
-              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
-              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
-              { "internalType": "bytes", "name": "message", "type": "bytes" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
             "name": "baseDepositData",
-            "type": "tuple"
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
+            "components": [
+              { "name": "inputToken", "type": "address", "internalType": "address" },
+              { "name": "outputToken", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "outputAmount", "type": "uint256", "internalType": "uint256" },
+              { "name": "depositor", "type": "address", "internalType": "address" },
+              { "name": "recipient", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "destinationChainId", "type": "uint256", "internalType": "uint256" },
+              { "name": "exclusiveRelayer", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "quoteTimestamp", "type": "uint32", "internalType": "uint32" },
+              { "name": "fillDeadline", "type": "uint32", "internalType": "uint32" },
+              { "name": "exclusivityParameter", "type": "uint32", "internalType": "uint32" },
+              { "name": "message", "type": "bytes", "internalType": "bytes" }
+            ]
           },
-          { "internalType": "uint256", "name": "inputAmount", "type": "uint256" },
-          { "internalType": "address", "name": "spokePool", "type": "address" },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
-        ],
-        "internalType": "struct SpokePoolPeripheryInterface.DepositData",
-        "name": "depositData",
-        "type": "tuple"
+          { "name": "inputAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "spokePool", "type": "address", "internalType": "address" },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" }
+        ]
       },
-      { "internalType": "uint256", "name": "deadline", "type": "uint256" },
-      { "internalType": "bytes", "name": "permitSignature", "type": "bytes" },
-      { "internalType": "bytes", "name": "depositDataSignature", "type": "bytes" }
+      { "name": "validAfter", "type": "uint256", "internalType": "uint256" },
+      { "name": "validBefore", "type": "uint256", "internalType": "uint256" },
+      { "name": "receiveWithAuthSignature", "type": "bytes", "internalType": "bytes" }
     ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "depositWithPermit",
+    "inputs": [
+      { "name": "signatureOwner", "type": "address", "internalType": "address" },
+      {
+        "name": "depositData",
+        "type": "tuple",
+        "internalType": "struct SpokePoolPeripheryInterface.DepositData",
+        "components": [
+          {
+            "name": "submissionFees",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.Fees",
+            "components": [
+              { "name": "amount", "type": "uint256", "internalType": "uint256" },
+              { "name": "recipient", "type": "address", "internalType": "address" }
+            ]
+          },
+          {
+            "name": "baseDepositData",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
+            "components": [
+              { "name": "inputToken", "type": "address", "internalType": "address" },
+              { "name": "outputToken", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "outputAmount", "type": "uint256", "internalType": "uint256" },
+              { "name": "depositor", "type": "address", "internalType": "address" },
+              { "name": "recipient", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "destinationChainId", "type": "uint256", "internalType": "uint256" },
+              { "name": "exclusiveRelayer", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "quoteTimestamp", "type": "uint32", "internalType": "uint32" },
+              { "name": "fillDeadline", "type": "uint32", "internalType": "uint32" },
+              { "name": "exclusivityParameter", "type": "uint32", "internalType": "uint32" },
+              { "name": "message", "type": "bytes", "internalType": "bytes" }
+            ]
+          },
+          { "name": "inputAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "spokePool", "type": "address", "internalType": "address" },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" }
+        ]
+      },
+      { "name": "deadline", "type": "uint256", "internalType": "uint256" },
+      { "name": "permitSignature", "type": "bytes", "internalType": "bytes" },
+      { "name": "depositDataSignature", "type": "bytes", "internalType": "bytes" }
+    ],
     "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
+    "stateMutability": "nonpayable"
   },
   {
-    "inputs": [
-      { "internalType": "address", "name": "signatureOwner", "type": "address" },
-      {
-        "components": [
-          {
-            "components": [
-              { "internalType": "uint256", "name": "amount", "type": "uint256" },
-              { "internalType": "address", "name": "recipient", "type": "address" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.Fees",
-            "name": "submissionFees",
-            "type": "tuple"
-          },
-          {
-            "components": [
-              { "internalType": "address", "name": "inputToken", "type": "address" },
-              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
-              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
-              { "internalType": "address", "name": "depositor", "type": "address" },
-              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
-              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
-              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
-              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
-              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
-              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
-              { "internalType": "bytes", "name": "message", "type": "bytes" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
-            "name": "baseDepositData",
-            "type": "tuple"
-          },
-          { "internalType": "uint256", "name": "inputAmount", "type": "uint256" },
-          { "internalType": "address", "name": "spokePool", "type": "address" },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
-        ],
-        "internalType": "struct SpokePoolPeripheryInterface.DepositData",
-        "name": "depositData",
-        "type": "tuple"
-      },
-      {
-        "components": [
-          {
-            "components": [
-              { "internalType": "address", "name": "token", "type": "address" },
-              { "internalType": "uint256", "name": "amount", "type": "uint256" }
-            ],
-            "internalType": "struct IPermit2.TokenPermissions",
-            "name": "permitted",
-            "type": "tuple"
-          },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" },
-          { "internalType": "uint256", "name": "deadline", "type": "uint256" }
-        ],
-        "internalType": "struct IPermit2.PermitTransferFrom",
-        "name": "permit",
-        "type": "tuple"
-      },
-      { "internalType": "bytes", "name": "signature", "type": "bytes" }
-    ],
+    "type": "function",
     "name": "depositWithPermit2",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "domainSeparator",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "eip712Domain",
-    "outputs": [
-      { "internalType": "bytes1", "name": "fields", "type": "bytes1" },
-      { "internalType": "string", "name": "name", "type": "string" },
-      { "internalType": "string", "name": "version", "type": "string" },
-      { "internalType": "uint256", "name": "chainId", "type": "uint256" },
-      { "internalType": "address", "name": "verifyingContract", "type": "address" },
-      { "internalType": "bytes32", "name": "salt", "type": "bytes32" },
-      { "internalType": "uint256[]", "name": "extensions", "type": "uint256[]" }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
-      { "internalType": "address", "name": "depositor", "type": "address" },
-      { "internalType": "address", "name": "authorizer", "type": "address" },
-      { "internalType": "bytes32", "name": "nonceIdentifier", "type": "bytes32" },
-      { "internalType": "uint256", "name": "nonce", "type": "uint256" },
-      { "internalType": "contract V3SpokePoolInterface", "name": "spokePool", "type": "address" }
-    ],
-    "name": "getDepositId",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
+      { "name": "signatureOwner", "type": "address", "internalType": "address" },
       {
-        "components": [
-          {
-            "components": [
-              { "internalType": "uint256", "name": "amount", "type": "uint256" },
-              { "internalType": "address", "name": "recipient", "type": "address" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.Fees",
-            "name": "submissionFees",
-            "type": "tuple"
-          },
-          {
-            "components": [
-              { "internalType": "address", "name": "inputToken", "type": "address" },
-              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
-              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
-              { "internalType": "address", "name": "depositor", "type": "address" },
-              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
-              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
-              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
-              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
-              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
-              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
-              { "internalType": "bytes", "name": "message", "type": "bytes" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
-            "name": "baseDepositData",
-            "type": "tuple"
-          },
-          { "internalType": "uint256", "name": "inputAmount", "type": "uint256" },
-          { "internalType": "address", "name": "spokePool", "type": "address" },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
-        ],
-        "internalType": "struct SpokePoolPeripheryInterface.DepositData",
         "name": "depositData",
-        "type": "tuple"
-      }
-    ],
-    "name": "getERC3009DepositWitness",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
-    "stateMutability": "pure",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
+        "type": "tuple",
+        "internalType": "struct SpokePoolPeripheryInterface.DepositData",
         "components": [
           {
-            "components": [
-              { "internalType": "uint256", "name": "amount", "type": "uint256" },
-              { "internalType": "address", "name": "recipient", "type": "address" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.Fees",
             "name": "submissionFees",
-            "type": "tuple"
-          },
-          {
-            "components": [
-              { "internalType": "address", "name": "inputToken", "type": "address" },
-              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
-              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
-              { "internalType": "address", "name": "depositor", "type": "address" },
-              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
-              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
-              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
-              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
-              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
-              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
-              { "internalType": "bytes", "name": "message", "type": "bytes" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
-            "name": "depositData",
-            "type": "tuple"
-          },
-          { "internalType": "address", "name": "swapToken", "type": "address" },
-          { "internalType": "address", "name": "exchange", "type": "address" },
-          { "internalType": "enum SpokePoolPeripheryInterface.TransferType", "name": "transferType", "type": "uint8" },
-          { "internalType": "uint256", "name": "swapTokenAmount", "type": "uint256" },
-          { "internalType": "uint256", "name": "minExpectedInputTokenAmount", "type": "uint256" },
-          { "internalType": "bytes", "name": "routerCalldata", "type": "bytes" },
-          { "internalType": "bool", "name": "enableProportionalAdjustment", "type": "bool" },
-          { "internalType": "address", "name": "spokePool", "type": "address" },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
-        ],
-        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
-        "name": "swapAndDepositData",
-        "type": "tuple"
-      }
-    ],
-    "name": "getERC3009SwapAndBridgeWitness",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
-    "stateMutability": "pure",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "bytes[]", "name": "data", "type": "bytes[]" }],
-    "name": "multicall",
-    "outputs": [{ "internalType": "bytes[]", "name": "results", "type": "bytes[]" }],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "permit2",
-    "outputs": [{ "internalType": "contract IPermit2", "name": "", "type": "address" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "address", "name": "user", "type": "address" }],
-    "name": "permitNonces",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "components": [
-          {
-            "components": [
-              { "internalType": "uint256", "name": "amount", "type": "uint256" },
-              { "internalType": "address", "name": "recipient", "type": "address" }
-            ],
+            "type": "tuple",
             "internalType": "struct SpokePoolPeripheryInterface.Fees",
-            "name": "submissionFees",
-            "type": "tuple"
+            "components": [
+              { "name": "amount", "type": "uint256", "internalType": "uint256" },
+              { "name": "recipient", "type": "address", "internalType": "address" }
+            ]
           },
           {
-            "components": [
-              { "internalType": "address", "name": "inputToken", "type": "address" },
-              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
-              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
-              { "internalType": "address", "name": "depositor", "type": "address" },
-              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
-              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
-              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
-              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
-              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
-              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
-              { "internalType": "bytes", "name": "message", "type": "bytes" }
-            ],
+            "name": "baseDepositData",
+            "type": "tuple",
             "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
-            "name": "depositData",
-            "type": "tuple"
-          },
-          { "internalType": "address", "name": "swapToken", "type": "address" },
-          { "internalType": "address", "name": "exchange", "type": "address" },
-          { "internalType": "enum SpokePoolPeripheryInterface.TransferType", "name": "transferType", "type": "uint8" },
-          { "internalType": "uint256", "name": "swapTokenAmount", "type": "uint256" },
-          { "internalType": "uint256", "name": "minExpectedInputTokenAmount", "type": "uint256" },
-          { "internalType": "bytes", "name": "routerCalldata", "type": "bytes" },
-          { "internalType": "bool", "name": "enableProportionalAdjustment", "type": "bool" },
-          { "internalType": "address", "name": "spokePool", "type": "address" },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
-        ],
-        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
-        "name": "swapAndDepositData",
-        "type": "tuple"
-      }
-    ],
-    "name": "swapAndBridge",
-    "outputs": [],
-    "stateMutability": "payable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "signatureOwner", "type": "address" },
-      {
-        "components": [
-          {
             "components": [
-              { "internalType": "uint256", "name": "amount", "type": "uint256" },
-              { "internalType": "address", "name": "recipient", "type": "address" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.Fees",
-            "name": "submissionFees",
-            "type": "tuple"
+              { "name": "inputToken", "type": "address", "internalType": "address" },
+              { "name": "outputToken", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "outputAmount", "type": "uint256", "internalType": "uint256" },
+              { "name": "depositor", "type": "address", "internalType": "address" },
+              { "name": "recipient", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "destinationChainId", "type": "uint256", "internalType": "uint256" },
+              { "name": "exclusiveRelayer", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "quoteTimestamp", "type": "uint32", "internalType": "uint32" },
+              { "name": "fillDeadline", "type": "uint32", "internalType": "uint32" },
+              { "name": "exclusivityParameter", "type": "uint32", "internalType": "uint32" },
+              { "name": "message", "type": "bytes", "internalType": "bytes" }
+            ]
           },
-          {
-            "components": [
-              { "internalType": "address", "name": "inputToken", "type": "address" },
-              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
-              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
-              { "internalType": "address", "name": "depositor", "type": "address" },
-              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
-              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
-              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
-              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
-              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
-              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
-              { "internalType": "bytes", "name": "message", "type": "bytes" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
-            "name": "depositData",
-            "type": "tuple"
-          },
-          { "internalType": "address", "name": "swapToken", "type": "address" },
-          { "internalType": "address", "name": "exchange", "type": "address" },
-          { "internalType": "enum SpokePoolPeripheryInterface.TransferType", "name": "transferType", "type": "uint8" },
-          { "internalType": "uint256", "name": "swapTokenAmount", "type": "uint256" },
-          { "internalType": "uint256", "name": "minExpectedInputTokenAmount", "type": "uint256" },
-          { "internalType": "bytes", "name": "routerCalldata", "type": "bytes" },
-          { "internalType": "bool", "name": "enableProportionalAdjustment", "type": "bool" },
-          { "internalType": "address", "name": "spokePool", "type": "address" },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
-        ],
-        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
-        "name": "swapAndDepositData",
-        "type": "tuple"
-      },
-      { "internalType": "uint256", "name": "validAfter", "type": "uint256" },
-      { "internalType": "uint256", "name": "validBefore", "type": "uint256" },
-      { "internalType": "bytes", "name": "receiveWithAuthSignature", "type": "bytes" }
-    ],
-    "name": "swapAndBridgeWithAuthorization",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "signatureOwner", "type": "address" },
-      {
-        "components": [
-          {
-            "components": [
-              { "internalType": "uint256", "name": "amount", "type": "uint256" },
-              { "internalType": "address", "name": "recipient", "type": "address" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.Fees",
-            "name": "submissionFees",
-            "type": "tuple"
-          },
-          {
-            "components": [
-              { "internalType": "address", "name": "inputToken", "type": "address" },
-              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
-              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
-              { "internalType": "address", "name": "depositor", "type": "address" },
-              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
-              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
-              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
-              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
-              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
-              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
-              { "internalType": "bytes", "name": "message", "type": "bytes" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
-            "name": "depositData",
-            "type": "tuple"
-          },
-          { "internalType": "address", "name": "swapToken", "type": "address" },
-          { "internalType": "address", "name": "exchange", "type": "address" },
-          { "internalType": "enum SpokePoolPeripheryInterface.TransferType", "name": "transferType", "type": "uint8" },
-          { "internalType": "uint256", "name": "swapTokenAmount", "type": "uint256" },
-          { "internalType": "uint256", "name": "minExpectedInputTokenAmount", "type": "uint256" },
-          { "internalType": "bytes", "name": "routerCalldata", "type": "bytes" },
-          { "internalType": "bool", "name": "enableProportionalAdjustment", "type": "bool" },
-          { "internalType": "address", "name": "spokePool", "type": "address" },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
-        ],
-        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
-        "name": "swapAndDepositData",
-        "type": "tuple"
-      },
-      { "internalType": "uint256", "name": "validAfter", "type": "uint256" },
-      { "internalType": "uint256", "name": "validBefore", "type": "uint256" },
-      { "internalType": "bytes", "name": "receiveWithAuthSignature", "type": "bytes" }
-    ],
-    "name": "swapAndBridgeWithAuthorizationBytes",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "signatureOwner", "type": "address" },
-      {
-        "components": [
-          {
-            "components": [
-              { "internalType": "uint256", "name": "amount", "type": "uint256" },
-              { "internalType": "address", "name": "recipient", "type": "address" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.Fees",
-            "name": "submissionFees",
-            "type": "tuple"
-          },
-          {
-            "components": [
-              { "internalType": "address", "name": "inputToken", "type": "address" },
-              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
-              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
-              { "internalType": "address", "name": "depositor", "type": "address" },
-              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
-              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
-              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
-              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
-              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
-              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
-              { "internalType": "bytes", "name": "message", "type": "bytes" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
-            "name": "depositData",
-            "type": "tuple"
-          },
-          { "internalType": "address", "name": "swapToken", "type": "address" },
-          { "internalType": "address", "name": "exchange", "type": "address" },
-          { "internalType": "enum SpokePoolPeripheryInterface.TransferType", "name": "transferType", "type": "uint8" },
-          { "internalType": "uint256", "name": "swapTokenAmount", "type": "uint256" },
-          { "internalType": "uint256", "name": "minExpectedInputTokenAmount", "type": "uint256" },
-          { "internalType": "bytes", "name": "routerCalldata", "type": "bytes" },
-          { "internalType": "bool", "name": "enableProportionalAdjustment", "type": "bool" },
-          { "internalType": "address", "name": "spokePool", "type": "address" },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
-        ],
-        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
-        "name": "swapAndDepositData",
-        "type": "tuple"
-      },
-      { "internalType": "uint256", "name": "deadline", "type": "uint256" },
-      { "internalType": "bytes", "name": "permitSignature", "type": "bytes" },
-      { "internalType": "bytes", "name": "swapAndDepositDataSignature", "type": "bytes" }
-    ],
-    "name": "swapAndBridgeWithPermit",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "signatureOwner", "type": "address" },
-      {
-        "components": [
-          {
-            "components": [
-              { "internalType": "uint256", "name": "amount", "type": "uint256" },
-              { "internalType": "address", "name": "recipient", "type": "address" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.Fees",
-            "name": "submissionFees",
-            "type": "tuple"
-          },
-          {
-            "components": [
-              { "internalType": "address", "name": "inputToken", "type": "address" },
-              { "internalType": "bytes32", "name": "outputToken", "type": "bytes32" },
-              { "internalType": "uint256", "name": "outputAmount", "type": "uint256" },
-              { "internalType": "address", "name": "depositor", "type": "address" },
-              { "internalType": "bytes32", "name": "recipient", "type": "bytes32" },
-              { "internalType": "uint256", "name": "destinationChainId", "type": "uint256" },
-              { "internalType": "bytes32", "name": "exclusiveRelayer", "type": "bytes32" },
-              { "internalType": "uint32", "name": "quoteTimestamp", "type": "uint32" },
-              { "internalType": "uint32", "name": "fillDeadline", "type": "uint32" },
-              { "internalType": "uint32", "name": "exclusivityParameter", "type": "uint32" },
-              { "internalType": "bytes", "name": "message", "type": "bytes" }
-            ],
-            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
-            "name": "depositData",
-            "type": "tuple"
-          },
-          { "internalType": "address", "name": "swapToken", "type": "address" },
-          { "internalType": "address", "name": "exchange", "type": "address" },
-          { "internalType": "enum SpokePoolPeripheryInterface.TransferType", "name": "transferType", "type": "uint8" },
-          { "internalType": "uint256", "name": "swapTokenAmount", "type": "uint256" },
-          { "internalType": "uint256", "name": "minExpectedInputTokenAmount", "type": "uint256" },
-          { "internalType": "bytes", "name": "routerCalldata", "type": "bytes" },
-          { "internalType": "bool", "name": "enableProportionalAdjustment", "type": "bool" },
-          { "internalType": "address", "name": "spokePool", "type": "address" },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" }
-        ],
-        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
-        "name": "swapAndDepositData",
-        "type": "tuple"
+          { "name": "inputAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "spokePool", "type": "address", "internalType": "address" },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" }
+        ]
       },
       {
-        "components": [
-          {
-            "components": [
-              { "internalType": "address", "name": "token", "type": "address" },
-              { "internalType": "uint256", "name": "amount", "type": "uint256" }
-            ],
-            "internalType": "struct IPermit2.TokenPermissions",
-            "name": "permitted",
-            "type": "tuple"
-          },
-          { "internalType": "uint256", "name": "nonce", "type": "uint256" },
-          { "internalType": "uint256", "name": "deadline", "type": "uint256" }
-        ],
-        "internalType": "struct IPermit2.PermitTransferFrom",
         "name": "permit",
-        "type": "tuple"
+        "type": "tuple",
+        "internalType": "struct IPermit2.PermitTransferFrom",
+        "components": [
+          {
+            "name": "permitted",
+            "type": "tuple",
+            "internalType": "struct IPermit2.TokenPermissions",
+            "components": [
+              { "name": "token", "type": "address", "internalType": "address" },
+              { "name": "amount", "type": "uint256", "internalType": "uint256" }
+            ]
+          },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" },
+          { "name": "deadline", "type": "uint256", "internalType": "uint256" }
+        ]
       },
-      { "internalType": "bytes", "name": "signature", "type": "bytes" }
+      { "name": "signature", "type": "bytes", "internalType": "bytes" }
     ],
-    "name": "swapAndBridgeWithPermit2",
     "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
+    "stateMutability": "nonpayable"
   },
   {
+    "type": "function",
+    "name": "domainSeparator",
     "inputs": [],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "eip712Domain",
+    "inputs": [],
+    "outputs": [
+      { "name": "fields", "type": "bytes1", "internalType": "bytes1" },
+      { "name": "name", "type": "string", "internalType": "string" },
+      { "name": "version", "type": "string", "internalType": "string" },
+      { "name": "chainId", "type": "uint256", "internalType": "uint256" },
+      { "name": "verifyingContract", "type": "address", "internalType": "address" },
+      { "name": "salt", "type": "bytes32", "internalType": "bytes32" },
+      { "name": "extensions", "type": "uint256[]", "internalType": "uint256[]" }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getDepositId",
+    "inputs": [
+      { "name": "depositor", "type": "address", "internalType": "address" },
+      { "name": "authorizer", "type": "address", "internalType": "address" },
+      { "name": "nonceIdentifier", "type": "bytes32", "internalType": "bytes32" },
+      { "name": "nonce", "type": "uint256", "internalType": "uint256" },
+      { "name": "spokePool", "type": "address", "internalType": "contract V3SpokePoolInterface" }
+    ],
+    "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getERC3009DepositWitness",
+    "inputs": [
+      {
+        "name": "depositData",
+        "type": "tuple",
+        "internalType": "struct SpokePoolPeripheryInterface.DepositData",
+        "components": [
+          {
+            "name": "submissionFees",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.Fees",
+            "components": [
+              { "name": "amount", "type": "uint256", "internalType": "uint256" },
+              { "name": "recipient", "type": "address", "internalType": "address" }
+            ]
+          },
+          {
+            "name": "baseDepositData",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
+            "components": [
+              { "name": "inputToken", "type": "address", "internalType": "address" },
+              { "name": "outputToken", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "outputAmount", "type": "uint256", "internalType": "uint256" },
+              { "name": "depositor", "type": "address", "internalType": "address" },
+              { "name": "recipient", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "destinationChainId", "type": "uint256", "internalType": "uint256" },
+              { "name": "exclusiveRelayer", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "quoteTimestamp", "type": "uint32", "internalType": "uint32" },
+              { "name": "fillDeadline", "type": "uint32", "internalType": "uint32" },
+              { "name": "exclusivityParameter", "type": "uint32", "internalType": "uint32" },
+              { "name": "message", "type": "bytes", "internalType": "bytes" }
+            ]
+          },
+          { "name": "inputAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "spokePool", "type": "address", "internalType": "address" },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" }
+        ]
+      }
+    ],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "getERC3009SwapAndBridgeWitness",
+    "inputs": [
+      {
+        "name": "swapAndDepositData",
+        "type": "tuple",
+        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
+        "components": [
+          {
+            "name": "submissionFees",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.Fees",
+            "components": [
+              { "name": "amount", "type": "uint256", "internalType": "uint256" },
+              { "name": "recipient", "type": "address", "internalType": "address" }
+            ]
+          },
+          {
+            "name": "depositData",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
+            "components": [
+              { "name": "inputToken", "type": "address", "internalType": "address" },
+              { "name": "outputToken", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "outputAmount", "type": "uint256", "internalType": "uint256" },
+              { "name": "depositor", "type": "address", "internalType": "address" },
+              { "name": "recipient", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "destinationChainId", "type": "uint256", "internalType": "uint256" },
+              { "name": "exclusiveRelayer", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "quoteTimestamp", "type": "uint32", "internalType": "uint32" },
+              { "name": "fillDeadline", "type": "uint32", "internalType": "uint32" },
+              { "name": "exclusivityParameter", "type": "uint32", "internalType": "uint32" },
+              { "name": "message", "type": "bytes", "internalType": "bytes" }
+            ]
+          },
+          { "name": "swapToken", "type": "address", "internalType": "address" },
+          { "name": "exchange", "type": "address", "internalType": "address" },
+          { "name": "transferType", "type": "uint8", "internalType": "enum SpokePoolPeripheryInterface.TransferType" },
+          { "name": "swapTokenAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "minExpectedInputTokenAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "routerCalldata", "type": "bytes", "internalType": "bytes" },
+          { "name": "enableProportionalAdjustment", "type": "bool", "internalType": "bool" },
+          { "name": "spokePool", "type": "address", "internalType": "address" },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" }
+        ]
+      }
+    ],
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "function",
+    "name": "multicall",
+    "inputs": [{ "name": "data", "type": "bytes[]", "internalType": "bytes[]" }],
+    "outputs": [{ "name": "results", "type": "bytes[]", "internalType": "bytes[]" }],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "multicall3",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address", "internalType": "contract IMulticall3" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "permit2",
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address", "internalType": "contract IPermit2" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "permitNonces",
+    "inputs": [{ "name": "user", "type": "address", "internalType": "address" }],
+    "outputs": [{ "name": "", "type": "uint256", "internalType": "uint256" }],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "swapAndBridge",
+    "inputs": [
+      {
+        "name": "swapAndDepositData",
+        "type": "tuple",
+        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
+        "components": [
+          {
+            "name": "submissionFees",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.Fees",
+            "components": [
+              { "name": "amount", "type": "uint256", "internalType": "uint256" },
+              { "name": "recipient", "type": "address", "internalType": "address" }
+            ]
+          },
+          {
+            "name": "depositData",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
+            "components": [
+              { "name": "inputToken", "type": "address", "internalType": "address" },
+              { "name": "outputToken", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "outputAmount", "type": "uint256", "internalType": "uint256" },
+              { "name": "depositor", "type": "address", "internalType": "address" },
+              { "name": "recipient", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "destinationChainId", "type": "uint256", "internalType": "uint256" },
+              { "name": "exclusiveRelayer", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "quoteTimestamp", "type": "uint32", "internalType": "uint32" },
+              { "name": "fillDeadline", "type": "uint32", "internalType": "uint32" },
+              { "name": "exclusivityParameter", "type": "uint32", "internalType": "uint32" },
+              { "name": "message", "type": "bytes", "internalType": "bytes" }
+            ]
+          },
+          { "name": "swapToken", "type": "address", "internalType": "address" },
+          { "name": "exchange", "type": "address", "internalType": "address" },
+          { "name": "transferType", "type": "uint8", "internalType": "enum SpokePoolPeripheryInterface.TransferType" },
+          { "name": "swapTokenAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "minExpectedInputTokenAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "routerCalldata", "type": "bytes", "internalType": "bytes" },
+          { "name": "enableProportionalAdjustment", "type": "bool", "internalType": "bool" },
+          { "name": "spokePool", "type": "address", "internalType": "address" },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "swapAndBridgeWithAuthorization",
+    "inputs": [
+      { "name": "signatureOwner", "type": "address", "internalType": "address" },
+      {
+        "name": "swapAndDepositData",
+        "type": "tuple",
+        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
+        "components": [
+          {
+            "name": "submissionFees",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.Fees",
+            "components": [
+              { "name": "amount", "type": "uint256", "internalType": "uint256" },
+              { "name": "recipient", "type": "address", "internalType": "address" }
+            ]
+          },
+          {
+            "name": "depositData",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
+            "components": [
+              { "name": "inputToken", "type": "address", "internalType": "address" },
+              { "name": "outputToken", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "outputAmount", "type": "uint256", "internalType": "uint256" },
+              { "name": "depositor", "type": "address", "internalType": "address" },
+              { "name": "recipient", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "destinationChainId", "type": "uint256", "internalType": "uint256" },
+              { "name": "exclusiveRelayer", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "quoteTimestamp", "type": "uint32", "internalType": "uint32" },
+              { "name": "fillDeadline", "type": "uint32", "internalType": "uint32" },
+              { "name": "exclusivityParameter", "type": "uint32", "internalType": "uint32" },
+              { "name": "message", "type": "bytes", "internalType": "bytes" }
+            ]
+          },
+          { "name": "swapToken", "type": "address", "internalType": "address" },
+          { "name": "exchange", "type": "address", "internalType": "address" },
+          { "name": "transferType", "type": "uint8", "internalType": "enum SpokePoolPeripheryInterface.TransferType" },
+          { "name": "swapTokenAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "minExpectedInputTokenAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "routerCalldata", "type": "bytes", "internalType": "bytes" },
+          { "name": "enableProportionalAdjustment", "type": "bool", "internalType": "bool" },
+          { "name": "spokePool", "type": "address", "internalType": "address" },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" }
+        ]
+      },
+      { "name": "validAfter", "type": "uint256", "internalType": "uint256" },
+      { "name": "validBefore", "type": "uint256", "internalType": "uint256" },
+      { "name": "receiveWithAuthSignature", "type": "bytes", "internalType": "bytes" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "swapAndBridgeWithAuthorizationBytes",
+    "inputs": [
+      { "name": "signatureOwner", "type": "address", "internalType": "address" },
+      {
+        "name": "swapAndDepositData",
+        "type": "tuple",
+        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
+        "components": [
+          {
+            "name": "submissionFees",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.Fees",
+            "components": [
+              { "name": "amount", "type": "uint256", "internalType": "uint256" },
+              { "name": "recipient", "type": "address", "internalType": "address" }
+            ]
+          },
+          {
+            "name": "depositData",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
+            "components": [
+              { "name": "inputToken", "type": "address", "internalType": "address" },
+              { "name": "outputToken", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "outputAmount", "type": "uint256", "internalType": "uint256" },
+              { "name": "depositor", "type": "address", "internalType": "address" },
+              { "name": "recipient", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "destinationChainId", "type": "uint256", "internalType": "uint256" },
+              { "name": "exclusiveRelayer", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "quoteTimestamp", "type": "uint32", "internalType": "uint32" },
+              { "name": "fillDeadline", "type": "uint32", "internalType": "uint32" },
+              { "name": "exclusivityParameter", "type": "uint32", "internalType": "uint32" },
+              { "name": "message", "type": "bytes", "internalType": "bytes" }
+            ]
+          },
+          { "name": "swapToken", "type": "address", "internalType": "address" },
+          { "name": "exchange", "type": "address", "internalType": "address" },
+          { "name": "transferType", "type": "uint8", "internalType": "enum SpokePoolPeripheryInterface.TransferType" },
+          { "name": "swapTokenAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "minExpectedInputTokenAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "routerCalldata", "type": "bytes", "internalType": "bytes" },
+          { "name": "enableProportionalAdjustment", "type": "bool", "internalType": "bool" },
+          { "name": "spokePool", "type": "address", "internalType": "address" },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" }
+        ]
+      },
+      { "name": "validAfter", "type": "uint256", "internalType": "uint256" },
+      { "name": "validBefore", "type": "uint256", "internalType": "uint256" },
+      { "name": "receiveWithAuthSignature", "type": "bytes", "internalType": "bytes" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "swapAndBridgeWithPermit",
+    "inputs": [
+      { "name": "signatureOwner", "type": "address", "internalType": "address" },
+      {
+        "name": "swapAndDepositData",
+        "type": "tuple",
+        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
+        "components": [
+          {
+            "name": "submissionFees",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.Fees",
+            "components": [
+              { "name": "amount", "type": "uint256", "internalType": "uint256" },
+              { "name": "recipient", "type": "address", "internalType": "address" }
+            ]
+          },
+          {
+            "name": "depositData",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
+            "components": [
+              { "name": "inputToken", "type": "address", "internalType": "address" },
+              { "name": "outputToken", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "outputAmount", "type": "uint256", "internalType": "uint256" },
+              { "name": "depositor", "type": "address", "internalType": "address" },
+              { "name": "recipient", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "destinationChainId", "type": "uint256", "internalType": "uint256" },
+              { "name": "exclusiveRelayer", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "quoteTimestamp", "type": "uint32", "internalType": "uint32" },
+              { "name": "fillDeadline", "type": "uint32", "internalType": "uint32" },
+              { "name": "exclusivityParameter", "type": "uint32", "internalType": "uint32" },
+              { "name": "message", "type": "bytes", "internalType": "bytes" }
+            ]
+          },
+          { "name": "swapToken", "type": "address", "internalType": "address" },
+          { "name": "exchange", "type": "address", "internalType": "address" },
+          { "name": "transferType", "type": "uint8", "internalType": "enum SpokePoolPeripheryInterface.TransferType" },
+          { "name": "swapTokenAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "minExpectedInputTokenAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "routerCalldata", "type": "bytes", "internalType": "bytes" },
+          { "name": "enableProportionalAdjustment", "type": "bool", "internalType": "bool" },
+          { "name": "spokePool", "type": "address", "internalType": "address" },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" }
+        ]
+      },
+      { "name": "deadline", "type": "uint256", "internalType": "uint256" },
+      { "name": "permitSignature", "type": "bytes", "internalType": "bytes" },
+      { "name": "swapAndDepositDataSignature", "type": "bytes", "internalType": "bytes" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "swapAndBridgeWithPermit2",
+    "inputs": [
+      { "name": "signatureOwner", "type": "address", "internalType": "address" },
+      {
+        "name": "swapAndDepositData",
+        "type": "tuple",
+        "internalType": "struct SpokePoolPeripheryInterface.SwapAndDepositData",
+        "components": [
+          {
+            "name": "submissionFees",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.Fees",
+            "components": [
+              { "name": "amount", "type": "uint256", "internalType": "uint256" },
+              { "name": "recipient", "type": "address", "internalType": "address" }
+            ]
+          },
+          {
+            "name": "depositData",
+            "type": "tuple",
+            "internalType": "struct SpokePoolPeripheryInterface.BaseDepositData",
+            "components": [
+              { "name": "inputToken", "type": "address", "internalType": "address" },
+              { "name": "outputToken", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "outputAmount", "type": "uint256", "internalType": "uint256" },
+              { "name": "depositor", "type": "address", "internalType": "address" },
+              { "name": "recipient", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "destinationChainId", "type": "uint256", "internalType": "uint256" },
+              { "name": "exclusiveRelayer", "type": "bytes32", "internalType": "bytes32" },
+              { "name": "quoteTimestamp", "type": "uint32", "internalType": "uint32" },
+              { "name": "fillDeadline", "type": "uint32", "internalType": "uint32" },
+              { "name": "exclusivityParameter", "type": "uint32", "internalType": "uint32" },
+              { "name": "message", "type": "bytes", "internalType": "bytes" }
+            ]
+          },
+          { "name": "swapToken", "type": "address", "internalType": "address" },
+          { "name": "exchange", "type": "address", "internalType": "address" },
+          { "name": "transferType", "type": "uint8", "internalType": "enum SpokePoolPeripheryInterface.TransferType" },
+          { "name": "swapTokenAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "minExpectedInputTokenAmount", "type": "uint256", "internalType": "uint256" },
+          { "name": "routerCalldata", "type": "bytes", "internalType": "bytes" },
+          { "name": "enableProportionalAdjustment", "type": "bool", "internalType": "bool" },
+          { "name": "spokePool", "type": "address", "internalType": "address" },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" }
+        ]
+      },
+      {
+        "name": "permit",
+        "type": "tuple",
+        "internalType": "struct IPermit2.PermitTransferFrom",
+        "components": [
+          {
+            "name": "permitted",
+            "type": "tuple",
+            "internalType": "struct IPermit2.TokenPermissions",
+            "components": [
+              { "name": "token", "type": "address", "internalType": "address" },
+              { "name": "amount", "type": "uint256", "internalType": "uint256" }
+            ]
+          },
+          { "name": "nonce", "type": "uint256", "internalType": "uint256" },
+          { "name": "deadline", "type": "uint256", "internalType": "uint256" }
+        ]
+      },
+      { "name": "signature", "type": "bytes", "internalType": "bytes" }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "swapProxy",
-    "outputs": [{ "internalType": "contract SwapProxy", "name": "", "type": "address" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [{ "name": "", "type": "address", "internalType": "contract SwapProxy" }],
+    "stateMutability": "view"
+  },
+  { "type": "event", "name": "EIP712DomainChanged", "inputs": [], "anonymous": false },
+  {
+    "type": "event",
+    "name": "SwapBeforeBridge",
+    "inputs": [
+      { "name": "exchange", "type": "address", "indexed": false, "internalType": "address" },
+      { "name": "exchangeCalldata", "type": "bytes", "indexed": false, "internalType": "bytes" },
+      { "name": "swapToken", "type": "address", "indexed": true, "internalType": "address" },
+      { "name": "acrossInputToken", "type": "address", "indexed": true, "internalType": "address" },
+      { "name": "swapTokenAmount", "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "acrossInputAmount", "type": "uint256", "indexed": false, "internalType": "uint256" },
+      { "name": "acrossOutputToken", "type": "bytes32", "indexed": true, "internalType": "bytes32" },
+      { "name": "acrossOutputAmount", "type": "uint256", "indexed": false, "internalType": "uint256" }
+    ],
+    "anonymous": false
+  },
+  { "type": "error", "name": "InvalidMinExpectedInputAmount", "inputs": [] },
+  { "type": "error", "name": "InvalidMsgValue", "inputs": [] },
+  { "type": "error", "name": "InvalidNonce", "inputs": [] },
+  { "type": "error", "name": "InvalidShortString", "inputs": [] },
+  { "type": "error", "name": "InvalidSignature", "inputs": [] },
+  { "type": "error", "name": "MinimumExpectedInputAmount", "inputs": [] },
+  {
+    "type": "error",
+    "name": "StringTooLong",
+    "inputs": [{ "name": "str", "type": "string", "internalType": "string" }]
   }
 ]
