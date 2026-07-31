@@ -263,7 +263,8 @@ not re-publish `deposit_executed`.
 - A claim whose transaction never mines is **never** discarded, so that transfer stays blocked
   indefinitely. Stranding a deposit is reversible; a second sweep is not. Find them with
   `HGETALL deposit-address:pending-execute-claims:<botIdentifier>` and release one by deleting its
-  field once its transaction is confirmed dead.
+  field once its transaction is confirmed dead. A field whose JSON doesn't parse is quarantined the
+  same way — alerted once, its own transfer blocked, everything else unaffected.
 - The v1 deposit path and both refund-withdraw paths still persist only after confirmation.
 
 ## Refund-withdraw flow (high level)

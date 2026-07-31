@@ -1100,12 +1100,13 @@ describe("DepositAddressHandler pending-execute claim", function () {
   let executeStub: sinon.SinonStub;
   let balanceStub: sinon.SinonStub;
   let warnStub: sinon.SinonStub;
+  let errorStub: sinon.SinonStub;
 
   type Internals = {
     initiateDepositV3: (m: DepositAddressMessageV3) => Promise<void>;
     _settlePendingExecute: (k: string, p: PendingExecute) => Promise<"executed" | "reverted" | "unresolved">;
     _recordPendingExecute: (k: string, p: PendingExecute) => Promise<void>;
-    _readPendingExecutes: () => Promise<Record<string, PendingExecute>>;
+    _readPendingExecutes: () => Promise<{ claims: Record<string, PendingExecute>; unparseable: Set<string> }>;
     _resolvePendingExecutes: (inherited: Record<string, PendingExecute>) => Promise<void>;
     _loadExecutedDepositsFromRedis: () => Promise<void>;
     executedDepositTxHashes: Set<string>;
@@ -1132,11 +1133,12 @@ describe("DepositAddressHandler pending-execute claim", function () {
     store = new Map<string, string>();
     hashes = new Map<string, Map<string, string>>();
     warnStub = sinon.stub();
+    errorStub = sinon.stub();
     const logger = {
       warn: warnStub,
       debug: sinon.stub(),
       info: sinon.stub(),
-      error: sinon.stub(),
+      error: errorStub,
     } as unknown as winston.Logger;
     const config = {
       botIdentifier: "test-bot",
@@ -1175,8 +1177,8 @@ describe("DepositAddressHandler pending-execute claim", function () {
     await (handler as unknown as Internals)._recordPendingExecute(depositKey, pendingRecord());
     expect(hashes.get(redisKey)?.has(depositKey)).to.equal(true);
     const persisted = await (handler as unknown as Internals)._readPendingExecutes();
-    expect(persisted[depositKey].txHash).to.equal(executeTxHash);
-    expect(persisted[depositKey].refTxHash).to.equal(refTxHash);
+    expect(persisted.claims[depositKey].txHash).to.equal(executeTxHash);
+    expect(persisted.claims[depositKey].refTxHash).to.equal(refTxHash);
   });
 
   it("does not request execute calldata while a recently-checked claim is outstanding", async function () {
@@ -1193,7 +1195,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
     getReceiptStub.resolves(sweepReceipt(1));
 
     const inherited = await (handler as unknown as Internals)._readPendingExecutes();
-    await (handler as unknown as Internals)._resolvePendingExecutes(inherited);
+    await (handler as unknown as Internals)._resolvePendingExecutes(inherited.claims);
 
     // Adopted into the executed set, so no later run re-submits for this transfer.
     expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(true);
@@ -1209,7 +1211,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
     getReceiptStub.resolves(sweepReceipt(0));
 
     const inherited = await (handler as unknown as Internals)._readPendingExecutes();
-    await (handler as unknown as Internals)._resolvePendingExecutes(inherited);
+    await (handler as unknown as Internals)._resolvePendingExecutes(inherited.claims);
 
     expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(false);
     expect((handler as unknown as Internals).pendingExecutes).to.deep.equal({});
@@ -1224,7 +1226,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
     getReceiptStub.resolves(null);
 
     const inherited = await (handler as unknown as Internals)._readPendingExecutes();
-    await (handler as unknown as Internals)._resolvePendingExecutes(inherited);
+    await (handler as unknown as Internals)._resolvePendingExecutes(inherited.claims);
 
     expect((handler as unknown as Internals).pendingExecutes[depositKey].txHash).to.equal(executeTxHash);
     expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(false);
@@ -1269,6 +1271,30 @@ describe("DepositAddressHandler pending-execute claim", function () {
     expect(warnStub.firstCall.firstArg.message).to.contain("already been broadcast");
   });
 
+  // The per-field hash isolates writes, so the read must isolate too: one corrupt field previously
+  // threw for the whole map, which bricked startup and made the pre-broadcast check block every v3
+  // deposit indefinitely. A bad field is quarantined — still blocking its own transfer, nothing else.
+  it("quarantines one unparseable claim without affecting other transfers", async function () {
+    const otherKey = `${DEPOSIT_ADDRESS}:0x${"7".repeat(64)}`;
+    const hash = new Map<string, string>();
+    hash.set(depositKey, "{not-valid-json");
+    hash.set(otherKey, JSON.stringify(pendingRecord({ refTxHash: "0x" + "7".repeat(64) })));
+    hashes.set(redisKey, hash);
+
+    const { claims, unparseable } = await (handler as unknown as Internals)._readPendingExecutes();
+
+    expect(Object.keys(claims)).to.deep.equal([otherKey]);
+    expect([...unparseable]).to.deep.equal([depositKey]);
+    // Alerted, and the corrupt field is retained rather than dropped.
+    expect(errorStub.calledOnce).to.equal(true);
+    expect(errorStub.firstCall.firstArg.notificationPath).to.equal("across-bot-error");
+    expect(hashes.get(redisKey)?.has(depositKey)).to.equal(true);
+
+    // The quarantined transfer stays blocked; no calldata is requested for it.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+  });
+
   // Regression for the startup ordering invariant. An incumbent that confirms concurrently persists
   // the executed hash and only then clears its claim, so the successor must snapshot claims BEFORE
   // loading the executed set (or it can see neither) but apply them AFTER (or adoption's whole-array
@@ -1282,7 +1308,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
 
     const inherited = await (handler as unknown as Internals)._readPendingExecutes();
     await (handler as unknown as Internals)._loadExecutedDepositsFromRedis();
-    await (handler as unknown as Internals)._resolvePendingExecutes(inherited);
+    await (handler as unknown as Internals)._resolvePendingExecutes(inherited.claims);
 
     expect(JSON.parse(store.get(executedKey) as string).sort()).to.deep.equal([priorHash, refTxHash].sort());
   });
@@ -1300,7 +1326,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
     ]);
 
     const persisted = await (handler as unknown as Internals)._readPendingExecutes();
-    expect(Object.keys(persisted).sort()).to.deep.equal([depositKey, otherKey].sort());
+    expect(Object.keys(persisted.claims).sort()).to.deep.equal([depositKey, otherKey].sort());
   });
 });
 

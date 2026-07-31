@@ -158,6 +158,9 @@ export class DepositAddressHandler {
   /** Unix seconds of the last on-chain settle attempt per depositKey; throttles re-checks. */
   private lastSettleAttempt: Record<string, number> = {};
 
+  /** depositKeys whose persisted claim could not be parsed. Treated as claimed; never re-attempted. */
+  private unparseableClaimKeys: Set<string> = new Set();
+
   private api: AcrossSwapApiClient;
   private indexerApi: AcrossIndexerApiClient;
   private _signerAddress?: EvmAddress;
@@ -244,7 +247,7 @@ export class DepositAddressHandler {
     // persists the executed hash and only then clears its claim, so reading in this order means a
     // claim already gone by now had its hash persisted earlier — and the load below therefore sees
     // it. Reading the claims after the load would leave a window where the successor sees neither.
-    const inheritedClaims = await this._readPendingExecutes();
+    const { claims: inheritedClaims } = await this._readPendingExecutes();
 
     await this._loadExecutedDepositsFromRedis();
     await this._loadWithdrawnKeysFromRedis();
@@ -361,26 +364,44 @@ export class DepositAddressHandler {
     });
   }
 
-  /** Reads every persisted claim. Throws on a malformed payload, which callers treat as claimed. */
-  private async _readPendingExecutes(): Promise<Record<string, PendingExecute>> {
+  /**
+   * Reads every persisted claim, parsing each hash field independently so one bad field cannot stop
+   * the rest from resolving — the same isolation the per-field hash gives writes. An unparseable
+   * field is quarantined, not dropped: its `depositKey` still blocks submission, since a claim we
+   * cannot read may well describe a transfer already swept. A failure of the read itself (rather than
+   * of a field) still throws, and callers treat that as claimed.
+   */
+  private async _readPendingExecutes(): Promise<{
+    claims: Record<string, PendingExecute>;
+    unparseable: Set<string>;
+  }> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const redisKey = this.getPendingExecutesRedisKey();
     const raw = await this.redisCache.hGetAll(redisKey);
-    try {
-      return Object.fromEntries(
-        Object.entries(raw).map(([depositKey, claim]) => [depositKey, parsePendingExecute(claim)])
-      );
-    } catch (err) {
-      this.logger.error({
-        at: "DepositAddressHandler#_readPendingExecutes",
-        message: "Failed to parse pending executes from Redis",
-        redisKey,
-        err: err instanceof Error ? err.message : String(err),
-        notificationPath: "across-bot-error",
-      });
 
-      throw err;
+    const claims: Record<string, PendingExecute> = {};
+    const unparseable = new Set<string>();
+    for (const [depositKey, claim] of Object.entries(raw)) {
+      try {
+        claims[depositKey] = parsePendingExecute(claim);
+      } catch (err) {
+        unparseable.add(depositKey);
+        // This read runs on every poll that reaches submission, so alert once per key per process.
+        if (!this.unparseableClaimKeys.has(depositKey)) {
+          this.logger.error({
+            at: "DepositAddressHandler#_readPendingExecutes",
+            message: "Quarantined an unparseable pending-execute claim; its transfer stays blocked",
+            redisKey,
+            depositKey,
+            err: err instanceof Error ? err.message : String(err),
+            notificationPath: "across-bot-error",
+          });
+        }
+      }
     }
+
+    this.unparseableClaimKeys = unparseable;
+    return { claims, unparseable };
   }
 
   /**
@@ -1220,6 +1241,18 @@ export class DepositAddressHandler {
     // An execute for this transfer is already on the wire — either this run broadcast it, or a
     // previous run did and was evicted before confirmation. Re-check it on-chain rather than
     // skipping blindly, so a revert is retried on a later poll instead of waiting for the next run.
+    // A quarantined claim can't be settled (its txHash is unreadable), but it may describe a transfer
+    // already swept, so it must keep blocking. Cleared by fixing or deleting the Redis field.
+    if (this.unparseableClaimKeys.has(depositKey)) {
+      this.logger.debug({
+        at: "DepositAddressHandler#initiateDepositV3",
+        message: "Skipping deposit: this transfer's persisted claim is unparseable",
+        refTxHash,
+        depositKey,
+      });
+      return;
+    }
+
     const pending = this.pendingExecutes[depositKey];
     if (isDefined(pending)) {
       const lastAttempt = this.lastSettleAttempt[depositKey] ?? 0;
@@ -1330,13 +1363,14 @@ export class DepositAddressHandler {
       // execute; re-read from Redis rather than the mirror, which only this run writes to. This
       // narrows the overlap window to a single Redis read — it does not close it.
       try {
-        const claimed = (await this._readPendingExecutes())[depositKey];
-        if (isDefined(claimed)) {
+        const { claims, unparseable } = await this._readPendingExecutes();
+        const claimed = claims[depositKey];
+        if (isDefined(claimed) || unparseable.has(depositKey)) {
           this.logger.warn({
             at: "DepositAddressHandler#initiateDepositV3",
             message: "Skipping execute: an execute for this transfer has already been broadcast",
             depositKey,
-            pendingTxHash: claimed.txHash,
+            pendingTxHash: claimed?.txHash ?? "unparseable claim",
           });
           return;
         }
