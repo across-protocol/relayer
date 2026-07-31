@@ -436,28 +436,54 @@ export class DepositAddressHandler {
    */
   private async _clearPendingExecute(depositKey: string, settledTxHash?: string): Promise<boolean> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    const redisKey = this.getPendingExecutesRedisKey();
+    const forget = () => {
+      delete this.pendingExecutes[depositKey];
+      delete this.lastSettleAttempt[depositKey];
+    };
 
-    if (isDefined(settledTxHash)) {
-      const stored = (await this._readPendingExecutes()).claims[depositKey];
-      if (isDefined(stored) && stored.txHash !== settledTxHash) {
-        this.pendingExecutes[depositKey] = stored;
-        delete this.lastSettleAttempt[depositKey];
-        this.logger.warn({
-          at: "DepositAddressHandler#_clearPendingExecute",
-          message: "Keeping a newer in-flight claim rather than clearing the one just resolved",
-          depositKey,
-          settledTxHash,
-          storedTxHash: stored.txHash,
-          notificationPath: "across-bot-error",
-        });
-        return false;
-      }
+    if (!isDefined(settledTxHash)) {
+      await redisCache.hDel(redisKey, depositKey);
+      forget();
+      return true;
     }
 
-    await this.redisCache.hDel(this.getPendingExecutesRedisKey(), depositKey);
-    delete this.pendingExecutes[depositKey];
+    const raw = (await redisCache.hGetAll(redisKey))[depositKey];
+    if (!isDefined(raw)) {
+      forget();
+      return true;
+    }
+
+    let stored: PendingExecute;
+    try {
+      stored = parsePendingExecute(raw);
+    } catch {
+      // Quarantined elsewhere; never delete a claim whose contents we could not read.
+      return false;
+    }
+
+    // Compare-and-delete on the exact bytes read, so a claim another run writes between the read and
+    // the delete survives rather than being lost to the gap between two commands.
+    if (stored.txHash === settledTxHash && (await redisCache.hDelIfEquals(redisKey, depositKey, raw))) {
+      forget();
+      return true;
+    }
+
+    // Either a newer transaction already owned the claim, or one replaced it mid-delete. Track what is
+    // there: that transaction, not the one just resolved, decides this transfer's outcome. The
+    // throttle is dropped so the next poll re-settles against the live hash immediately.
+    this.pendingExecutes[depositKey] = stored;
     delete this.lastSettleAttempt[depositKey];
-    return true;
+    this.logger.warn({
+      at: "DepositAddressHandler#_clearPendingExecute",
+      message: "Keeping a newer in-flight claim rather than clearing the one just resolved",
+      depositKey,
+      settledTxHash,
+      storedTxHash: stored.txHash,
+      notificationPath: "across-bot-error",
+    });
+    return false;
   }
 
   /**

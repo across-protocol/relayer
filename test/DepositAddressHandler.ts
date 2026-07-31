@@ -1076,6 +1076,14 @@ function redisHashFake(hashes: Map<string, Map<string, string>>) {
     },
     hGetAll: async (key: string) => Object.fromEntries(hashes.get(key) ?? new Map<string, string>()),
     hDel: async (key: string, field: string) => (hashes.get(key)?.delete(field) ? 1 : 0),
+    hDelIfEquals: async (key: string, field: string, expected: string) => {
+      const hash = hashes.get(key);
+      if (hash?.get(field) !== expected) {
+        return false;
+      }
+      hash.delete(field);
+      return true;
+    },
   };
 }
 
@@ -1294,6 +1302,27 @@ describe("DepositAddressHandler pending-execute claim", function () {
     expect(warnStub.args.some((a) => a[0].message.includes("Keeping a newer in-flight claim"))).to.equal(true);
 
     // The transfer stays blocked.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+  });
+
+  // The compare and the delete are separate Redis commands, so a claim written in between would be
+  // lost to a plain hDel. The delete is a compare-and-swap on the exact bytes read: if they changed,
+  // it fails and the claim stays.
+  it("does not delete a claim rewritten between the compare and the delete", async function () {
+    const ours = pendingRecord({ txHash: executeTxHash });
+    seedClaim(ours);
+    (handler as unknown as Internals).pendingExecutes = { [depositKey]: ours };
+    getReceiptStub.resolves(sweepReceipt(0));
+    // Stands in for another run's hSet landing in the gap: the CAS no longer matches.
+    (handler as unknown as { redisCache: { hDelIfEquals: sinon.SinonStub } }).redisCache.hDelIfEquals = sinon
+      .stub()
+      .resolves(false);
+
+    const outcome = await (handler as unknown as Internals)._settlePendingExecute(depositKey, ours);
+
+    expect(outcome).to.equal("unresolved");
+    expect(hashes.get(redisKey)?.has(depositKey)).to.equal(true);
     await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
     expect(executeStub.notCalled).to.equal(true);
   });

@@ -12,6 +12,7 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   decrBy(key: string, amount: number): Promise<number>;
   del(key: string): Promise<number>;
   hDel(key: string, field: string): Promise<number>;
+  hDelIfEquals(key: string, field: string, expected: string): Promise<boolean>;
   hGetAll(key: string): Promise<Record<string, string>>;
   hSet(key: string, field: string, value: string): Promise<number>;
   releaseLock(key: string, token: string): Promise<boolean>;
@@ -121,6 +122,22 @@ export class RedisCache implements RedisCacheInterface {
 
   hDel(key: string, field: string): Promise<number> {
     return this.client.hDel(this.getNamespacedKey(key), field);
+  }
+
+  /**
+   * Deletes `field` only if it still holds exactly `expected`. Same token-checked pattern as
+   * `releaseLock`: a read followed by a delete is a TOCTOU, so callers that must not clobber a value
+   * another writer replaced in between use this instead.
+   */
+  async hDelIfEquals(key: string, field: string, expected: string): Promise<boolean> {
+    const reply = await this.client.eval(
+      "if redis.call('hget', KEYS[1], ARGV[1]) == ARGV[2] then return redis.call('hdel', KEYS[1], ARGV[1]) else return 0 end",
+      {
+        keys: [this.getNamespacedKey(key)],
+        arguments: [field, expected],
+      }
+    );
+    return reply === 1;
   }
 
   sAdd(key: string, value: string): Promise<number> {
