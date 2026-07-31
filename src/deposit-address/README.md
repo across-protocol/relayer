@@ -126,11 +126,20 @@ The flow (`initiateDepositV3`):
    must match the origin chain, `isPlaceholder` must be false, and `signatureDeadline` must have
    ≥60s of headroom. The calldata embeds a deadline-bounded signature — it is perishable, and on
    any failure the next poll **re-requests fresh calldata; stale payloads are never patched**.
-7. Re-read the claim hash from Redis (see "In-flight execute claims") and skip if another run has
-   already broadcast for this transfer during the quote round trip.
+7. Re-read the claim hash from Redis via `_syncClaim` (see "In-flight execute claims") and skip if
+   another run has already broadcast for this transfer during the quote round trip.
 8. Sign and submit via `TransactionClient` (gas, nonce, rebroadcast), recording a claim from the
-   `onBroadcast` hook, then persist the tx hash to Redis exactly like v1 and clear the claim.
-9. Publish a `deposit_executed` lifecycle event to GCP Pub/Sub (if `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`).
+   `onBroadcast` hook before the confirmation wait.
+9. On confirmation, persist the tx hash to Redis exactly like v1, **then** publish a
+   `deposit_executed` lifecycle event to GCP Pub/Sub (if
+   `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`), **then** clear the claim.
+
+   This order is load-bearing in both directions and must not be rearranged. The executed set is
+   written before the claim is cleared, because the reverse would reopen the duplicate-sweep window.
+   The publish precedes the clear, and the clear is best-effort, because once the executed set is
+   written the claim is redundant — the executed-set check runs first on later polls, and startup
+   tidies a leftover — whereas a skipped publish is lost for good: later polls skip the transfer and
+   claim adoption deliberately does not re-publish.
 
 The v3 message's `counterfactualMaterials`/`initialRoot`/`salt` are relayed by the indexer but not
 read by the execute path — the API re-derives them, so they are carried for diagnostics only.
@@ -230,9 +239,11 @@ sweep would leave no trace — and because the deposit address is a shared pot, 
 transfer makes the stale message look executable again.
 
 So on the v3 execute path the broadcast hash is persisted from `TransactionClient`'s `onBroadcast`
-hook, before the confirmation wait, and cleared once the executed set is written. Claims are written
-per hash field so overlapping runs recording different transfers cannot clobber each other, and the
-repriced branch re-notifies so the persisted hash is always one that can actually mine.
+hook, before the confirmation wait, and cleared once the executed set is written and the lifecycle
+event published (step 9 above gives the ordering and why it matters). Claims are written per hash
+field so overlapping runs recording different transfers cannot clobber each other, and the repriced
+branch re-notifies — including for a replacement that reverted — so the persisted hash is always one
+that can actually be resolved on-chain.
 
 Redis is the source of truth, not the in-memory mirror: this process only snapshots claims at startup, while an overlapping run can record, replace or (via the ops procedure below) remove one at any time. Every decision that depends on a claim therefore reads through `_syncClaim`, so a stale entry can neither block a transfer indefinitely nor hide a live one.
 
