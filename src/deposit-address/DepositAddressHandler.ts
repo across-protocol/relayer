@@ -449,7 +449,7 @@ export class DepositAddressHandler {
       return true;
     }
 
-    const raw = (await redisCache.hGetAll(redisKey))[depositKey];
+    const raw = await redisCache.hGet(redisKey, depositKey);
     if (!isDefined(raw)) {
       forget();
       return true;
@@ -495,13 +495,40 @@ export class DepositAddressHandler {
    * stale mirror entry can neither block a transfer indefinitely nor hide a live one.
    */
   private async _syncClaim(depositKey: string): Promise<PendingExecute | undefined> {
-    const live = (await this._readPendingExecutes()).claims[depositKey];
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    // One field, not the whole hash: claims are deliberately never pruned, so reading all of them here
+    // would make this per-transfer path cost scale with every unrelated claim being retained.
+    const raw = await this.redisCache.hGet(this.getPendingExecutesRedisKey(), depositKey);
 
-    if (!isDefined(live)) {
+    if (!isDefined(raw)) {
+      this.unparseableClaimKeys.delete(depositKey);
       delete this.pendingExecutes[depositKey];
       delete this.lastSettleAttempt[depositKey];
       return undefined;
     }
+
+    let live: PendingExecute;
+    try {
+      live = parsePendingExecute(raw);
+    } catch (err) {
+      // Quarantine this field alone. Callers must consult `unparseableClaimKeys`, since a claim that
+      // cannot be read has to keep blocking its transfer rather than read as absent.
+      if (!this.unparseableClaimKeys.has(depositKey)) {
+        this.logger.error({
+          at: "DepositAddressHandler#_syncClaim",
+          message: "Quarantined an unparseable pending-execute claim; its transfer stays blocked",
+          depositKey,
+          err: err instanceof Error ? err.message : String(err),
+          notificationPath: "across-bot-error",
+        });
+      }
+      this.unparseableClaimKeys.add(depositKey);
+      delete this.pendingExecutes[depositKey];
+      delete this.lastSettleAttempt[depositKey];
+      return undefined;
+    }
+
+    this.unparseableClaimKeys.delete(depositKey);
 
     // A different hash is a different transaction; re-settle it without waiting out the throttle.
     if (this.pendingExecutes[depositKey]?.txHash !== live.txHash) {
@@ -561,6 +588,11 @@ export class DepositAddressHandler {
       }
 
       if (!isDefined(live)) {
+        // Quarantined is not the same as gone: we could not read the claim, so keep blocking.
+        if (this.unparseableClaimKeys.has(depositKey)) {
+          this.logger.warn({ ...logContext, message: "Pending execute claim is unreadable; transfer stays blocked" });
+          return "unresolved";
+        }
         this.logger.warn({
           ...logContext,
           message: "Pending execute claim no longer present; deposit may be re-attempted",
@@ -1361,7 +1393,9 @@ export class DepositAddressHandler {
       // Re-read first: the quarantine set is otherwise only refreshed at startup, so the documented
       // ops recovery — repair or delete the malformed field — would not take effect until the process
       // was replaced.
-      const { claims } = await this._readPendingExecutes();
+      // _syncClaim updates the mirror and this key's quarantine state, so a repaired or removed field
+      // takes effect here without a restart.
+      await this._syncClaim(depositKey);
       if (this.unparseableClaimKeys.has(depositKey)) {
         this.logger.debug({
           at: "DepositAddressHandler#initiateDepositV3",
@@ -1370,13 +1404,6 @@ export class DepositAddressHandler {
           depositKey,
         });
         return;
-      }
-
-      // Repaired or removed. Track whatever the field holds now so the checks below act on it.
-      if (isDefined(claims[depositKey])) {
-        this.pendingExecutes[depositKey] = claims[depositKey];
-      } else {
-        delete this.pendingExecutes[depositKey];
       }
     }
 

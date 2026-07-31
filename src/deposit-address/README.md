@@ -245,7 +245,7 @@ field so overlapping runs recording different transfers cannot clobber each othe
 branch re-notifies — including for a replacement that reverted — so the persisted hash is always one
 that can actually be resolved on-chain.
 
-Redis is the source of truth, not the in-memory mirror: this process only snapshots claims at startup, while an overlapping run can record, replace or (via the ops procedure below) remove one at any time. Every decision that depends on a claim therefore reads through `_syncClaim`, so a stale entry can neither block a transfer indefinitely nor hide a live one.
+Redis is the source of truth, not the in-memory mirror: this process only snapshots claims at startup, while an overlapping run can record, replace or (via the ops procedure below) remove one at any time. Every decision that depends on a claim therefore reads through `_syncClaim`, so a stale entry can neither block a transfer indefinitely nor hide a live one. `_syncClaim` reads the **single** field it needs (`HGET`), because claims are never pruned and a per-transfer path must not cost more as unrelated claims accumulate; `HGETALL` is reserved for the startup snapshot. A field that fails to parse is quarantined per key and keeps blocking only its own transfer.
 
 Startup read order matters. An incumbent that confirms concurrently persists the executed hash and
 only then clears its claim, so the successor snapshots the claim hash **before** loading the executed

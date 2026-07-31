@@ -13,6 +13,7 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   del(key: string): Promise<number>;
   hDel(key: string, field: string): Promise<number>;
   hDelIfEquals(key: string, field: string, expected: string): Promise<boolean>;
+  hGet(key: string, field: string): Promise<string | undefined>;
   hGetAll(key: string): Promise<Record<string, string>>;
   hSet(key: string, field: string, value: string): Promise<number>;
   releaseLock(key: string, token: string): Promise<boolean>;
@@ -114,6 +115,12 @@ export class RedisCache implements RedisCacheInterface {
   // fields cannot clobber each other the way a read-modify-write of one serialized blob can.
   hSet(key: string, field: string, value: string): Promise<number> {
     return this.client.hSet(this.getNamespacedKey(key), field, value);
+  }
+
+  // Prefer this over hGetAll wherever one field answers the question: the caller's cost then does not
+  // scale with unrelated fields the hash happens to be retaining.
+  async hGet(key: string, field: string): Promise<string | undefined> {
+    return (await this.client.hGet(this.getNamespacedKey(key), field)) ?? undefined;
   }
 
   hGetAll(key: string): Promise<Record<string, string>> {

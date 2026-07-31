@@ -1075,6 +1075,7 @@ function redisHashFake(hashes: Map<string, Map<string, string>>) {
       hashes.set(key, hash);
       return 1;
     },
+    hGet: async (key: string, field: string) => hashes.get(key)?.get(field),
     hGetAll: async (key: string) => Object.fromEntries(hashes.get(key) ?? new Map<string, string>()),
     hDel: async (key: string, field: string) => (hashes.get(key)?.delete(field) ? 1 : 0),
     hDelIfEquals: async (key: string, field: string, expected: string) => {
@@ -1325,6 +1326,24 @@ describe("DepositAddressHandler pending-execute claim", function () {
     // The next poll settles the live hash, sees the revert, and lets the deposit be re-attempted.
     await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
     expect(executeStub.called).to.equal(true);
+  });
+
+  // Claims are deliberately never pruned, so the per-transfer path must not read the whole hash:
+  // otherwise its cost scales with every unrelated claim being retained. hGetAll is startup-only.
+  it("reads a single field when syncing one transfer's claim", async function () {
+    const cache = (handler as unknown as { redisCache: Record<string, sinon.SinonStub> }).redisCache;
+    const hGetAllSpy = sinon.spy(cache, "hGetAll" as never);
+    const hGetSpy = sinon.spy(cache, "hGet" as never);
+    // Unrelated retained claims, as a neglected deployment would accumulate.
+    for (let i = 0; i < 5; i++) {
+      seedClaim(pendingRecord({ txHash: `0x${i}`.padEnd(66, "0") }), `${DEPOSIT_ADDRESS}:other-${i}`);
+    }
+    seedClaim(pendingRecord());
+
+    await (handler as unknown as { _syncClaim: (k: string) => Promise<unknown> })._syncClaim(depositKey);
+
+    expect(hGetSpy.calledOnceWith(sinon.match.string, depositKey)).to.equal(true);
+    expect(hGetAllSpy.notCalled).to.equal(true);
   });
 
   // The README's recovery is to delete a confirmed-dead claim. Without honouring an absent field the
