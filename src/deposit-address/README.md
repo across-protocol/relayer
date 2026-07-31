@@ -126,9 +126,11 @@ The flow (`initiateDepositV3`):
    must match the origin chain, `isPlaceholder` must be false, and `signatureDeadline` must have
    ≥60s of headroom. The calldata embeds a deadline-bounded signature — it is perishable, and on
    any failure the next poll **re-requests fresh calldata; stale payloads are never patched**.
-7. Sign and submit via `TransactionClient` (gas, nonce, rebroadcast), then persist the tx hash to
-   Redis exactly like v1.
-8. Publish a `deposit_executed` lifecycle event to GCP Pub/Sub (if `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`).
+7. Re-read the claim hash from Redis (see "In-flight execute claims") and skip if another run has
+   already broadcast for this transfer during the quote round trip.
+8. Sign and submit via `TransactionClient` (gas, nonce, rebroadcast), recording a claim from the
+   `onBroadcast` hook, then persist the tx hash to Redis exactly like v1 and clear the claim.
+9. Publish a `deposit_executed` lifecycle event to GCP Pub/Sub (if `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`).
 
 The v3 message's `counterfactualMaterials`/`initialRoot`/`salt` are relayed by the indexer but not
 read by the execute path — the API re-derives them, so they are carried for diagnostics only.
@@ -215,6 +217,49 @@ Three sets persist across runs so handover does not double-spend, double-refund,
 - `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
 
 On each poll, entries whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages.
+
+A fourth key, `deposit-address:pending-execute-claims:<botIdentifier>`, is a **hash** (one field per
+`depositKey`) rather than a set, carries no TTL, and is **not** pruned against the indexer — a claim
+must outlive the message that produced it.
+
+## In-flight execute claims
+
+Runs overlap: a successor overwrites the instance key at startup while the incumbent only notices on
+its next 1s `InstanceCoordinator.subscribe()` poll. A run can therefore broadcast an execute and be
+evicted before the receipt lands. Since the executed set is only written *after* confirmation, that
+sweep would leave no trace — and because the deposit address is a shared pot, a later inbound
+transfer makes the stale message look executable again.
+
+So on the v3 execute path the broadcast hash is persisted from `TransactionClient`'s `onBroadcast`
+hook, before the confirmation wait, and cleared once the executed set is written. Claims are written
+per hash field so overlapping runs recording different transfers cannot clobber each other, and the
+repriced branch re-notifies so the persisted hash is always one that can actually mine.
+
+A claim is resolved against the chain at startup, and again (throttled to once a minute per key) when
+a poll encounters an outstanding one:
+
+| Receipt | Outcome | Action |
+| --- | --- | --- |
+| no provider / RPC error | `unresolved` | warn, keep the claim |
+| absent | `unresolved` | keep the claim; the transfer stays blocked |
+| `status === 0` | `reverted` | clear; the deposit is re-attempted |
+| mined, `status !== 0` | `executed` | adopt into the executed set, clear |
+
+Only an explicit `status === 0` counts as a revert: ethers leaves `status` undefined on some chains,
+and treating that as success can strand a deposit but can never cause a second sweep. Adoption does
+not re-publish `deposit_executed`.
+
+**Deliberately not covered.** This narrows the failure window rather than closing it:
+
+- Two overlapping runs can still both broadcast. The pre-broadcast re-read shrinks that window from
+  the whole quote-api round trip to one Redis read; it does not eliminate it. Note it is only a real
+  double-sweep where a resubmit lands in a different nonce space — always on nonce-less TVM, and on
+  EVM when dispatcher keys rotate the retry onto another signer.
+- A claim whose transaction never mines is **never** discarded, so that transfer stays blocked
+  indefinitely. Stranding a deposit is reversible; a second sweep is not. Find them with
+  `HGETALL deposit-address:pending-execute-claims:<botIdentifier>` and release one by deleting its
+  field once its transaction is confirmed dead.
+- The v1 deposit path and both refund-withdraw paths still persist only after confirmation.
 
 ## Refund-withdraw flow (high level)
 
