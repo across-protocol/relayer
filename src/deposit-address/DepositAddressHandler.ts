@@ -1305,13 +1305,26 @@ export class DepositAddressHandler {
     // A quarantined claim can't be settled (its txHash is unreadable), but it may describe a transfer
     // already swept, so it must keep blocking. Cleared by fixing or deleting the Redis field.
     if (this.unparseableClaimKeys.has(depositKey)) {
-      this.logger.debug({
-        at: "DepositAddressHandler#initiateDepositV3",
-        message: "Skipping deposit: this transfer's persisted claim is unparseable",
-        refTxHash,
-        depositKey,
-      });
-      return;
+      // Re-read first: the quarantine set is otherwise only refreshed at startup, so the documented
+      // ops recovery — repair or delete the malformed field — would not take effect until the process
+      // was replaced.
+      const { claims } = await this._readPendingExecutes();
+      if (this.unparseableClaimKeys.has(depositKey)) {
+        this.logger.debug({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Skipping deposit: this transfer's persisted claim is unparseable",
+          refTxHash,
+          depositKey,
+        });
+        return;
+      }
+
+      // Repaired or removed. Track whatever the field holds now so the checks below act on it.
+      if (isDefined(claims[depositKey])) {
+        this.pendingExecutes[depositKey] = claims[depositKey];
+      } else {
+        delete this.pendingExecutes[depositKey];
+      }
     }
 
     const pending = this.pendingExecutes[depositKey];
@@ -1478,8 +1491,20 @@ export class DepositAddressHandler {
       this.executedDepositTxHashes.add(refTxHash);
       executeCommitted = true;
       await this._persistExecutedDepositsRedis();
-      await this._clearPendingExecute(depositKey);
+      // Publish before clearing. The executed set already guards this transfer, so the claim is now
+      // redundant and a leftover is tidied at startup — whereas a skipped publish is lost for good,
+      // since later polls skip the transfer and adoption deliberately does not re-publish.
       await this._publishDepositExecuted(depositReceipt, depositMessage);
+      try {
+        await this._clearPendingExecute(depositKey);
+      } catch (err) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Failed to clear a now-redundant execute claim; startup will tidy it",
+          depositKey,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
     } finally {
       if (!executeCommitted) {
         this.observedExecutedDeposits[originChainId].delete(depositKey);

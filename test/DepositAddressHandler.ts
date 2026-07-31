@@ -21,6 +21,7 @@ import {
   TransactionClient,
 } from "../src/clients";
 import { PendingExecute } from "../src/deposit-address/pendingExecutes";
+import * as txUtils from "../src/utils/TransactionUtils";
 import { DepositAddressHandler } from "../src/deposit-address/DepositAddressHandler";
 import { DepositAddressHandlerConfig } from "../src/deposit-address/DepositAddressHandlerConfig";
 import { ERC20_TRANSFER_TOPIC } from "../src/deposit-address/withdrawPayload";
@@ -1304,6 +1305,58 @@ describe("DepositAddressHandler pending-execute claim", function () {
     // The transfer stays blocked.
     await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
     expect(executeStub.notCalled).to.equal(true);
+  });
+
+  // The README tells operators to repair or delete a malformed field to release a stuck transfer. The
+  // quarantine set is only rebuilt on a Redis read, so without re-reading here that recovery would
+  // need a restart to take effect.
+  it("picks up an operator's repair of a quarantined claim without a restart", async function () {
+    const hash = new Map<string, string>();
+    hash.set(depositKey, "{not-valid-json");
+    hashes.set(redisKey, hash);
+    // Startup quarantines it, and the transfer is blocked.
+    await (handler as unknown as Internals)._readPendingExecutes();
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+
+    // Operator deletes the field; no restart.
+    hashes.get(redisKey)?.delete(depositKey);
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+
+    expect(executeStub.called).to.equal(true);
+  });
+
+  // A failed claim delete must not cost the lifecycle event: the executed set already guards the
+  // transfer, so later polls skip it and startup adoption deliberately does not re-publish.
+  it("publishes deposit_executed even if clearing the redundant claim fails", async function () {
+    (handler as unknown as { getExecuteContract: sinon.SinonStub }).getExecuteContract = sinon
+      .stub()
+      .returns({ address: TOKEN });
+    executeStub.resolves({
+      depositAddress: DEPOSIT_ADDRESS,
+      executeTx: { ecosystem: "evm", chainId, to: TOKEN, data: "0x", value: "0" },
+      signer: SIGNER,
+      signatureDeadline: getCurrentTime() + 600,
+      isPlaceholder: false,
+    });
+    sinon.stub(txUtils, "sendAndConfirmTransaction").resolves(sweepReceipt(1));
+
+    // Order is what matters: the publish is unrecoverable, the claim delete is not.
+    const calls: string[] = [];
+    const publishSpy = sinon.stub().callsFake(async () => void calls.push("publish"));
+    (handler as unknown as { _publishDepositExecuted: unknown })._publishDepositExecuted = publishSpy;
+    (handler as unknown as { redisCache: { hDel: sinon.SinonStub } }).redisCache.hDel = sinon
+      .stub()
+      .callsFake(async () => {
+        calls.push("hDel");
+        throw new Error("redis unavailable");
+      });
+
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+
+    expect(calls).to.deep.equal(["publish", "hDel"]);
+    expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(true);
+    expect(warnStub.args.some((a) => a[0].message.includes("startup will tidy it"))).to.equal(true);
   });
 
   // The compare and the delete are separate Redis commands, so a claim written in between would be
