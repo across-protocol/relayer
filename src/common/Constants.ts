@@ -324,12 +324,20 @@ Object.values(CHAIN_IDs)
     DEFAULT_GAS_FEE_SCALERS[chainId] ??= { maxFeePerGasScaler: 1.1, maxPriorityFeePerGasScaler: 1.1 };
   });
 
+// Chains that Across no longer supports but that still carry a recognized chain family in PUBLIC_NETWORKS.
+// Runtime configs may lag code removal, so registries that are auto-generated from chain families must exclude
+// these chains explicitly rather than resolve family defaults whose CONTRACT_ADDRESSES entries have been removed.
+export const REMOVED_CHAIN_IDS = [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA];
+
 // These are the spokes that can hold the native token for that network, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
 const resolveNativeTokenSpokes = () => {
   const chains = [CHAIN_IDs.LINEA, CHAIN_IDs.ZK_SYNC];
   Object.entries(PUBLIC_NETWORKS).forEach(([_chainId, config]) => {
     const chainId = Number(_chainId);
+    if (REMOVED_CHAIN_IDS.includes(chainId)) {
+      return; // Their nativeToken CONTRACT_ADDRESSES entries no longer exist.
+    }
     if ([ChainFamily.OP_STACK, ChainFamily.ZK_STACK].includes(config.family)) {
       chains.push(chainId);
     }
@@ -416,11 +424,6 @@ type L2BridgeConstructor<T extends BaseL2BridgeAdapter> = new (
   l1Token: EvmAddress,
   logger?: winston.Logger
 ) => T;
-
-// Chains that Across no longer supports but that still carry a recognized chain family in PUBLIC_NETWORKS.
-// Runtime configs may lag code removal, so registries that are auto-generated from chain families must exclude
-// these chains explicitly rather than resolve family defaults whose CONTRACT_ADDRESSES entries have been removed.
-export const REMOVED_CHAIN_IDS = [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA];
 
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
 // case, it is the default bridge for the given chain.
