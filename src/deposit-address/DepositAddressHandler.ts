@@ -423,11 +423,41 @@ export class DepositAddressHandler {
     });
   }
 
-  private async _clearPendingExecute(depositKey: string): Promise<void> {
+  /**
+   * Removes a claim. Pass `settledTxHash` to delete only if the stored claim is still that
+   * transaction: overlapping runs write the same field, so an unconditional delete can drop a *newer*
+   * claim whose transaction is still in flight, unblocking a transfer that is mid-sweep. When the
+   * stored claim has moved on, adopt it locally instead so this run resolves the live transaction.
+   *
+   * Callers that have already recorded the transfer in the executed set may omit `settledTxHash` —
+   * that set guards the transfer by `refTxHash` from then on, whatever the claim says.
+   *
+   * @returns whether the claim was actually removed.
+   */
+  private async _clearPendingExecute(depositKey: string, settledTxHash?: string): Promise<boolean> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+
+    if (isDefined(settledTxHash)) {
+      const stored = (await this._readPendingExecutes()).claims[depositKey];
+      if (isDefined(stored) && stored.txHash !== settledTxHash) {
+        this.pendingExecutes[depositKey] = stored;
+        delete this.lastSettleAttempt[depositKey];
+        this.logger.warn({
+          at: "DepositAddressHandler#_clearPendingExecute",
+          message: "Keeping a newer in-flight claim rather than clearing the one just resolved",
+          depositKey,
+          settledTxHash,
+          storedTxHash: stored.txHash,
+          notificationPath: "across-bot-error",
+        });
+        return false;
+      }
+    }
+
     await this.redisCache.hDel(this.getPendingExecutesRedisKey(), depositKey);
     delete this.pendingExecutes[depositKey];
     delete this.lastSettleAttempt[depositKey];
+    return true;
   }
 
   /**
@@ -478,7 +508,12 @@ export class DepositAddressHandler {
     // Only an explicit status of 0 is a revert; ethers leaves it undefined on some chains, and
     // treating that as success can strand a deposit but can never cause a second sweep.
     if (receipt.status === 0) {
-      await this._clearPendingExecute(depositKey);
+      // Only report a revert if this really was the transfer's live claim. If a newer broadcast has
+      // replaced it, that transaction — not this revert — decides the outcome, and the transfer must
+      // stay blocked meanwhile.
+      if (!(await this._clearPendingExecute(depositKey, pending.txHash))) {
+        return "unresolved";
+      }
       this.logger.warn({ ...logContext, message: "Pending execute reverted on-chain; deposit will be re-attempted" });
       return "reverted";
     }

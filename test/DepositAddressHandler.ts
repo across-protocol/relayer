@@ -1271,6 +1271,33 @@ describe("DepositAddressHandler pending-execute claim", function () {
     expect(warnStub.firstCall.firstArg.message).to.contain("already been broadcast");
   });
 
+  // Overlapping runs write the same hash field. If an older transaction reverts while a newer one is
+  // still in flight, clearing unconditionally would drop the live claim and unblock a mid-sweep
+  // transfer — turning a two-sweep interleaving into a three-sweep one.
+  it("keeps a newer in-flight claim when the transaction it replaced reverted", async function () {
+    const newerTxHash = "0x" + "f".repeat(64);
+    seedClaim(pendingRecord({ txHash: newerTxHash }));
+    // This run's mirror still points at its own, older transaction.
+    const ours = pendingRecord({ txHash: executeTxHash });
+    (handler as unknown as Internals).pendingExecutes = { [depositKey]: ours };
+    // Ours reverted; the newer one is still unmined.
+    getReceiptStub.withArgs(executeTxHash).resolves(sweepReceipt(0));
+    getReceiptStub.withArgs(newerTxHash).resolves(null);
+
+    const outcome = await (handler as unknown as Internals)._settlePendingExecute(depositKey, ours);
+
+    // Not "reverted": that would let the caller re-submit immediately.
+    expect(outcome).to.equal("unresolved");
+    expect(hashes.get(redisKey)?.get(depositKey)).to.equal(JSON.stringify(pendingRecord({ txHash: newerTxHash })));
+    // And this run now tracks the live transaction instead of its own.
+    expect((handler as unknown as Internals).pendingExecutes[depositKey].txHash).to.equal(newerTxHash);
+    expect(warnStub.args.some((a) => a[0].message.includes("Keeping a newer in-flight claim"))).to.equal(true);
+
+    // The transfer stays blocked.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+  });
+
   // The per-field hash isolates writes, so the read must isolate too: one corrupt field previously
   // threw for the whole map, which bricked startup and made the pre-broadcast check block every v3
   // deposit indefinitely. A bad field is quarantined — still blocking its own transfer, nothing else.
