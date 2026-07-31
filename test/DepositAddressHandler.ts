@@ -1113,7 +1113,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
 
   type Internals = {
     initiateDepositV3: (m: DepositAddressMessageV3) => Promise<void>;
-    _settlePendingExecute: (k: string, p: PendingExecute) => Promise<"executed" | "reverted" | "unresolved">;
+    _settlePendingExecute: (k: string, p: PendingExecute) => Promise<"executed" | "unclaimed" | "unresolved">;
     _recordPendingExecute: (k: string, p: PendingExecute) => Promise<void>;
     _readPendingExecutes: () => Promise<{ claims: Record<string, PendingExecute>; unparseable: Set<string> }>;
     _resolvePendingExecutes: (inherited: Record<string, PendingExecute>) => Promise<void>;
@@ -1295,7 +1295,7 @@ describe("DepositAddressHandler pending-execute claim", function () {
 
     const outcome = await (handler as unknown as Internals)._settlePendingExecute(depositKey, ours);
 
-    // Not "reverted": that would let the caller re-submit immediately.
+    // Not "unclaimed": that would let the caller re-submit immediately.
     expect(outcome).to.equal("unresolved");
     expect(hashes.get(redisKey)?.get(depositKey)).to.equal(JSON.stringify(pendingRecord({ txHash: newerTxHash })));
     // And this run now tracks the live transaction instead of its own.
@@ -1325,6 +1325,50 @@ describe("DepositAddressHandler pending-execute claim", function () {
     // The next poll settles the live hash, sees the revert, and lets the deposit be re-attempted.
     await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
     expect(executeStub.called).to.equal(true);
+  });
+
+  // The README's recovery is to delete a confirmed-dead claim. Without honouring an absent field the
+  // mirror kept the dead hash, rechecked it every minute, and blocked the transfer until restart.
+  it("releases the transfer when an operator deletes a cached claim", async function () {
+    const ours = pendingRecord({ txHash: executeTxHash });
+    (handler as unknown as Internals).pendingExecutes = { [depositKey]: ours };
+    getReceiptStub.resolves(null); // never mined, so the claim can only be released by hand
+    // Operator deletes the field; nothing seeded in Redis.
+
+    const outcome = await (handler as unknown as Internals)._settlePendingExecute(depositKey, ours);
+
+    expect(outcome).to.equal("unclaimed");
+    expect((handler as unknown as Internals).pendingExecutes[depositKey]).to.equal(undefined);
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.called).to.equal(true);
+  });
+
+  // The pre-broadcast gate is the only place a claim written after startup is seen. Not caching it
+  // meant every later poll re-ran the balance check and quote request before blocking here again,
+  // and _settlePendingExecute was never reached to resolve it.
+  it("caches a claim discovered by the pre-broadcast check so later polls settle it", async function () {
+    (handler as unknown as { getExecuteContract: sinon.SinonStub }).getExecuteContract = sinon
+      .stub()
+      .returns({ address: TOKEN });
+    executeStub.resolves({
+      depositAddress: DEPOSIT_ADDRESS,
+      executeTx: { ecosystem: "evm", chainId, to: TOKEN, data: "0x", value: "0" },
+      signer: SIGNER,
+      signatureDeadline: getCurrentTime() + 600,
+      isPlaceholder: false,
+    });
+    // Recorded by an overlapping run after this process snapshotted, so absent from the mirror.
+    seedClaim(pendingRecord());
+    getReceiptStub.resolves(sweepReceipt(0));
+
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.calledOnce).to.equal(true);
+    expect((handler as unknown as Internals).pendingExecutes[depositKey].txHash).to.equal(executeTxHash);
+
+    // Next poll resolves it instead of re-quoting: reverted, so the deposit is re-attempted.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(getReceiptStub.called).to.equal(true);
+    expect(executeStub.callCount).to.equal(2);
   });
 
   // The README tells operators to repair or delete a malformed field to release a stuck transfer. The
@@ -1469,7 +1513,7 @@ describe("DepositAddressHandler pending-execute claim on Tron", function () {
   let getReceiptStub: sinon.SinonStub;
 
   type Internals = {
-    _settlePendingExecute: (k: string, p: PendingExecute) => Promise<"executed" | "reverted" | "unresolved">;
+    _settlePendingExecute: (k: string, p: PendingExecute) => Promise<"executed" | "unclaimed" | "unresolved">;
   };
 
   beforeEach(function () {

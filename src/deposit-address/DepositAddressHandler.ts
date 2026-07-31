@@ -487,6 +487,31 @@ export class DepositAddressHandler {
   }
 
   /**
+   * Refreshes the local mirror for one transfer from Redis and returns the live claim.
+   *
+   * Redis is the source of truth and this process only snapshots it at startup, while an overlapping
+   * run can record a new claim, replace one (a resubmit at the same nonce), or have one removed by an
+   * operator at any point. Every decision that depends on a claim therefore reads through here, so a
+   * stale mirror entry can neither block a transfer indefinitely nor hide a live one.
+   */
+  private async _syncClaim(depositKey: string): Promise<PendingExecute | undefined> {
+    const live = (await this._readPendingExecutes()).claims[depositKey];
+
+    if (!isDefined(live)) {
+      delete this.pendingExecutes[depositKey];
+      delete this.lastSettleAttempt[depositKey];
+      return undefined;
+    }
+
+    // A different hash is a different transaction; re-settle it without waiting out the throttle.
+    if (this.pendingExecutes[depositKey]?.txHash !== live.txHash) {
+      delete this.lastSettleAttempt[depositKey];
+    }
+    this.pendingExecutes[depositKey] = live;
+    return live;
+  }
+
+  /**
    * Resolves one claim against the chain. A claim with no receipt is deliberately never discarded:
    * stranding a transfer for manual recovery is reversible, a second sweep is not. See the module
    * README for how to release one by hand.
@@ -494,7 +519,7 @@ export class DepositAddressHandler {
   private async _settlePendingExecute(
     depositKey: string,
     pending: PendingExecute
-  ): Promise<"executed" | "reverted" | "unresolved"> {
+  ): Promise<"executed" | "unclaimed" | "unresolved"> {
     const logContext = {
       at: "DepositAddressHandler#_settlePendingExecute",
       depositKey,
@@ -523,15 +548,26 @@ export class DepositAddressHandler {
     }
 
     if (!isDefined(receipt) || !isDefined(receipt.blockNumber)) {
-      // A hash with no receipt may simply be pending — or may have been replaced in Redis by another
-      // run (e.g. a timeout resubmit) after this one cached it. Reconcile against the field before
-      // settling for "keep waiting", or a replaced hash would never resolve and would block the
-      // transfer for this process's lifetime: every later poll would re-settle the same dead hash and
-      // return before the pre-broadcast read that would otherwise have noticed.
-      const live = (await this._readPendingExecutes()).claims[depositKey];
-      if (isDefined(live) && live.txHash !== pending.txHash) {
-        this.pendingExecutes[depositKey] = live;
-        delete this.lastSettleAttempt[depositKey];
+      // A hash with no receipt may simply be pending — or may have been replaced by another run, or
+      // released by an operator, since this process cached it. Reconcile before settling for "keep
+      // waiting", or a hash that can never resolve would block the transfer for this process's
+      // lifetime: later polls would re-settle it and return before the pre-broadcast read.
+      let live: PendingExecute | undefined;
+      try {
+        live = await this._syncClaim(depositKey);
+      } catch {
+        // Already logged. Unverifiable state keeps the transfer blocked, never unblocks it.
+        return "unresolved";
+      }
+
+      if (!isDefined(live)) {
+        this.logger.warn({
+          ...logContext,
+          message: "Pending execute claim no longer present; deposit may be re-attempted",
+        });
+        return "unclaimed";
+      }
+      if (live.txHash !== pending.txHash) {
         this.logger.info({
           ...logContext,
           message: "Adopted a replacement claim recorded by another run; settling that instead",
@@ -558,7 +594,7 @@ export class DepositAddressHandler {
         return "unresolved";
       }
       this.logger.warn({ ...logContext, message: "Pending execute reverted on-chain; deposit will be re-attempted" });
-      return "reverted";
+      return "unclaimed";
     }
 
     this.executedDepositTxHashes.add(pending.refTxHash);
@@ -1350,8 +1386,9 @@ export class DepositAddressHandler {
       if (getCurrentTime() - lastAttempt < PENDING_EXECUTE_RESETTLE_INTERVAL) {
         return;
       }
-      if ((await this._settlePendingExecute(depositKey, pending)) !== "reverted") {
-        // "executed" is now covered by executedDepositTxHashes; "unresolved" must not be re-submitted.
+      // "unclaimed" = no live claim remains (reverted, or released by an operator), so fall through and
+      // re-attempt. "executed" is covered by executedDepositTxHashes; "unresolved" must not resubmit.
+      if ((await this._settlePendingExecute(depositKey, pending)) !== "unclaimed") {
         return;
       }
     }
@@ -1454,9 +1491,10 @@ export class DepositAddressHandler {
       // execute; re-read from Redis rather than the mirror, which only this run writes to. This
       // narrows the overlap window to a single Redis read — it does not close it.
       try {
-        const { claims, unparseable } = await this._readPendingExecutes();
-        const claimed = claims[depositKey];
-        if (isDefined(claimed) || unparseable.has(depositKey)) {
+        // _syncClaim caches whatever it finds, so a claim an overlapping run recorded after this
+        // process started is settled by the next poll rather than re-quoted on every one.
+        const claimed = await this._syncClaim(depositKey);
+        if (isDefined(claimed) || this.unparseableClaimKeys.has(depositKey)) {
           this.logger.warn({
             at: "DepositAddressHandler#initiateDepositV3",
             message: "Skipping execute: an execute for this transfer has already been broadcast",

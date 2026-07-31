@@ -234,6 +234,8 @@ hook, before the confirmation wait, and cleared once the executed set is written
 per hash field so overlapping runs recording different transfers cannot clobber each other, and the
 repriced branch re-notifies so the persisted hash is always one that can actually mine.
 
+Redis is the source of truth, not the in-memory mirror: this process only snapshots claims at startup, while an overlapping run can record, replace or (via the ops procedure below) remove one at any time. Every decision that depends on a claim therefore reads through `_syncClaim`, so a stale entry can neither block a transfer indefinitely nor hide a live one.
+
 Startup read order matters. An incumbent that confirms concurrently persists the executed hash and
 only then clears its claim, so the successor snapshots the claim hash **before** loading the executed
 set: a claim already gone by then had its hash persisted earlier, so the load picks it up. Reading
@@ -247,7 +249,8 @@ a poll encounters an outstanding one:
 | --- | --- | --- |
 | no provider / RPC error | `unresolved` | warn, keep the claim |
 | absent | `unresolved` | keep the claim; the transfer stays blocked |
-| `status === 0` | `reverted` | clear; the deposit is re-attempted |
+| absent, and the field was released externally | `unclaimed` | the deposit is re-attempted |
+| `status === 0` | `unclaimed` | clear; the deposit is re-attempted |
 | mined, `status !== 0` | `executed` | adopt into the executed set, clear |
 
 Only an explicit `status === 0` counts as a revert: ethers leaves `status` undefined on some chains,
