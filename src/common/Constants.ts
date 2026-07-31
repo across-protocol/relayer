@@ -417,6 +417,11 @@ type L2BridgeConstructor<T extends BaseL2BridgeAdapter> = new (
   logger?: winston.Logger
 ) => T;
 
+// Chains that Across no longer supports but that still carry a recognized chain family in PUBLIC_NETWORKS.
+// Runtime configs may lag code removal, so registries that are auto-generated from chain families must exclude
+// these chains explicitly rather than resolve family defaults whose CONTRACT_ADDRESSES entries have been removed.
+export const REMOVED_CHAIN_IDS = [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA];
+
 // Map of chain IDs to all "canonical bridges" for the given chain. Canonical is loosely defined -- in this
 // case, it is the default bridge for the given chain.
 const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridgeAdapter>> => {
@@ -438,14 +443,9 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
     [ChainFamily.ZK_STACK]: ZKStackBridge,
   };
 
-  // Chains that Across no longer supports but that still carry a recognized chain family in PUBLIC_NETWORKS.
-  // Without this exclusion, the family default would resolve a bridge whose CONTRACT_ADDRESSES entries have
-  // been removed, and instantiating it would throw.
-  const removedChains = [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA];
-
   return Object.fromEntries(
     Object.entries(PUBLIC_NETWORKS)
-      .filter(([_chainId]) => !removedChains.includes(Number(_chainId)))
+      .filter(([_chainId]) => !REMOVED_CHAIN_IDS.includes(Number(_chainId)))
       .map(([_chainId, { family }]) => {
         const chainId = Number(_chainId);
         const bridge = bridges[chainId] ?? defaultBridges[family];
