@@ -523,6 +523,23 @@ export class DepositAddressHandler {
     }
 
     if (!isDefined(receipt) || !isDefined(receipt.blockNumber)) {
+      // A hash with no receipt may simply be pending — or may have been replaced in Redis by another
+      // run (e.g. a timeout resubmit) after this one cached it. Reconcile against the field before
+      // settling for "keep waiting", or a replaced hash would never resolve and would block the
+      // transfer for this process's lifetime: every later poll would re-settle the same dead hash and
+      // return before the pre-broadcast read that would otherwise have noticed.
+      const live = (await this._readPendingExecutes()).claims[depositKey];
+      if (isDefined(live) && live.txHash !== pending.txHash) {
+        this.pendingExecutes[depositKey] = live;
+        delete this.lastSettleAttempt[depositKey];
+        this.logger.info({
+          ...logContext,
+          message: "Adopted a replacement claim recorded by another run; settling that instead",
+          liveTxHash: live.txHash,
+        });
+        return "unresolved";
+      }
+
       this.logger.debug({
         ...logContext,
         message: "Pending execute not mined yet; keeping the claim",

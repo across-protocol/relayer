@@ -1307,6 +1307,26 @@ describe("DepositAddressHandler pending-execute claim", function () {
     expect(executeStub.notCalled).to.equal(true);
   });
 
+  // A cached hash with no receipt may have been replaced in Redis by another run's timeout resubmit.
+  // Without reconciling, every later poll re-settles the same dead hash and returns before the
+  // pre-broadcast read, so the transfer would stay blocked for this process's lifetime.
+  it("adopts a replacement hash another run recorded when the cached one has no receipt", async function () {
+    const replacementTxHash = "0x" + "9".repeat(64);
+    const ours = pendingRecord({ txHash: executeTxHash });
+    (handler as unknown as Internals).pendingExecutes = { [depositKey]: ours };
+    // Redis has moved on to the replacement; ours was replaced at the same nonce and never mined.
+    seedClaim(pendingRecord({ txHash: replacementTxHash }));
+    getReceiptStub.withArgs(executeTxHash).resolves(null);
+    getReceiptStub.withArgs(replacementTxHash).resolves(sweepReceipt(0));
+
+    expect(await (handler as unknown as Internals)._settlePendingExecute(depositKey, ours)).to.equal("unresolved");
+    expect((handler as unknown as Internals).pendingExecutes[depositKey].txHash).to.equal(replacementTxHash);
+
+    // The next poll settles the live hash, sees the revert, and lets the deposit be re-attempted.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.called).to.equal(true);
+  });
+
   // The README tells operators to repair or delete a malformed field to release a stuck transfer. The
   // quarantine set is only rebuilt on a Redis read, so without re-reading here that recovery would
   // need a restart to take effect.
