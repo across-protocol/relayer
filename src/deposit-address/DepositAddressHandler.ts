@@ -240,11 +240,18 @@ export class DepositAddressHandler {
     );
     await this.instanceCoordinator.initiateHandover();
 
+    // Snapshot claims *before* the executed-set load. An incumbent that confirms concurrently
+    // persists the executed hash and only then clears its claim, so reading in this order means a
+    // claim already gone by now had its hash persisted earlier — and the load below therefore sees
+    // it. Reading the claims after the load would leave a window where the successor sees neither.
+    const inheritedClaims = await this._readPendingExecutes();
+
     await this._loadExecutedDepositsFromRedis();
     await this._loadWithdrawnKeysFromRedis();
     await this._loadSkippedWithdrawKeysFromRedis();
-    // Must follow the executed-deposits load: adopting an inherited execute writes to that set.
-    await this._resolvePendingExecutes();
+    // Settling must follow the loads: adopting a claim adds to the executed set, which the load
+    // replaces wholesale (and would then persist back to Redis minus every other hash).
+    await this._resolvePendingExecutes(inheritedClaims);
 
     this.initialized = true;
   }
@@ -468,10 +475,12 @@ export class DepositAddressHandler {
 
   /**
    * Settles executes a previous run broadcast but never saw confirmed. Runs once at startup, right
-   * after handover, so a successor inherits the incumbent's in-flight work.
+   * after handover, so a successor inherits the incumbent's in-flight work. Takes the claim snapshot
+   * as an argument because it must be read before the executed-set load, but applied after it — see
+   * `initialize()`.
    */
-  private async _resolvePendingExecutes(): Promise<void> {
-    this.pendingExecutes = await this._readPendingExecutes();
+  private async _resolvePendingExecutes(inherited: Record<string, PendingExecute>): Promise<void> {
+    this.pendingExecutes = inherited;
     const entries = Object.entries(this.pendingExecutes);
     if (entries.length === 0) {
       return;

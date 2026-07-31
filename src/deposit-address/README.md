@@ -75,8 +75,8 @@ re-derives the deposit address and all counterfactual merkle materials server-si
 identity (`destination.token`, `destination.recipient`, `userAddress`); the bot relays funding
 context only — origin chain, swept `depositAddress`, funding `inputToken`, amount, destination
 route, refund identity — plus its own `executionFeeRecipient` and the `integratorId` the address
-was derived with. `executionFee` is currently omitted (the API defaults it to 0); bot-side fee
-pricing is a follow-up task.
+was derived with. `executionFee` is
+currently omitted (the API defaults it to 0); bot-side fee pricing is a follow-up task.
 
 The `integratorId` (2-byte hex) is sourced from the indexer message's `integrator` projection (a
 property of the deposit address, not the bot's auth key) and is **required** by the execute
@@ -139,9 +139,8 @@ read by the execute path — the API re-derives them, so they are carried for di
 (`depositAddressNamespace: "tron"`). No dedicated gate: Tron activates by adding its chainId
 (728126428) to `RELAYER_ORIGIN_CHAINS`, which also provisions the provider and dedup sets. v3
 messages stay un-normalized, so Tron fields flow **base58 end-to-end to the quote-api**
-(`userAddress`, `depositAddress`, `inputToken.address`; the bot re-encodes its own
-`executionFeeRecipient` to base58 via `toAddressType`). The API responds with
-`executeTx.ecosystem: "tvm"`, a **0x-hex `to`** (the
+(`userAddress`, `depositAddress`, `inputToken.address`; the bot re-encodes its own `executionFeeRecipient` to base58
+via `toAddressType`). The API responds with `executeTx.ecosystem: "tvm"`, a **0x-hex `to`** (the
 RPC-facing format), and the `depositAddress` echoed in base58; the bot validates the ecosystem
 against the chain family and compares deposit addresses canonically (base58 → hex) since base58 is
 case-sensitive. On-chain reads (`getDepositAddressBalance`) and receipt-log matching
@@ -234,6 +233,12 @@ So on the v3 execute path the broadcast hash is persisted from `TransactionClien
 hook, before the confirmation wait, and cleared once the executed set is written. Claims are written
 per hash field so overlapping runs recording different transfers cannot clobber each other, and the
 repriced branch re-notifies so the persisted hash is always one that can actually mine.
+
+Startup read order matters. An incumbent that confirms concurrently persists the executed hash and
+only then clears its claim, so the successor snapshots the claim hash **before** loading the executed
+set: a claim already gone by then had its hash persisted earlier, so the load picks it up. Reading
+claims after the load would leave a window where the successor sees neither. The snapshot is applied
+**after** the loads, because adoption writes to the executed set and the load replaces it wholesale.
 
 A claim is resolved against the chain at startup, and again (throttled to once a minute per key) when
 a poll encounters an outstanding one:

@@ -1106,7 +1106,8 @@ describe("DepositAddressHandler pending-execute claim", function () {
     _settlePendingExecute: (k: string, p: PendingExecute) => Promise<"executed" | "reverted" | "unresolved">;
     _recordPendingExecute: (k: string, p: PendingExecute) => Promise<void>;
     _readPendingExecutes: () => Promise<Record<string, PendingExecute>>;
-    _resolvePendingExecutes: () => Promise<void>;
+    _resolvePendingExecutes: (inherited: Record<string, PendingExecute>) => Promise<void>;
+    _loadExecutedDepositsFromRedis: () => Promise<void>;
     executedDepositTxHashes: Set<string>;
     pendingExecutes: Record<string, PendingExecute>;
     lastSettleAttempt: Record<string, number>;
@@ -1191,7 +1192,8 @@ describe("DepositAddressHandler pending-execute claim", function () {
     seedClaim(pendingRecord());
     getReceiptStub.resolves(sweepReceipt(1));
 
-    await (handler as unknown as Internals)._resolvePendingExecutes();
+    const inherited = await (handler as unknown as Internals)._readPendingExecutes();
+    await (handler as unknown as Internals)._resolvePendingExecutes(inherited);
 
     // Adopted into the executed set, so no later run re-submits for this transfer.
     expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(true);
@@ -1206,7 +1208,8 @@ describe("DepositAddressHandler pending-execute claim", function () {
     seedClaim(pendingRecord());
     getReceiptStub.resolves(sweepReceipt(0));
 
-    await (handler as unknown as Internals)._resolvePendingExecutes();
+    const inherited = await (handler as unknown as Internals)._readPendingExecutes();
+    await (handler as unknown as Internals)._resolvePendingExecutes(inherited);
 
     expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(false);
     expect((handler as unknown as Internals).pendingExecutes).to.deep.equal({});
@@ -1220,7 +1223,8 @@ describe("DepositAddressHandler pending-execute claim", function () {
     seedClaim(pendingRecord({ submittedAt: getCurrentTime() - 86_400 }));
     getReceiptStub.resolves(null);
 
-    await (handler as unknown as Internals)._resolvePendingExecutes();
+    const inherited = await (handler as unknown as Internals)._readPendingExecutes();
+    await (handler as unknown as Internals)._resolvePendingExecutes(inherited);
 
     expect((handler as unknown as Internals).pendingExecutes[depositKey].txHash).to.equal(executeTxHash);
     expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(false);
@@ -1263,6 +1267,24 @@ describe("DepositAddressHandler pending-execute claim", function () {
 
     expect(warnStub.calledOnce).to.equal(true);
     expect(warnStub.firstCall.firstArg.message).to.contain("already been broadcast");
+  });
+
+  // Regression for the startup ordering invariant. An incumbent that confirms concurrently persists
+  // the executed hash and only then clears its claim, so the successor must snapshot claims BEFORE
+  // loading the executed set (or it can see neither) but apply them AFTER (or adoption's whole-array
+  // persist drops every other hash). This pins the second half: swapping the two clobbers Redis.
+  it("preserves previously-executed hashes when adopting an inherited claim", async function () {
+    const priorHash = "0x" + "a".repeat(64);
+    const executedKey = "deposit-address:executed:test-bot";
+    store.set(executedKey, JSON.stringify([priorHash]));
+    seedClaim(pendingRecord());
+    getReceiptStub.resolves(sweepReceipt(1));
+
+    const inherited = await (handler as unknown as Internals)._readPendingExecutes();
+    await (handler as unknown as Internals)._loadExecutedDepositsFromRedis();
+    await (handler as unknown as Internals)._resolvePendingExecutes(inherited);
+
+    expect(JSON.parse(store.get(executedKey) as string).sort()).to.deep.equal([priorHash, refTxHash].sort());
   });
 
   // Regression: rewriting a whole serialized map from a fresh read let concurrent broadcasts (polls
