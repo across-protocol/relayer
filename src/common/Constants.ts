@@ -438,8 +438,14 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
     [ChainFamily.ZK_STACK]: ZKStackBridge,
   };
 
+  // Chains that Across no longer supports but that still carry a recognized chain family in PUBLIC_NETWORKS.
+  // Without this exclusion, the family default would resolve a bridge whose CONTRACT_ADDRESSES entries have
+  // been removed, and instantiating it would throw.
+  const removedChains = [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA];
+
   return Object.fromEntries(
     Object.entries(PUBLIC_NETWORKS)
+      .filter(([_chainId]) => !removedChains.includes(Number(_chainId)))
       .map(([_chainId, { family }]) => {
         const chainId = Number(_chainId);
         const bridge = bridges[chainId] ?? defaultBridges[family];
