@@ -1546,4 +1546,48 @@ describe("TransactionClient onBroadcast hook", function () {
     // The original at broadcast, then the replacement that actually mined.
     expect(seen).to.deep.equal([broadcastHash, replacementHash]);
   });
+
+  // A reverted replacement must be notified too. Only the replacement has a receipt, so a caller left
+  // holding the original hash could never resolve it — the transfer would block forever instead of
+  // being retried after the revert.
+  it("re-invokes the hook when the repriced replacement reverted", async function () {
+    const replacementHash = "0x" + "d".repeat(64);
+    class RevertedRepriceClient extends TransactionClient {
+      protected _getTransactionPromise(): Promise<TransactionResponse> {
+        return Promise.resolve({
+          hash: broadcastHash,
+          nonce: 7,
+          wait: async () => {
+            const error = new Error("repriced") as Error & Record<string, unknown>;
+            error.code = "TRANSACTION_REPLACED";
+            error.reason = "repriced";
+            error.receipt = { blockNumber: 10, status: 0 };
+            error.replacement = { hash: replacementHash };
+            throw error;
+          },
+        } as unknown as TransactionResponse);
+      }
+    }
+
+    const client = new RevertedRepriceClient({
+      warn: sinon.stub(),
+      debug: sinon.stub(),
+    } as unknown as winston.Logger);
+    const seen: string[] = [];
+    let threw = false;
+    try {
+      await (client as unknown as Internals)._submit(
+        transaction(async (r) => {
+          seen.push(r.hash);
+        }),
+        { nonce: null }
+      );
+    } catch {
+      threw = true;
+    }
+
+    expect(threw).to.equal(true);
+    // The claim now points at the reverted replacement, which resolves to status 0 and is retried.
+    expect(seen).to.deep.equal([broadcastHash, replacementHash]);
+  });
 });

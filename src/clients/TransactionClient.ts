@@ -231,13 +231,15 @@ export class TransactionClient {
             case ethers.errors.TRANSACTION_REPLACED:
               // "repriced" ⇒ a transaction identical to ours (data/to/value) was mined at this nonce; adopt it.
               if (error.reason === "repriced" && isReplacedError(error)) {
+                // Only the replacement will ever have a receipt — including when it reverted — so
+                // re-notify before deciding the outcome. A caller that durably recorded the original
+                // hash must be able to resolve its claim against the chain either way; notifying only
+                // on success would strand it on a hash that can never resolve.
+                await this._notifyBroadcast(txn, error.replacement);
                 if (error.receipt.status === 0) {
                   this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
                   throw error;
                 }
-                // Only the replacement will ever have a receipt, so re-notify: a caller that durably
-                // recorded the original hash must be able to resolve its claim against the chain.
-                await this._notifyBroadcast(txn, error.replacement);
                 return error.replacement;
               }
               this.logger.warn({
