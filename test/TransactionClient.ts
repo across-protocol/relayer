@@ -463,6 +463,22 @@ describe("TransactionClient", function () {
       expect(selected.replacing).to.be.true;
     });
 
+    it("Serializes concurrent selections against the same deep backlog", async function () {
+      const provider = {
+        getTransactionCount: (_addr: string, blockTag?: string) => Promise.resolve(blockTag === "pending" ? 14 : 10),
+        getBlockNumber: () => Promise.resolve(100),
+      } as unknown as Provider;
+
+      // Both selections start before either resolves; the marker must still admit exactly one
+      // replacement, with the other appending behind the queue instead of evicting it.
+      const selections = await Promise.all([
+        _selectNonce(chainId, provider, signerAddr, backlogThreshold),
+        _selectNonce(chainId, provider, signerAddr, backlogThreshold),
+      ]);
+      expect(selections.filter(({ replacing }) => replacing).map(({ nonce }) => nonce)).to.deep.equal([10]);
+      expect(selections.filter(({ replacing }) => !replacing).map(({ nonce }) => nonce)).to.deep.equal([14]);
+    });
+
     it("Defers re-arming until the chain produces blocks", async function () {
       const clock = sinon.useFakeTimers({ now: Date.now(), toFake: ["Date"] });
       try {

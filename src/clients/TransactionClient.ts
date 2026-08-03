@@ -746,9 +746,14 @@ export async function _selectNonce(
   address: string,
   backlogThreshold: number
 ): Promise<{ nonce: number; replacing: boolean; backlog?: number }> {
-  const [confirmed, pending] = await Promise.all([
+  // The block number (replaced-head baseline/probe) is resolved upfront alongside the counts so
+  // that the marker logic below runs synchronously: an await between reading and writing
+  // replacedHeads would let concurrent selections in this process both enter replacement mode,
+  // with the second evicting the first's replacement.
+  const [confirmed, pending, blockNumber] = await Promise.all([
     provider.getTransactionCount(address, "latest"),
     provider.getTransactionCount(address, "pending").catch(() => undefined),
+    provider.getBlockNumber?.().catch(() => undefined),
   ]);
 
   // Without "pending" blockTag support the backlog is unknowable, so appending is not an option.
@@ -770,7 +775,6 @@ export async function _selectNonce(
   const key = `${chainId}:${address}`;
   const now = Date.now();
   const prior = replacedHeads[key];
-  let blockNumber: number | undefined;
   if (prior?.nonce === confirmed) {
     if (now < prior.expiresAt) {
       return { nonce: pending, replacing: false, backlog };
@@ -778,7 +782,6 @@ export async function _selectNonce(
     // The window has elapsed, but re-arming also requires the chain to have produced blocks that
     // could have tested the prior replacement. When block progress is unobservable (either
     // baseline unavailable), the wall-clock expiry alone governs.
-    blockNumber = await provider.getBlockNumber?.().catch(() => undefined);
     if (
       isDefined(prior.blockNumber) &&
       isDefined(blockNumber) &&
@@ -789,11 +792,7 @@ export async function _selectNonce(
   }
 
   const confirmationWindow = CONFIRMATION_TIMEOUTS_MS[chainId] ?? CONFIRMATION_TIMEOUT_MS_DEFAULT;
-  replacedHeads[key] = {
-    nonce: confirmed,
-    expiresAt: now + CONFIRMATION_BLOCKS * confirmationWindow,
-    blockNumber: blockNumber ?? (await provider.getBlockNumber?.().catch(() => undefined)),
-  };
+  replacedHeads[key] = { nonce: confirmed, expiresAt: now + CONFIRMATION_BLOCKS * confirmationWindow, blockNumber };
   return { nonce: confirmed, replacing: true, backlog };
 }
 
