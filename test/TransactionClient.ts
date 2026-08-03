@@ -392,6 +392,14 @@ describe("TransactionClient", function () {
 
   describe("_selectNonce", function () {
     const backlogThreshold = 4;
+    const chainId = chainIds[0];
+    // The replaced-head marker is keyed by chain and signer, so isolate each test with a fresh
+    // signer address.
+    let signerAddr: string;
+
+    beforeEach(function () {
+      signerAddr = randomAddress();
+    });
 
     function makeProvider(confirmed: number, pending?: number): Provider {
       return {
@@ -405,27 +413,89 @@ describe("TransactionClient", function () {
     }
 
     it("Appends behind a modest in-flight backlog", async function () {
-      const { nonce, replacing } = await _selectNonce(makeProvider(10, 13), address, backlogThreshold);
+      const { nonce, replacing } = await _selectNonce(chainId, makeProvider(10, 13), signerAddr, backlogThreshold);
       expect(nonce).to.equal(13);
       expect(replacing).to.be.false;
     });
 
     it("Replaces at the confirmed nonce at/beyond the backlog threshold", async function () {
-      const { nonce, replacing } = await _selectNonce(makeProvider(10, 14), address, backlogThreshold);
+      const { nonce, replacing } = await _selectNonce(chainId, makeProvider(10, 14), signerAddr, backlogThreshold);
       expect(nonce).to.equal(10);
       expect(replacing).to.be.true;
     });
 
-    it("Falls back to the confirmed nonce when the pending tag is unsupported", async function () {
-      const { nonce, replacing } = await _selectNonce(makeProvider(10), address, backlogThreshold);
+    it("Falls back to replacement mode when the pending tag is unsupported", async function () {
+      // The backlog is unknowable, so an occupied confirmed nonce must escalate fees at the same
+      // nonce (replacement mode) rather than futilely re-selecting the same nonce.
+      const { nonce, replacing } = await _selectNonce(chainId, makeProvider(10), signerAddr, backlogThreshold);
+      expect(nonce).to.equal(10);
+      expect(replacing).to.be.true;
+    });
+
+    it("Clamps an inconsistent pending count", async function () {
+      const { nonce, replacing } = await _selectNonce(chainId, makeProvider(10, 8), signerAddr, backlogThreshold);
       expect(nonce).to.equal(10);
       expect(replacing).to.be.false;
     });
 
-    it("Clamps an inconsistent pending count", async function () {
-      const { nonce, replacing } = await _selectNonce(makeProvider(10, 8), address, backlogThreshold);
-      expect(nonce).to.equal(10);
-      expect(replacing).to.be.false;
+    it("Targets a deep-backlog head only once", async function () {
+      const provider = makeProvider(10, 14);
+      let selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
+      expect(selected.nonce).to.equal(10);
+      expect(selected.replacing).to.be.true;
+
+      // Replacement leaves the backlog depth unchanged; the head must not be re-targeted (that
+      // would evict the just-submitted replacement), so subsequent selections append instead.
+      selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
+      expect(selected.nonce).to.equal(14);
+      expect(selected.replacing).to.be.false;
+    });
+
+    it("Re-arms replacement when the queue head advances", async function () {
+      let selected = await _selectNonce(chainId, makeProvider(10, 14), signerAddr, backlogThreshold);
+      expect(selected.nonce).to.equal(10);
+      expect(selected.replacing).to.be.true;
+
+      // The prior head confirmed but the backlog is still deep; the new head is fair game.
+      selected = await _selectNonce(chainId, makeProvider(11, 15), signerAddr, backlogThreshold);
+      expect(selected.nonce).to.equal(11);
+      expect(selected.replacing).to.be.true;
+    });
+  });
+
+  describe("Cached nonce reconciliation", function () {
+    function makeTxn(chainId: number, pendingCount: number): AugmentedTransaction {
+      const provider = {
+        getTransactionCount: (_address: string, blockTag?: string) =>
+          Promise.resolve(blockTag === "pending" ? pendingCount : 0),
+      };
+      return {
+        chainId,
+        contract: { address, signer, provider } as unknown as Contract,
+        method,
+        args: [],
+        message: "",
+        mrkdwn: "",
+      } as AugmentedTransaction;
+    }
+
+    it("Appends behind nonces occupied by a concurrent submitter", async function () {
+      const chainId = chainIds[0];
+      // Cached: this client last submitted nonce 9, so the naive next nonce is 10.
+      txnClient.noncesBySigner[chainId] = { [await signer.getAddress()]: 9 };
+
+      // A concurrent submitter sharing the signer occupied nonces 10-12.
+      const [txnResponse] = await txnClient.submit(chainId, [makeTxn(chainId, 13)]);
+      expect(txnResponse.nonce).to.equal(13);
+    });
+
+    it("Retains a cached nonce that leads the pending transaction count", async function () {
+      const chainId = chainIds[0];
+      txnClient.noncesBySigner[chainId] = { [await signer.getAddress()]: 9 };
+
+      // The provider's pending count lags this client's own submissions; trust the cache.
+      const [txnResponse] = await txnClient.submit(chainId, [makeTxn(chainId, 8)]);
+      expect(txnResponse.nonce).to.equal(10);
     });
   });
 });

@@ -291,6 +291,7 @@ export class TransactionClient {
     // Transactions are submitted sequentially to avoid nonce collisions. More
     // advanced nonce management may permit them to be submitted in parallel.
     let mrkdwn = "";
+    const reconciledSigners = new Set<string>();
     for (let idx = 0; idx < txns.length; ++idx) {
       let txn = txns[idx];
 
@@ -307,7 +308,18 @@ export class TransactionClient {
 
       const signerAddr = await txn.contract.signer.getAddress();
       const chainNonceMap = (this.noncesBySigner[chainId] ??= {});
-      const nonce = isDefined(chainNonceMap[signerAddr]) ? chainNonceMap[signerAddr] + 1 : undefined;
+      let nonce = isDefined(chainNonceMap[signerAddr]) ? chainNonceMap[signerAddr] + 1 : undefined;
+
+      // The nonce cache is blind to nonces occupied by concurrent submitters sharing this signer
+      // (e.g. another bot instance) since the previous submission, so reconcile it against the
+      // network's pending transaction count once per signer per batch. The cached nonce remains
+      // authoritative when it leads: pending counts can lag this client's own recent submissions,
+      // and deferring to a lagging count would replace them.
+      if (isDefined(nonce) && !reconciledSigners.has(signerAddr) && !chainIsTvm(chainId)) {
+        const pending = await txn.contract.provider?.getTransactionCount(signerAddr, "pending").catch(() => undefined);
+        nonce = Math.max(nonce, pending ?? 0);
+      }
+      reconciledSigners.add(signerAddr);
 
       // @dev It's assumed that nobody ever wants to discount the gasLimit.
       const gasLimitMultiplier = txn.gasLimitMultiplier ?? this.DEFAULT_GAS_LIMIT_MULTIPLIER;
@@ -395,11 +407,17 @@ async function _runTransaction(
   let gas: Partial<FeeData>;
   try {
     if (!isDefined(nonce)) {
-      ({ nonce, replacing } = await _selectNonce(provider, await signer.getAddress(), nonceBacklogReplaceThreshold));
-      if (replacing) {
+      let backlog: number | undefined;
+      ({ nonce, replacing, backlog } = await _selectNonce(
+        chainId,
+        provider,
+        await signer.getAddress(),
+        nonceBacklogReplaceThreshold
+      ));
+      if (replacing && isDefined(backlog)) {
         logger.debug({
           at,
-          message: `Pending nonce backlog on ${chain} at/beyond ${nonceBacklogReplaceThreshold}; replacing at nonce ${nonce}.`,
+          message: `Pending nonce backlog of ${backlog} on ${chain}; replacing at nonce ${nonce}.`,
         });
       }
     }
@@ -634,32 +652,65 @@ async function _runTransactionTvm(
   } as unknown as TransactionResponse;
 }
 
+// Queue heads already targeted for replacement, keyed by chain and signer. Replacing the head of a
+// deep backlog leaves the backlog depth (pending - confirmed) unchanged, so without this marker
+// every subsequent selection would re-target the head and evict the previous replacement. An entry
+// is superseded when the head advances, and expires once the chain has had CONFIRMATION_BLOCKS
+// confirmation windows to mine the replacement (mirroring the stalled-wait resubmission criterion),
+// at which point a still-stuck head becomes eligible for another replacement.
+const replacedHeads: { [chainAndSigner: string]: { nonce: number; expiresAt: number } } = {};
+
 /**
  * Select the nonce for a new transaction from the signer's confirmed ("latest") and pending
  * transaction counts. A modest backlog is the normal signature of concurrent submitters sharing
  * the signer, so new transactions append behind it (pending nonce). A backlog at/beyond
  * backlogThreshold instead implies the confirmed-nonce transaction is blocking the queue, so the
- * new transaction targets it for replacement (fee scaling engages via retry on rejection).
+ * new transaction targets it for replacement (fee scaling engages via retry on rejection) — at
+ * most once per head per confirmation window, appending behind the queue in between.
+ * @param chainId Chain ID for transaction submission.
  * @param provider Provider to query transaction counts from.
  * @param address Signer address.
  * @param backlogThreshold Pending-minus-confirmed depth at which to replace rather than append.
- * @returns Selected nonce, and whether it targets an in-flight transaction for replacement.
+ * @returns Selected nonce, whether it targets an in-flight transaction for replacement, and the
+ * backlog depth (undefined when the provider lacks "pending" blockTag support).
  */
 export async function _selectNonce(
+  chainId: number,
   provider: Provider,
   address: string,
   backlogThreshold: number
-): Promise<{ nonce: number; replacing: boolean }> {
+): Promise<{ nonce: number; replacing: boolean; backlog?: number }> {
   const [confirmed, pending] = await Promise.all([
     provider.getTransactionCount(address, "latest"),
     provider.getTransactionCount(address, "pending").catch(() => undefined),
   ]);
 
-  // Clamp for providers without "pending" blockTag support, or transiently inconsistent responses.
-  const backlog = Math.max((pending ?? confirmed) - confirmed, 0);
-  return backlog >= backlogThreshold
-    ? { nonce: confirmed, replacing: true }
-    : { nonce: confirmed + backlog, replacing: false };
+  // Without "pending" blockTag support the backlog is unknowable, so appending is not an option.
+  // Submit at the confirmed nonce in replacement mode: if that nonce turns out to be occupied,
+  // fee escalation at the same nonce is the only recovery available (re-selection would just
+  // yield the same nonce again).
+  if (!isDefined(pending)) {
+    return { nonce: confirmed, replacing: true };
+  }
+
+  const backlog = Math.max(pending - confirmed, 0); // Clamp transiently inconsistent responses.
+  if (backlog < backlogThreshold) {
+    return { nonce: confirmed + backlog, replacing: false, backlog };
+  }
+
+  // Deep backlog: the queue head is assumed stuck and targeted for replacement — but only once.
+  // While a prior replacement of this head may still confirm, append behind the queue instead of
+  // evicting it.
+  const key = `${chainId}:${address}`;
+  const now = Date.now();
+  const prior = replacedHeads[key];
+  if (prior?.nonce === confirmed && now < prior.expiresAt) {
+    return { nonce: pending, replacing: false, backlog };
+  }
+
+  const confirmationWindow = CONFIRMATION_TIMEOUTS_MS[chainId] ?? CONFIRMATION_TIMEOUT_MS_DEFAULT;
+  replacedHeads[key] = { nonce: confirmed, expiresAt: now + CONFIRMATION_BLOCKS * confirmationWindow };
+  return { nonce: confirmed, replacing: true, backlog };
 }
 
 /**
