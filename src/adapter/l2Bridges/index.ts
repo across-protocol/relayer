@@ -6,6 +6,7 @@ export * from "./OpStackBridge";
 export * from "./OpStackUSDCBridge";
 export * from "./OpStackWethBridge";
 export * from "./UsdcCCTPBridge";
+export * from "./ZKStackBaseTokenBridge";
 export * from "./SolanaUsdcCCTPBridge";
 export * from "./BridgeApi";
 export * from "./PaxosTransitL2Bridge";

@@ -134,3 +134,28 @@ contract zkSync_L2Bridge {
         return keccak256(abi.encodePacked(token));
     }
 }
+
+contract zkSync_L2BaseToken {
+    event Withdrawal(address indexed _l2Sender, address indexed _l1Receiver, uint256 _amount);
+
+    function withdraw(address _l1Receiver) external payable {
+        emit Withdrawal(msg.sender, _l1Receiver, msg.value);
+    }
+
+    // Test helper to emit a withdrawal event from an arbitrary sender without sending value.
+    function emitWithdrawal(address _l2Sender, address _l1Receiver, uint256 _amount) external {
+        emit Withdrawal(_l2Sender, _l1Receiver, _amount);
+    }
+}
+
+contract zkSync_L1NativeTokenVault {
+    event BridgeMint(uint256 indexed chainId, bytes32 indexed assetId, address receiver, uint256 amount);
+
+    function assetId(address token) public pure returns (bytes32) {
+        return keccak256(abi.encodePacked(token));
+    }
+
+    function emitBridgeMint(uint256 _chainId, address _l1Token, address _receiver, uint256 _amount) external {
+        emit BridgeMint(_chainId, assetId(_l1Token), _receiver, _amount);
+    }
+}
