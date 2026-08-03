@@ -52,7 +52,7 @@ const SAME_ASSET_BRIDGE_ADAPTER_BY_SYMBOL: Record<StableToken, "cctp" | "oft"> =
   USDT: "oft",
 };
 
-// Hyperliquid can only use an endpoint when Madrid can bridge that token between the endpoint and HyperEVM.
+// Hyperliquid can only use an endpoint when the rebalancer can bridge that token between the endpoint and HyperEVM.
 // These catalogs also prevent unsupported same-asset routes from reaching adapter initialization.
 const BRIDGE_CHAINS_BY_SYMBOL: Record<StableToken, readonly number[]> = {
   USDC: [
