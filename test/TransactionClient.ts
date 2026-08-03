@@ -1,3 +1,4 @@
+import sinon from "sinon";
 import { AugmentedTransaction } from "../src/clients";
 import { _selectNonce } from "../src/clients/TransactionClient";
 import {
@@ -461,6 +462,36 @@ describe("TransactionClient", function () {
       expect(selected.nonce).to.equal(11);
       expect(selected.replacing).to.be.true;
     });
+
+    it("Defers re-arming until the chain produces blocks", async function () {
+      const clock = sinon.useFakeTimers({ now: Date.now(), toFake: ["Date"] });
+      try {
+        let blockNumber = 100;
+        const provider = {
+          getTransactionCount: (_addr: string, blockTag?: string) => Promise.resolve(blockTag === "pending" ? 14 : 10),
+          getBlockNumber: () => Promise.resolve(blockNumber),
+        } as unknown as Provider;
+
+        let selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
+        expect(selected.nonce).to.equal(10);
+        expect(selected.replacing).to.be.true;
+
+        // The wall-clock window elapses on a stalled chain: no block has tested the prior
+        // replacement, so the head must not be re-targeted.
+        clock.tick(10 * 60 * 1000);
+        selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
+        expect(selected.nonce).to.equal(14);
+        expect(selected.replacing).to.be.false;
+
+        // Blocks are produced without confirming the replacement: re-arm.
+        blockNumber += 2;
+        selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
+        expect(selected.nonce).to.equal(10);
+        expect(selected.replacing).to.be.true;
+      } finally {
+        clock.restore();
+      }
+    });
   });
 
   describe("Cached nonce reconciliation", function () {
@@ -531,6 +562,46 @@ describe("TransactionClient", function () {
       const txns = [makeTxn(chainId, 2, 5), makeTxn(chainId, 2, 5)];
       const txnResponses = await txnClient.submit(chainId, txns);
       expect(txnResponses.map(({ nonce }) => nonce)).to.deep.equal([1, 5]);
+    });
+
+    it("Re-opens reconciliation after a submission re-syncs behind the requested nonce", async function () {
+      const chainId = chainIds[0];
+
+      class BackslideClient extends MockedTransactionClient {
+        public calls = 0;
+        protected override _getTransactionPromise(
+          txn: AugmentedTransaction,
+          nonce: number | null
+        ): Promise<TransactionResponse> {
+          // The first submission simulates a collision retry inside _runTransaction that
+          // replaced the backlog head at nonce 10 instead of the requested append nonce.
+          return super._getTransactionPromise(txn, ++this.calls === 1 ? 10 : nonce);
+        }
+      }
+
+      const client = new BackslideClient(spyLogger);
+      client.noncesBySigner[chainId] = { [await signer.getAddress()]: 9 };
+
+      // First: requested 13 (reconciled append) but landed at 10. Second: reconciliation must
+      // re-open and append at 13 again — not increment from the head into occupied nonces (11).
+      const txns = [makeTxn(chainId, 10, 13), makeTxn(chainId, 10, 13)];
+      const txnResponses = await client.submit(chainId, txns);
+      expect(txnResponses.map(({ nonce }) => nonce)).to.deep.equal([10, 13]);
+    });
+
+    it("Sanitizes an invalid backlog threshold override", async function () {
+      const chainId = chainIds[0];
+      process.env.NONCE_BACKLOG_REPLACE_THRESHOLD = "four";
+      try {
+        txnClient.noncesBySigner[chainId] = { [await signer.getAddress()]: 9 };
+        // Number("four") is NaN and backlog < NaN is false, which unsanitized would classify
+        // this modest backlog (3) as deep and replace the healthy head at 10. The invalid
+        // override must fall back to the default threshold (4) and append instead.
+        const [txnResponse] = await txnClient.submit(chainId, [makeTxn(chainId, 10, 13)]);
+        expect(txnResponse.nonce).to.equal(13);
+      } finally {
+        delete process.env.NONCE_BACKLOG_REPLACE_THRESHOLD;
+      }
     });
   });
 });

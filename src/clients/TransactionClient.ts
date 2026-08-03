@@ -380,6 +380,16 @@ export class TransactionClient {
         return txnResponses;
       }
 
+      // A response nonce behind the requested nonce means the submission re-synced inside
+      // _runTransaction and replaced a backlog head (a forward re-sync just appended at the
+      // tail). The cache now points at the head while the backlog remains in flight, so re-open
+      // reconciliation: the next submission re-selects, and the replace-once marker steers it
+      // behind the tail rather than incrementing from the head into occupied nonces.
+      if (isDefined(nonce) && response.nonce < nonce) {
+        reconciledSigners.delete(signerAddr);
+        delete nonceFloors[signerAddr];
+      }
+
       chainNonceMap[signerAddr] = response.nonce;
       const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
@@ -710,8 +720,11 @@ async function _runTransactionTvm(
 // every subsequent selection would re-target the head and evict the previous replacement. An entry
 // is superseded when the head advances, and expires once the chain has had CONFIRMATION_BLOCKS
 // confirmation windows to mine the replacement (mirroring the stalled-wait resubmission criterion),
-// at which point a still-stuck head becomes eligible for another replacement.
-const replacedHeads: { [chainAndSigner: string]: { nonce: number; expiresAt: number } } = {};
+// at which point a still-stuck head becomes eligible for another replacement. Wall-clock expiry
+// alone is insufficient on a stalled chain — only block production can have tested the prior
+// replacement — so re-arming additionally requires CONFIRMATION_BLOCKS of block progress whenever
+// both block baselines are observable.
+const replacedHeads: { [chainAndSigner: string]: { nonce: number; expiresAt: number; blockNumber?: number } } = {};
 
 /**
  * Select the nonce for a new transaction from the signer's confirmed ("latest") and pending
@@ -757,12 +770,30 @@ export async function _selectNonce(
   const key = `${chainId}:${address}`;
   const now = Date.now();
   const prior = replacedHeads[key];
-  if (prior?.nonce === confirmed && now < prior.expiresAt) {
-    return { nonce: pending, replacing: false, backlog };
+  let blockNumber: number | undefined;
+  if (prior?.nonce === confirmed) {
+    if (now < prior.expiresAt) {
+      return { nonce: pending, replacing: false, backlog };
+    }
+    // The window has elapsed, but re-arming also requires the chain to have produced blocks that
+    // could have tested the prior replacement. When block progress is unobservable (either
+    // baseline unavailable), the wall-clock expiry alone governs.
+    blockNumber = await provider.getBlockNumber?.().catch(() => undefined);
+    if (
+      isDefined(prior.blockNumber) &&
+      isDefined(blockNumber) &&
+      blockNumber < prior.blockNumber + CONFIRMATION_BLOCKS
+    ) {
+      return { nonce: pending, replacing: false, backlog };
+    }
   }
 
   const confirmationWindow = CONFIRMATION_TIMEOUTS_MS[chainId] ?? CONFIRMATION_TIMEOUT_MS_DEFAULT;
-  replacedHeads[key] = { nonce: confirmed, expiresAt: now + CONFIRMATION_BLOCKS * confirmationWindow };
+  replacedHeads[key] = {
+    nonce: confirmed,
+    expiresAt: now + CONFIRMATION_BLOCKS * confirmationWindow,
+    blockNumber: blockNumber ?? (await provider.getBlockNumber?.().catch(() => undefined)),
+  };
   return { nonce: confirmed, replacing: true, backlog };
 }
 
@@ -823,11 +854,17 @@ function _readTransactionConfig(chainId: number): {
       TRANSACTION_SUBMISSION_RETRIES_DEFAULT
   );
 
-  const nonceBacklogReplaceThreshold = Number(
+  const _nonceBacklogReplaceThreshold = Number(
     process.env[`NONCE_BACKLOG_REPLACE_THRESHOLD_${chainId}`] ??
       process.env.NONCE_BACKLOG_REPLACE_THRESHOLD ??
       NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT
   );
+  // An invalid override (NaN or < 1) would classify every backlog as deep (backlog < NaN is
+  // false) and target healthy queue heads for replacement; sanitize to the default instead.
+  const nonceBacklogReplaceThreshold =
+    Number.isInteger(_nonceBacklogReplaceThreshold) && _nonceBacklogReplaceThreshold >= 1
+      ? _nonceBacklogReplaceThreshold
+      : NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT;
 
   const priorityFeeScaler =
     Number(process.env[`PRIORITY_FEE_SCALER_${chainId}`] || process.env.PRIORITY_FEE_SCALER) ||
