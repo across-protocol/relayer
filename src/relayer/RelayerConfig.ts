@@ -1,5 +1,6 @@
 import { utils as ethersUtils } from "ethers";
 import winston from "winston";
+import { array, assert as ssAssert, enums, integer, literal, min, nonempty, object, string, union } from "superstruct";
 import { typeguards } from "@across-protocol/sdk";
 import {
   BigNumber,
@@ -31,12 +32,110 @@ import {
   TokenBalanceConfig,
   isAliasConfig,
   SwapRoute,
+  SwapRouteV2,
 } from "../interfaces/InventoryManagement";
 
 type DepositConfirmationConfig = {
   usdThreshold: BigNumber;
   minConfirmations: number;
 };
+
+// Compact v2 chain selector: "ALL", a single positive chain id, or a non-empty array of them.
+const SwapRouteChains = union([literal("ALL"), min(integer(), 1), nonempty(array(min(integer(), 1)))]);
+const SwapRouteV2Struct = object({
+  fromChain: SwapRouteChains,
+  fromToken: string(),
+  toChain: SwapRouteChains,
+  toToken: string(),
+});
+
+/**
+ * Normalize a v2 chain selector into either `"ALL"` or a list of chain IDs.
+ */
+export function normalizeSwapRouteChains(chain: SwapRouteV2["fromChain"]): number[] | "ALL" {
+  return chain === "ALL" || Array.isArray(chain) ? chain : [chain];
+}
+
+/**
+ * Expand a compact {@link SwapRouteV2} into flat {@link SwapRoute} rows used by InventoryClient.
+ * - `"ALL"` keeps chain=`"ALL"` and expands token to every address in TOKEN_SYMBOLS_MAP for that symbol.
+ * - A chain array expands to one concrete chain id per listed chain (cartesian with the other side).
+ */
+export function expandAllowedSwapRouteV2(rawSwapRoute: SwapRouteV2): SwapRoute[] {
+  ssAssert(rawSwapRoute, SwapRouteV2Struct);
+  const fromChains = normalizeSwapRouteChains(rawSwapRoute.fromChain);
+  const toChains = normalizeSwapRouteChains(rawSwapRoute.toChain);
+
+  type Side = { chain: number | "ALL"; tokens: string[] };
+  const resolveSide = (chains: number[] | "ALL", token: string, side: "from" | "to"): Side[] => {
+    if (chains === "ALL") {
+      const tokenInfo = resolveAcrossToken(token);
+      assert(isDefined(tokenInfo), `Unknown token symbol in allowedSwapRoutes2 (${side}): ${token}`);
+      return [{ chain: "ALL", tokens: Object.values(tokenInfo.addresses) }];
+    }
+    return chains.map((chainId) => ({
+      chain: chainId,
+      tokens: [ethersUtils.isAddress(token) ? token : resolveAcrossToken(token, chainId, true)],
+    }));
+  };
+
+  const fromSides = resolveSide(fromChains, rawSwapRoute.fromToken, "from");
+  const toSides = resolveSide(toChains, rawSwapRoute.toToken, "to");
+  const swapRoutes: SwapRoute[] = [];
+  for (const from of fromSides) {
+    for (const to of toSides) {
+      for (const fromToken of from.tokens) {
+        for (const toToken of to.tokens) {
+          swapRoutes.push({
+            fromChain: from.chain,
+            fromToken,
+            toChain: to.chain,
+            toToken,
+          });
+        }
+      }
+    }
+  }
+  return swapRoutes;
+}
+
+/**
+ * Expand legacy (v1) allowedSwapRoutes entries into address-resolved flat routes.
+ */
+export function expandAllowedSwapRouteV1(rawSwapRoute: SwapRoute): SwapRoute[] {
+  // @dev If the fromChain/toChain is 'ALL', then `fromToken`/`toToken` MUST be the symbol (otherwise we try to index TOKEN_SYMBOLS_MAP on an address).
+  let fromTokens: string[];
+  if (rawSwapRoute.fromChain === "ALL") {
+    const fromTokenInfo = resolveAcrossToken(rawSwapRoute.fromToken);
+    assert(isDefined(fromTokenInfo), `Unknown token symbol: ${rawSwapRoute.fromToken}`);
+    fromTokens = Object.values(fromTokenInfo.addresses);
+  } else {
+    fromTokens = [
+      ethersUtils.isAddress(rawSwapRoute.fromToken)
+        ? rawSwapRoute.fromToken
+        : resolveAcrossToken(rawSwapRoute.fromToken, rawSwapRoute.fromChain, true),
+    ];
+  }
+  let toTokens: string[];
+  if (rawSwapRoute.toChain === "ALL") {
+    const toTokenInfo = resolveAcrossToken(rawSwapRoute.toToken);
+    assert(isDefined(toTokenInfo), `Unknown token symbol: ${rawSwapRoute.toToken}`);
+    toTokens = Object.values(toTokenInfo.addresses);
+  } else {
+    toTokens = [
+      ethersUtils.isAddress(rawSwapRoute.toToken)
+        ? rawSwapRoute.toToken
+        : resolveAcrossToken(rawSwapRoute.toToken, rawSwapRoute.toChain, true),
+    ];
+  }
+  return fromTokens.flatMap((fromToken) =>
+    toTokens.map((toToken) => ({
+      ...rawSwapRoute,
+      fromToken,
+      toToken,
+    }))
+  );
+}
 
 export class RelayerConfig extends CommonConfig {
   readonly externalListener: boolean;
@@ -106,6 +205,7 @@ export class RelayerConfig extends CommonConfig {
       INVENTORY_TOPIC = "across-relayer-inventory",
       RELAYER_USE_INVENTORY_MANAGER = "false",
       RELAYER_EVENT_LISTENER = "false",
+      RELAYER_ALLOWED_SWAP_ROUTES_VERSION = "1",
     } = env;
     super(env, { botIdentifier: "across-relayer" });
 
@@ -307,45 +407,14 @@ export class RelayerConfig extends CommonConfig {
       });
 
       // Replace symbols in allowed swap routes with addresses.
-      const rawSwapRoutes = inventoryConfig?.allowedSwapRoutes ?? ([] as SwapRoute[]);
-      const swapRoutes = (inventoryConfig.allowedSwapRoutes = [] as SwapRoute[]);
-      rawSwapRoutes.forEach((rawSwapRoute) => {
-        // @dev If the fromChain/toChain is 'ALL', then `fromToken`/`toToken` MUST be the symbol (otherwise we try to index TOKEN_SYMBOLS_MAP on an address).
-        let fromTokens: string[];
-        if (rawSwapRoute.fromChain === "ALL") {
-          const fromTokenInfo = resolveAcrossToken(rawSwapRoute.fromToken);
-          assert(isDefined(fromTokenInfo), `Unknown token symbol: ${rawSwapRoute.fromToken}`);
-          fromTokens = Object.values(fromTokenInfo.addresses);
-        } else {
-          fromTokens = [
-            ethersUtils.isAddress(rawSwapRoute.fromToken)
-              ? rawSwapRoute.fromToken
-              : resolveAcrossToken(rawSwapRoute.fromToken, rawSwapRoute.fromChain, true),
-          ];
-        }
-        let toTokens: string[];
-        if (rawSwapRoute.toChain === "ALL") {
-          const toTokenInfo = resolveAcrossToken(rawSwapRoute.toToken);
-          assert(isDefined(toTokenInfo), `Unknown token symbol: ${rawSwapRoute.toToken}`);
-          toTokens = Object.values(toTokenInfo.addresses);
-        } else {
-          toTokens = [
-            ethersUtils.isAddress(rawSwapRoute.toToken)
-              ? rawSwapRoute.toToken
-              : resolveAcrossToken(rawSwapRoute.toToken, rawSwapRoute.toChain, true),
-          ];
-        }
-        fromTokens.forEach((fromToken) => {
-          toTokens.forEach((toToken) => {
-            const swapRoute = {
-              ...rawSwapRoute,
-              fromToken,
-              toToken,
-            };
-            swapRoutes.push(swapRoute);
-          });
-        });
-      });
+      // Version selector: "1" (default) uses allowedSwapRoutes; "2" uses compact allowedSwapRoutes2.
+      ssAssert(RELAYER_ALLOWED_SWAP_ROUTES_VERSION, enums(["1", "2"]));
+      inventoryConfig.allowedSwapRoutes =
+        RELAYER_ALLOWED_SWAP_ROUTES_VERSION === "2"
+          ? (inventoryConfig.allowedSwapRoutes2 ?? []).flatMap(expandAllowedSwapRouteV2)
+          : (inventoryConfig.allowedSwapRoutes ?? []).flatMap(expandAllowedSwapRouteV1);
+      // Drop compact form after expansion so runtime consumers only see flat routes.
+      delete inventoryConfig.allowedSwapRoutes2;
     }
 
     this.debugProfitability = DEBUG_PROFITABILITY === "true";
