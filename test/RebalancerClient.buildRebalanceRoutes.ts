@@ -137,7 +137,7 @@ function buildSyntheticRebalancerConfigWithTron(): RebalancerConfig {
   });
 }
 
-const PR_144_USDT_CHAINS = [
+const FULL_MATRIX_USDT_CHAINS = [
   CHAIN_IDs.MAINNET,
   CHAIN_IDs.OPTIMISM,
   CHAIN_IDs.UNICHAIN,
@@ -153,7 +153,7 @@ const PR_144_USDT_CHAINS = [
   CHAIN_IDs.TRON,
 ] as const;
 
-const PR_144_USDC_CHAINS = [
+const FULL_MATRIX_USDC_CHAINS = [
   CHAIN_IDs.MAINNET,
   CHAIN_IDs.OPTIMISM,
   CHAIN_IDs.UNICHAIN,
@@ -169,12 +169,12 @@ const PR_144_USDC_CHAINS = [
   CHAIN_IDs.BSC,
 ] as const;
 
-const PR_144_HYPERLIQUID_USDT_CHAINS = PR_144_USDT_CHAINS.filter(
+const HYPERLIQUID_USDT_CHAINS = FULL_MATRIX_USDT_CHAINS.filter(
   (chainId) => ![CHAIN_IDs.AVALANCHE, CHAIN_IDs.BSC, CHAIN_IDs.TRON].includes(chainId)
 );
-const PR_144_HYPERLIQUID_USDC_CHAINS = PR_144_USDC_CHAINS.filter((chainId) => chainId !== CHAIN_IDs.BSC);
+const HYPERLIQUID_USDC_CHAINS = FULL_MATRIX_USDC_CHAINS.filter((chainId) => chainId !== CHAIN_IDs.BSC);
 
-function buildPr144RebalancerConfig(): RebalancerConfig {
+function buildFullMatrixRebalancerConfig(): RebalancerConfig {
   const chains = (chainIds: readonly number[]) => Object.fromEntries(chainIds.map((chainId) => [chainId, 0]));
   return new RebalancerConfig({
     HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
@@ -184,13 +184,13 @@ function buildPr144RebalancerConfig(): RebalancerConfig {
           targetBalance: "1000",
           thresholdBalance: "500",
           priorityTier: 0,
-          chains: chains(PR_144_USDT_CHAINS),
+          chains: chains(FULL_MATRIX_USDT_CHAINS),
         },
         USDC: {
           targetBalance: "1000",
           thresholdBalance: "500",
           priorityTier: 0,
-          chains: chains(PR_144_USDC_CHAINS),
+          chains: chains(FULL_MATRIX_USDC_CHAINS),
         },
       },
       maxAmountsToTransfer: {
@@ -391,16 +391,16 @@ describe("buildRebalanceRoutes", function () {
     expect(hasRoute(CHAIN_IDs.OPTIMISM, "USDT", CHAIN_IDs.TRON, "USDT", "oft")).to.equal(false);
   });
 
-  it("covers every cross-chain PR 144 USDT<->USDC route with Binance", function () {
-    const routes = buildRebalanceRoutes(buildPr144RebalancerConfig());
+  it("covers every configured cross-chain USDT<->USDC route with Binance", function () {
+    const routes = buildRebalanceRoutes(buildFullMatrixRebalancerConfig());
     const matrixRoutes = [
-      ...PR_144_USDT_CHAINS.flatMap((sourceChain) =>
-        PR_144_USDC_CHAINS.filter((destinationChain) => destinationChain !== sourceChain).map(
+      ...FULL_MATRIX_USDT_CHAINS.flatMap((sourceChain) =>
+        FULL_MATRIX_USDC_CHAINS.filter((destinationChain) => destinationChain !== sourceChain).map(
           (destinationChain) => [sourceChain, "USDT", destinationChain, "USDC"] as const
         )
       ),
-      ...PR_144_USDC_CHAINS.flatMap((sourceChain) =>
-        PR_144_USDT_CHAINS.filter((destinationChain) => destinationChain !== sourceChain).map(
+      ...FULL_MATRIX_USDC_CHAINS.flatMap((sourceChain) =>
+        FULL_MATRIX_USDT_CHAINS.filter((destinationChain) => destinationChain !== sourceChain).map(
           (destinationChain) => [sourceChain, "USDC", destinationChain, "USDT"] as const
         )
       ),
@@ -415,8 +415,8 @@ describe("buildRebalanceRoutes", function () {
     });
   });
 
-  it("only builds PR 144 Hyperliquid routes whose token endpoints can bridge through HyperEVM", function () {
-    const routes = buildRebalanceRoutes(buildPr144RebalancerConfig());
+  it("only builds Hyperliquid routes whose token endpoints can bridge through HyperEVM", function () {
+    const routes = buildRebalanceRoutes(buildFullMatrixRebalancerConfig());
     const hyperliquidRoutes = routes.filter(
       ({ sourceChain, sourceToken, destinationChain, destinationToken, adapter }) =>
         adapter === "hyperliquid" &&
@@ -427,10 +427,9 @@ describe("buildRebalanceRoutes", function () {
 
     expect(hyperliquidRoutes).to.have.lengthOf(224);
     hyperliquidRoutes.forEach(({ sourceChain, sourceToken, destinationChain, destinationToken }) => {
-      const supportedSourceChains =
-        sourceToken === "USDT" ? PR_144_HYPERLIQUID_USDT_CHAINS : PR_144_HYPERLIQUID_USDC_CHAINS;
+      const supportedSourceChains = sourceToken === "USDT" ? HYPERLIQUID_USDT_CHAINS : HYPERLIQUID_USDC_CHAINS;
       const supportedDestinationChains =
-        destinationToken === "USDT" ? PR_144_HYPERLIQUID_USDT_CHAINS : PR_144_HYPERLIQUID_USDC_CHAINS;
+        destinationToken === "USDT" ? HYPERLIQUID_USDT_CHAINS : HYPERLIQUID_USDC_CHAINS;
       expect(supportedSourceChains).to.include(sourceChain);
       expect(supportedDestinationChains).to.include(destinationChain);
     });
@@ -443,8 +442,8 @@ describe("buildRebalanceRoutes", function () {
     expect(routeExists(routes, CHAIN_IDs.MEGAETH, "USDT", CHAIN_IDs.BSC, "USDC", "hyperliquid")).to.equal(false);
   });
 
-  it("does not advertise unsupported PR 144 same-asset bridge endpoints", function () {
-    const routes = buildRebalanceRoutes(buildPr144RebalancerConfig());
+  it("does not advertise unsupported same-asset bridge endpoints", function () {
+    const routes = buildRebalanceRoutes(buildFullMatrixRebalancerConfig());
 
     for (const unsupportedUsdtChain of [CHAIN_IDs.AVALANCHE, CHAIN_IDs.BSC, CHAIN_IDs.TRON]) {
       expect(routeExists(routes, unsupportedUsdtChain, "USDT", CHAIN_IDs.MEGAETH, "USDT", "oft")).to.equal(false);
