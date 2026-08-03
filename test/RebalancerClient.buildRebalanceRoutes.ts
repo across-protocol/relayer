@@ -137,6 +137,74 @@ function buildSyntheticRebalancerConfigWithTron(): RebalancerConfig {
   });
 }
 
+const PR_144_USDT_CHAINS = [
+  CHAIN_IDs.MAINNET,
+  CHAIN_IDs.OPTIMISM,
+  CHAIN_IDs.UNICHAIN,
+  CHAIN_IDs.POLYGON,
+  CHAIN_IDs.MONAD,
+  CHAIN_IDs.HYPEREVM,
+  CHAIN_IDs.MEGAETH,
+  CHAIN_IDs.PLASMA,
+  CHAIN_IDs.ARBITRUM,
+  CHAIN_IDs.AVALANCHE,
+  CHAIN_IDs.INK,
+  CHAIN_IDs.BSC,
+  CHAIN_IDs.TRON,
+] as const;
+
+const PR_144_USDC_CHAINS = [
+  CHAIN_IDs.MAINNET,
+  CHAIN_IDs.OPTIMISM,
+  CHAIN_IDs.UNICHAIN,
+  CHAIN_IDs.POLYGON,
+  CHAIN_IDs.MONAD,
+  CHAIN_IDs.WORLD_CHAIN,
+  CHAIN_IDs.HYPEREVM,
+  CHAIN_IDs.BASE,
+  CHAIN_IDs.ARBITRUM,
+  CHAIN_IDs.AVALANCHE,
+  CHAIN_IDs.INK,
+  CHAIN_IDs.LINEA,
+  CHAIN_IDs.BSC,
+] as const;
+
+const PR_144_HYPERLIQUID_USDT_CHAINS = PR_144_USDT_CHAINS.filter(
+  (chainId) => ![CHAIN_IDs.AVALANCHE, CHAIN_IDs.BSC, CHAIN_IDs.TRON].includes(chainId)
+);
+const PR_144_HYPERLIQUID_USDC_CHAINS = PR_144_USDC_CHAINS.filter((chainId) => chainId !== CHAIN_IDs.BSC);
+
+function buildPr144RebalancerConfig(): RebalancerConfig {
+  const chains = (chainIds: readonly number[]) => Object.fromEntries(chainIds.map((chainId) => [chainId, 0]));
+  return new RebalancerConfig({
+    HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+    REBALANCER_CONFIG: JSON.stringify({
+      cumulativeTargetBalances: {
+        USDT: {
+          targetBalance: "1000",
+          thresholdBalance: "500",
+          priorityTier: 0,
+          chains: chains(PR_144_USDT_CHAINS),
+        },
+        USDC: {
+          targetBalance: "1000",
+          thresholdBalance: "500",
+          priorityTier: 0,
+          chains: chains(PR_144_USDC_CHAINS),
+        },
+      },
+      maxAmountsToTransfer: {
+        USDT: "100",
+        USDC: "100",
+      },
+      maxPendingOrders: {
+        hyperliquid: 3,
+        binance: 3,
+      },
+    }),
+  });
+}
+
 function buildSyntheticSameAssetRebalancerConfig(
   supportedRoutes: readonly SameAssetRebalanceRouteSupport[]
 ): RebalancerConfig {
@@ -216,6 +284,8 @@ describe("buildRebalanceRoutes", function () {
     expect(hasRoute(CHAIN_IDs.BSC, "USDT", CHAIN_IDs.OPTIMISM, "USDT", "binance")).to.equal(true);
     expect(hasRoute(CHAIN_IDs.BSC, "USDC", CHAIN_IDs.BASE, "USDC", "binance")).to.equal(true);
     expect(hasRoute(CHAIN_IDs.HYPEREVM, "USDC", CHAIN_IDs.BASE, "USDC", "binance")).to.equal(false);
+    expect(hasRoute(CHAIN_IDs.ARBITRUM, "USDT", CHAIN_IDs.OPTIMISM, "USDC", "binance")).to.equal(false);
+    expect(hasRoute(CHAIN_IDs.BASE, "USDC", CHAIN_IDs.ARBITRUM, "USDT", "binance")).to.equal(false);
   });
 
   it("does not build WETH Binance routes when mainnet is not configured", async function () {
@@ -319,6 +389,71 @@ describe("buildRebalanceRoutes", function () {
     expect(hasRoute(CHAIN_IDs.BASE, "USDC", CHAIN_IDs.TRON, "USDT", "hyperliquid")).to.equal(false);
     expect(hasRoute(CHAIN_IDs.TRON, "USDT", CHAIN_IDs.OPTIMISM, "USDT", "oft")).to.equal(false);
     expect(hasRoute(CHAIN_IDs.OPTIMISM, "USDT", CHAIN_IDs.TRON, "USDT", "oft")).to.equal(false);
+  });
+
+  it("covers every cross-chain PR 144 USDT<->USDC route with Binance", function () {
+    const routes = buildRebalanceRoutes(buildPr144RebalancerConfig());
+    const matrixRoutes = [
+      ...PR_144_USDT_CHAINS.flatMap((sourceChain) =>
+        PR_144_USDC_CHAINS.filter((destinationChain) => destinationChain !== sourceChain).map(
+          (destinationChain) => [sourceChain, "USDT", destinationChain, "USDC"] as const
+        )
+      ),
+      ...PR_144_USDC_CHAINS.flatMap((sourceChain) =>
+        PR_144_USDT_CHAINS.filter((destinationChain) => destinationChain !== sourceChain).map(
+          (destinationChain) => [sourceChain, "USDC", destinationChain, "USDT"] as const
+        )
+      ),
+    ];
+
+    expect(matrixRoutes).to.have.lengthOf(318);
+    matrixRoutes.forEach(([sourceChain, sourceToken, destinationChain, destinationToken]) => {
+      expect(routeExists(routes, sourceChain, sourceToken, destinationChain, destinationToken, "binance")).to.equal(
+        true,
+        `missing Binance route ${sourceChain} ${sourceToken} -> ${destinationChain} ${destinationToken}`
+      );
+    });
+  });
+
+  it("only builds PR 144 Hyperliquid routes whose token endpoints can bridge through HyperEVM", function () {
+    const routes = buildRebalanceRoutes(buildPr144RebalancerConfig());
+    const hyperliquidRoutes = routes.filter(
+      ({ sourceChain, sourceToken, destinationChain, destinationToken, adapter }) =>
+        adapter === "hyperliquid" &&
+        sourceChain !== destinationChain &&
+        ((sourceToken === "USDT" && destinationToken === "USDC") ||
+          (sourceToken === "USDC" && destinationToken === "USDT"))
+    );
+
+    expect(hyperliquidRoutes).to.have.lengthOf(224);
+    hyperliquidRoutes.forEach(({ sourceChain, sourceToken, destinationChain, destinationToken }) => {
+      const supportedSourceChains =
+        sourceToken === "USDT" ? PR_144_HYPERLIQUID_USDT_CHAINS : PR_144_HYPERLIQUID_USDC_CHAINS;
+      const supportedDestinationChains =
+        destinationToken === "USDT" ? PR_144_HYPERLIQUID_USDT_CHAINS : PR_144_HYPERLIQUID_USDC_CHAINS;
+      expect(supportedSourceChains).to.include(sourceChain);
+      expect(supportedDestinationChains).to.include(destinationChain);
+    });
+
+    for (const unsupportedUsdtChain of [CHAIN_IDs.AVALANCHE, CHAIN_IDs.BSC, CHAIN_IDs.TRON]) {
+      expect(routeExists(routes, unsupportedUsdtChain, "USDT", CHAIN_IDs.LINEA, "USDC", "hyperliquid")).to.equal(false);
+      expect(routeExists(routes, CHAIN_IDs.LINEA, "USDC", unsupportedUsdtChain, "USDT", "hyperliquid")).to.equal(false);
+    }
+    expect(routeExists(routes, CHAIN_IDs.BSC, "USDC", CHAIN_IDs.MEGAETH, "USDT", "hyperliquid")).to.equal(false);
+    expect(routeExists(routes, CHAIN_IDs.MEGAETH, "USDT", CHAIN_IDs.BSC, "USDC", "hyperliquid")).to.equal(false);
+  });
+
+  it("does not advertise unsupported PR 144 same-asset bridge endpoints", function () {
+    const routes = buildRebalanceRoutes(buildPr144RebalancerConfig());
+
+    for (const unsupportedUsdtChain of [CHAIN_IDs.AVALANCHE, CHAIN_IDs.BSC, CHAIN_IDs.TRON]) {
+      expect(routeExists(routes, unsupportedUsdtChain, "USDT", CHAIN_IDs.MEGAETH, "USDT", "oft")).to.equal(false);
+      expect(routeExists(routes, CHAIN_IDs.MEGAETH, "USDT", unsupportedUsdtChain, "USDT", "oft")).to.equal(false);
+    }
+    expect(routeExists(routes, CHAIN_IDs.BSC, "USDC", CHAIN_IDs.LINEA, "USDC", "cctp")).to.equal(false);
+    expect(routeExists(routes, CHAIN_IDs.LINEA, "USDC", CHAIN_IDs.BSC, "USDC", "cctp")).to.equal(false);
+    expect(routeExists(routes, CHAIN_IDs.MEGAETH, "USDT", CHAIN_IDs.INK, "USDT", "oft")).to.equal(true);
+    expect(routeExists(routes, CHAIN_IDs.WORLD_CHAIN, "USDC", CHAIN_IDs.LINEA, "USDC", "cctp")).to.equal(true);
   });
 });
 
