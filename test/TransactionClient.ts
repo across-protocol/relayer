@@ -1,6 +1,6 @@
 import sinon from "sinon";
 import { AugmentedTransaction } from "../src/clients";
-import { _selectNonce } from "../src/clients/TransactionClient";
+import { _clearReplacedHead, _selectNonce } from "../src/clients/TransactionClient";
 import {
   BigNumber,
   ethers,
@@ -463,6 +463,56 @@ describe("TransactionClient", function () {
       expect(selected.replacing).to.be.true;
     });
 
+    it("Releases the replaced-head reservation on request", async function () {
+      const provider = makeProvider(10, 14);
+      let selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
+      expect(selected.replacing).to.be.true;
+
+      // A release at the wrong nonce must not disturb the live reservation.
+      _clearReplacedHead(chainId, signerAddr, 9);
+      selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
+      expect(selected.nonce).to.equal(14);
+      expect(selected.replacing).to.be.false;
+
+      // Releasing the recorded head re-admits replacement (the failed attempt never broadcast).
+      _clearReplacedHead(chainId, signerAddr, 10);
+      selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
+      expect(selected.nonce).to.equal(10);
+      expect(selected.replacing).to.be.true;
+    });
+
+    it("Patches a stale block baseline after the count reads", async function () {
+      const clock = sinon.useFakeTimers({ now: Date.now(), toFake: ["Date"] });
+      try {
+        // The block read resolves at 100 while the count reads land only after the chain has
+        // advanced to 102; the recorded baseline must reflect the later height.
+        let blockNumber = 100;
+        let countsResolved = false;
+        const provider = {
+          getTransactionCount: (_addr: string, blockTag?: string) =>
+            new Promise((resolve) =>
+              setImmediate(() => {
+                [blockNumber, countsResolved] = [102, true];
+                resolve(blockTag === "pending" ? 14 : 10);
+              })
+            ),
+          getBlockNumber: () => Promise.resolve(countsResolved ? blockNumber : 100),
+        } as unknown as Provider;
+
+        let selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
+        expect(selected.replacing).to.be.true;
+
+        // The window elapses with the chain stalled at 102. With a stale baseline (100) the
+        // block gate would already read as satisfied and re-arm; the patched baseline defers.
+        clock.tick(10 * 60 * 1000);
+        selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
+        expect(selected.nonce).to.equal(14);
+        expect(selected.replacing).to.be.false;
+      } finally {
+        clock.restore();
+      }
+    });
+
     it("Serializes concurrent selections against the same deep backlog", async function () {
       const provider = {
         getTransactionCount: (_addr: string, blockTag?: string) => Promise.resolve(blockTag === "pending" ? 14 : 10),
@@ -511,10 +561,14 @@ describe("TransactionClient", function () {
   });
 
   describe("Cached nonce reconciliation", function () {
-    function makeTxn(chainId: number, confirmedCount: number, pendingCount: number): AugmentedTransaction {
+    function makeTxn(chainId: number, confirmedCount: number, pendingCount?: number): AugmentedTransaction {
       const provider = {
         getTransactionCount: (_address: string, blockTag?: string) =>
-          Promise.resolve(blockTag === "pending" ? pendingCount : confirmedCount),
+          blockTag === "pending"
+            ? isDefined(pendingCount)
+              ? Promise.resolve(pendingCount)
+              : Promise.reject(new Error("pending tag unsupported"))
+            : Promise.resolve(confirmedCount),
       };
       return {
         chainId,
@@ -603,6 +657,47 @@ describe("TransactionClient", function () {
       const txns = [makeTxn(chainId, 10, 13), makeTxn(chainId, 10, 13)];
       const txnResponses = await client.submit(chainId, txns);
       expect(txnResponses.map(({ nonce }) => nonce)).to.deep.equal([10, 13]);
+    });
+
+    it("Keeps replacement mode for a leading cache when the pending tag is unsupported", async function () {
+      const chainId = chainIds[0];
+
+      class CapturingClient extends MockedTransactionClient {
+        public lastReplacing: boolean | undefined;
+        protected override _getTransactionPromise(
+          txn: AugmentedTransaction,
+          nonce: number | null,
+          replacing = false
+        ): Promise<TransactionResponse> {
+          this.lastReplacing = replacing;
+          return super._getTransactionPromise(txn, nonce);
+        }
+      }
+
+      const client = new CapturingClient(spyLogger);
+      client.noncesBySigner[chainId] = { [await signer.getAddress()]: 14 };
+
+      // The cache (next nonce 15) leads the confirmed count (10) and the in-flight queue is
+      // unobservable: submit at the cached nonce but in replacement mode, so an occupied nonce
+      // escalates in place instead of re-syncing to the confirmed nonce and evicting the
+      // unrelated queue head there.
+      const [txnResponse] = await client.submit(chainId, [makeTxn(chainId, 10)]);
+      expect(txnResponse.nonce).to.equal(15);
+      expect(client.lastReplacing).to.be.true;
+    });
+
+    it("Floors the tail at the cache high-water mark when the pending count lags", async function () {
+      // Isolate the replaced-head marker: this test must not share (chainId, signer) with others.
+      const chainId = chainIds[3];
+      txnClient.noncesBySigner[chainId] = { [await signer.getAddress()]: 20 };
+
+      // The cache proves nonces through 20 were submitted while the lagging provider reports
+      // latest 10 / pending 14 (deep backlog). The head replacement lands at 10; the second
+      // transaction must land beyond the cache high-water mark (21) — not at the observed tail
+      // (14), where it would evict one of this client's own in-flight transactions.
+      const txns = [makeTxn(chainId, 10, 14), makeTxn(chainId, 10, 14)];
+      const txnResponses = await txnClient.submit(chainId, txns);
+      expect(txnResponses.map(({ nonce }) => nonce)).to.deep.equal([10, 21]);
     });
 
     it("Sanitizes an invalid backlog threshold override", async function () {

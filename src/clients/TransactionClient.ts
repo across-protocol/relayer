@@ -340,10 +340,18 @@ export class TransactionClient {
           .catch(() => undefined);
         if (isDefined(selected)) {
           if (selected.replacing && isDefined(selected.backlog)) {
+            // The backlog behind the replaced head remains in flight, and the pending count can
+            // lag this client's own submissions, so subsequent batch transactions must land
+            // beyond both the observed tail and the cache's high-water mark.
+            nonceFloors[signerAddr] = Math.max(selected.nonce + selected.backlog, nonce);
             ({ nonce, replacing } = selected);
-            // The backlog behind the replaced head remains in flight; subsequent batch
-            // transactions must land beyond its observed tail.
-            nonceFloors[signerAddr] = selected.nonce + selected.backlog;
+          } else if (selected.replacing) {
+            // Pending tag unsupported: the in-flight queue is unobservable, so the leading cache
+            // stays authoritative but retains replacement mode — an occupied nonce then escalates
+            // in place (pre-existing behavior) instead of re-syncing to the confirmed nonce and
+            // evicting the unrelated queue head there.
+            nonce = Math.max(nonce, selected.nonce);
+            replacing = true;
           } else {
             nonce = Math.max(nonce, selected.nonce);
           }
@@ -445,6 +453,14 @@ async function _runTransaction(
   } = _readTransactionConfig(chainId);
   retries ??= _retries;
 
+  // A replacement-mode submission that dies without reaching the provider must release its
+  // replaced-head reservation (no-op when none is held at this nonce).
+  const releaseReplacedHead = async (): Promise<void> => {
+    if (replacing && isDefined(nonce)) {
+      _clearReplacedHead(chainId, await signer.getAddress(), nonce);
+    }
+  };
+
   let gas: Partial<FeeData>;
   try {
     if (!isDefined(nonce)) {
@@ -479,6 +495,7 @@ async function _runTransaction(
     // Linea uses linea_estimateGas and will throw on FilledRelay() reverts; skip retries.
     // nb. Requiring low-level chain & method inspection is a wart on the implementation. @todo: refactor it away.
     if ((chainId === CHAIN_IDs.LINEA && method === "fillRelay") || --retries < 0) {
+      await releaseReplacedHead(); // Gas quoting failed; nothing was broadcast.
       throw error;
     }
     return await _runTransaction(
@@ -535,6 +552,7 @@ async function _runTransaction(
         message = `Unable to simulate transaction (${cause}).`;
         if ([cause, reason].some((err) => err.includes("revert"))) {
           logger.warn({ at, message, retries, reason, ...commonFields });
+          await releaseReplacedHead(); // Failed in simulation; nothing was broadcast.
           throw error;
         }
         scaleGas = ["gas", "fee"].some((cause) => cause.includes(reason));
@@ -577,6 +595,7 @@ async function _runTransaction(
       case errors.INSUFFICIENT_FUNDS: {
         message = "Cannot execute transaction due to insufficient native token balance.";
         logger.warn({ at, message, code, reason, ...commonFields });
+        await releaseReplacedHead(); // Rejected; nothing was broadcast.
         throw error;
       }
 
@@ -586,6 +605,7 @@ async function _runTransaction(
       case errors.UNEXPECTED_ARGUMENT: {
         message = `Attempted invalid ${chain} transaction (${cause}).`;
         logger.warn({ at, message, code, reason, ...commonFields });
+        await releaseReplacedHead(); // Rejected; nothing was broadcast.
         throw error;
       }
 
@@ -595,6 +615,11 @@ async function _runTransaction(
 
     logger.debug({ at, message, code, reason, ...commonFields });
     if (--retries < 0) {
+      // SERVER_ERROR and TIMEOUT are ambiguous — the transaction may have reached the provider —
+      // so the replaced-head reservation is retained for those.
+      if (code !== errors.SERVER_ERROR && code !== errors.TIMEOUT) {
+        await releaseReplacedHead();
+      }
       throw error;
     }
 
@@ -727,6 +752,22 @@ async function _runTransactionTvm(
 const replacedHeads: { [chainAndSigner: string]: { nonce: number; expiresAt: number; blockNumber?: number } } = {};
 
 /**
+ * Release a replaced-head reservation when the replacement definitively failed to reach the
+ * provider; otherwise valid submissions would append behind the still-stuck head until the
+ * re-arm window and block gate both elapse. Guarded on the recorded nonce so an unrelated
+ * failure cannot release a live reservation.
+ * @param chainId Chain ID for transaction submission.
+ * @param address Signer address.
+ * @param nonce Nonce of the failed replacement.
+ */
+export function _clearReplacedHead(chainId: number, address: string, nonce: number): void {
+  const key = `${chainId}:${address}`;
+  if (replacedHeads[key]?.nonce === nonce) {
+    delete replacedHeads[key];
+  }
+}
+
+/**
  * Select the nonce for a new transaction from the signer's confirmed ("latest") and pending
  * transaction counts. A modest backlog is the normal signature of concurrent submitters sharing
  * the signer, so new transactions append behind it (pending nonce). A backlog at/beyond
@@ -792,7 +833,17 @@ export async function _selectNonce(
   }
 
   const confirmationWindow = CONFIRMATION_TIMEOUTS_MS[chainId] ?? CONFIRMATION_TIMEOUT_MS_DEFAULT;
-  replacedHeads[key] = { nonce: confirmed, expiresAt: now + CONFIRMATION_BLOCKS * confirmationWindow, blockNumber };
+  const entry = { nonce: confirmed, expiresAt: now + CONFIRMATION_BLOCKS * confirmationWindow, blockNumber };
+  replacedHeads[key] = entry;
+
+  // The upfront block read can predate slower count reads by several blocks, and a stale-low
+  // baseline would prematurely satisfy the re-arm block gate on a subsequently stalled chain.
+  // Refresh it after the decision: the marker is already visible to concurrent selections, so
+  // this await reopens no check-and-set gap.
+  const refreshed = await provider.getBlockNumber?.().catch(() => undefined);
+  if (isDefined(refreshed)) {
+    entry.blockNumber = Math.max(refreshed, entry.blockNumber ?? refreshed);
+  }
   return { nonce: confirmed, replacing: true, backlog };
 }
 
