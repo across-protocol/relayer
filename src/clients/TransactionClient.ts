@@ -38,6 +38,12 @@ const MIN_GAS_RETRY_SCALER_DEFAULT = 1.1;
 const MAX_GAS_RETRY_SCALER_DEFAULT = 3;
 const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
 
+// Pending-nonce backlog (pending - confirmed transaction count) at which a new submission assumes
+// head-of-line blocking and targets the confirmed nonce for replacement, rather than appending
+// behind the in-flight queue. A healthy queue drains at ~1 transaction/block, so this must sit
+// above the in-flight depth produced by ordinary submission bursts (empirically 1 - 3).
+const NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT = 4;
+
 // Default TVM fee limit in SUN (1 TRX = 1,000,000 SUN). 100 TRX is a reasonable default for
 // contract interactions on TRON.
 const DEFAULT_TVM_FEE_LIMIT = 100_000_000;
@@ -141,19 +147,25 @@ export class TransactionClient {
     return (await this.submit(txn.chainId, [dispatchTxn]))[0];
   }
 
-  protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
+  protected _getTransactionPromise(
+    txn: AugmentedTransaction,
+    nonce: number | null,
+    replacing = false
+  ): Promise<TransactionResponse> {
     const { contract, method, args, value, gasLimit, chainId } = txn;
-    const transactionHandler = chainIsTvm(chainId) ? _runTransactionTvm : _runTransaction;
-    return transactionHandler(this.logger, contract, method, args, value, gasLimit, nonce);
+    if (chainIsTvm(chainId)) {
+      return _runTransactionTvm(this.logger, contract, method, args, value, gasLimit, nonce);
+    }
+    return _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce, undefined, 1.0, replacing);
   }
 
   protected async _submit(
     txn: AugmentedTransaction,
-    opts: { nonce: number | null; maxTries?: number }
+    opts: { nonce: number | null; maxTries?: number; replacing?: boolean }
   ): Promise<TransactionResponse> {
     const { chainId } = txn;
-    const { nonce = null, maxTries = 10 } = opts;
-    const txnPromise = this._getTransactionPromise(txn, nonce);
+    const { nonce = null, maxTries = 10, replacing = false } = opts;
+    const txnPromise = this._getTransactionPromise(txn, nonce, replacing);
 
     if (txn.ensureConfirmation) {
       const at = "TransactionClient#_submit";
@@ -242,7 +254,7 @@ export class TransactionClient {
                 ...common,
                 message: `Transaction on ${chain} timed out at nonce ${txnResponse.nonce}, resubmitting...`,
               });
-              return this._submit(txn, { nonce: txnResponse.nonce, maxTries: maxTries - 1 });
+              return this._submit(txn, { nonce: txnResponse.nonce, maxTries: maxTries - 1, replacing: true });
             }
             default:
               this.logger.warn({
@@ -363,7 +375,8 @@ async function _runTransaction(
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
   retries?: number,
-  retryScaler = 1.0
+  retryScaler = 1.0,
+  replacing = false
 ): Promise<TransactionResponse> {
   const at = "TxUtil#_runTransaction";
   const { provider, signer } = contract;
@@ -371,12 +384,25 @@ async function _runTransaction(
   const chain = getNetworkName(chainId);
   const sendRawTxn = method === "";
 
-  const { maxFeePerGasScaler, priorityFeeScaler, retries: _retries } = _readTransactionConfig(chainId);
+  const {
+    maxFeePerGasScaler,
+    priorityFeeScaler,
+    retries: _retries,
+    nonceBacklogReplaceThreshold,
+  } = _readTransactionConfig(chainId);
   retries ??= _retries;
 
   let gas: Partial<FeeData>;
   try {
-    nonce ??= await provider.getTransactionCount(await signer.getAddress());
+    if (!isDefined(nonce)) {
+      ({ nonce, replacing } = await _selectNonce(provider, await signer.getAddress(), nonceBacklogReplaceThreshold));
+      if (replacing) {
+        logger.debug({
+          at,
+          message: `Pending nonce backlog on ${chain} at/beyond ${nonceBacklogReplaceThreshold}; replacing at nonce ${nonce}.`,
+        });
+      }
+    }
     const preGas = await getGasPrice(
       provider,
       priorityFeeScaler,
@@ -390,7 +416,7 @@ async function _runTransaction(
     if ((chainId === CHAIN_IDs.LINEA && method === "fillRelay") || --retries < 0) {
       throw error;
     }
-    return await _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries);
+    return await _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, 1.0, replacing);
   }
 
   const to = contract.address;
@@ -438,8 +464,15 @@ async function _runTransaction(
         break;
 
       case errors.REPLACEMENT_UNDERPRICED:
-        message = `Transaction replacement on ${chain} failed at nonce ${nonce} (${cause}).`;
-        scaleGas = true;
+        if (replacing) {
+          message = `Transaction replacement on ${chain} failed at nonce ${nonce} (${cause}).`;
+          scaleGas = true;
+        } else {
+          // A concurrent submitter sharing this signer took the nonce first. The incumbent isn't
+          // known to be stuck, so re-select and queue behind it rather than bidding against it.
+          message = `Nonce ${nonce} on ${chain} taken by an in-flight transaction, re-syncing (${cause}).`;
+          nonce = null;
+        }
         break;
 
       // Undiagnosed issue. Can be a nonce issue, so try to re-sync, and otherwise
@@ -495,7 +528,18 @@ async function _runTransaction(
       retryScaler = Math.min(retryScaler, maxGasScaler);
     }
 
-    return await _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, retryScaler);
+    return await _runTransaction(
+      logger,
+      contract,
+      method,
+      args,
+      value,
+      gasLimit,
+      nonce,
+      retries,
+      retryScaler,
+      replacing
+    );
   }
 }
 
@@ -591,6 +635,34 @@ async function _runTransactionTvm(
 }
 
 /**
+ * Select the nonce for a new transaction from the signer's confirmed ("latest") and pending
+ * transaction counts. A modest backlog is the normal signature of concurrent submitters sharing
+ * the signer, so new transactions append behind it (pending nonce). A backlog at/beyond
+ * backlogThreshold instead implies the confirmed-nonce transaction is blocking the queue, so the
+ * new transaction targets it for replacement (fee scaling engages via retry on rejection).
+ * @param provider Provider to query transaction counts from.
+ * @param address Signer address.
+ * @param backlogThreshold Pending-minus-confirmed depth at which to replace rather than append.
+ * @returns Selected nonce, and whether it targets an in-flight transaction for replacement.
+ */
+export async function _selectNonce(
+  provider: Provider,
+  address: string,
+  backlogThreshold: number
+): Promise<{ nonce: number; replacing: boolean }> {
+  const [confirmed, pending] = await Promise.all([
+    provider.getTransactionCount(address, "latest"),
+    provider.getTransactionCount(address, "pending").catch(() => undefined),
+  ]);
+
+  // Clamp for providers without "pending" blockTag support, or transiently inconsistent responses.
+  const backlog = Math.max((pending ?? confirmed) - confirmed, 0);
+  return backlog >= backlogThreshold
+    ? { nonce: confirmed, replacing: true }
+    : { nonce: confirmed + backlog, replacing: false };
+}
+
+/**
  * Apply local scaling to a gas price. The gas price can be scaled up in case it falls beneath an env-defined
  * price floor, or in case of a retry (i.e. due to replacement underpriced RPC rejection).
  * @param chainId Chain ID for transaction submission.
@@ -639,11 +711,18 @@ function _readTransactionConfig(chainId: number): {
   maxFeePerGasScaler: number;
   priorityFeeScaler: number;
   retries: number;
+  nonceBacklogReplaceThreshold: number;
 } {
   const retries = Number(
     process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] ??
       process.env.TRANSACTION_SUBMISSION_RETRIES ??
       TRANSACTION_SUBMISSION_RETRIES_DEFAULT
+  );
+
+  const nonceBacklogReplaceThreshold = Number(
+    process.env[`NONCE_BACKLOG_REPLACE_THRESHOLD_${chainId}`] ??
+      process.env.NONCE_BACKLOG_REPLACE_THRESHOLD ??
+      NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT
   );
 
   const priorityFeeScaler =
@@ -657,5 +736,6 @@ function _readTransactionConfig(chainId: number): {
     priorityFeeScaler,
     maxFeePerGasScaler,
     retries,
+    nonceBacklogReplaceThreshold,
   };
 }

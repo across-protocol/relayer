@@ -1,8 +1,10 @@
 import { AugmentedTransaction } from "../src/clients";
+import { _selectNonce } from "../src/clients/TransactionClient";
 import {
   BigNumber,
   ethers,
   isDefined,
+  Provider,
   TransactionReceipt,
   TransactionResponse,
   TransactionSimulationResult,
@@ -385,6 +387,45 @@ describe("TransactionClient", function () {
       expect(txnResponses.length).to.equal(1);
       // wait() was called maxTries times (default is 10).
       expect(waitCalls).to.equal(10);
+    });
+  });
+
+  describe("_selectNonce", function () {
+    const backlogThreshold = 4;
+
+    function makeProvider(confirmed: number, pending?: number): Provider {
+      return {
+        getTransactionCount: (_address: string, blockTag?: string) =>
+          blockTag === "pending"
+            ? isDefined(pending)
+              ? Promise.resolve(pending)
+              : Promise.reject(new Error("pending tag unsupported"))
+            : Promise.resolve(confirmed),
+      } as unknown as Provider;
+    }
+
+    it("Appends behind a modest in-flight backlog", async function () {
+      const { nonce, replacing } = await _selectNonce(makeProvider(10, 13), address, backlogThreshold);
+      expect(nonce).to.equal(13);
+      expect(replacing).to.be.false;
+    });
+
+    it("Replaces at the confirmed nonce at/beyond the backlog threshold", async function () {
+      const { nonce, replacing } = await _selectNonce(makeProvider(10, 14), address, backlogThreshold);
+      expect(nonce).to.equal(10);
+      expect(replacing).to.be.true;
+    });
+
+    it("Falls back to the confirmed nonce when the pending tag is unsupported", async function () {
+      const { nonce, replacing } = await _selectNonce(makeProvider(10), address, backlogThreshold);
+      expect(nonce).to.equal(10);
+      expect(replacing).to.be.false;
+    });
+
+    it("Clamps an inconsistent pending count", async function () {
+      const { nonce, replacing } = await _selectNonce(makeProvider(10, 8), address, backlogThreshold);
+      expect(nonce).to.equal(10);
+      expect(replacing).to.be.false;
     });
   });
 });
