@@ -476,6 +476,33 @@ describe("TransactionClient", function () {
       expect(thrown?.message).to.equal("pending tag unsupported");
     });
 
+    it("Records pending support even when the latest read fails", async function () {
+      let latestCalls = 0;
+      let pendingCalls = 0;
+      const provider = {
+        getTransactionCount: (_addr: string, blockTag?: string) =>
+          blockTag === "pending"
+            ? ++pendingCalls === 1
+              ? Promise.resolve(12)
+              : Promise.reject(new Error("transient blip"))
+            : ++latestCalls === 1
+              ? Promise.reject(new Error("latest failed"))
+              : Promise.resolve(10),
+      } as unknown as Provider;
+
+      // The first selection fails on the latest read, but its successful pending observation
+      // must still register capability.
+      let thrown: Error | undefined;
+      await _selectNonce(chainId, provider, signerAddr, backlogThreshold).catch((error) => (thrown = error));
+      expect(thrown?.message).to.equal("latest failed");
+
+      // A subsequent pending failure is then transient (propagated), not an unsupported tag
+      // that would route the submission into replacement mode at the confirmed nonce.
+      thrown = undefined;
+      await _selectNonce(chainId, provider, signerAddr, backlogThreshold).catch((error) => (thrown = error));
+      expect(thrown?.message).to.equal("transient blip");
+    });
+
     it("Scopes pending-tag capability to the provider, not the chain", async function () {
       // One provider serves pending counts on this chain...
       await _selectNonce(chainId, makeProvider(10, 12), signerAddr, backlogThreshold);

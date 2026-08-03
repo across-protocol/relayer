@@ -493,7 +493,8 @@ async function _runTransaction(
   let gas: Partial<FeeData>;
   try {
     if (!isDefined(nonce)) {
-      const selected = await _selectNonce(chainId, provider, await signer.getAddress(), nonceBacklogReplaceThreshold);
+      const signerAddress = await signer.getAddress();
+      const selected = await _selectNonce(chainId, provider, signerAddress, nonceBacklogReplaceThreshold);
       const { backlog } = selected;
       ({ nonce, replacing } = selected);
       reservationId = selected.reservationId ?? null;
@@ -503,14 +504,21 @@ async function _runTransaction(
           message: `Pending nonce backlog of ${backlog} on ${chain}; replacing at nonce ${nonce}.`,
         });
       } else if (!replacing && nonce === collidedNonce) {
-        // A REPLACEMENT_UNDERPRICED rejection proved this nonce is occupied, so a re-selection
-        // that fails to advance means the provider's pending view is stale and appending is
-        // unavailable. Escalate at the nonce instead of looping on unscaled resubmission. The
-        // incumbent is priced at/near market (the rejection proved it), so advance the fee
-        // ladder now rather than burning a retry on a repeat of the same bid.
-        replacing = true;
-        retryScaler = _bumpRetryScaler(chainId, retryScaler, priorityFeeScaler);
-        logger.debug({ at, message: `Nonce ${nonce} on ${chain} re-selected after collision; replacing.` });
+        if (_hasLiveReservation(chainId, signerAddress, nonce)) {
+          // The occupant at the proven-collided nonce is a reservation-protected replacement
+          // from this process; escalating here would evict it. Hold append mode — the next
+          // rejection re-syncs again, by which point the pending view should have advanced.
+          logger.debug({ at, message: `Nonce ${nonce} on ${chain} re-selected but reserved; not escalating.` });
+        } else {
+          // A REPLACEMENT_UNDERPRICED rejection proved this nonce is occupied, so a re-selection
+          // that fails to advance means the provider's pending view is stale and appending is
+          // unavailable. Escalate at the nonce instead of looping on unscaled resubmission. The
+          // incumbent is priced at/near market (the rejection proved it), so advance the fee
+          // ladder now rather than burning a retry on a repeat of the same bid.
+          replacing = true;
+          retryScaler = _bumpRetryScaler(chainId, retryScaler, priorityFeeScaler);
+          logger.debug({ at, message: `Nonce ${nonce} on ${chain} re-selected after collision; replacing.` });
+        }
       }
     }
     const preGas = await getGasPrice(
@@ -850,6 +858,18 @@ export function _reserveReplacedHead(chainId: number, address: string, nonce: nu
 }
 
 /**
+ * Whether an unexpired replacement reservation is held for the given nonce.
+ * @param chainId Chain ID for transaction submission.
+ * @param address Signer address.
+ * @param nonce Nonce to look up.
+ * @returns True when a live reservation exists.
+ */
+function _hasLiveReservation(chainId: number, address: string, nonce: number): boolean {
+  const entry = replacedHeads[`${chainId}:${address}`]?.[nonce];
+  return isDefined(entry) && Date.now() < entry.expiresAt;
+}
+
+/**
  * Release a replaced-head reservation when the replacement definitively failed to reach the
  * provider; otherwise valid submissions would append behind the still-stuck head until the
  * re-arm window and block gate both elapse. Guarded on the owner id so an unrelated or aged-out
@@ -888,7 +908,12 @@ export async function _selectNonce(
 ): Promise<{ nonce: number; replacing: boolean; backlog?: number; reservationId?: number }> {
   const observePending = (): Promise<{ count: number } | { error: unknown }> =>
     provider.getTransactionCount(address, "pending").then(
-      (count) => ({ count }),
+      (count) => {
+        // Record capability at the point of success: a concurrent "latest" failure rejects the
+        // combined read, and this observation must not be lost with it.
+        pendingTagSupported.add(provider);
+        return { count };
+      },
       (error) => ({ error })
     );
 
@@ -907,6 +932,14 @@ export async function _selectNonce(
   const pendingResult =
     "count" in firstPending || pendingTagSupported.has(provider) ? firstPending : await observePending();
 
+  // Prune reservations for consumed nonces on every selection, not just the deep-backlog path:
+  // on providers without pending support every broadcast runs in replacement mode and records a
+  // reservation, so a long-lived process would otherwise accumulate entries indefinitely.
+  const signerHeads = (replacedHeads[`${chainId}:${address}`] ??= {});
+  Object.keys(signerHeads)
+    .filter((nonce) => Number(nonce) < confirmed)
+    .forEach((nonce) => delete signerHeads[Number(nonce)]);
+
   if (!("count" in pendingResult)) {
     // A provider that has ever served a pending count supports the tag, so this failure is
     // transient (timeout, rate limit, outage): propagate it for the caller's bounded retry or
@@ -919,7 +952,6 @@ export async function _selectNonce(
     }
     return { nonce: confirmed, replacing: true };
   }
-  pendingTagSupported.add(provider);
   const pending = pendingResult.count;
 
   const backlog = Math.max(pending - confirmed, 0); // Clamp transiently inconsistent responses.
@@ -929,12 +961,7 @@ export async function _selectNonce(
 
   // Deep backlog: the queue head is assumed stuck and targeted for replacement — but only once.
   // While a prior replacement of this head may still confirm, append behind the queue instead of
-  // evicting it. Reservations for consumed nonces no longer protect anything; prune them.
-  const signerHeads = (replacedHeads[`${chainId}:${address}`] ??= {});
-  Object.keys(signerHeads)
-    .filter((nonce) => Number(nonce) < confirmed)
-    .forEach((nonce) => delete signerHeads[Number(nonce)]);
-
+  // evicting it.
   const prior = signerHeads[confirmed];
   if (isDefined(prior)) {
     if (Date.now() < prior.expiresAt) {
