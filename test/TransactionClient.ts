@@ -464,10 +464,10 @@ describe("TransactionClient", function () {
   });
 
   describe("Cached nonce reconciliation", function () {
-    function makeTxn(chainId: number, pendingCount: number): AugmentedTransaction {
+    function makeTxn(chainId: number, confirmedCount: number, pendingCount: number): AugmentedTransaction {
       const provider = {
         getTransactionCount: (_address: string, blockTag?: string) =>
-          Promise.resolve(blockTag === "pending" ? pendingCount : 0),
+          Promise.resolve(blockTag === "pending" ? pendingCount : confirmedCount),
       };
       return {
         chainId,
@@ -484,8 +484,8 @@ describe("TransactionClient", function () {
       // Cached: this client last submitted nonce 9, so the naive next nonce is 10.
       txnClient.noncesBySigner[chainId] = { [await signer.getAddress()]: 9 };
 
-      // A concurrent submitter sharing the signer occupied nonces 10-12.
-      const [txnResponse] = await txnClient.submit(chainId, [makeTxn(chainId, 13)]);
+      // A concurrent submitter sharing the signer occupied nonces 10-12 (modest backlog).
+      const [txnResponse] = await txnClient.submit(chainId, [makeTxn(chainId, 10, 13)]);
       expect(txnResponse.nonce).to.equal(13);
     });
 
@@ -494,7 +494,18 @@ describe("TransactionClient", function () {
       txnClient.noncesBySigner[chainId] = { [await signer.getAddress()]: 9 };
 
       // The provider's pending count lags this client's own submissions; trust the cache.
-      const [txnResponse] = await txnClient.submit(chainId, [makeTxn(chainId, 8)]);
+      const [txnResponse] = await txnClient.submit(chainId, [makeTxn(chainId, 8, 8)]);
+      expect(txnResponse.nonce).to.equal(10);
+    });
+
+    it("Adopts a deep-backlog replacement over the cached nonce", async function () {
+      // Isolate the replaced-head marker: this test must not share (chainId, signer) with others.
+      const chainId = chainIds[1];
+      txnClient.noncesBySigner[chainId] = { [await signer.getAddress()]: 12 };
+
+      // Backlog of 5 (>= threshold 4): the stuck head at nonce 10 is targeted for replacement
+      // rather than appending at the cached nonce 13 (or the pending nonce 15) behind it.
+      const [txnResponse] = await txnClient.submit(chainId, [makeTxn(chainId, 10, 15)]);
       expect(txnResponse.nonce).to.equal(10);
     });
   });

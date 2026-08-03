@@ -309,15 +309,28 @@ export class TransactionClient {
       const signerAddr = await txn.contract.signer.getAddress();
       const chainNonceMap = (this.noncesBySigner[chainId] ??= {});
       let nonce = isDefined(chainNonceMap[signerAddr]) ? chainNonceMap[signerAddr] + 1 : undefined;
+      let replacing = false;
 
       // The nonce cache is blind to nonces occupied by concurrent submitters sharing this signer
       // (e.g. another bot instance) since the previous submission, so reconcile it against the
-      // network's pending transaction count once per signer per batch. The cached nonce remains
-      // authoritative when it leads: pending counts can lag this client's own recent submissions,
-      // and deferring to a lagging count would replace them.
+      // network once per signer per batch. An append-mode selection takes effect only when it
+      // leads the cache: pending counts can lag this client's own recent submissions, and
+      // deferring to a lagging count would replace them. A deep-backlog replacement selection is
+      // adopted as-is — otherwise a warm cache would append behind a stuck head indefinitely. The
+      // pending-unsupported fallback (backlog undefined) never overrides a cache that leads, since
+      // the cache is the only view of in-flight transactions on such providers.
       if (isDefined(nonce) && !reconciledSigners.has(signerAddr) && !chainIsTvm(chainId)) {
-        const pending = await txn.contract.provider?.getTransactionCount(signerAddr, "pending").catch(() => undefined);
-        nonce = Math.max(nonce, pending ?? 0);
+        const { nonceBacklogReplaceThreshold } = _readTransactionConfig(chainId);
+        const selected = await _selectNonce(chainId, txn.contract.provider, signerAddr, nonceBacklogReplaceThreshold)
+          // Reconciliation is best-effort; on provider failure, fall back to the cached nonce.
+          .catch(() => undefined);
+        if (isDefined(selected)) {
+          if (selected.replacing && isDefined(selected.backlog)) {
+            ({ nonce, replacing } = selected);
+          } else {
+            nonce = Math.max(nonce, selected.nonce);
+          }
+        }
       }
       reconciledSigners.add(signerAddr);
 
@@ -335,7 +348,7 @@ export class TransactionClient {
 
       let response: TransactionResponse;
       try {
-        response = await this._submit(txn, { nonce: nonce ?? null });
+        response = await this._submit(txn, { nonce: nonce ?? null, replacing });
       } catch (error) {
         delete chainNonceMap[signerAddr];
         this.logger.info({
@@ -388,7 +401,8 @@ async function _runTransaction(
   nonce: number | null = null,
   retries?: number,
   retryScaler = 1.0,
-  replacing = false
+  replacing = false,
+  collidedNonce: number | null = null
 ): Promise<TransactionResponse> {
   const at = "TxUtil#_runTransaction";
   const { provider, signer } = contract;
@@ -419,6 +433,12 @@ async function _runTransaction(
           at,
           message: `Pending nonce backlog of ${backlog} on ${chain}; replacing at nonce ${nonce}.`,
         });
+      } else if (!replacing && nonce === collidedNonce) {
+        // A REPLACEMENT_UNDERPRICED rejection proved this nonce is occupied, so a re-selection
+        // that fails to advance means the provider's pending view is stale and appending is
+        // unavailable. Escalate at the nonce instead of looping on unscaled resubmission.
+        replacing = true;
+        logger.debug({ at, message: `Nonce ${nonce} on ${chain} re-selected after collision; replacing.` });
       }
     }
     const preGas = await getGasPrice(
@@ -434,7 +454,19 @@ async function _runTransaction(
     if ((chainId === CHAIN_IDs.LINEA && method === "fillRelay") || --retries < 0) {
       throw error;
     }
-    return await _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, 1.0, replacing);
+    return await _runTransaction(
+      logger,
+      contract,
+      method,
+      args,
+      value,
+      gasLimit,
+      nonce,
+      retries,
+      1.0,
+      replacing,
+      collidedNonce
+    );
   }
 
   const to = contract.address;
@@ -488,7 +520,10 @@ async function _runTransaction(
         } else {
           // A concurrent submitter sharing this signer took the nonce first. The incumbent isn't
           // known to be stuck, so re-select and queue behind it rather than bidding against it.
+          // Record the collision so a re-selection that fails to advance (stale pending view)
+          // escalates instead of repeating the same unscaled submission.
           message = `Nonce ${nonce} on ${chain} taken by an in-flight transaction, re-syncing (${cause}).`;
+          collidedNonce = nonce;
           nonce = null;
         }
         break;
@@ -556,7 +591,8 @@ async function _runTransaction(
       nonce,
       retries,
       retryScaler,
-      replacing
+      replacing,
+      collidedNonce
     );
   }
 }
