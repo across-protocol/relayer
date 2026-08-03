@@ -396,9 +396,7 @@ describe("buildRebalanceRoutes", function () {
   });
 
   it("builds direct Binance routes for a USDT-only Mainnet and Avalanche config", function () {
-    const config = buildStablecoinRebalancerConfig();
-    delete config.cumulativeTargetBalances.USDC;
-    const routes = buildRebalanceRoutes(config);
+    const routes = buildRebalanceRoutes(buildStablecoinRebalancerConfig([CHAIN_IDs.MAINNET, CHAIN_IDs.AVALANCHE], []));
 
     expect(routeExists(routes, CHAIN_IDs.MAINNET, "USDT", CHAIN_IDs.AVALANCHE, "USDT", "binance")).to.equal(true);
     expect(routeExists(routes, CHAIN_IDs.AVALANCHE, "USDT", CHAIN_IDs.MAINNET, "USDT", "binance")).to.equal(true);
@@ -407,8 +405,7 @@ describe("buildRebalanceRoutes", function () {
   });
 
   it("includes unconfigured entrypoint chains in bridge adapter support routes", function () {
-    const config = buildStablecoinRebalancerConfig([CHAIN_IDs.POLYGON], [CHAIN_IDs.BASE]);
-    const routes = buildRebalanceRoutes(config);
+    const routes = buildRebalanceRoutes(buildStablecoinRebalancerConfig([CHAIN_IDs.POLYGON], [CHAIN_IDs.BASE]));
     const overrideRoute: RebalanceRoute = {
       sourceChain: CHAIN_IDs.MAINNET,
       sourceToken: "USDC",
@@ -431,8 +428,7 @@ describe("buildRebalanceRoutes", function () {
   });
 
   it("does not add bridge entrypoints for direct-only Binance routes", function () {
-    const config = buildStablecoinRebalancerConfig([CHAIN_IDs.MAINNET, CHAIN_IDs.AVALANCHE], []);
-    const routes = buildRebalanceRoutes(config);
+    const routes = buildRebalanceRoutes(buildStablecoinRebalancerConfig([CHAIN_IDs.MAINNET, CHAIN_IDs.AVALANCHE], []));
     const bridgeSupportRoutes = buildBridgeSupportRoutes(routes);
 
     expect(bridgeSupportRoutes).to.deep.equal(routes);

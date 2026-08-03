@@ -109,17 +109,20 @@ function canUseHyperliquidStablecoinRoute({
   );
 }
 
-function buildSameAssetBridgeRoutes(token: StableToken, chains: readonly number[]): RebalanceRoute[] {
-  const bridgeChains = chains.filter((chainId) => BRIDGE_CHAINS_BY_SYMBOL[token].includes(chainId));
-  return bridgeChains.flatMap((sourceChain) =>
-    bridgeChains
+function buildSameAssetRouteMatrix(
+  token: StableToken,
+  chains: readonly number[],
+  adapter: "binance" | "cctp" | "oft"
+): RebalanceRoute[] {
+  return chains.flatMap((sourceChain) =>
+    chains
       .filter((destinationChain) => destinationChain !== sourceChain)
       .map((destinationChain) => ({
         sourceChain,
         sourceToken: token,
         destinationChain,
         destinationToken: token,
-        adapter: SAME_ASSET_BRIDGE_ADAPTER_BY_SYMBOL[token],
+        adapter,
       }))
   );
 }
@@ -129,38 +132,23 @@ function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: StableT
     return [];
   }
   const configuredChains = configuredChainsForToken(rebalancerConfig, token);
-  const directBinanceNetworks = new Set(BINANCE_NETWORKS_BY_SYMBOL[token]);
-  const routes = buildSameAssetBridgeRoutes(token, configuredChains);
-
-  for (const sourceChain of configuredChains) {
-    for (const destinationChain of configuredChains) {
-      if (sourceChain === destinationChain) {
-        continue;
-      }
-
-      if (directBinanceNetworks.has(sourceChain) && directBinanceNetworks.has(destinationChain)) {
-        routes.push({
-          sourceChain,
-          sourceToken: token,
-          destinationChain,
-          destinationToken: token,
-          adapter: "binance",
-        });
-      }
-    }
-  }
-
-  return routes;
+  const bridgeChains = configuredChains.filter((chainId) => BRIDGE_CHAINS_BY_SYMBOL[token].includes(chainId));
+  const binanceChains = configuredChains.filter((chainId) => BINANCE_NETWORKS_BY_SYMBOL[token].includes(chainId));
+  return [
+    ...buildSameAssetRouteMatrix(token, bridgeChains, SAME_ASSET_BRIDGE_ADAPTER_BY_SYMBOL[token]),
+    ...buildSameAssetRouteMatrix(token, binanceChains, "binance"),
+  ];
 }
 
 export function buildBridgeSupportRoutes(rebalanceRoutes: RebalanceRoute[]): RebalanceRoute[] {
   const routes = [...rebalanceRoutes];
-  const routeKeys = new Set(
-    routes.map(({ sourceChain, sourceToken, destinationChain, destinationToken, adapter }) =>
-      [sourceChain, sourceToken, destinationChain, destinationToken, adapter].join("|")
-    )
-  );
-  const addRoute = (token: StableToken, sourceChain: number, destinationChain: number): void => {
+  const routeKey = ({ sourceChain, sourceToken, destinationChain, destinationToken, adapter }: RebalanceRoute) =>
+    [sourceChain, sourceToken, destinationChain, destinationToken, adapter].join("|");
+  const routeKeys = new Set(routes.map(routeKey));
+  const addRoute = (token: string, sourceChain: number, destinationChain: number): void => {
+    if (token !== "USDT" && token !== "USDC") {
+      return;
+    }
     const route = {
       sourceChain,
       sourceToken: token,
@@ -168,39 +156,35 @@ export function buildBridgeSupportRoutes(rebalanceRoutes: RebalanceRoute[]): Reb
       destinationToken: token,
       adapter: SAME_ASSET_BRIDGE_ADAPTER_BY_SYMBOL[token],
     };
-    const key = [sourceChain, token, destinationChain, token, route.adapter].join("|");
+    const key = routeKey(route);
     if (!routeKeys.has(key)) {
       routes.push(route);
       routeKeys.add(key);
     }
   };
-  const addEndpointRoute = (token: string, sourceChain: number, destinationChain: number): void => {
-    if (token === "USDT" || token === "USDC") {
-      addRoute(token, sourceChain, destinationChain);
-    }
-  };
 
   for (const route of rebalanceRoutes) {
-    if (route.adapter === "binance") {
-      if (
-        (route.sourceToken === "USDT" || route.sourceToken === "USDC") &&
-        !BINANCE_NETWORKS_BY_SYMBOL[route.sourceToken].includes(route.sourceChain)
-      ) {
-        addEndpointRoute(route.sourceToken, route.sourceChain, CHAIN_IDs.ARBITRUM);
-      }
-      if (
-        (route.destinationToken === "USDT" || route.destinationToken === "USDC") &&
-        !BINANCE_NETWORKS_BY_SYMBOL[route.destinationToken].includes(route.destinationChain)
-      ) {
-        addEndpointRoute(route.destinationToken, CHAIN_IDs.ARBITRUM, route.destinationChain);
-      }
+    const entrypoint =
+      route.adapter === "binance"
+        ? CHAIN_IDs.ARBITRUM
+        : route.adapter === "hyperliquid"
+          ? CHAIN_IDs.HYPEREVM
+          : undefined;
+    if (entrypoint === undefined) {
+      continue;
     }
-    if (route.adapter === "hyperliquid") {
-      if (route.sourceChain !== CHAIN_IDs.HYPEREVM) {
-        addEndpointRoute(route.sourceToken, route.sourceChain, CHAIN_IDs.HYPEREVM);
-      }
-      if (route.destinationChain !== CHAIN_IDs.HYPEREVM) {
-        addEndpointRoute(route.destinationToken, CHAIN_IDs.HYPEREVM, route.destinationChain);
+    const endpoints = [
+      [route.sourceToken, route.sourceChain, entrypoint],
+      [route.destinationToken, entrypoint, route.destinationChain],
+    ] as const;
+    for (const [token, sourceChain, destinationChain] of endpoints) {
+      const endpointChain: number = sourceChain === entrypoint ? destinationChain : sourceChain;
+      const isDirectBinanceRoute =
+        route.adapter === "binance" &&
+        (token === "USDT" || token === "USDC") &&
+        BINANCE_NETWORKS_BY_SYMBOL[token].includes(endpointChain);
+      if (endpointChain !== entrypoint && !isDirectBinanceRoute) {
+        addRoute(token, sourceChain, destinationChain);
       }
     }
   }
