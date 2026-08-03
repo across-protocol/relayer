@@ -424,7 +424,11 @@ export class TransactionClient {
         nonceFloors[signerAddr] = nonce;
       }
 
-      chainNonceMap[signerAddr] = response.nonce;
+      // The cache records the signer's high-water mark, so it never moves backward: a lower
+      // response nonce (a head replacement here, or a late response from an interleaved
+      // concurrent submit()) does not reduce the highest nonce already submitted, and regressing
+      // the cache would point the next submission at an occupied nonce.
+      chainNonceMap[signerAddr] = Math.max(chainNonceMap[signerAddr] ?? response.nonce, response.nonce);
       const blockExplorer = blockExplorerLink(response.hash, txn.chainId);
       mrkdwn += `  ${idx + 1}. ${txn.message || "No message"} (${blockExplorer}): ${txn.mrkdwn || "No markdown"}\n`;
       txnResponses.push(response);
@@ -504,7 +508,7 @@ async function _runTransaction(
           message: `Pending nonce backlog of ${backlog} on ${chain}; replacing at nonce ${nonce}.`,
         });
       } else if (!replacing && nonce === collidedNonce) {
-        if (_hasLiveReservation(chainId, signerAddress, nonce)) {
+        if (await _isReservationProtected(chainId, signerAddress, nonce, provider)) {
           // The occupant at the proven-collided nonce is a reservation-protected replacement
           // from this process; escalating here would evict it. Hold append mode — the next
           // rejection re-syncs again, by which point the pending view should have advanced.
@@ -570,15 +574,22 @@ async function _runTransaction(
       : await contract[method](...args, txConfig);
     // A live replacement restarts the replaced-head gates from broadcast: selection-time gates
     // could otherwise age out during gas pricing and signing, letting a concurrent submission
-    // re-arm against a replacement that just went live. The block gate is re-baselined at the
-    // broadcast-time height for the same reason. This also registers rebroadcasts from the
-    // stalled-wait confirmation path, which replace a head without passing _selectNonce.
+    // re-arm against a replacement that just went live. This also registers rebroadcasts from
+    // the stalled-wait confirmation path, which replace a head without passing _selectNonce.
+    // The reservation is recorded synchronously (response.from needs no await) — a collision-flip
+    // replacement holds no provisional reservation, so protection must not wait on any RPC. The
+    // broadcast-time block baseline is then patched out-of-band: a slow block read must delay
+    // neither the protection nor this response, and an absent baseline only means the re-arm
+    // block gate defers to wall-clock expiry. A late patch of a since-pruned entry is inert
+    // (selections only consult the confirmed nonce, and re-pruning follows).
     if (replacing && isDefined(nonce)) {
-      const [address, broadcastBlock] = await Promise.all([
-        signer.getAddress(),
-        provider.getBlockNumber?.().catch(() => undefined),
-      ]);
-      _reserveReplacedHead(chainId, address, nonce, broadcastBlock);
+      const { from } = response;
+      const reservedNonce = nonce;
+      _reserveReplacedHead(chainId, from, reservedNonce);
+      void provider
+        .getBlockNumber?.()
+        .then((broadcastBlock: number) => _reserveReplacedHead(chainId, from, reservedNonce, broadcastBlock))
+        .catch(() => undefined);
     }
     return response;
   } catch (error) {
@@ -858,15 +869,34 @@ export function _reserveReplacedHead(chainId: number, address: string, nonce: nu
 }
 
 /**
- * Whether an unexpired replacement reservation is held for the given nonce.
+ * Whether a replacement reservation still protects the given nonce, applying the same criterion
+ * as deep-backlog re-arming: wall-clock expiry alone does not end protection unless the chain has
+ * also produced CONFIRMATION_BLOCKS that could have tested the replacement (when both block
+ * baselines are observable).
  * @param chainId Chain ID for transaction submission.
  * @param address Signer address.
  * @param nonce Nonce to look up.
- * @returns True when a live reservation exists.
+ * @param provider Provider for the block-progress probe (consulted only on wall-clock expiry).
+ * @returns True while the reservation protects the nonce.
  */
-function _hasLiveReservation(chainId: number, address: string, nonce: number): boolean {
+async function _isReservationProtected(
+  chainId: number,
+  address: string,
+  nonce: number,
+  provider: Provider
+): Promise<boolean> {
   const entry = replacedHeads[`${chainId}:${address}`]?.[nonce];
-  return isDefined(entry) && Date.now() < entry.expiresAt;
+  if (!isDefined(entry)) {
+    return false;
+  }
+  if (Date.now() < entry.expiresAt) {
+    return true;
+  }
+  if (!isDefined(entry.blockNumber)) {
+    return false; // Block progress unobservable; wall-clock expiry governs.
+  }
+  const blockNumber = await provider.getBlockNumber?.().catch(() => undefined);
+  return isDefined(blockNumber) && blockNumber < entry.blockNumber + CONFIRMATION_BLOCKS;
 }
 
 /**

@@ -879,6 +879,29 @@ describe("TransactionClient", function () {
       expect(txnResponses.map(({ nonce }) => nonce)).to.deep.equal([10, 21]);
     });
 
+    it("Never moves the shared nonce cache backward", async function () {
+      const chainId = chainIds[0];
+      const signerAddr = await signer.getAddress();
+
+      class BackslideClient extends MockedTransactionClient {
+        protected override _getTransactionPromise(
+          txn: AugmentedTransaction,
+          _nonce: number | null
+        ): Promise<TransactionResponse> {
+          // A late or internally re-synced response lands behind the requested nonce.
+          return super._getTransactionPromise(txn, 10);
+        }
+      }
+
+      const client = new BackslideClient(spyLogger);
+      client.noncesBySigner[chainId] = { [signerAddr]: 12 };
+      await client.submit(chainId, [makeTxn(chainId, 10, 13)]);
+
+      // The response (10) is behind the high-water mark (12): the cache must not regress, or a
+      // later submission would increment from it onto an occupied nonce (11).
+      expect(client.noncesBySigner[chainId][signerAddr]).to.equal(12);
+    });
+
     it("Sanitizes an invalid backlog threshold override", async function () {
       const chainId = chainIds[0];
       process.env.NONCE_BACKLOG_REPLACE_THRESHOLD = "four";
