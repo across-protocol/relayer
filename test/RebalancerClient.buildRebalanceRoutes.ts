@@ -2,6 +2,7 @@ import { expect } from "./utils";
 import { CHAIN_IDs } from "../src/utils";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { buildBridgeSupportRoutes, buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
+import type { RebalanceRoute } from "../src/rebalancer/utils/interfaces";
 import {
   buildSameAssetRebalanceRoutes,
   SAME_ASSET_REBALANCE_ROUTE_SUPPORT,
@@ -408,7 +409,14 @@ describe("buildRebalanceRoutes", function () {
   it("includes unconfigured entrypoint chains in bridge adapter support routes", function () {
     const config = buildStablecoinRebalancerConfig([CHAIN_IDs.POLYGON], [CHAIN_IDs.BASE]);
     const routes = buildRebalanceRoutes(config);
-    const bridgeSupportRoutes = buildBridgeSupportRoutes(config);
+    const overrideRoute: RebalanceRoute = {
+      sourceChain: CHAIN_IDs.MAINNET,
+      sourceToken: "USDC",
+      destinationChain: CHAIN_IDs.BASE,
+      destinationToken: "USDC",
+      adapter: "cctp",
+    };
+    const bridgeSupportRoutes = buildBridgeSupportRoutes(config, [overrideRoute]);
 
     expect(routeExists(routes, CHAIN_IDs.POLYGON, "USDT", CHAIN_IDs.BASE, "USDC", "binance")).to.equal(true);
     expect(routeExists(routes, CHAIN_IDs.POLYGON, "USDT", CHAIN_IDs.BASE, "USDC", "hyperliquid")).to.equal(true);
@@ -420,6 +428,7 @@ describe("buildRebalanceRoutes", function () {
     );
     expect(routeExists(bridgeSupportRoutes, CHAIN_IDs.ARBITRUM, "USDC", CHAIN_IDs.BASE, "USDC", "cctp")).to.equal(true);
     expect(routeExists(bridgeSupportRoutes, CHAIN_IDs.HYPEREVM, "USDC", CHAIN_IDs.BASE, "USDC", "cctp")).to.equal(true);
+    expect(bridgeSupportRoutes).to.include(overrideRoute);
   });
 
   it("covers every configured cross-chain USDT<->USDC route with Binance", function () {

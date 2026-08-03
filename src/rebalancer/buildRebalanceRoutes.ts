@@ -155,8 +155,11 @@ function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: StableT
   return routes;
 }
 
-export function buildBridgeSupportRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
-  return (["USDT", "USDC"] as const).flatMap((token) => {
+export function buildBridgeSupportRoutes(
+  rebalancerConfig: RebalancerConfig,
+  rebalanceRoutes: RebalanceRoute[] = []
+): RebalanceRoute[] {
+  const requiredRoutes = (["USDT", "USDC"] as const).flatMap((token) => {
     const configuredBridgeChains = configuredChainsForToken(rebalancerConfig, token).filter((chainId) =>
       BRIDGE_CHAINS_BY_SYMBOL[token].includes(chainId)
     );
@@ -168,6 +171,7 @@ export function buildBridgeSupportRoutes(rebalancerConfig: RebalancerConfig): Re
       Array.from(new Set([...configuredBridgeChains, ...REQUIRED_BRIDGE_ENTRYPOINT_CHAINS]))
     );
   });
+  return [...rebalanceRoutes, ...requiredRoutes];
 }
 
 type DifferentAssetPairRule = {
