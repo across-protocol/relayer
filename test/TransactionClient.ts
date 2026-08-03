@@ -508,5 +508,29 @@ describe("TransactionClient", function () {
       const [txnResponse] = await txnClient.submit(chainId, [makeTxn(chainId, 10, 15)]);
       expect(txnResponse.nonce).to.equal(10);
     });
+
+    it("Appends behind the backlog tail after replacing its head", async function () {
+      // Isolate the replaced-head marker: this test must not share (chainId, signer) with others.
+      const chainId = chainIds[2];
+      txnClient.noncesBySigner[chainId] = { [await signer.getAddress()]: 12 };
+
+      // The first transaction replaces the stuck head at nonce 10, resetting the nonce cache to
+      // the head. Nonces 11-14 are still occupied by the in-flight backlog, so the second
+      // transaction must append at the observed tail (15) — not head + 1, which would evict a
+      // queued transaction given a sufficiently higher fee quote.
+      const txns = [makeTxn(chainId, 10, 15), makeTxn(chainId, 10, 15)];
+      const txnResponses = await txnClient.submit(chainId, txns);
+      expect(txnResponses.map(({ nonce }) => nonce)).to.deep.equal([10, 15]);
+    });
+
+    it("Reconciles the second submission when the first started cold", async function () {
+      const chainId = chainIds[0];
+      // No cached nonce: the first transaction selects inside _runTransaction (mocked here to
+      // nonce 1), which must not mark the signer reconciled. The second transaction then
+      // reconciles its warm cache (2) against the pending count (5) and appends behind it.
+      const txns = [makeTxn(chainId, 2, 5), makeTxn(chainId, 2, 5)];
+      const txnResponses = await txnClient.submit(chainId, txns);
+      expect(txnResponses.map(({ nonce }) => nonce)).to.deep.equal([1, 5]);
+    });
   });
 });

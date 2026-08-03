@@ -292,6 +292,7 @@ export class TransactionClient {
     // advanced nonce management may permit them to be submitted in parallel.
     let mrkdwn = "";
     const reconciledSigners = new Set<string>();
+    const nonceFloors: { [signerAddr: string]: number } = {};
     for (let idx = 0; idx < txns.length; ++idx) {
       let txn = txns[idx];
 
@@ -311,14 +312,27 @@ export class TransactionClient {
       let nonce = isDefined(chainNonceMap[signerAddr]) ? chainNonceMap[signerAddr] + 1 : undefined;
       let replacing = false;
 
+      // A prior transaction in this batch replaced the head of a deep backlog, resetting the
+      // nonce cache to the head while the remainder of the backlog is still in flight. Later
+      // transactions must append behind that tail — incrementing from the head would target
+      // occupied nonces and, with a sufficiently higher fee quote, silently evict them.
+      const floor = nonceFloors[signerAddr];
+      if (isDefined(nonce) && isDefined(floor)) {
+        nonce = Math.max(nonce, floor);
+      }
+
       // The nonce cache is blind to nonces occupied by concurrent submitters sharing this signer
       // (e.g. another bot instance) since the previous submission, so reconcile it against the
-      // network once per signer per batch. An append-mode selection takes effect only when it
-      // leads the cache: pending counts can lag this client's own recent submissions, and
-      // deferring to a lagging count would replace them. A deep-backlog replacement selection is
-      // adopted as-is — otherwise a warm cache would append behind a stuck head indefinitely. The
-      // pending-unsupported fallback (backlog undefined) never overrides a cache that leads, since
-      // the cache is the only view of in-flight transactions on such providers.
+      // network on the first warm-cache submission per signer per batch. (A cold cache is
+      // reconciled inside _runTransaction itself, so the signer is deliberately left unmarked
+      // there: if that selection replaced a deep-backlog head, the next submission's
+      // reconciliation appends behind the tail via the replace-once marker.) An append-mode
+      // selection takes effect only when it leads the cache: pending counts can lag this
+      // client's own recent submissions, and deferring to a lagging count would replace them.
+      // A deep-backlog replacement selection is adopted as-is — otherwise a warm cache would
+      // append behind a stuck head indefinitely. The pending-unsupported fallback (backlog
+      // undefined) never overrides a cache that leads, since the cache is the only view of
+      // in-flight transactions on such providers.
       if (isDefined(nonce) && !reconciledSigners.has(signerAddr) && !chainIsTvm(chainId)) {
         const { nonceBacklogReplaceThreshold } = _readTransactionConfig(chainId);
         const selected = await _selectNonce(chainId, txn.contract.provider, signerAddr, nonceBacklogReplaceThreshold)
@@ -327,12 +341,15 @@ export class TransactionClient {
         if (isDefined(selected)) {
           if (selected.replacing && isDefined(selected.backlog)) {
             ({ nonce, replacing } = selected);
+            // The backlog behind the replaced head remains in flight; subsequent batch
+            // transactions must land beyond its observed tail.
+            nonceFloors[signerAddr] = selected.nonce + selected.backlog;
           } else {
             nonce = Math.max(nonce, selected.nonce);
           }
         }
+        reconciledSigners.add(signerAddr);
       }
-      reconciledSigners.add(signerAddr);
 
       // @dev It's assumed that nobody ever wants to discount the gasLimit.
       const gasLimitMultiplier = txn.gasLimitMultiplier ?? this.DEFAULT_GAS_LIMIT_MULTIPLIER;
