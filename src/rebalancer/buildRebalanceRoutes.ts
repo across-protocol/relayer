@@ -83,6 +83,8 @@ const BRIDGE_CHAINS_BY_SYMBOL: Record<StableToken, readonly number[]> = {
   ],
 };
 
+const REQUIRED_BRIDGE_ENTRYPOINT_CHAINS = [CHAIN_IDs.ARBITRUM, CHAIN_IDs.HYPEREVM] as const;
+
 function configuredChainsForToken(rebalancerConfig: RebalancerConfig, token: SupportedToken): number[] {
   const configuredChains = new Set(
     Object.keys(rebalancerConfig.cumulativeTargetBalances[token]?.chains ?? {}).map(Number)
@@ -109,9 +111,18 @@ function canUseHyperliquidStablecoinRoute({
   );
 }
 
-function canUseSameAssetBridgeRoute(token: StableToken, sourceChain: number, destinationChain: number): boolean {
-  return (
-    BRIDGE_CHAINS_BY_SYMBOL[token].includes(sourceChain) && BRIDGE_CHAINS_BY_SYMBOL[token].includes(destinationChain)
+function buildSameAssetBridgeRoutes(token: StableToken, chains: readonly number[]): RebalanceRoute[] {
+  const bridgeChains = chains.filter((chainId) => BRIDGE_CHAINS_BY_SYMBOL[token].includes(chainId));
+  return bridgeChains.flatMap((sourceChain) =>
+    bridgeChains
+      .filter((destinationChain) => destinationChain !== sourceChain)
+      .map((destinationChain) => ({
+        sourceChain,
+        sourceToken: token,
+        destinationChain,
+        destinationToken: token,
+        adapter: SAME_ASSET_BRIDGE_ADAPTER_BY_SYMBOL[token],
+      }))
   );
 }
 
@@ -119,24 +130,14 @@ function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: StableT
   if (!rebalancerConfig.cumulativeTargetBalances[token]?.targetBalance) {
     return [];
   }
-  const routes: RebalanceRoute[] = [];
   const configuredChains = configuredChainsForToken(rebalancerConfig, token);
   const directBinanceNetworks = new Set(BINANCE_NETWORKS_BY_SYMBOL[token]);
+  const routes = buildSameAssetBridgeRoutes(token, configuredChains);
 
   for (const sourceChain of configuredChains) {
     for (const destinationChain of configuredChains) {
       if (sourceChain === destinationChain) {
         continue;
-      }
-
-      if (canUseSameAssetBridgeRoute(token, sourceChain, destinationChain)) {
-        routes.push({
-          sourceChain,
-          sourceToken: token,
-          destinationChain,
-          destinationToken: token,
-          adapter: SAME_ASSET_BRIDGE_ADAPTER_BY_SYMBOL[token],
-        });
       }
 
       if (directBinanceNetworks.has(sourceChain) && directBinanceNetworks.has(destinationChain)) {
@@ -152,6 +153,21 @@ function buildSameAssetRoutes(rebalancerConfig: RebalancerConfig, token: StableT
   }
 
   return routes;
+}
+
+export function buildBridgeSupportRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
+  return (["USDT", "USDC"] as const).flatMap((token) => {
+    const configuredBridgeChains = configuredChainsForToken(rebalancerConfig, token).filter((chainId) =>
+      BRIDGE_CHAINS_BY_SYMBOL[token].includes(chainId)
+    );
+    if (configuredBridgeChains.length === 0) {
+      return [];
+    }
+    return buildSameAssetBridgeRoutes(
+      token,
+      Array.from(new Set([...configuredBridgeChains, ...REQUIRED_BRIDGE_ENTRYPOINT_CHAINS]))
+    );
+  });
 }
 
 type DifferentAssetPairRule = {

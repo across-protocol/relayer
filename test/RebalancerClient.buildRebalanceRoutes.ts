@@ -1,7 +1,7 @@
 import { expect } from "./utils";
 import { CHAIN_IDs } from "../src/utils";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
-import { buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
+import { buildBridgeSupportRoutes, buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
 import {
   buildSameAssetRebalanceRoutes,
   SAME_ASSET_REBALANCE_ROUTE_SUPPORT,
@@ -174,7 +174,10 @@ const HYPERLIQUID_USDT_CHAINS = FULL_MATRIX_USDT_CHAINS.filter(
 );
 const HYPERLIQUID_USDC_CHAINS = FULL_MATRIX_USDC_CHAINS.filter((chainId) => chainId !== CHAIN_IDs.BSC);
 
-function buildFullMatrixRebalancerConfig(): RebalancerConfig {
+function buildStablecoinRebalancerConfig(
+  usdtChains: readonly number[] = FULL_MATRIX_USDT_CHAINS,
+  usdcChains: readonly number[] = FULL_MATRIX_USDC_CHAINS
+): RebalancerConfig {
   const chains = (chainIds: readonly number[]) => Object.fromEntries(chainIds.map((chainId) => [chainId, 0]));
   return new RebalancerConfig({
     HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
@@ -184,13 +187,13 @@ function buildFullMatrixRebalancerConfig(): RebalancerConfig {
           targetBalance: "1000",
           thresholdBalance: "500",
           priorityTier: 0,
-          chains: chains(FULL_MATRIX_USDT_CHAINS),
+          chains: chains(usdtChains),
         },
         USDC: {
           targetBalance: "1000",
           thresholdBalance: "500",
           priorityTier: 0,
-          chains: chains(FULL_MATRIX_USDC_CHAINS),
+          chains: chains(usdcChains),
         },
       },
       maxAmountsToTransfer: {
@@ -392,7 +395,7 @@ describe("buildRebalanceRoutes", function () {
   });
 
   it("builds direct Binance routes for a USDT-only Mainnet and Avalanche config", function () {
-    const config = buildFullMatrixRebalancerConfig();
+    const config = buildStablecoinRebalancerConfig();
     delete config.cumulativeTargetBalances.USDC;
     const routes = buildRebalanceRoutes(config);
 
@@ -402,8 +405,25 @@ describe("buildRebalanceRoutes", function () {
     expect(routeExists(routes, CHAIN_IDs.AVALANCHE, "USDT", CHAIN_IDs.MAINNET, "USDT", "oft")).to.equal(false);
   });
 
+  it("includes unconfigured entrypoint chains in bridge adapter support routes", function () {
+    const config = buildStablecoinRebalancerConfig([CHAIN_IDs.POLYGON], [CHAIN_IDs.BASE]);
+    const routes = buildRebalanceRoutes(config);
+    const bridgeSupportRoutes = buildBridgeSupportRoutes(config);
+
+    expect(routeExists(routes, CHAIN_IDs.POLYGON, "USDT", CHAIN_IDs.BASE, "USDC", "binance")).to.equal(true);
+    expect(routeExists(routes, CHAIN_IDs.POLYGON, "USDT", CHAIN_IDs.BASE, "USDC", "hyperliquid")).to.equal(true);
+    expect(routeExists(bridgeSupportRoutes, CHAIN_IDs.POLYGON, "USDT", CHAIN_IDs.ARBITRUM, "USDT", "oft")).to.equal(
+      true
+    );
+    expect(routeExists(bridgeSupportRoutes, CHAIN_IDs.POLYGON, "USDT", CHAIN_IDs.HYPEREVM, "USDT", "oft")).to.equal(
+      true
+    );
+    expect(routeExists(bridgeSupportRoutes, CHAIN_IDs.ARBITRUM, "USDC", CHAIN_IDs.BASE, "USDC", "cctp")).to.equal(true);
+    expect(routeExists(bridgeSupportRoutes, CHAIN_IDs.HYPEREVM, "USDC", CHAIN_IDs.BASE, "USDC", "cctp")).to.equal(true);
+  });
+
   it("covers every configured cross-chain USDT<->USDC route with Binance", function () {
-    const routes = buildRebalanceRoutes(buildFullMatrixRebalancerConfig());
+    const routes = buildRebalanceRoutes(buildStablecoinRebalancerConfig());
     const matrixRoutes = [
       ...FULL_MATRIX_USDT_CHAINS.flatMap((sourceChain) =>
         FULL_MATRIX_USDC_CHAINS.filter((destinationChain) => destinationChain !== sourceChain).map(
@@ -427,7 +447,7 @@ describe("buildRebalanceRoutes", function () {
   });
 
   it("only builds Hyperliquid routes whose token endpoints can bridge through HyperEVM", function () {
-    const routes = buildRebalanceRoutes(buildFullMatrixRebalancerConfig());
+    const routes = buildRebalanceRoutes(buildStablecoinRebalancerConfig());
     const hyperliquidRoutes = routes.filter(
       ({ sourceChain, sourceToken, destinationChain, destinationToken, adapter }) =>
         adapter === "hyperliquid" &&
@@ -454,7 +474,7 @@ describe("buildRebalanceRoutes", function () {
   });
 
   it("does not advertise unsupported same-asset bridge endpoints", function () {
-    const routes = buildRebalanceRoutes(buildFullMatrixRebalancerConfig());
+    const routes = buildRebalanceRoutes(buildStablecoinRebalancerConfig());
 
     for (const unsupportedUsdtChain of [CHAIN_IDs.AVALANCHE, CHAIN_IDs.BSC, CHAIN_IDs.TRON]) {
       expect(routeExists(routes, unsupportedUsdtChain, "USDT", CHAIN_IDs.MEGAETH, "USDT", "oft")).to.equal(false);
