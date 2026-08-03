@@ -426,11 +426,25 @@ describe("TransactionClient", function () {
     });
 
     it("Falls back to replacement mode when the pending tag is unsupported", async function () {
+      // A chain with no recorded pending-tag success (support state is per-chain, module-wide).
+      const untestedChainId = 660_001;
       // The backlog is unknowable, so an occupied confirmed nonce must escalate fees at the same
       // nonce (replacement mode) rather than futilely re-selecting the same nonce.
-      const { nonce, replacing } = await _selectNonce(chainId, makeProvider(10), signerAddr, backlogThreshold);
+      const { nonce, replacing } = await _selectNonce(untestedChainId, makeProvider(10), signerAddr, backlogThreshold);
       expect(nonce).to.equal(10);
       expect(replacing).to.be.true;
+    });
+
+    it("Propagates a transient pending-count failure once support is established", async function () {
+      const provider = makeProvider(10, 12);
+      await _selectNonce(chainId, provider, signerAddr, backlogThreshold); // Establishes support.
+
+      // A later pending failure on the same chain is transient, not an unsupported tag: it must
+      // propagate for the caller's bounded retry or warm-cache fallback, not misread a healthy
+      // in-flight transaction at the confirmed nonce as a replacement target.
+      let thrown: Error | undefined;
+      await _selectNonce(chainId, makeProvider(10), signerAddr, backlogThreshold).catch((error) => (thrown = error));
+      expect(thrown?.message).to.equal("pending tag unsupported");
     });
 
     it("Clamps an inconsistent pending count", async function () {
@@ -463,19 +477,22 @@ describe("TransactionClient", function () {
       expect(selected.replacing).to.be.true;
     });
 
-    it("Releases the replaced-head reservation on request", async function () {
+    it("Releases the replaced-head reservation only to its owner", async function () {
       const provider = makeProvider(10, 14);
       let selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
       expect(selected.replacing).to.be.true;
+      const { reservationId } = selected;
+      expect(isDefined(reservationId)).to.be.true;
 
-      // A release at the wrong nonce must not disturb the live reservation.
-      _clearReplacedHead(chainId, signerAddr, 9);
+      // A release with the wrong nonce or a non-owner id must not disturb the live reservation.
+      _clearReplacedHead(chainId, signerAddr, 9, reservationId as number);
+      _clearReplacedHead(chainId, signerAddr, 10, (reservationId as number) + 1);
       selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
       expect(selected.nonce).to.equal(14);
       expect(selected.replacing).to.be.false;
 
-      // Releasing the recorded head re-admits replacement (the failed attempt never broadcast).
-      _clearReplacedHead(chainId, signerAddr, 10);
+      // The owning attempt releases it (its replacement never broadcast), re-admitting replacement.
+      _clearReplacedHead(chainId, signerAddr, 10, reservationId as number);
       selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
       expect(selected.nonce).to.equal(10);
       expect(selected.replacing).to.be.true;
@@ -660,7 +677,9 @@ describe("TransactionClient", function () {
     });
 
     it("Keeps replacement mode for a leading cache when the pending tag is unsupported", async function () {
-      const chainId = chainIds[0];
+      // A chain with no recorded pending-tag success, so the rejection reads as unsupported
+      // rather than transient (support state is per-chain, module-wide).
+      const chainId = 987_654_301;
 
       class CapturingClient extends MockedTransactionClient {
         public lastReplacing: boolean | undefined;
