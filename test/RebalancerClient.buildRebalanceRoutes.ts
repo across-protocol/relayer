@@ -391,6 +391,17 @@ describe("buildRebalanceRoutes", function () {
     expect(hasRoute(CHAIN_IDs.OPTIMISM, "USDT", CHAIN_IDs.TRON, "USDT", "oft")).to.equal(false);
   });
 
+  it("builds direct Binance routes for a USDT-only Mainnet and Avalanche config", function () {
+    const config = buildFullMatrixRebalancerConfig();
+    delete config.cumulativeTargetBalances.USDC;
+    const routes = buildRebalanceRoutes(config);
+
+    expect(routeExists(routes, CHAIN_IDs.MAINNET, "USDT", CHAIN_IDs.AVALANCHE, "USDT", "binance")).to.equal(true);
+    expect(routeExists(routes, CHAIN_IDs.AVALANCHE, "USDT", CHAIN_IDs.MAINNET, "USDT", "binance")).to.equal(true);
+    expect(routeExists(routes, CHAIN_IDs.MAINNET, "USDT", CHAIN_IDs.AVALANCHE, "USDT", "oft")).to.equal(false);
+    expect(routeExists(routes, CHAIN_IDs.AVALANCHE, "USDT", CHAIN_IDs.MAINNET, "USDT", "oft")).to.equal(false);
+  });
+
   it("covers every configured cross-chain USDT<->USDC route with Binance", function () {
     const routes = buildRebalanceRoutes(buildFullMatrixRebalancerConfig());
     const matrixRoutes = [

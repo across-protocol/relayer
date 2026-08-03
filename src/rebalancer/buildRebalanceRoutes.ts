@@ -10,7 +10,7 @@ type DifferentAssetAdapter = "binance" | "hyperliquid";
 // set so we can track venue support without automatically enabling every listed network operationally.
 const BINANCE_NETWORKS_BY_SYMBOL: Record<StableToken, readonly number[]> = {
   USDC: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BASE, CHAIN_IDs.BSC],
-  USDT: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BSC, CHAIN_IDs.TRON],
+  USDT: [CHAIN_IDs.ARBITRUM, CHAIN_IDs.AVALANCHE, CHAIN_IDs.OPTIMISM, CHAIN_IDs.MAINNET, CHAIN_IDs.BSC, CHAIN_IDs.TRON],
 };
 
 const REBALANCE_CHAINS_BY_SYMBOL: Record<SupportedToken, readonly number[]> = {
