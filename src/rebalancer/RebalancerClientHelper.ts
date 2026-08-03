@@ -69,7 +69,7 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
 ): Promise<T> {
   const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
   const rebalanceRoutes = getRebalanceRoutes(rebalancerConfig);
-  const bridgeSupportRoutes = buildBridgeSupportRoutes(rebalancerConfig, rebalanceRoutes);
+  const bridgeSupportRoutes = buildBridgeSupportRoutes(rebalanceRoutes);
   const rebalancerClient = new Client(logger, rebalancerConfig, adapters, baseSigner, isReadonly);
 
   await Promise.all(

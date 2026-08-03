@@ -39,10 +39,10 @@ The current stablecoin endpoint catalogs are:
 - `USDC`: Mainnet, Optimism, Unichain, Polygon, Monad, World Chain, HyperEVM, Base, Arbitrum, Avalanche, Ink, Linea, and BSC.
 
 Only chains configured under `cumulativeTargetBalances[token].chains` are selected from these catalogs for that token.
-Adapter initialization separately builds CCTP/OFT support routes for configured bridge-capable endpoints and the
-required Arbitrum and HyperEVM entrypoints. Those internal routes let Binance and Hyperliquid use intermediate bridge
-legs even when an entrypoint is not itself a balance target; cumulative-mode route selection still requires both
-operational endpoints to be configured for their tokens.
+Adapter initialization separately adds the CCTP/OFT support routes required by the selected operational routes:
+Arbitrum legs for non-direct Binance endpoints and HyperEVM legs for Hyperliquid endpoints outside HyperEVM. These
+internal routes do not make an entrypoint a balance target, and direct-only routes do not initialize unused bridge
+entrypoints.
 
 Operational note:
 
