@@ -588,7 +588,7 @@ async function _runTransaction(
       _reserveReplacedHead(chainId, from, reservedNonce);
       void provider
         .getBlockNumber?.()
-        .then((broadcastBlock: number) => _reserveReplacedHead(chainId, from, reservedNonce, broadcastBlock))
+        .then((broadcastBlock: number) => _patchReservationBaseline(chainId, from, reservedNonce, broadcastBlock))
         .catch(() => undefined);
     }
     return response;
@@ -869,6 +869,23 @@ export function _reserveReplacedHead(chainId: number, address: string, nonce: nu
 }
 
 /**
+ * Update the block baseline of a still-current reservation without touching its expiry or owner
+ * id. Used for the out-of-band broadcast-height patch: re-reserving there would restart the
+ * expiry from callback time (extending protection beyond the broadcast-based window) and could
+ * resurrect an entry pruned while the block read was in flight.
+ * @param chainId Chain ID for transaction submission.
+ * @param address Signer address.
+ * @param nonce Nonce of the reservation to patch.
+ * @param blockNumber Baseline candidate; the later of old and new is retained.
+ */
+function _patchReservationBaseline(chainId: number, address: string, nonce: number, blockNumber: number): void {
+  const entry = replacedHeads[`${chainId}:${address}`]?.[nonce];
+  if (isDefined(entry)) {
+    entry.blockNumber = isDefined(entry.blockNumber) ? Math.max(entry.blockNumber, blockNumber) : blockNumber;
+  }
+}
+
+/**
  * Whether a replacement reservation still protects the given nonce, applying the same criterion
  * as deep-backlog re-arming: wall-clock expiry alone does not end protection unless the chain has
  * also produced CONFIRMATION_BLOCKS that could have tested the replacement (when both block
@@ -896,6 +913,13 @@ async function _isReservationProtected(
     return false; // Block progress unobservable; wall-clock expiry governs.
   }
   const blockNumber = await provider.getBlockNumber?.().catch(() => undefined);
+  // Re-validate after the await (mirroring the deep-backlog re-arm path): a concurrent
+  // broadcast may have refreshed the reservation in the interim, and its fresh protection
+  // must not be judged by the pre-await entry.
+  const current = replacedHeads[`${chainId}:${address}`]?.[nonce];
+  if (isDefined(current) && (current.id !== entry.id || Date.now() < current.expiresAt)) {
+    return true;
+  }
   return isDefined(blockNumber) && blockNumber < entry.blockNumber + CONFIRMATION_BLOCKS;
 }
 
