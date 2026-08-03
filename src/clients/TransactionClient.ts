@@ -272,7 +272,7 @@ export class TransactionClient {
               // provisional replaced-head reservation: a concurrent deep-backlog selection must
               // append behind it rather than target the same head. The probed block height is the
               // baseline; broadcast success refreshes the gates.
-              _reserveReplacedHead(chainId, txnResponse.from, txnResponse.nonce, blockNumber);
+              _reserveReplacedHead(chainId, txnResponse.from, txnResponse.nonce, blockNumber, minedNonce);
               return this._submit(txn, { nonce: txnResponse.nonce, maxTries: maxTries - 1, replacing: true });
             }
             default:
@@ -376,8 +376,10 @@ export class TransactionClient {
           } else {
             nonce = Math.max(nonce, selected.nonce);
           }
+          // Marked only on success: a transiently-failed reconciliation is re-attempted by the
+          // next submission for this signer rather than silently skipped for the batch.
+          reconciledSigners.add(signerAddr);
         }
-        reconciledSigners.add(signerAddr);
       }
 
       // @dev It's assumed that nobody ever wants to discount the gasLimit.
@@ -413,10 +415,13 @@ export class TransactionClient {
       // _runTransaction and replaced a backlog head (a forward re-sync just appended at the
       // tail). The cache now points at the head while the backlog remains in flight, so re-open
       // reconciliation: the next submission re-selects, and the replace-once marker steers it
-      // behind the tail rather than incrementing from the head into occupied nonces.
+      // behind the tail rather than incrementing from the head into occupied nonces. The
+      // requested nonce was a gap-safe append target when selected (cache high-water mark or an
+      // observed pending count), so it also floors the rest of the batch — protection that holds
+      // even if the next entry's re-reconciliation fails transiently.
       if (isDefined(nonce) && response.nonce < nonce) {
         reconciledSigners.delete(signerAddr);
-        delete nonceFloors[signerAddr];
+        nonceFloors[signerAddr] = nonce;
       }
 
       chainNonceMap[signerAddr] = response.nonce;
@@ -554,10 +559,15 @@ async function _runTransaction(
       : await contract[method](...args, txConfig);
     // A live replacement restarts the replaced-head gates from broadcast: selection-time gates
     // could otherwise age out during gas pricing and signing, letting a concurrent submission
-    // re-arm against a replacement that just went live. This also registers rebroadcasts from
-    // the stalled-wait confirmation path, which replace a head without passing _selectNonce.
+    // re-arm against a replacement that just went live. The block gate is re-baselined at the
+    // broadcast-time height for the same reason. This also registers rebroadcasts from the
+    // stalled-wait confirmation path, which replace a head without passing _selectNonce.
     if (replacing && isDefined(nonce)) {
-      _reserveReplacedHead(chainId, await signer.getAddress(), nonce);
+      const [address, broadcastBlock] = await Promise.all([
+        signer.getAddress(),
+        provider.getBlockNumber?.().catch(() => undefined),
+      ]);
+      _reserveReplacedHead(chainId, address, nonce, broadcastBlock);
     }
     return response;
   } catch (error) {
@@ -800,19 +810,41 @@ const pendingTagSupported = new Set<number>();
  * @param nonce Nonce of the (re)broadcast replacement.
  * @param blockNumber Optional block baseline; a same-nonce refresh retains the existing one.
  */
-export function _reserveReplacedHead(chainId: number, address: string, nonce: number, blockNumber?: number): void {
+export function _reserveReplacedHead(
+  chainId: number,
+  address: string,
+  nonce: number,
+  blockNumber?: number,
+  confirmedCount?: number
+): void {
   const key = `${chainId}:${address}`;
   const prior = replacedHeads[key];
+
+  // Never clobber a live reservation held for a different, still-relevant nonce (e.g. a
+  // deep-backlog head) with an incidental rebroadcast elsewhere in the queue — but a reservation
+  // for an already-consumed nonce (below the observed confirmed count) protects nothing and must
+  // not block reserving the current head.
   if (isDefined(prior) && prior.nonce !== nonce && Date.now() < prior.expiresAt) {
-    return;
+    const priorConsumed = isDefined(confirmedCount) && prior.nonce < confirmedCount;
+    if (!priorConsumed) {
+      return;
+    }
+  }
+
+  // On a same-nonce refresh, retain the later of the prior and supplied block baselines. The id
+  // is always fresh: this call marks a (re)broadcast reaching the provider, so any outstanding
+  // pre-broadcast release token for this nonce (e.g. from an aged-out attempt) must lose the
+  // ability to release protection for the now-live transaction.
+  let baseline = blockNumber;
+  if (prior?.nonce === nonce && isDefined(prior.blockNumber)) {
+    baseline = isDefined(baseline) ? Math.max(baseline, prior.blockNumber) : prior.blockNumber;
   }
   const confirmationWindow = CONFIRMATION_TIMEOUTS_MS[chainId] ?? CONFIRMATION_TIMEOUT_MS_DEFAULT;
-  const refresh = prior?.nonce === nonce;
   replacedHeads[key] = {
     nonce,
     expiresAt: Date.now() + CONFIRMATION_BLOCKS * confirmationWindow,
-    blockNumber: blockNumber ?? (refresh ? prior.blockNumber : undefined),
-    id: refresh ? prior.id : nextReservationId++,
+    blockNumber: baseline,
+    id: nextReservationId++,
   };
 }
 
@@ -858,14 +890,23 @@ export async function _selectNonce(
   // that the marker logic below runs synchronously: an await between reading and writing
   // replacedHeads would let concurrent selections in this process both enter replacement mode,
   // with the second evicting the first's replacement.
-  const [confirmed, pendingResult, blockNumber] = await Promise.all([
-    provider.getTransactionCount(address, "latest"),
+  const observePending = (): Promise<{ count: number } | { error: unknown }> =>
     provider.getTransactionCount(address, "pending").then(
       (count) => ({ count }),
       (error) => ({ error })
-    ),
+    );
+
+  const [confirmed, firstPending, blockNumber] = await Promise.all([
+    provider.getTransactionCount(address, "latest"),
+    observePending(),
     provider.getBlockNumber?.().catch(() => undefined),
   ]);
+
+  // Support can only be learned from a success, so a transient failure on the first observation
+  // for a chain (fresh process — bots are stateless between runs) would otherwise be misread as
+  // an unsupported tag. Retry once before classifying.
+  const pendingResult =
+    "count" in firstPending || pendingTagSupported.has(chainId) ? firstPending : await observePending();
 
   if (!("count" in pendingResult)) {
     // A provider that has ever served a pending count supports the tag, so this failure is

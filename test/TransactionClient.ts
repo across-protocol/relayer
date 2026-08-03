@@ -1,6 +1,6 @@
 import sinon from "sinon";
 import { AugmentedTransaction } from "../src/clients";
-import { _clearReplacedHead, _selectNonce } from "../src/clients/TransactionClient";
+import { _clearReplacedHead, _reserveReplacedHead, _selectNonce } from "../src/clients/TransactionClient";
 import {
   BigNumber,
   ethers,
@@ -435,6 +435,27 @@ describe("TransactionClient", function () {
       expect(replacing).to.be.true;
     });
 
+    it("Retries a failed first pending observation before assuming the tag is unsupported", async function () {
+      // A chain with no recorded pending-tag success (support state is per-chain, module-wide).
+      const untestedChainId = 660_002;
+      let pendingCalls = 0;
+      const provider = {
+        getTransactionCount: (_addr: string, blockTag?: string) =>
+          blockTag === "pending"
+            ? ++pendingCalls === 1
+              ? Promise.reject(new Error("transient blip"))
+              : Promise.resolve(13)
+            : Promise.resolve(10),
+      } as unknown as Provider;
+
+      // The first observation fails transiently; one retry succeeds, so the selection appends
+      // normally instead of misclassifying the tag as unsupported and entering replacement mode.
+      const { nonce, replacing } = await _selectNonce(untestedChainId, provider, signerAddr, backlogThreshold);
+      expect(nonce).to.equal(13);
+      expect(replacing).to.be.false;
+      expect(pendingCalls).to.equal(2);
+    });
+
     it("Propagates a transient pending-count failure once support is established", async function () {
       const provider = makeProvider(10, 12);
       await _selectNonce(chainId, provider, signerAddr, backlogThreshold); // Establishes support.
@@ -496,6 +517,42 @@ describe("TransactionClient", function () {
       selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
       expect(selected.nonce).to.equal(10);
       expect(selected.replacing).to.be.true;
+    });
+
+    it("Supersedes a reservation for an already-consumed head", async function () {
+      // Reserve head 10, then the head confirms; a rebroadcast reservation for the new head (11)
+      // must supersede the stale entry rather than be refused by it.
+      await _selectNonce(chainId, makeProvider(10, 14), signerAddr, backlogThreshold);
+      _reserveReplacedHead(chainId, signerAddr, 11, undefined, 11);
+
+      // The new head is reserved: a deep-backlog selection appends instead of evicting it.
+      const selected = await _selectNonce(chainId, makeProvider(11, 15), signerAddr, backlogThreshold);
+      expect(selected.nonce).to.equal(15);
+      expect(selected.replacing).to.be.false;
+    });
+
+    it("Refuses an incidental reservation while a different head is live", async function () {
+      await _selectNonce(chainId, makeProvider(10, 14), signerAddr, backlogThreshold);
+
+      // Without evidence that head 10 was consumed, a rebroadcast elsewhere in the queue must
+      // not clobber its live reservation.
+      _reserveReplacedHead(chainId, signerAddr, 12);
+      const selected = await _selectNonce(chainId, makeProvider(10, 14), signerAddr, backlogThreshold);
+      expect(selected.nonce).to.equal(14);
+      expect(selected.replacing).to.be.false;
+    });
+
+    it("Invalidates stale release tokens once a broadcast refreshes the reservation", async function () {
+      const provider = makeProvider(10, 14);
+      const { reservationId } = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
+
+      // Another attempt's broadcast refreshes the reservation; the original selection's release
+      // token must no longer be able to strip protection from the live replacement.
+      _reserveReplacedHead(chainId, signerAddr, 10);
+      _clearReplacedHead(chainId, signerAddr, 10, reservationId as number);
+      const selected = await _selectNonce(chainId, provider, signerAddr, backlogThreshold);
+      expect(selected.nonce).to.equal(14);
+      expect(selected.replacing).to.be.false;
     });
 
     it("Patches a stale block baseline after the count reads", async function () {
@@ -673,6 +730,50 @@ describe("TransactionClient", function () {
       // re-open and append at 13 again — not increment from the head into occupied nonces (11).
       const txns = [makeTxn(chainId, 10, 13), makeTxn(chainId, 10, 13)];
       const txnResponses = await client.submit(chainId, txns);
+      expect(txnResponses.map(({ nonce }) => nonce)).to.deep.equal([10, 13]);
+    });
+
+    it("Floors at the backslid request when re-reconciliation fails", async function () {
+      // Fresh chain so pending-tag support state starts clean for this test.
+      const chainId = 987_654_310;
+
+      class BackslideClient extends MockedTransactionClient {
+        public calls = 0;
+        protected override _getTransactionPromise(
+          txn: AugmentedTransaction,
+          nonce: number | null
+        ): Promise<TransactionResponse> {
+          // The first submission re-syncs internally and replaces the backlog head at nonce 10.
+          return super._getTransactionPromise(txn, ++this.calls === 1 ? 10 : nonce);
+        }
+      }
+
+      // The pending count is served once (txn 1's reconciliation, requested nonce 13), then
+      // fails transiently for txn 2's re-reconciliation.
+      let pendingCalls = 0;
+      const provider = {
+        getTransactionCount: (_addr: string, blockTag?: string) =>
+          blockTag === "pending"
+            ? ++pendingCalls === 1
+              ? Promise.resolve(13)
+              : Promise.reject(new Error("transient blip"))
+            : Promise.resolve(10),
+      };
+      const txn = {
+        chainId,
+        contract: { address, signer, provider } as unknown as Contract,
+        method,
+        args: [],
+        message: "",
+        mrkdwn: "",
+      } as AugmentedTransaction;
+
+      const client = new BackslideClient(spyLogger);
+      client.noncesBySigner[chainId] = { [await signer.getAddress()]: 9 };
+
+      // The backslide floors the batch at the requested nonce (13), so even with the follow-up
+      // reconciliation failing, txn 2 must not target head + 1 (11) and evict a queued entry.
+      const txnResponses = await client.submit(chainId, [txn, { ...txn }]);
       expect(txnResponses.map(({ nonce }) => nonce)).to.deep.equal([10, 13]);
     });
 
