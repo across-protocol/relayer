@@ -272,7 +272,7 @@ export class TransactionClient {
               // provisional replaced-head reservation: a concurrent deep-backlog selection must
               // append behind it rather than target the same head. The probed block height is the
               // baseline; broadcast success refreshes the gates.
-              _reserveReplacedHead(chainId, txnResponse.from, txnResponse.nonce, blockNumber, minedNonce);
+              _reserveReplacedHead(chainId, txnResponse.from, txnResponse.nonce, blockNumber);
               return this._submit(txn, { nonce: txnResponse.nonce, maxTries: maxTries - 1, replacing: true });
             }
             default:
@@ -505,8 +505,11 @@ async function _runTransaction(
       } else if (!replacing && nonce === collidedNonce) {
         // A REPLACEMENT_UNDERPRICED rejection proved this nonce is occupied, so a re-selection
         // that fails to advance means the provider's pending view is stale and appending is
-        // unavailable. Escalate at the nonce instead of looping on unscaled resubmission.
+        // unavailable. Escalate at the nonce instead of looping on unscaled resubmission. The
+        // incumbent is priced at/near market (the rejection proved it), so advance the fee
+        // ladder now rather than burning a retry on a repeat of the same bid.
         replacing = true;
+        retryScaler = _bumpRetryScaler(chainId, retryScaler, priorityFeeScaler);
         logger.debug({ at, message: `Nonce ${nonce} on ${chain} re-selected after collision; replacing.` });
       }
     }
@@ -571,8 +574,11 @@ async function _runTransaction(
     }
     return response;
   } catch (error) {
-    // Narrow type. All errors caught here should be Ethers errors.
+    // Narrow type. All errors caught here should be Ethers errors. A non-Ethers throw originates
+    // locally (e.g. custom signing infrastructure) before any broadcast, so it must release the
+    // replaced-head reservation like the recognized pre-broadcast failures below.
     if (!typeguards.isEthersError(error)) {
+      await releaseReplacedHead();
       throw error;
     }
 
@@ -664,13 +670,7 @@ async function _runTransaction(
     }
 
     if (scaleGas) {
-      const maxGasScaler = Number(
-        process.env[`MAX_GAS_RETRY_SCALER_DEFAULT_${chainId}`] ??
-          process.env.MAX_GAS_RETRY_SCALER_DEFAULT ??
-          MAX_GAS_RETRY_SCALER_DEFAULT
-      );
-      retryScaler *= Math.max(priorityFeeScaler, MIN_GAS_RETRY_SCALER_DEFAULT);
-      retryScaler = Math.min(retryScaler, maxGasScaler);
+      retryScaler = _bumpRetryScaler(chainId, retryScaler, priorityFeeScaler);
     }
 
     return await _runTransaction(
@@ -781,67 +781,68 @@ async function _runTransactionTvm(
   } as unknown as TransactionResponse;
 }
 
-// Queue heads already targeted for replacement, keyed by chain and signer. Replacing the head of a
-// deep backlog leaves the backlog depth (pending - confirmed) unchanged, so without this marker
-// every subsequent selection would re-target the head and evict the previous replacement. An entry
-// is superseded when the head advances, and expires once the chain has had CONFIRMATION_BLOCKS
-// confirmation windows to mine the replacement (mirroring the stalled-wait resubmission criterion),
-// at which point a still-stuck head becomes eligible for another replacement. Wall-clock expiry
-// alone is insufficient on a stalled chain — only block production can have tested the prior
-// replacement — so re-arming additionally requires CONFIRMATION_BLOCKS of block progress whenever
-// both block baselines are observable. Each entry carries an owner id so that only the attempt
-// that created a reservation can release it (an aged-out attempt failing late must not release a
-// successor's live reservation).
-type ReplacedHead = { nonce: number; expiresAt: number; blockNumber?: number; id: number };
-const replacedHeads: { [chainAndSigner: string]: ReplacedHead } = {};
+// Nonces already targeted for replacement, keyed by chain and signer, one entry per nonce.
+// Replacing the head of a deep backlog leaves the backlog depth (pending - confirmed) unchanged,
+// so without this marker every subsequent selection would re-target the head and evict the
+// previous replacement. An entry expires once the chain has had CONFIRMATION_BLOCKS confirmation
+// windows to mine the replacement (mirroring the stalled-wait resubmission criterion), at which
+// point a still-stuck head becomes eligible for another replacement. Wall-clock expiry alone is
+// insufficient on a stalled chain — only block production can have tested the prior replacement —
+// so re-arming additionally requires CONFIRMATION_BLOCKS of block progress whenever both block
+// baselines are observable. Entries for consumed nonces (below the observed confirmed count) are
+// pruned during selection. Each entry carries an owner id so that only the attempt that created a
+// reservation can release it (an aged-out attempt failing late must not release a successor's
+// live reservation).
+type ReplacedHead = { expiresAt: number; blockNumber?: number; id: number };
+const replacedHeads: { [chainAndSigner: string]: { [nonce: number]: ReplacedHead } } = {};
 let nextReservationId = 1;
 
-// Chains where the provider has demonstrated "pending" blockTag support. A pending-count failure
-// on such a chain is transient (propagated for retry) rather than evidence of an unsupported tag.
-const pendingTagSupported = new Set<number>();
+// Providers that have demonstrated "pending" blockTag support. A pending-count failure from such
+// a provider is transient (propagated for retry) rather than evidence of an unsupported tag.
+// Scoped per provider, not per chain: one chain can mix providers (e.g. spray transactions
+// reconnect through a SpeedProvider while others retain the standard provider).
+const pendingTagSupported = new WeakSet<Provider>();
 
 /**
- * Register or refresh a replaced-head reservation with gates starting now. Used when a
- * replacement is (re)broadcast: selection-time gates could otherwise age out during gas pricing
- * and signing, letting a concurrent submission re-arm against a replacement that just went live.
- * A live reservation held for a different nonce is never clobbered.
+ * Advance the retry fee ladder by one rung, bounded by the env-configurable max scaler.
+ * @param chainId Chain ID for transaction submission.
+ * @param retryScaler Current scaler.
+ * @param priorityFeeScaler Chain priority fee scaler (rung size, floored at the minimum bump).
+ * @returns The advanced scaler.
+ */
+function _bumpRetryScaler(chainId: number, retryScaler: number, priorityFeeScaler: number): number {
+  const maxGasScaler = Number(
+    process.env[`MAX_GAS_RETRY_SCALER_DEFAULT_${chainId}`] ??
+      process.env.MAX_GAS_RETRY_SCALER_DEFAULT ??
+      MAX_GAS_RETRY_SCALER_DEFAULT
+  );
+  return Math.min(retryScaler * Math.max(priorityFeeScaler, MIN_GAS_RETRY_SCALER_DEFAULT), maxGasScaler);
+}
+
+/**
+ * Register or refresh the reservation for a (re)broadcast replacement, with gates starting now.
+ * Selection-time gates could otherwise age out during gas pricing and signing, letting a
+ * concurrent submission re-arm against a replacement that just went live. Reservations are held
+ * per nonce, so registering one never displaces protection held for a different nonce.
  * @param chainId Chain ID for transaction submission.
  * @param address Signer address.
  * @param nonce Nonce of the (re)broadcast replacement.
- * @param blockNumber Optional block baseline; a same-nonce refresh retains the existing one.
+ * @param blockNumber Optional block baseline; a refresh retains the later of old and new.
  */
-export function _reserveReplacedHead(
-  chainId: number,
-  address: string,
-  nonce: number,
-  blockNumber?: number,
-  confirmedCount?: number
-): void {
-  const key = `${chainId}:${address}`;
-  const prior = replacedHeads[key];
+export function _reserveReplacedHead(chainId: number, address: string, nonce: number, blockNumber?: number): void {
+  const signerHeads = (replacedHeads[`${chainId}:${address}`] ??= {});
+  const prior = signerHeads[nonce];
 
-  // Never clobber a live reservation held for a different, still-relevant nonce (e.g. a
-  // deep-backlog head) with an incidental rebroadcast elsewhere in the queue — but a reservation
-  // for an already-consumed nonce (below the observed confirmed count) protects nothing and must
-  // not block reserving the current head.
-  if (isDefined(prior) && prior.nonce !== nonce && Date.now() < prior.expiresAt) {
-    const priorConsumed = isDefined(confirmedCount) && prior.nonce < confirmedCount;
-    if (!priorConsumed) {
-      return;
-    }
-  }
-
-  // On a same-nonce refresh, retain the later of the prior and supplied block baselines. The id
-  // is always fresh: this call marks a (re)broadcast reaching the provider, so any outstanding
-  // pre-broadcast release token for this nonce (e.g. from an aged-out attempt) must lose the
-  // ability to release protection for the now-live transaction.
+  // Retain the later of the prior and supplied block baselines. The id is always fresh: this
+  // call marks a (re)broadcast reaching the provider, so any outstanding pre-broadcast release
+  // token for this nonce (e.g. from an aged-out attempt) must lose the ability to release
+  // protection for the now-live transaction.
   let baseline = blockNumber;
-  if (prior?.nonce === nonce && isDefined(prior.blockNumber)) {
+  if (isDefined(prior?.blockNumber)) {
     baseline = isDefined(baseline) ? Math.max(baseline, prior.blockNumber) : prior.blockNumber;
   }
   const confirmationWindow = CONFIRMATION_TIMEOUTS_MS[chainId] ?? CONFIRMATION_TIMEOUT_MS_DEFAULT;
-  replacedHeads[key] = {
-    nonce,
+  signerHeads[nonce] = {
     expiresAt: Date.now() + CONFIRMATION_BLOCKS * confirmationWindow,
     blockNumber: baseline,
     id: nextReservationId++,
@@ -851,18 +852,17 @@ export function _reserveReplacedHead(
 /**
  * Release a replaced-head reservation when the replacement definitively failed to reach the
  * provider; otherwise valid submissions would append behind the still-stuck head until the
- * re-arm window and block gate both elapse. Guarded on both the recorded nonce and the owner id
- * so an unrelated or aged-out failure cannot release a successor's live reservation.
+ * re-arm window and block gate both elapse. Guarded on the owner id so an unrelated or aged-out
+ * failure cannot release a successor's live reservation.
  * @param chainId Chain ID for transaction submission.
  * @param address Signer address.
  * @param nonce Nonce of the failed replacement.
  * @param reservationId Owner id returned by the selection that created the reservation.
  */
 export function _clearReplacedHead(chainId: number, address: string, nonce: number, reservationId: number): void {
-  const key = `${chainId}:${address}`;
-  const entry = replacedHeads[key];
-  if (entry?.nonce === nonce && entry.id === reservationId) {
-    delete replacedHeads[key];
+  const signerHeads = replacedHeads[`${chainId}:${address}`];
+  if (signerHeads?.[nonce]?.id === reservationId) {
+    delete signerHeads[nonce];
   }
 }
 
@@ -886,27 +886,26 @@ export async function _selectNonce(
   address: string,
   backlogThreshold: number
 ): Promise<{ nonce: number; replacing: boolean; backlog?: number; reservationId?: number }> {
-  // The block number (replaced-head baseline/probe) is resolved upfront alongside the counts so
-  // that the marker logic below runs synchronously: an await between reading and writing
-  // replacedHeads would let concurrent selections in this process both enter replacement mode,
-  // with the second evicting the first's replacement.
   const observePending = (): Promise<{ count: number } | { error: unknown }> =>
     provider.getTransactionCount(address, "pending").then(
       (count) => ({ count }),
       (error) => ({ error })
     );
 
-  const [confirmed, firstPending, blockNumber] = await Promise.all([
+  // The block read is started speculatively but deliberately NOT awaited with the counts: it is
+  // only consumed on the rare deep-backlog re-arm path, and a slow eth_blockNumber must not
+  // serialize into every shallow selection (the common case).
+  const blockPromise = provider.getBlockNumber?.().catch(() => undefined);
+  const [confirmed, firstPending] = await Promise.all([
     provider.getTransactionCount(address, "latest"),
     observePending(),
-    provider.getBlockNumber?.().catch(() => undefined),
   ]);
 
   // Support can only be learned from a success, so a transient failure on the first observation
-  // for a chain (fresh process — bots are stateless between runs) would otherwise be misread as
-  // an unsupported tag. Retry once before classifying.
+  // from a provider (fresh process — bots are stateless between runs) would otherwise be misread
+  // as an unsupported tag. Retry once before classifying.
   const pendingResult =
-    "count" in firstPending || pendingTagSupported.has(chainId) ? firstPending : await observePending();
+    "count" in firstPending || pendingTagSupported.has(provider) ? firstPending : await observePending();
 
   if (!("count" in pendingResult)) {
     // A provider that has ever served a pending count supports the tag, so this failure is
@@ -915,12 +914,12 @@ export async function _selectNonce(
     // replacement target. Otherwise the tag is assumed unsupported: the backlog is unknowable,
     // appending is not an option, and an occupied confirmed nonce can only be fee-escalated
     // (replacement mode).
-    if (pendingTagSupported.has(chainId)) {
+    if (pendingTagSupported.has(provider)) {
       throw pendingResult.error;
     }
     return { nonce: confirmed, replacing: true };
   }
-  pendingTagSupported.add(chainId);
+  pendingTagSupported.add(provider);
   const pending = pendingResult.count;
 
   const backlog = Math.max(pending - confirmed, 0); // Clamp transiently inconsistent responses.
@@ -930,43 +929,46 @@ export async function _selectNonce(
 
   // Deep backlog: the queue head is assumed stuck and targeted for replacement — but only once.
   // While a prior replacement of this head may still confirm, append behind the queue instead of
-  // evicting it.
-  const key = `${chainId}:${address}`;
-  const now = Date.now();
-  const prior = replacedHeads[key];
-  if (prior?.nonce === confirmed) {
-    if (now < prior.expiresAt) {
+  // evicting it. Reservations for consumed nonces no longer protect anything; prune them.
+  const signerHeads = (replacedHeads[`${chainId}:${address}`] ??= {});
+  Object.keys(signerHeads)
+    .filter((nonce) => Number(nonce) < confirmed)
+    .forEach((nonce) => delete signerHeads[Number(nonce)]);
+
+  const prior = signerHeads[confirmed];
+  if (isDefined(prior)) {
+    if (Date.now() < prior.expiresAt) {
       return { nonce: pending, replacing: false, backlog };
     }
     // The window has elapsed, but re-arming also requires the chain to have produced blocks that
     // could have tested the prior replacement. When block progress is unobservable (either
-    // baseline unavailable), the wall-clock expiry alone governs.
-    if (
-      isDefined(prior.blockNumber) &&
-      isDefined(blockNumber) &&
-      blockNumber < prior.blockNumber + CONFIRMATION_BLOCKS
-    ) {
+    // baseline unavailable), the wall-clock expiry alone governs. The probe await opens a gap, so
+    // re-validate the entry afterward: a concurrent selection may have re-armed in the interim,
+    // and its fresh reservation must not be evicted.
+    const probe = await blockPromise;
+    const current = signerHeads[confirmed];
+    if (isDefined(current) && (current.id !== prior.id || Date.now() < current.expiresAt)) {
+      return { nonce: pending, replacing: false, backlog };
+    }
+    if (isDefined(prior.blockNumber) && isDefined(probe) && probe < prior.blockNumber + CONFIRMATION_BLOCKS) {
       return { nonce: pending, replacing: false, backlog };
     }
   }
 
   const confirmationWindow = CONFIRMATION_TIMEOUTS_MS[chainId] ?? CONFIRMATION_TIMEOUT_MS_DEFAULT;
   const entry: ReplacedHead = {
-    nonce: confirmed,
-    expiresAt: now + CONFIRMATION_BLOCKS * confirmationWindow,
-    blockNumber,
+    expiresAt: Date.now() + CONFIRMATION_BLOCKS * confirmationWindow,
+    blockNumber: undefined,
     id: nextReservationId++,
   };
-  replacedHeads[key] = entry;
+  signerHeads[confirmed] = entry;
 
-  // The upfront block read can predate slower count reads by several blocks, and a stale-low
-  // baseline would prematurely satisfy the re-arm block gate on a subsequently stalled chain.
-  // Refresh it after the decision: the marker is already visible to concurrent selections, so
-  // this await reopens no check-and-set gap.
+  // The block baseline is sampled only after the (synchronous) decision — the marker is already
+  // visible to concurrent selections, so this await reopens no check-and-set gap — and after the
+  // count reads, so a stale-low pre-count height cannot prematurely satisfy the re-arm block
+  // gate on a subsequently stalled chain.
   const refreshed = await provider.getBlockNumber?.().catch(() => undefined);
-  if (isDefined(refreshed)) {
-    entry.blockNumber = Math.max(refreshed, entry.blockNumber ?? refreshed);
-  }
+  entry.blockNumber = isDefined(refreshed) ? refreshed : await blockPromise;
   return { nonce: confirmed, replacing: true, backlog, reservationId: entry.id };
 }
 

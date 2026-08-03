@@ -457,15 +457,35 @@ describe("TransactionClient", function () {
     });
 
     it("Propagates a transient pending-count failure once support is established", async function () {
-      const provider = makeProvider(10, 12);
+      let pendingCalls = 0;
+      const provider = {
+        getTransactionCount: (_addr: string, blockTag?: string) =>
+          blockTag === "pending"
+            ? ++pendingCalls === 1
+              ? Promise.resolve(12)
+              : Promise.reject(new Error("pending tag unsupported"))
+            : Promise.resolve(10),
+      } as unknown as Provider;
       await _selectNonce(chainId, provider, signerAddr, backlogThreshold); // Establishes support.
 
-      // A later pending failure on the same chain is transient, not an unsupported tag: it must
-      // propagate for the caller's bounded retry or warm-cache fallback, not misread a healthy
-      // in-flight transaction at the confirmed nonce as a replacement target.
+      // A later pending failure from the same provider is transient, not an unsupported tag: it
+      // must propagate for the caller's bounded retry or warm-cache fallback, not misread a
+      // healthy in-flight transaction at the confirmed nonce as a replacement target.
       let thrown: Error | undefined;
-      await _selectNonce(chainId, makeProvider(10), signerAddr, backlogThreshold).catch((error) => (thrown = error));
+      await _selectNonce(chainId, provider, signerAddr, backlogThreshold).catch((error) => (thrown = error));
       expect(thrown?.message).to.equal("pending tag unsupported");
+    });
+
+    it("Scopes pending-tag capability to the provider, not the chain", async function () {
+      // One provider serves pending counts on this chain...
+      await _selectNonce(chainId, makeProvider(10, 12), signerAddr, backlogThreshold);
+
+      // ...but a different provider on the same chain (e.g. a spray SpeedProvider) lacks the
+      // tag: it must take the unsupported fallback rather than the transient path, which would
+      // exhaust the submission's retries without ever broadcasting.
+      const { nonce, replacing } = await _selectNonce(chainId, makeProvider(10), signerAddr, backlogThreshold);
+      expect(nonce).to.equal(10);
+      expect(replacing).to.be.true;
     });
 
     it("Clamps an inconsistent pending count", async function () {
@@ -519,24 +539,36 @@ describe("TransactionClient", function () {
       expect(selected.replacing).to.be.true;
     });
 
-    it("Supersedes a reservation for an already-consumed head", async function () {
-      // Reserve head 10, then the head confirms; a rebroadcast reservation for the new head (11)
-      // must supersede the stale entry rather than be refused by it.
+    it("Prunes consumed reservations and honors one for the advanced head", async function () {
+      // Reserve head 10, then a rebroadcast reserves the next head (11); reservations are per
+      // nonce, so both hold simultaneously.
       await _selectNonce(chainId, makeProvider(10, 14), signerAddr, backlogThreshold);
-      _reserveReplacedHead(chainId, signerAddr, 11, undefined, 11);
+      _reserveReplacedHead(chainId, signerAddr, 11);
 
-      // The new head is reserved: a deep-backlog selection appends instead of evicting it.
+      // Head 10 confirms: its entry is pruned, and the reservation for the new head (11)
+      // suppresses a deep-backlog selection from evicting the rebroadcast held there.
       const selected = await _selectNonce(chainId, makeProvider(11, 15), signerAddr, backlogThreshold);
       expect(selected.nonce).to.equal(15);
       expect(selected.replacing).to.be.false;
     });
 
-    it("Refuses an incidental reservation while a different head is live", async function () {
+    it("Keeps a live head reservation alongside an incidental higher reservation", async function () {
       await _selectNonce(chainId, makeProvider(10, 14), signerAddr, backlogThreshold);
 
-      // Without evidence that head 10 was consumed, a rebroadcast elsewhere in the queue must
-      // not clobber its live reservation.
+      // A rebroadcast elsewhere in the queue reserves its own nonce without displacing the
+      // head's live reservation.
       _reserveReplacedHead(chainId, signerAddr, 12);
+      const selected = await _selectNonce(chainId, makeProvider(10, 14), signerAddr, backlogThreshold);
+      expect(selected.nonce).to.equal(14);
+      expect(selected.replacing).to.be.false;
+    });
+
+    it("Protects the queue head reserved after a higher queued reservation", async function () {
+      // The inverse ordering: a queued (non-head) rebroadcast reserved nonce 12 first, then the
+      // head rebroadcast reserves nonce 10. The higher entry must not block head protection.
+      _reserveReplacedHead(chainId, signerAddr, 12);
+      _reserveReplacedHead(chainId, signerAddr, 10);
+
       const selected = await _selectNonce(chainId, makeProvider(10, 14), signerAddr, backlogThreshold);
       expect(selected.nonce).to.equal(14);
       expect(selected.replacing).to.be.false;
