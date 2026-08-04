@@ -135,7 +135,7 @@ export class Relayer {
   private async updateLimits(): Promise<void> {
     const { acrossApiClient } = this.clients;
 
-    for (let attempt = 1; attempt <= API_UPDATE_ATTEMPTS; attempt++) {
+    for (let attempt = 1; attempt <= API_UPDATE_ATTEMPTS; ++attempt) {
       if (await acrossApiClient.update(this.config.ignoreLimits)) {
         return;
       }
