@@ -25,7 +25,6 @@ Keep all relevant `AGENTS.md` and `README.md` files updated in the same change w
 - Rebalancer behavior and adapters: `src/rebalancer/README.md`
 - Refiller behavior: `src/refiller/README.md`
 - Dataworker root-bundle flow: `src/dataworker/README.md`
-- Jussi graph builder topology/economics/upload flow: `src/jussi/README.md`
 - Deposit-address handler and withdraw lifecycle: `src/deposit-address/README.md`
 - Deposit-address service (Express + Pub/Sub push; replaces the polling handler): `src/deposit-address-service/README.md`
 - Gasless relayer (API polling, deposits-only mode, integrator filters): `src/gasless/README.md`

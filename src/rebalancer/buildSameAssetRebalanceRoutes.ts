@@ -8,8 +8,8 @@ export const SAME_ASSET_REBALANCE_ROUTE_SUPPORT = [
 
 export type SameAssetRebalanceRouteSupport = (typeof SAME_ASSET_REBALANCE_ROUTE_SUPPORT)[number];
 
-// @dev Jussi topology preparation consumes this builder; runtime initiation is owned by the AdapterManager's
-// Binance swap bridge, whose routes derive from CUSTOM_BRIDGE + sameAssetBalances instead of this catalog.
+// @dev Runtime initiation is owned by the AdapterManager's Binance swap bridge, whose routes derive from
+// CUSTOM_BRIDGE + sameAssetBalances instead of this catalog.
 export function buildSameAssetRebalanceRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
   return SAME_ASSET_REBALANCE_ROUTE_SUPPORT.filter(({ token, chainId }) =>
     isDefined(rebalancerConfig.sameAssetBalances?.[token]?.[chainId])
