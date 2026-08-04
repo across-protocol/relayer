@@ -48,7 +48,8 @@ export class MockedTransactionClient extends TransactionClient {
 
   protected override _getTransactionPromise(
     txn: AugmentedTransaction,
-    nonce: number | null
+    nonce: number | null,
+    _retryScaler = 1.0
   ): Promise<TransactionResponse> {
     if (this.txnFailure(txn)) {
       return Promise.reject(this.txnFailureReason(txn));

@@ -179,12 +179,15 @@ describe("TransactionClient", function () {
 
     class CountingClient extends MockedTransactionClient {
       public submissions = 0;
+      public retryScalers: number[] = [];
       protected override _getTransactionPromise(
         txn: AugmentedTransaction,
-        nonce: number | null
+        nonce: number | null,
+        retryScaler = 1.0
       ): Promise<TransactionResponse> {
         ++this.submissions;
-        return super._getTransactionPromise(txn, nonce);
+        this.retryScalers.push(retryScaler);
+        return super._getTransactionPromise(txn, nonce, retryScaler);
       }
     }
 
@@ -271,6 +274,31 @@ describe("TransactionClient", function () {
       expect(waitCalls).to.equal(2);
       // The resubmission must pin the original nonce in order to replace the stuck transaction.
       expect(txnResponses[0].nonce).to.equal(nonce);
+    });
+
+    it("Bumps fees on each timeout resubmission", async function () {
+      const chainId = chainIds[0];
+      const client = new CountingClient(spyLogger);
+      let blockNumber = 100;
+      const provider: MockProvider = {
+        getBlockNumber: () => Promise.resolve((blockNumber += 2)), // Blocks are produced without inclusion.
+        getTransactionCount: () => Promise.resolve(0),
+      };
+      let waitCalls = 0;
+      client.waitOverride = () => {
+        return ++waitCalls <= 2
+          ? Promise.reject(makeEthersError(ethers.errors.TIMEOUT))
+          : Promise.resolve({} as TransactionReceipt);
+      };
+
+      const txnResponses = await client.submit(chainId, [makeConfirmationTxn(chainId, provider)]);
+      expect(txnResponses.length).to.equal(1);
+      expect(client.submissions).to.equal(3);
+      // The initial submission is unscaled; each replacement compounds the fee bump.
+      expect(client.retryScalers[0]).to.equal(1);
+      client.retryScalers.slice(1).forEach((retryScaler, idx) => {
+        expect(retryScaler).to.be.greaterThan(client.retryScalers[idx]);
+      });
     });
 
     it("Tolerates transient RPC errors while confirming", async function () {

@@ -141,19 +141,25 @@ export class TransactionClient {
     return (await this.submit(txn.chainId, [dispatchTxn]))[0];
   }
 
-  protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
+  protected _getTransactionPromise(
+    txn: AugmentedTransaction,
+    nonce: number | null,
+    retryScaler = 1.0
+  ): Promise<TransactionResponse> {
     const { contract, method, args, value, gasLimit, chainId } = txn;
-    const transactionHandler = chainIsTvm(chainId) ? _runTransactionTvm : _runTransaction;
-    return transactionHandler(this.logger, contract, method, args, value, gasLimit, nonce);
+    if (chainIsTvm(chainId)) {
+      return _runTransactionTvm(this.logger, contract, method, args, value, gasLimit, nonce);
+    }
+    return _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce, undefined, retryScaler);
   }
 
   protected async _submit(
     txn: AugmentedTransaction,
-    opts: { nonce: number | null; maxTries?: number }
+    opts: { nonce: number | null; maxTries?: number; retryScaler?: number }
   ): Promise<TransactionResponse> {
     const { chainId } = txn;
-    const { nonce = null, maxTries = 10 } = opts;
-    const txnPromise = this._getTransactionPromise(txn, nonce);
+    const { nonce = null, maxTries = 10, retryScaler = 1.0 } = opts;
+    const txnPromise = this._getTransactionPromise(txn, nonce, retryScaler);
 
     if (txn.ensureConfirmation) {
       const at = "TransactionClient#_submit";
@@ -238,11 +244,17 @@ export class TransactionClient {
               if (blockNumber < startBlock + CONFIRMATION_BLOCKS) {
                 continue; // Loop: retry the wait (bounded by maxTries).
               }
+              // Bump fees on the replacement: the outgoing transaction was evidently not priced for
+              // inclusion, and nodes holding it will reject a replacement that doesn't raise both fee
+              // caps. Don't rely on REPLACEMENT_UNDERPRICED to escalate — RPCs that route transactions
+              // privately (no public mempool insertion) never emit it.
+              const bumpedScaler = _bumpRetryScaler(chainId, retryScaler);
               this.logger.warn({
                 ...common,
                 message: `Transaction on ${chain} timed out at nonce ${txnResponse.nonce}, resubmitting...`,
+                retryScaler: bumpedScaler,
               });
-              return this._submit(txn, { nonce: txnResponse.nonce, maxTries: maxTries - 1 });
+              return this._submit(txn, { nonce: txnResponse.nonce, maxTries: maxTries - 1, retryScaler: bumpedScaler });
             }
             default:
               this.logger.warn({
@@ -486,13 +498,7 @@ async function _runTransaction(
     }
 
     if (scaleGas) {
-      const maxGasScaler = Number(
-        process.env[`MAX_GAS_RETRY_SCALER_DEFAULT_${chainId}`] ??
-          process.env.MAX_GAS_RETRY_SCALER_DEFAULT ??
-          MAX_GAS_RETRY_SCALER_DEFAULT
-      );
-      retryScaler *= Math.max(priorityFeeScaler, MIN_GAS_RETRY_SCALER_DEFAULT);
-      retryScaler = Math.min(retryScaler, maxGasScaler);
+      retryScaler = _bumpRetryScaler(chainId, retryScaler, priorityFeeScaler);
     }
 
     return await _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, retryScaler);
@@ -633,6 +639,20 @@ function _scaleGasPrice(
     maxFeePerGas,
     maxPriorityFeePerGas,
   };
+}
+
+// Escalate the fee scaler for a replacement attempt. The bump compounds per attempt by the larger
+// of the chain's priority fee scaler and MIN_GAS_RETRY_SCALER_DEFAULT (nodes require both fee caps
+// to rise ~10% for a same-nonce replacement), capped by MAX_GAS_RETRY_SCALER_DEFAULT[_<chainId>].
+function _bumpRetryScaler(chainId: number, retryScaler: number, priorityFeeScaler?: number): number {
+  priorityFeeScaler ??= _readTransactionConfig(chainId).priorityFeeScaler;
+  const maxGasScaler = Number(
+    process.env[`MAX_GAS_RETRY_SCALER_DEFAULT_${chainId}`] ??
+      process.env.MAX_GAS_RETRY_SCALER_DEFAULT ??
+      MAX_GAS_RETRY_SCALER_DEFAULT
+  );
+  const bump = Math.max(priorityFeeScaler || MIN_GAS_RETRY_SCALER_DEFAULT, MIN_GAS_RETRY_SCALER_DEFAULT);
+  return Math.min(retryScaler * bump, maxGasScaler);
 }
 
 function _readTransactionConfig(chainId: number): {
