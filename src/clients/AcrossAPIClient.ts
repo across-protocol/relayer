@@ -39,7 +39,7 @@ export class AcrossApiClient {
     readonly hubPoolClient: HubPoolClient,
     chainIds: number[],
     readonly tokensQuery: EvmAddress[] = [],
-    readonly timeout: number = 3000
+    readonly timeout: number = 10_000
   ) {
     const hubChainId = hubPoolClient.chainId;
     this.endpoint = `https://${getAcrossHost(hubChainId)}/api`;
