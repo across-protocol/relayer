@@ -1358,7 +1358,7 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
         expect(logged(`with repayment on ${destinationChainId}`)).to.be.false;
       });
 
-      it("Defers deposits until a non-origin repayment can be funded", async function () {
+      it("Treats an unfundable repayment as an unprofitable fill", async function () {
         determineRefundChainId.resolves([destinationChainId]);
         await deposit();
         await updateAllClients();
@@ -1367,11 +1367,15 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
         expect((await txnReceipts[destinationChainId]).length).to.equal(0);
         expect(logged("can be funded by available HubPool liquidity")).to.be.true;
 
-        // The deposit must not have been dropped; once HubPool liquidity recovers, it is filled.
+        // Utilisation high enough to refuse every eligible refund is a real condition rather than a transient blip, so
+        // it goes through the existing unprofitable-fill mechanism instead of a bespoke retry path.
+        expect(profitClient.getUnprofitableFills()[originChainId]?.length ?? 0).to.equal(1);
+
+        // Which also means the deposit is suppressed until runMaintenance() flushes ignoredDeposits, even once
+        // HubPool liquidity recovers.
         getLimit.returns(inputAmount);
         txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-        expect((await txnReceipts[destinationChainId]).length).to.equal(1);
-        expect(logged(`with repayment on ${destinationChainId}`)).to.be.true;
+        expect((await txnReceipts[destinationChainId]).length).to.equal(0);
       });
 
       it("Drops non-origin repayment chains for an input token with no L1 token mapping", async function () {

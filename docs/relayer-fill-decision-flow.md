@@ -59,15 +59,14 @@ For each filtered deposit:
 2. enforce dynamic confirmation-age threshold
 3. optionally force slow-fill request for configured slow depositors
 4. apply minimum fill age per destination chain (if configured)
-5. resolve repayment-chain + profitability data (`resolveRepaymentChain`)
-6. return early when no eligible repayment chain can be funded by HubPool liquidity (`unfundableRepayment`), without
-   marking the deposit ignored - HubPool liquidity recovers over time, so the deposit is re-evaluated on later loops
-7. check local output-token balance availability
-8. if unprofitable or insufficient balance:
+5. resolve repayment-chain + profitability data (`resolveRepaymentChain`). No repayment chain is reported when none of
+   the eligible chains can be funded by HubPool liquidity, which is handled as an unprofitable fill (step 6)
+6. check local output-token balance availability
+7. if unprofitable or insufficient balance:
    - capture shortfall/unprofitability telemetry
    - optionally request slow fill when enabled and valid
    - return
-9. if profitable and funded:
+8. if profitable and funded:
    - apply origin-chain commitment limits
    - decrement local destination balance virtually
    - enqueue `fillRelay`

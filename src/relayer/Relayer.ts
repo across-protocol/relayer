@@ -866,7 +866,6 @@ export class Relayer {
 
     const {
       repaymentChainId,
-      unfundableRepayment,
       repaymentChainProfitability: {
         relayerFeePct,
         gasCost,
@@ -876,12 +875,6 @@ export class Relayer {
         gasPrice,
       },
     } = await this.resolveRepaymentChain(deposit, lpFees);
-
-    // A repayment that the HubPool can't currently fund is not an unprofitable fill; HubPool liquidity recovers as LPs
-    // deposit and as bundles execute, so leave this deposit eligible for re-evaluation on subsequent loops.
-    if (unfundableRepayment) {
-      return;
-    }
 
     const isProfitable = isDefined(repaymentChainId);
     // Limit the ability of persistently-unprofitable deposits to congest the deposit/fill evaluation pipeline.
@@ -1348,7 +1341,6 @@ export class Relayer {
     repaymentFees: RepaymentFee[]
   ): Promise<{
     repaymentChainId?: number;
-    unfundableRepayment?: boolean;
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
     const { inventoryClient, profitClient } = this.clients;
@@ -1362,14 +1354,17 @@ export class Relayer {
     // Origin chain repayment survives this filter unconditionally, so a deposit that is forced to take origin chain
     // repayment is never refused on the basis of HubPool liquid reserves.
     const preferredChainIds = this.filterFundableRepaymentChains(deposit, eligibleChainIds);
-    const unfundableRepayment = preferredChainIds.length === 0 && eligibleChainIds.length > 0;
+    // Local to the log below: an empty result is reported to the caller as "no repayment chain", the same as any other
+    // failure to identify one. HubPool utilisation is not treated as transient, since a failed /liquid-reserves query
+    // now retains the last known limits rather than reporting zero (AcrossApiClient.update()).
+    const unfundable = preferredChainIds.length === 0 && eligibleChainIds.length > 0;
 
     if (preferredChainIds.length === 0) {
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
       // that the origin chain, the only possible repayment chain, is over-allocated. We should log this case because
       // it is a special edge case the relayer should be aware of.
       let message: string;
-      if (unfundableRepayment) {
+      if (unfundable) {
         message =
           `😱 Skipping ${originChain} deposit ${depositId.toString()}: no eligible repayment chain ` +
           `${JSON.stringify(eligibleChainIds)} can be funded by available HubPool liquidity.`;
@@ -1378,13 +1373,12 @@ export class Relayer {
       } else {
         message = `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId.toString()}.`;
       }
-      this.logger[unfundableRepayment ? "warn" : "debug"]({
+      this.logger[unfundable ? "warn" : "debug"]({
         at: "Relayer::resolveRepaymentChain",
         message,
         txn: blockExplorerLink(txnRef, originChainId),
       });
       return {
-        unfundableRepayment,
         repaymentChainProfitability: {
           gasLimit: bnZero,
           gasCost: bnUint256Max,

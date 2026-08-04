@@ -92,9 +92,12 @@ Key properties:
   unmapped input token only when no swap route covers it, and the mapping is symbol-based
   (`getInventoryEquivalentL1TokenAddress()`) rather than PoolRebalanceRoute-based, so it can be absent even where the
   HubPool permits destination chain repayment.
-- when the filter empties a non-empty eligible list, `resolveRepaymentChain()` returns `unfundableRepayment: true`.
-  `evaluateFill()` skips the deposit *without* marking it ignored, since reserves recover as LPs deposit and as bundles
-  execute.
+- when the filter empties a non-empty eligible list, `resolveRepaymentChain()` reports no repayment chain, exactly as it
+  does for any other failure to identify one. `evaluateFill()` then handles it via the existing unprofitable-fill path:
+  the deposit is captured as unprofitable and added to `ignoredDeposits` until the next `runMaintenance()` flush. This is
+  deliberate - HubPool utilisation high enough to refuse a refund is a real condition rather than a transient blip, since
+  a failed `/liquid-reserves` query now retains the last known limits instead of reporting zero, and a refund the HubPool
+  cannot fund may stall settlement.
 
 Caveat: origin chain repayment is only strictly self-funding when the deposit and the refund land in the same bundle.
 If the origin chain's excess running balance was already swept back to the HubPool, an origin refund does draw on
