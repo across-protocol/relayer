@@ -1,0 +1,71 @@
+import { delay, winston } from "./";
+import { RedisCacheInterface } from "../cache/Redis";
+
+export class InstanceCoordinator {
+  constructor(
+    private readonly logger: winston.Logger,
+    private readonly redis: RedisCacheInterface,
+    public readonly identifier: string,
+    public readonly instance: string,
+    private readonly abortController: AbortController,
+    public readonly instanceExpiry = 1200
+  ) {}
+
+  async getActiveInstance(): Promise<string | undefined> {
+    return (await this.redis.get<string>(this.identifier)) ?? undefined;
+  }
+
+  setActiveInstance(): Promise<string | undefined> {
+    return this.redis.set(this.identifier, this.instance, this.instanceExpiry);
+  }
+
+  async isActiveInstance(): Promise<boolean> {
+    return (await this.getActiveInstance()) === this.instance;
+  }
+
+  async initiateHandover(): Promise<void> {
+    const activeInstance = await this.getActiveInstance();
+    this.logger.debug({
+      at: "Coordinator::initiateHandover",
+      message: `Taking over from ${this.identifier} instance ${activeInstance}.`,
+    });
+
+    await this.setActiveInstance();
+  }
+
+  // Poor-man's subscription - just poll on a 1s interval.
+  async subscribe(): Promise<string | undefined> {
+    const maxConsecutiveErrors = 10;
+    let consecutiveErrors = 0;
+    let activeInstance: string | undefined = this.instance;
+    do {
+      await delay(1);
+      if (this.abortController.signal.aborted) {
+        break;
+      }
+
+      try {
+        activeInstance = (await this.redis.get<string>(this.identifier)) ?? undefined;
+        consecutiveErrors = 0;
+      } catch (err) {
+        if (++consecutiveErrors >= maxConsecutiveErrors) {
+          this.logger.error({
+            at: "Coordinator::subscribe",
+            message: "Redis unreachable; exiting.",
+            err: String(err),
+          });
+          break;
+        }
+      }
+    } while (activeInstance === this.instance);
+
+    if (activeInstance !== this.instance) {
+      this.logger.debug({
+        at: "Coordinator::monitorInstance",
+        message: `Handover requested by ${this.identifier} instance ${activeInstance}.`,
+      });
+    }
+
+    return activeInstance ?? undefined;
+  }
+}

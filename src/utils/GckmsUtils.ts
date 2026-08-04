@@ -43,7 +43,7 @@ export function getGckmsConfig(keys: string[]): KeyConfig[] {
   }
 
   const keyConfigs = keys.map((keyName: string): KeyConfig => {
-    return (configOverride["mainnet"][keyName] || {}) as KeyConfig; // Hardcode to "mainnet" network. This makes no impact key retrieval.
+    return configOverride["mainnet"][keyName] || {}; // Hardcode to "mainnet" network. This makes no impact key retrieval.
   });
 
   return keyConfigs;

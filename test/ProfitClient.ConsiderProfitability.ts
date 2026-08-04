@@ -1,5 +1,7 @@
 import { assert } from "chai";
+import { Contract } from "ethers";
 import { random } from "lodash";
+import { AcrossConfigStore } from "@across-protocol/contracts";
 import { constants as sdkConstants, utils as sdkUtils } from "@across-protocol/sdk";
 import { ConfigStoreClient, FillProfit, EVMSpokePoolClient } from "../src/clients";
 import { Deposit } from "../src/interfaces";
@@ -125,10 +127,12 @@ describe("ProfitClient: Consider relay profit", () => {
   ): Pick<FillProfit, "grossRelayerFeeUsd" | "netRelayerFeePct" | "netRelayerFeeUsd" | "profitable"> => {
     const grossRelayerFeeUsd = inputAmountUsd.sub(outputAmountUsd).sub(lpFeeUsd);
     const netRelayerFeeUsd = grossRelayerFeeUsd.sub(gasCostUsd);
-    const netRelayerFeePct = netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd);
-
-    const minRelayerFeeUsd = outputAmountUsd.mul(minRelayerFeePct).div(fixedPoint);
-    const profitable = netRelayerFeeUsd.gte(minRelayerFeeUsd);
+    // Mirror ProfitClient.calculateFillProfitability's integer-math comparison; comparing the
+    // equivalent USD threshold diverges by 1 wei at the boundary and flakes.
+    const netRelayerFeePct = outputAmountUsd.gt(bnZero)
+      ? netRelayerFeeUsd.mul(fixedPoint).div(outputAmountUsd)
+      : bnZero;
+    const profitable = netRelayerFeePct.gte(minRelayerFeePct);
 
     return {
       grossRelayerFeeUsd,
@@ -138,36 +142,39 @@ describe("ProfitClient: Consider relay profit", () => {
     };
   };
 
-  beforeEach(async () => {
+  let configStore: AcrossConfigStore;
+  let hubPool: Contract;
+  let deployedSpokes: { chainId: number; spokePool: Contract; deploymentBlock: number }[];
+
+  before(async () => {
     const [owner] = await ethers.getSigners();
+    ({ configStore } = await deployConfigStore(owner, []));
+    ({ hubPool } = await hubPoolFixture());
+
+    assert(chainIds.length === 2, "SpokePool deployment requires only 2 chainIds");
+    deployedSpokes = await sdkUtils.mapAsync(chainIds, async (spokeChainId, idx) => {
+      const { spokePool, deploymentBlock } = await deploySpokePoolWithToken(
+        spokeChainId,
+        chainIds[(idx + 1) % 2] // @dev Only works for 2 chainIds.
+      );
+      return { chainId: spokeChainId, spokePool: spokePool.connect(owner), deploymentBlock };
+    });
+  });
+
+  beforeEach(async () => {
     const logger = createSpyLogger().spyLogger;
 
-    const { configStore } = await deployConfigStore(owner, []);
     const configStoreClient = new ConfigStoreClient(logger, configStore);
     await configStoreClient.update();
 
-    const { hubPool } = await hubPoolFixture();
     hubPoolClient = new MockHubPoolClient(logger, hubPool, configStoreClient);
     await hubPoolClient.update();
 
-    const chainIds = [originChainId, destinationChainId];
-    assert(chainIds.length === 2, "SpokePool deployment requires only 2 chainIds");
     const spokePoolClients = Object.fromEntries(
-      await sdkUtils.mapAsync(chainIds, async (spokeChainId, idx) => {
-        const { spokePool, deploymentBlock } = await deploySpokePoolWithToken(
-          spokeChainId,
-          chainIds[(idx + 1) % 2] // @dev Only works for 2 chainIds.
-        );
-        const spokePoolClient = new EVMSpokePoolClient(
-          spyLogger,
-          spokePool.connect(owner),
-          null,
-          spokeChainId,
-          deploymentBlock
-        );
-
-        return [spokeChainId, spokePoolClient];
-      })
+      deployedSpokes.map(({ chainId, spokePool, deploymentBlock }) => [
+        chainId,
+        new EVMSpokePoolClient(spyLogger, spokePool, null, chainId, deploymentBlock),
+      ])
     );
 
     const debugProfitability = true;
@@ -337,7 +344,8 @@ describe("ProfitClient: Consider relay profit", () => {
           const inputAmountUsd = scaledInputAmount.mul(tokenPriceUsd).div(fixedPoint);
           const outputAmountUsd = scaledOutputAmount.mul(tokenPriceUsd).div(fixedPoint);
 
-          const lpFeeUsd = inputAmountUsd.mul(lpFeePct).div(fixedPoint);
+          const scaledLpFeeAmount = scaledInputAmount.mul(lpFeePct).div(fixedPoint);
+          const lpFeeUsd = scaledLpFeeAmount.mul(tokenPriceUsd).div(fixedPoint);
           const gasToken = profitClient.resolveGasToken(destinationChainId);
           const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.symbol);
 
@@ -416,7 +424,8 @@ describe("ProfitClient: Consider relay profit", () => {
 
           for (const lpFeeMultiplier of lpFeeMultipliers) {
             const effectiveLpFeePct = lpFeePct.mul(lpFeeMultiplier).div(fixedPoint);
-            const lpFeeUsd = inputAmountUsd.mul(effectiveLpFeePct).div(fixedPoint);
+            const scaledLpFeeAmount = scaledInputAmount.mul(effectiveLpFeePct).div(fixedPoint);
+            const lpFeeUsd = scaledLpFeeAmount.mul(tokenPriceUsd).div(fixedPoint);
 
             const expected = testProfitability(inputAmountUsd, outputAmountUsd, gasCostUsd, lpFeeUsd);
             spyLogger.debug({
@@ -464,7 +473,8 @@ describe("ProfitClient: Consider relay profit", () => {
     process.env[minUSDCKey] = minUSDC;
 
     const envPrefix = "MIN_RELAYER_FEE_PCT";
-    ["USDC", "DAI", "WETH", "WBTC"].forEach((symbol) => {
+    ["USDC", "WETH", "WBTC"].forEach((symbol) => {
+      profitClient.setTokenSymbol(tokens[symbol].address, symbol);
       chainIds.forEach((srcChainId) => {
         chainIds
           .filter((chainId) => chainId !== srcChainId)
@@ -477,7 +487,12 @@ describe("ProfitClient: Consider relay profit", () => {
               expect(routeMinRelayerFeePct.eq(toBNWei(minUSDC))).to.be.true;
             }
 
-            const computedMinRelayerFeePct = profitClient.minRelayerFeePct(symbol, srcChainId, dstChainId);
+            const computedMinRelayerFeePct = profitClient.minRelayerFeePct({
+              inputToken: EvmAddress.from(tokens[symbol].address),
+              originChainId: srcChainId,
+              outputToken: EvmAddress.from(ZERO_ADDRESS),
+              destinationChainId: dstChainId,
+            });
             spyLogger.debug({
               message: `Expect relayerFeePct === ${routeMinRelayerFeePct}`,
               routeFee,
@@ -497,6 +512,316 @@ describe("ProfitClient: Consider relay profit", () => {
       });
     });
     process.env[minUSDCKey] = initialMinUSDC;
+  });
+
+  it("Per-route and per-token configuration priority", () => {
+    // Verify minRelayerFeePct lookup precedence:
+    // routeKey -> destinationChainKey -> tokenKey.
+    // Also verify tokenKey with src+dst symbols is used ahead of src-only key.
+    profitClient.setTokenSymbol(tokens.USDC.address, "USDC");
+    profitClient.setTokenSymbol(tokens.WETH.address, "WETH");
+
+    const minRouteFee = "0.00041";
+    const minDestinationChainFee = "0.00031";
+    const minPairTokenFee = "0.00021";
+    const minSrcTokenFee = "0.00011";
+
+    const pairTokenKey = "MIN_RELAYER_FEE_PCT_USDC_WETH";
+    const srcTokenKey = "MIN_RELAYER_FEE_PCT_USDC";
+    const destinationChainKey = `MIN_RELAYER_FEE_PCT_${destinationChainId}`;
+    const routeKey = `${pairTokenKey}_${originChainId}_${destinationChainId}`;
+
+    const initialRouteFee = process.env[routeKey];
+    const initialDestinationChainFee = process.env[destinationChainKey];
+    const initialPairTokenFee = process.env[pairTokenKey];
+    const initialSrcTokenFee = process.env[srcTokenKey];
+    const restoreEnvKey = (key: string, value: string | undefined): void => {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    };
+
+    const deposit = {
+      inputToken: EvmAddress.from(tokens.USDC.address),
+      originChainId,
+      outputToken: EvmAddress.from(tokens.WETH.address),
+      destinationChainId,
+    };
+
+    try {
+      // 1) route key has highest precedence.
+      process.env[routeKey] = minRouteFee;
+      process.env[destinationChainKey] = minDestinationChainFee;
+      process.env[pairTokenKey] = minPairTokenFee;
+      process.env[srcTokenKey] = minSrcTokenFee;
+      const computedFromRoute = profitClient.minRelayerFeePct(deposit);
+      expect(computedFromRoute.eq(toBNWei(minRouteFee))).to.be.true;
+
+      // 2) destination-chain key has higher precedence than token key.
+      const uncachedOriginChain = originChainId + 999;
+      const uncachedRouteKey = `${pairTokenKey}_${uncachedOriginChain}_${destinationChainId}`;
+      delete process.env[uncachedRouteKey];
+      const computedFromDestinationChain = profitClient.minRelayerFeePct({
+        ...deposit,
+        originChainId: uncachedOriginChain,
+      });
+      expect(computedFromDestinationChain.eq(toBNWei(minDestinationChainFee))).to.be.true;
+
+      // 3) pair-token key takes precedence over src-only token key.
+      delete process.env[destinationChainKey];
+      const anotherUncachedOriginChain = originChainId + 1999;
+      const anotherUncachedRouteKey = `${pairTokenKey}_${anotherUncachedOriginChain}_${destinationChainId}`;
+      delete process.env[anotherUncachedRouteKey];
+      const computedFromPairToken = profitClient.minRelayerFeePct({
+        ...deposit,
+        originChainId: anotherUncachedOriginChain,
+      });
+      expect(computedFromPairToken.eq(toBNWei(minPairTokenFee))).to.be.true;
+
+      // 4) falls back to default min fee when no env key is set.
+      delete process.env[pairTokenKey];
+      delete process.env[srcTokenKey];
+      const defaultFallbackOriginChain = originChainId + 2999;
+      const defaultFallbackRouteKey = `${pairTokenKey}_${defaultFallbackOriginChain}_${destinationChainId}`;
+      delete process.env[defaultFallbackRouteKey];
+      const computedFromDefault = profitClient.minRelayerFeePct({
+        ...deposit,
+        originChainId: defaultFallbackOriginChain,
+      });
+      expect(computedFromDefault.eq(minRelayerFeePct)).to.be.true;
+    } finally {
+      restoreEnvKey(routeKey, initialRouteFee);
+      restoreEnvKey(destinationChainKey, initialDestinationChainFee);
+      restoreEnvKey(pairTokenKey, initialPairTokenFee);
+      restoreEnvKey(srcTokenKey, initialSrcTokenFee);
+    }
+  });
+
+  it("Per-route gas multiplier override priority", () => {
+    // Verify resolveGasMultiplier lookup precedence:
+    // routeKey -> tokenKey -> chainKey -> default (message-aware).
+    profitClient.setTokenSymbol(tokens.USDC.address, "USDC");
+    profitClient.setTokenSymbol(tokens.WETH.address, "WETH");
+
+    const routeMultiplier = "2.5";
+    const tokenMultiplier = "1.5";
+    const chainMultiplier = "0.5";
+
+    const routeKey = `RELAYER_GAS_MULTIPLIER_USDC_WETH_${destinationChainId}`;
+    const tokenKey = "RELAYER_GAS_MULTIPLIER_USDC";
+    const chainKey = `RELAYER_GAS_MULTIPLIER_${destinationChainId}`;
+
+    const initialRouteVal = process.env[routeKey];
+    const initialTokenVal = process.env[tokenKey];
+    const initialChainVal = process.env[chainKey];
+    const restoreEnvKey = (key: string, value: string | undefined): void => {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    };
+
+    const deposit: Deposit = {
+      ...v3DepositTemplate,
+      inputToken: EvmAddress.from(tokens.USDC.address),
+      outputToken: EvmAddress.from(tokens.WETH.address),
+      destinationChainId,
+    };
+
+    try {
+      // 1) route key has highest precedence.
+      process.env[routeKey] = routeMultiplier;
+      process.env[tokenKey] = tokenMultiplier;
+      process.env[chainKey] = chainMultiplier;
+      expect(profitClient.resolveGasMultiplier(deposit).eq(toBNWei(routeMultiplier))).to.be.true;
+
+      // 2) token key has higher precedence than chain key.
+      delete process.env[routeKey];
+      expect(profitClient.resolveGasMultiplier(deposit).eq(toBNWei(tokenMultiplier))).to.be.true;
+
+      // 3) chain key is used when no route or token key is set.
+      delete process.env[tokenKey];
+      expect(profitClient.resolveGasMultiplier(deposit).eq(toBNWei(chainMultiplier))).to.be.true;
+
+      // 4) falls back to default gasMultiplier when no env vars are set.
+      delete process.env[chainKey];
+      const defaultMultiplier = profitClient.resolveGasMultiplier(deposit);
+      // Default for empty-message deposits is this.gasMultiplier (set to 1.0 in mock).
+      expect(defaultMultiplier.eq(toBNWei("1"))).to.be.true;
+    } finally {
+      restoreEnvKey(routeKey, initialRouteVal);
+      restoreEnvKey(tokenKey, initialTokenVal);
+      restoreEnvKey(chainKey, initialChainVal);
+    }
+  });
+
+  it("Policy registry short-circuits minRelayerFeePct and resolveGasMultiplier", () => {
+    // Use Mainnet as the origin so isUnmeteredFastRebalance(origin, _, hubChainId=1) returns true
+    // via the hub-chain branch without needing to mock CCTP/OFT chain registries.
+    const policyOriginChainId = CHAIN_IDs.MAINNET;
+
+    const policiesKey = "RELAYER_POLICIES";
+    const destsKey = "RELAYER_POLICY_RAMP_DESTINATIONS_USDT_USDC";
+    const originsKey = "RELAYER_POLICY_RAMP_ORIGINS_USDT_USDC";
+    const minFeeKey = "RELAYER_POLICY_RAMP_MIN_FEE_PCT";
+    const gasMultKey = "RELAYER_POLICY_RAMP_GAS_MULTIPLIER";
+    // Second policy used to exercise first-match-wins ordering.
+    const policy2DestsKey = "RELAYER_POLICY_BOOTSTRAP_DESTINATIONS_USDT_USDC";
+    const policy2MinFeeKey = "RELAYER_POLICY_BOOTSTRAP_MIN_FEE_PCT";
+
+    const envKeys = [policiesKey, destsKey, originsKey, minFeeKey, gasMultKey, policy2DestsKey, policy2MinFeeKey];
+    const initial = Object.fromEntries(envKeys.map((k) => [k, process.env[k]]));
+    const clearEnv = (): void => envKeys.forEach((k) => delete process.env[k]);
+    const restoreEnv = (): void => {
+      for (const [k, v] of Object.entries(initial)) {
+        if (v === undefined) {
+          delete process.env[k];
+        } else {
+          process.env[k] = v;
+        }
+      }
+    };
+
+    // Policies are decoded once in the constructor — so each scenario sets env, builds a fresh
+    // MockProfitClient, then asserts. `buildClient` mirrors the `beforeEach` setup.
+    const buildClient = (): MockProfitClient => {
+      const client = new MockProfitClient(
+        spyLogger,
+        hubPoolClient,
+        {},
+        [],
+        EvmAddress.from(randomAddress()),
+        SvmAddress.from(ZERO_BYTES),
+        minRelayerFeePct,
+        true
+      );
+      client.setGasCosts(gasCost);
+      client.setTokenPrices(tokenPrices);
+      client.setTokenSymbol(tokens.USDC.address, "USDC");
+      client.setTokenSymbol(tokens.WETH.address, "USDT");
+      return client;
+    };
+
+    const deposit: Deposit = {
+      ...v3DepositTemplate,
+      inputToken: EvmAddress.from(tokens.WETH.address), // symbol overridden to USDT above
+      outputToken: EvmAddress.from(tokens.USDC.address),
+      originChainId: policyOriginChainId,
+      destinationChainId,
+    };
+    const slowOriginDeposit = { ...deposit, originChainId: 1234567 };
+
+    try {
+      // No policy registry set — falls through to existing logic.
+      clearEnv();
+      let client = buildClient();
+      const fallbackMinFee = client.minRelayerFeePct(deposit);
+      const fallbackGasMult = client.resolveGasMultiplier(deposit);
+
+      // Policy named in registry but no per-policy DESTINATIONS — falls through.
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
+      expect(client.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
+
+      // Match: destination in set, no origin restriction, fast-rebalance origin (hub).
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      process.env[destsKey] = `${destinationChainId},9999`;
+      process.env[minFeeKey] = "-0.0001";
+      process.env[gasMultKey] = "0";
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(toBNWei("-0.0001"))).to.be.true;
+      expect(client.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
+
+      // When only DESTINATIONS is set, missing MIN_FEE_PCT / GAS_MULTIPLIER falls through.
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      process.env[destsKey] = `${destinationChainId},9999`;
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
+      expect(client.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
+
+      // Destination not in set: falls through.
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      process.env[destsKey] = "9999";
+      process.env[minFeeKey] = "-0.0001";
+      process.env[gasMultKey] = "0";
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
+      expect(client.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
+
+      // Origin allowlist excludes this origin: falls through.
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      process.env[destsKey] = `${destinationChainId}`;
+      process.env[originsKey] = `${policyOriginChainId + 1}`;
+      process.env[minFeeKey] = "-0.0001";
+      process.env[gasMultKey] = "0";
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(fallbackMinFee)).to.be.true;
+      expect(client.resolveGasMultiplier(deposit).eq(fallbackGasMult)).to.be.true;
+
+      // Origin allowlist includes this origin: match.
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      process.env[destsKey] = `${destinationChainId}`;
+      process.env[originsKey] = `${policyOriginChainId},${policyOriginChainId + 1}`;
+      process.env[minFeeKey] = "0";
+      process.env[gasMultKey] = "0";
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(bnZero)).to.be.true;
+      expect(client.resolveGasMultiplier(deposit).eq(bnZero)).to.be.true;
+
+      // Explicit origin allowlist overrides the fast-rebalance default: a non-fast origin
+      // that's explicitly listed still matches.
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      process.env[destsKey] = `${destinationChainId}`;
+      process.env[originsKey] = "1234567";
+      process.env[minFeeKey] = "0";
+      process.env[gasMultKey] = "0";
+      client = buildClient();
+      expect(client.minRelayerFeePct(slowOriginDeposit).eq(bnZero)).to.be.true;
+      expect(client.resolveGasMultiplier(slowOriginDeposit).eq(bnZero)).to.be.true;
+
+      // No origin allowlist + non-fast-rebalance origin: falls through to default lookup.
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      process.env[destsKey] = `${destinationChainId}`;
+      process.env[minFeeKey] = "0";
+      process.env[gasMultKey] = "0";
+      client = buildClient();
+      expect(client.minRelayerFeePct(slowOriginDeposit).eq(fallbackMinFee)).to.be.true;
+      expect(client.resolveGasMultiplier(slowOriginDeposit).eq(fallbackGasMult)).to.be.true;
+
+      // First-match-wins across the registry: bootstrap is listed first, so its MIN_FEE_PCT
+      // applies even though ramp would also match.
+      clearEnv();
+      process.env[policiesKey] = "bootstrap,ramp";
+      process.env[destsKey] = `${destinationChainId}`;
+      process.env[minFeeKey] = "-0.0001";
+      process.env[policy2DestsKey] = `${destinationChainId}`;
+      process.env[policy2MinFeeKey] = "-0.0009";
+      client = buildClient();
+      expect(client.minRelayerFeePct(deposit).eq(toBNWei("-0.0009"))).to.be.true;
+
+      // GAS_MULTIPLIER must satisfy 0 <= multiplier <= 4 — validated at construct time.
+      clearEnv();
+      process.env[policiesKey] = "ramp";
+      process.env[destsKey] = `${destinationChainId}`;
+      process.env[gasMultKey] = "-0.1";
+      expect(() => buildClient()).to.throw(/RELAYER_POLICY_RAMP_GAS_MULTIPLIER/);
+      process.env[gasMultKey] = "4.1";
+      expect(() => buildClient()).to.throw(/RELAYER_POLICY_RAMP_GAS_MULTIPLIER/);
+    } finally {
+      restoreEnv();
+    }
   });
 
   it("Considers updated deposits", async () => {

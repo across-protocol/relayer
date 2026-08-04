@@ -24,11 +24,26 @@ import {
 } from "./utils";
 
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
-import { getCurrentTime, toBNWei, assert, ZERO_ADDRESS, bnZero, toAddressType, toBytes32 } from "../src/utils";
+import {
+  bnComparatorAscending,
+  getCurrentTime,
+  toBNWei,
+  assert,
+  ZERO_ADDRESS,
+  bnZero,
+  toAddressType,
+  toBytes32,
+} from "../src/utils";
 import { MockConfigStoreClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { constants as sdkConstants, interfaces, providers, utils as sdkUtils } from "@across-protocol/sdk";
+import {
+  clients as sdkClients,
+  constants as sdkConstants,
+  interfaces,
+  providers,
+  utils as sdkUtils,
+} from "@across-protocol/sdk";
 
-describe("Dataworker: Load bundle data: Computing unexecutable slow fills", async function () {
+describe("Dataworker: Load bundle data: Computing unexecutable slow fills", function () {
   const { EMPTY_MESSAGE } = sdkConstants;
 
   let spokePool_1: Contract, erc20_1: Contract, spokePool_2: Contract, erc20_2: Contract;
@@ -116,7 +131,7 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     } as interfaces.SlowFillRequestWithBlock);
   }
 
-  beforeEach(async function () {
+  before(async function () {
     ({
       spokePool_1,
       erc20_1,
@@ -134,6 +149,15 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       spokePoolClients,
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, 0));
+  });
+
+  // Clear the spy log so tests can count their own calls without leakage
+  // from prior tests.
+  beforeEach(function () {
+    spy.resetHistory();
+  });
+
+  beforeEach(async function () {
     await updateAllClients();
     mockHubPoolClient = new MockHubPoolClient(
       hubPoolClient.logger,
@@ -153,19 +177,24 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     );
     // Mock a realized lp fee pct for each deposit so we can check refund amounts and bundle lp fees.
     mockHubPoolClient.setDefaultRealizedLpFeePct(lpFeePct);
+    // Anchor each fresh EventManager to the live chain head; outer before() leaves it lagging at deploymentBlock.
     mockOriginSpokePoolClient = new MockSpokePoolClient(
       spokePoolClient_1.logger,
       spokePoolClient_1.spokePool,
       spokePoolClient_1.chainId,
-      spokePoolClient_1.deploymentBlock
+      spokePoolClient_1.deploymentBlock,
+      { eventManager: new sdkClients.mocks.EventManager(spokePoolClient_1.latestHeightSearched) }
     );
     mockDestinationSpokePool = await smock.fake(spokePoolClient_2.spokePool.interface);
     mockDestinationSpokePoolClient = new MockSpokePoolClient(
       spokePoolClient_2.logger,
       mockDestinationSpokePool as Contract,
       spokePoolClient_2.chainId,
-      spokePoolClient_2.deploymentBlock
+      spokePoolClient_2.deploymentBlock,
+      { eventManager: new sdkClients.mocks.EventManager(spokePoolClient_2.latestHeightSearched) }
     );
+    // Headroom so `eventManager.blockNumber + N` lookups resolve to real blocks.
+    await mineRandomBlocks(256);
     spokePoolClients = {
       ...spokePoolClients,
       [originChainId]: mockOriginSpokePoolClient,
@@ -299,8 +328,12 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
     // - one slow fill request is in an older bundle
     expect(data1.unexecutableSlowFills[destinationChainId][toBytes32(erc20_2.address)].length).to.equal(2);
     expect(
-      data1.unexecutableSlowFills[destinationChainId][toBytes32(erc20_2.address)].map((x) => x.depositId).sort()
-    ).to.deep.equal([depositWithMissingSlowFillRequest.depositId, eligibleSlowFills[0].depositId].sort());
+      data1.unexecutableSlowFills[destinationChainId][toBytes32(erc20_2.address)]
+        .map((x) => x.depositId)
+        .sort(bnComparatorAscending)
+    ).to.deep.equal(
+      [depositWithMissingSlowFillRequest.depositId, eligibleSlowFills[0].depositId].sort(bnComparatorAscending)
+    );
   });
 
   it("Creates unexecutable slow fill even if fast fill repayment information is invalid", async function () {
@@ -356,7 +389,9 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       JSON.stringify([mockOriginSpokePoolClient.chainId])
     );
     await mockConfigStore.update();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_1 as any).configStoreClient = mockConfigStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (spokePoolClient_2 as any).configStoreClient = mockConfigStore;
 
     // Generate a deposit that cannot be slow filled, to test that its ignored as a slow fill excess.
@@ -385,8 +420,12 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
 
     await spokePoolClient_1.update();
     await spokePoolClient_2.update();
-    const originChainDeposit = spokePoolClient_1.getDeposits()[0];
-    const destinationChainDeposit = spokePoolClient_2.getDeposits()[0];
+    const originChainDeposit = spokePoolClient_1
+      .getDeposits()
+      .find((d) => d.depositId.eq(depositsWithSlowFillRequests[0].depositId));
+    const destinationChainDeposit = spokePoolClient_2
+      .getDeposits()
+      .find((d) => d.depositId.eq(depositsWithSlowFillRequests[1].depositId));
 
     // Generate slow fill requests for the slow fill-eligible deposits
     await requestSlowFill(spokePool_2, relayer, depositsWithSlowFillRequests[0]);
@@ -552,7 +591,9 @@ describe("Dataworker: Load bundle data: Computing unexecutable slow fills", asyn
       JSON.stringify([mockOriginSpokePoolClient.chainId])
     );
     await mockConfigStore.update();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (mockOriginSpokePoolClient as any).configStoreClient = mockConfigStore;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (mockDestinationSpokePool as any).configStoreClient = mockConfigStore;
     const updateEventTimestamp = mockConfigStore.liteChainIndicesUpdates[0].timestamp;
 

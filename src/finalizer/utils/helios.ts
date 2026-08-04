@@ -6,14 +6,17 @@ import {
   paginatedEventQuery,
   compareAddressesSimple,
   ethers,
-  BigNumber,
+  toBN,
   groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
+  fetchWithTimeout,
+  postWithTimeout,
+  isHttpError,
+  isDefined,
 } from "../../utils";
 import { spreadEventWithBlockNumber } from "../../utils/EventUtils";
 import { FinalizerPromise, CrossChainMessage } from "../types";
-import axios from "axios";
 import UNIVERSAL_SPOKE_ABI from "../../common/abi/Universal_SpokePool.json";
 import { RelayedCallDataEvent, StoredCallDataEvent } from "../../interfaces/Universal";
 import { ApiProofRequest, ProofOutputs, ProofStateResponse, SP1HeliosProofData } from "../../interfaces/ZkApi";
@@ -70,9 +73,10 @@ export async function heliosL1toL2Finalizer(
   const l2ChainId = l2SpokePoolClient.chainId;
   const sp1HeliosL2 = await getSp1HeliosContractEVM(l2SpokePoolClient.spokePool, l2SpokePoolClient.spokePool.signer);
   const { sp1HeliosHead, sp1HeliosHeader } = await getSp1HeliosHeadData(sp1HeliosL2);
+  const sp1HeliosVkey: string = await sp1HeliosL2.heliosProgramVkey();
 
   // --- Step 1: Identify all actions needed (pending L1 -> L2 messages to finalize & keep-alive) ---
-  const actions = await identifyRequiredActions(
+  const _actions = await identifyRequiredActions(
     logger,
     hubPoolClient,
     l1SpokePoolClient,
@@ -81,6 +85,7 @@ export async function heliosL1toL2Finalizer(
     l1ChainId,
     l2ChainId
   );
+  const actions = filterRequiredActions(hubPoolClient, l2SpokePoolClient, l2ChainId, _actions);
 
   logger.debug({
     at: `Finalizer#heliosL1toL2Finalizer:${l2ChainId}`,
@@ -99,7 +104,8 @@ export async function heliosL1toL2Finalizer(
     l2SpokePoolClient,
     l1SpokePoolClient,
     sp1HeliosHead,
-    sp1HeliosHeader
+    sp1HeliosHeader,
+    sp1HeliosVkey
   );
 
   if (readyActions.length === 0) {
@@ -175,8 +181,8 @@ async function identifyRequiredActions(
       continue;
     }
 
-    if (verifiedSlotsMap.has(expectedStorageSlot) /* isVerified */) {
-      const verifiedEvent = verifiedSlotsMap.get(expectedStorageSlot);
+    const verifiedEvent = verifiedSlotsMap.get(expectedStorageSlot);
+    if (isDefined(verifiedEvent) /* isVerified */) {
       actions.push({
         type: "ExecuteOnly",
         l1Event: l1Event,
@@ -271,7 +277,8 @@ async function enrichHeliosActions(
   l2SpokePoolClient: EVMSpokePoolClient,
   l1SpokePoolClient: EVMSpokePoolClient,
   currentL2HeliosHeadNumber: number,
-  currentL2HeliosHeader: string
+  currentL2HeliosHeader: string,
+  vkey: string
 ): Promise<HeliosAction[]> {
   const l2ChainId = l2SpokePoolClient.chainId;
   const apiBaseUrl = process.env.HELIOS_PROOF_API_URL;
@@ -286,6 +293,7 @@ async function enrichHeliosActions(
   const readyActions: HeliosAction[] = [];
   for (const action of actions) {
     let apiRequest: ApiProofRequest;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let logContext: any;
     switch (action.type) {
       case "ExecuteOnly":
@@ -306,6 +314,7 @@ async function enrichHeliosActions(
           src_chain_block_number: action.l1Event.blockNumber,
           dst_chain_contract_from_head: currentL2HeliosHeadNumber,
           dst_chain_contract_from_header: currentL2HeliosHeader,
+          vkey,
         };
         break;
       case "UpdateOnly":
@@ -319,6 +328,7 @@ async function enrichHeliosActions(
           src_chain_block_number: 0,
           dst_chain_contract_from_head: currentL2HeliosHeadNumber,
           dst_chain_contract_from_header: currentL2HeliosHeader,
+          vkey,
         };
         break;
       default: {
@@ -334,22 +344,23 @@ async function enrichHeliosActions(
     let proofState: ProofStateResponse | null = null;
 
     // @dev We need try - catch here because of how API responds to non-existing proofs: with NotFound status
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let getError: any = null;
     try {
-      const response = await axios.get<ProofStateResponse>(getProofUrl);
-      proofState = response.data;
+      proofState = await fetchWithTimeout<ProofStateResponse>(getProofUrl);
       logger.debug({ ...logContext, message: "Proof state received", proofId, status: proofState.status });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       getError = error;
     }
 
-    // Axios error. Handle based on whether was a NOTFOUND or another error
+    // Handle fetch error based on whether it was a NOTFOUND or another error.
     if (getError) {
-      const isNotFoundError = axios.isAxiosError(getError) && getError.response?.status === 404;
+      const isNotFoundError = isHttpError(getError) && getError.status === 404;
       if (isNotFoundError) {
         // NOTFOUND error -> Request proof
         logger.debug({ ...logContext, message: "Proof not found (404), requesting...", proofId });
-        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
+        await postWithTimeout(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
         logger.debug({ ...logContext, message: "Proof requested successfully.", proofId });
         continue;
       } else {
@@ -359,6 +370,7 @@ async function enrichHeliosActions(
     }
 
     // No axios error, process `proofState`
+    assert(proofState !== null, `proofState unexpectedly null for proofId ${proofId}`);
     switch (proofState.status) {
       case "pending":
         // If proof generation is pending -- there's nothing for us to do yet. Will check this proof next run
@@ -378,7 +390,7 @@ async function enrichHeliosActions(
           errorMessage: proofState.error_message,
         });
 
-        await axios.post(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
+        await postWithTimeout(`${apiBaseUrl}/v1/api/proofs`, apiRequest);
         logger.debug({ ...logContext, message: "Errored proof requested again successfully.", proofId });
         break;
       }
@@ -430,13 +442,15 @@ async function getRelevantL1Events(
 
   const events: StoredCallDataEvent[] = rawLogs.map((log) => spreadEventWithBlockNumber(log) as StoredCallDataEvent);
 
-  const spokeActivationBlock = hubPoolClient.getSpokePoolActivationBlock(l2ChainId, l2SpokePoolClient.spokePoolAddress);
+  const spokePoolAddress = l2SpokePoolClient.spokePoolAddress;
+  assert(isDefined(spokePoolAddress), `helios: l2 spoke pool address not yet known for chain ${l2ChainId}`);
+  const spokeActivationBlock = hubPoolClient.getSpokePoolActivationBlock(l2ChainId, spokePoolAddress);
   assert(
     spokeActivationBlock !== undefined,
-    `Can't retrieve spoke activation block for l2 (${l2ChainId}) spoke: ${l2SpokePoolClient.spokePoolAddress.toNative()}
+    `Can't retrieve spoke activation block for l2 (${l2ChainId}) spoke: ${spokePoolAddress.toNative()}
     \nIs this address correct?`
   );
-  const spokePoolAddressStr = l2SpokePoolClient.spokePoolAddress.toEvmAddress();
+  const spokePoolAddressStr = spokePoolAddress.toEvmAddress();
   const relevantStoredCallDataEvents = events.filter(
     (event) =>
       event.blockNumber >= spokeActivationBlock &&
@@ -445,6 +459,50 @@ async function getRelevantL1Events(
   );
 
   return relevantStoredCallDataEvents;
+}
+
+export function filterRequiredActions(
+  hubPoolClient: HubPoolClient,
+  l2SpokePoolClient: SpokePoolClient,
+  l2ChainId: number,
+  actions: HeliosAction[]
+): HeliosAction[] {
+  return actions.filter((action) => {
+    if (action.type !== "UpdateAndExecute") {
+      return true;
+    }
+    // Admin function messages are stored against a specific target spoke pool and are not tied to a
+    // pool rebalance leaf, so they are never gated here. Only the shared `relayRootBundle` message --
+    // which the HubPoolStore stores with `target == address(0)` so that it is reused by every
+    // Universal chain in the bundle -- must wait for this chain's leaf to be executed on the HubPool.
+    if (!compareAddressesSimple(action.l1Event.target, ethers.constants.AddressZero)) {
+      return true;
+    }
+    // The shared `relayRootBundle` message is written to the HubPoolStore exactly once per bundle --
+    // by whichever Universal chain's `executeRootBundle()` runs first -- and is keyed by a nonce equal
+    // to the bundle's `challengePeriodEndTimestamp`. We must only finalize it on this L2 once THIS
+    // chain's pool rebalance leaf for that bundle has been executed on the HubPool; otherwise the
+    // refund root (and the funds backing it) is not yet ready on this chain.
+    //
+    // We therefore look the bundle up by its `challengePeriodEndTimestamp` and check whether a leaf
+    // for `l2ChainId` has executed. We intentionally do NOT require the leaf to have executed in the
+    // same L1 transaction that stored the message: the dataworker frequently splits leaf execution
+    // across multiple `executeRootBundle()` transactions, in which case every Universal chain whose
+    // leaf landed outside the storing transaction would otherwise be skipped forever.
+    const challengePeriodEndTimestamp = action.l1Event.nonce.toNumber();
+    const proposedRootBundle = hubPoolClient
+      .getProposedRootBundles()
+      .find((bundle) => bundle.challengePeriodEndTimestamp === challengePeriodEndTimestamp);
+    if (!isDefined(proposedRootBundle)) {
+      // The proposal predates our lookback window; its leaves were necessarily executed long ago, so
+      // there is nothing left to wait for.
+      return true;
+    }
+    const followingBlockNumber =
+      hubPoolClient.getFollowingRootBundle(proposedRootBundle)?.blockNumber ?? hubPoolClient.latestHeightSearched;
+    const executedLeaves = hubPoolClient.getExecutedLeavesForRootBundle(proposedRootBundle, followingBlockNumber);
+    return executedLeaves.some((leaf) => leaf.chainId === l2ChainId);
+  });
 }
 
 /** Query L2 Verification Events and return verified slots map */
@@ -698,6 +756,7 @@ function addUpdateAndExecuteTxns(
   // 2. SpokePool.executeMessage transaction
   const encodedMessage = ethers.utils.defaultAbiCoder.encode(["address", "bytes"], [l1Event.target, l1Event.data]);
   const executeArgs = [l1Event.nonce, encodedMessage, decodedOutputs.newHead];
+  const gasLimit = toBN(process.env[`HELIOS_EXECUTE_MESSAGE_GAS_LIMIT_${l2ChainId}`] ?? 500_000);
   const executeTx: AugmentedTransaction = {
     contract: universalSpokePoolContract,
     chainId: l2ChainId,
@@ -707,7 +766,7 @@ function addUpdateAndExecuteTxns(
     // @dev Simulation of `executeMessage` depends on prior state update via SP1Helios.update
     canFailInSimulation: true,
     // todo? this hardcoded gas limit of 500K could be improved if we were able to simulate this tx on top of blockchain state created by the tx above
-    gasLimit: BigNumber.from(500000),
+    gasLimit,
     message: `Finalize Helios msg (HubPoolStore nonce ${l1Event.nonce.toString()}) - Step 2: Execute on SpokePool`,
   };
   transactions.push(executeTx);

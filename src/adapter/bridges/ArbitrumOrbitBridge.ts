@@ -7,7 +7,7 @@ import {
   Provider,
   toBN,
   toWei,
-  TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   isDefined,
   ethers,
   bnZero,
@@ -15,7 +15,7 @@ import {
   EvmAddress,
   winston,
 } from "../../utils";
-import { CONTRACT_ADDRESSES, CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY } from "../../common";
+import { CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY, getContractAbi, getContractEntry } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 import { PUBLIC_NETWORKS } from "@across-protocol/constants";
@@ -23,12 +23,14 @@ import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20Gateway
 
 const bridgeSubmitValue: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.ARBITRUM]: toWei(0.013),
+  [CHAIN_IDs.ROBINHOOD]: toWei(0.013),
   // Testnet
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: toWei(0.013),
 };
 
 const maxFeePerGas: { [chainId: number]: BigNumber } = {
   [CHAIN_IDs.ARBITRUM]: toBN(20e9),
+  [CHAIN_IDs.ROBINHOOD]: toBN(20e9),
   // Testnet
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: toBN(20e9),
 };
@@ -51,11 +53,13 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    const { address: gatewayAddress, abi: gatewayRouterAbi } =
-      CONTRACT_ADDRESSES[hubChainId][`orbitErc20GatewayRouter_${l2chainId}`];
+    const { address: gatewayAddress, abi: gatewayRouterAbi } = getContractEntry(
+      hubChainId,
+      `orbitErc20GatewayRouter_${l2chainId}`
+    );
     const { l1: l1Address, l2: l2Address } =
       CUSTOM_ARBITRUM_GATEWAYS[l2chainId]?.[l1Token.toNative()] ?? DEFAULT_ARBITRUM_GATEWAY[l2chainId];
-    const l1Abi = CONTRACT_ADDRESSES[hubChainId][`orbitErc20Gateway_${l2chainId}`].abi;
+    const l1Abi = getContractAbi(hubChainId, `orbitErc20Gateway_${l2chainId}`);
     const l2Abi = ARBITRUM_ERC20_GATEWAY_L2_ABI;
 
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
@@ -63,7 +67,7 @@ export class ArbitrumOrbitBridge extends BaseBridgeAdapter {
     const nativeToken = PUBLIC_NETWORKS[l2chainId].nativeToken;
     // Only set nonstandard gas tokens.
     if (nativeToken !== "ETH") {
-      this.gasToken = EvmAddress.from(TOKEN_SYMBOLS_MAP[nativeToken].addresses[hubChainId]);
+      this.gasToken = EvmAddress.from(resolveAcrossToken(nativeToken, hubChainId, true));
     }
     this.l1SubmitValue = bridgeSubmitValue[l2chainId];
     this.l2GasPrice = maxFeePerGas[l2chainId];

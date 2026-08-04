@@ -10,7 +10,6 @@ import {
   getCachedProvider,
   getUniqueLogIndex,
   getCurrentTime,
-  getRedisCache,
   getBlockForTimestamp,
   Multicall2Call,
   TOKEN_SYMBOLS_MAP,
@@ -20,7 +19,10 @@ import {
   getL1TokenAddress,
   toAddressType,
   EvmAddress,
+  assert,
+  isDefined,
 } from "../../utils";
+import { getRedisCache } from "../../cache/Redis";
 import { EthersError, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, CrossChainMessage } from "../types";
@@ -28,7 +30,7 @@ import { FinalizerPromise, CrossChainMessage } from "../types";
 // Note!!: This client will only work for PoS tokens. Matic also has Plasma tokens which have a different finalization
 // process entirely.
 
-let CHAIN_ID;
+let CHAIN_ID: number;
 enum POLYGON_MESSAGE_STATUS {
   NOT_CHECKPOINTED = "NOT_CHECKPOINTED",
   CAN_EXIT = "CAN_EXIT",
@@ -287,6 +289,7 @@ async function retrieveTokenFromMainnetTokenBridger(l2Token: string, mainnetSign
   const l1Token = getL1TokenAddress(EvmAddress.from(l2Token), CHAIN_ID);
   const mainnetTokenBridger = getMainnetTokenBridger(mainnetSigner);
   const callData = await mainnetTokenBridger.populateTransaction.retrieve(l1Token.toNative());
+  assert(isDefined(callData.data) && isDefined(callData.to), "polygon: retrieve populateTransaction missing data/to");
   return {
     callData: callData.data,
     target: callData.to,
@@ -294,7 +297,7 @@ async function retrieveTokenFromMainnetTokenBridger(l2Token: string, mainnetSign
 }
 
 function getL2TokensToFinalize(events: TokensBridged[]): string[] {
-  const l2TokenCountInBridgeEvents = events.reduce((l2TokenDictionary, event) => {
+  const l2TokenCountInBridgeEvents = events.reduce<Record<string, boolean>>((l2TokenDictionary, event) => {
     l2TokenDictionary[event.l2TokenAddress.toEvmAddress()] = true;
     return l2TokenDictionary;
   }, {});

@@ -52,7 +52,7 @@ export async function requestSlowFill(
   ]);
   const lastEvent = events.at(-1);
   assert(lastEvent);
-  const slowFillRequest = slowFillRequestFromArgs(spreadEvent(lastEvent.args!));
+  const slowFillRequest = slowFillRequestFromArgs(spreadEvent(lastEvent.args));
   const requestObject: SlowFillRequestWithBlock = {
     ...slowFillRequest,
     destinationChainId,

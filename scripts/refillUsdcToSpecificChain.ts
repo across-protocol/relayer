@@ -8,7 +8,6 @@ import {
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
   createFormatFunction,
-  formatUnits,
   toBNWei,
   ERC20,
   Contract,
@@ -28,7 +27,7 @@ import { MultiCallerClient } from "../src/clients";
 config();
 
 // Example usage:
-//   ts-node ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1
+//   tsx ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1
 //
 // Required environment variables (set in .env file):
 //   SOURCE_CHAIN_IDS="[8453,42161,137]"  # JSON array of source chain IDs
@@ -62,7 +61,7 @@ async function run(): Promise<void> {
     if (!Array.isArray(sourceChainIds) || sourceChainIds.length === 0) {
       throw new Error("SOURCE_CHAIN_IDS must be a non-empty array");
     }
-  } catch (error) {
+  } catch {
     throw new Error(`Invalid SOURCE_CHAIN_IDS format. Expected JSON array, got: ${chainIdsInput}`);
   }
 
@@ -198,7 +197,7 @@ async function run(): Promise<void> {
           chainName: sourceChainName,
           chainId: sourceChainId,
           balance: balanceFormatted,
-          threshold: formatUnits(MIN_BALANCE_THRESHOLD_USDC, sourceUsdcTokenInfo.decimals),
+          threshold: MIN_BALANCE_THRESHOLD_USDC_DECIMAL,
         });
 
         // Construct transaction to send entire balance to destination chain
@@ -239,7 +238,7 @@ async function run(): Promise<void> {
           chainName: sourceChainName,
           chainId: sourceChainId,
           balance: balanceFormatted,
-          threshold: formatUnits(MIN_BALANCE_THRESHOLD_USDC, sourceUsdcTokenInfo.decimals),
+          threshold: MIN_BALANCE_THRESHOLD_USDC_DECIMAL,
         });
       }
     } catch (error) {
@@ -294,7 +293,7 @@ async function run(): Promise<void> {
     logger.debug({
       at: "RefillUsdcToSpecificChain#run",
       message: "💡 To execute transactions, set SEND_TRANSACTIONS=true in your environment variables",
-      example: "SEND_TRANSACTIONS=true yarn ts-node ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1",
+      example: "SEND_TRANSACTIONS=true yarn tsx ./scripts/refillUsdcToSpecificChain.ts --wallet gckms --keys bot1",
     });
     return;
   }

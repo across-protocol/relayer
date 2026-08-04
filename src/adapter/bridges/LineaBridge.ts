@@ -8,7 +8,7 @@ import {
   EvmAddress,
   winston,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
@@ -23,8 +23,8 @@ export class LineaBridge extends BaseBridgeAdapter {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     _logger: winston.Logger
   ) {
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].lineaL1TokenBridge;
-    const { address: l2Address, abi: l2Abi } = CONTRACT_ADDRESSES[l2chainId].lineaL2TokenBridge;
+    const { address: l1Address, abi: l1Abi } = getContractEntry(hubChainId, "lineaL1TokenBridge");
+    const { address: l2Address, abi: l2Abi } = getContractEntry(l2chainId, "lineaL2TokenBridge");
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(l1Address)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);

@@ -1,4 +1,4 @@
-import { BigNumber, EvmAddress, SvmAddress, isDefined, TOKEN_SYMBOLS_MAP } from "../utils";
+import { BigNumber, EvmAddress, SvmAddress, isDefined, resolveAcrossToken } from "../utils";
 
 export type TokenBalanceConfig = {
   targetOverageBuffer: BigNumber; // Max multiplier for targetPct, to give flexibility in repayment chain selection.
@@ -23,6 +23,18 @@ export type SwapRoute = {
   fromChain: number | "ALL";
   fromToken: string;
   toChain: number | "ALL";
+  toToken: string;
+};
+
+/**
+ * Compact swap-route config used when `RELAYER_ALLOWED_SWAP_ROUTES_VERSION=2`.
+ * `fromChain` / `toChain` may be a single chain id, `"ALL"`, or an array of chain ids.
+ * Expanded at config load into flat {@link SwapRoute} entries (same runtime shape as v1).
+ */
+export type SwapRouteV2 = {
+  fromChain: number | "ALL" | number[];
+  fromToken: string;
+  toChain: number | "ALL" | number[];
   toToken: string;
 };
 
@@ -60,7 +72,7 @@ export type SwapRoute = {
  */
 export interface InventoryConfig {
   // tokenConfig can map to a single token allocation, or a set of allocations that all map to the same HubPool token.
-  tokenConfig: { [l1Token: string]: ChainTokenConfig } | { [l1Token: string]: ChainTokenInventory };
+  tokenConfig: { [l1Token: string]: ChainTokenConfig | ChainTokenInventory };
 
   // If ETH balance on chain is above threshold, wrap the excess over the target to WETH.
   wrapEtherTargetPerChain: {
@@ -73,7 +85,14 @@ export interface InventoryConfig {
   wrapEtherThreshold: BigNumber;
 
   // Allows caller to specify specific swap routes eligible for filling.
+  // After RelayerConfig load this is always the expanded flat list used at runtime.
   allowedSwapRoutes: SwapRoute[];
+
+  /**
+   * Compact swap routes (chain arrays / ALL). Used only when
+   * `RELAYER_ALLOWED_SWAP_ROUTES_VERSION=2`; otherwise ignored.
+   */
+  allowedSwapRoutes2?: SwapRouteV2[];
 
   // Optional parameter which forces relayer repayment on the specified chain ID.
   repaymentChainOverride: number | undefined;
@@ -85,11 +104,12 @@ export interface InventoryConfig {
   forceOriginRepaymentPerChain: {
     [chainId: number]: boolean;
   };
+  rebalanceShortfalls?: boolean;
 }
 
 export function isAliasConfig(config: ChainTokenConfig | ChainTokenInventory): config is ChainTokenInventory {
   // Keys are token symbols.
-  if (Object.keys(config).every((k) => isDefined(TOKEN_SYMBOLS_MAP[k]))) {
+  if (Object.keys(config).every((k) => isDefined(resolveAcrossToken(k)))) {
     return true;
   }
 

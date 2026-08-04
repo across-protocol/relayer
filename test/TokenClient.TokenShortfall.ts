@@ -17,7 +17,7 @@ import {
 } from "./utils";
 import { EvmAddress, getSvmSignerFromEvmSigner, SvmAddress, isSignerWallet, toAddressType } from "../src/utils";
 
-describe("TokenClient: Token shortfall", async function () {
+describe("TokenClient: Token shortfall", function () {
   let spokePool_1: Contract, spokePool_2: Contract;
   let erc20_2: Contract;
   let spokePoolClient_1: SpokePoolClient, spokePoolClient_2: SpokePoolClient;

@@ -1,7 +1,17 @@
+import { randomUUID } from "crypto";
 import winston from "winston";
-import { DEFAULT_MULTICALL_CHUNK_SIZE, DEFAULT_ARWEAVE_GATEWAY } from "../common";
-import { ArweaveGatewayInterface, ArweaveGatewayInterfaceSS } from "../interfaces";
-import { addressAdapters, AddressAggregator, assert, CHAIN_IDs, isDefined } from "../utils";
+import { DEFAULT_MULTICALL_CHUNK_SIZE } from "../common";
+import { ArweaveGatewayConfigSS, ArweaveGatewayConfig } from "../interfaces";
+import {
+  addressAdapters,
+  AddressAggregator,
+  assert,
+  CHAIN_IDs,
+  isDefined,
+  parseJson,
+  stringifyThrownValue,
+} from "../utils";
+import * as httpAdapter from "./addressFilter/http";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -12,24 +22,26 @@ export class CommonConfig {
   readonly hubPoolChainId: number;
   readonly pollingDelay: number;
   readonly maxBlockLookBack: { [key: number]: number };
-  readonly maxTxWait: number;
   readonly spokePoolChainsOverride: number[];
+  readonly l1TokensOverride: string[];
   readonly sendingTransactionsEnabled: boolean;
   readonly maxRelayerLookBack: number;
   readonly version: string;
   readonly maxConfigVersion: number;
   readonly blockRangeEndBlockBuffer: { [chainId: number]: number };
   readonly timeToCache: number;
-  readonly arweaveGateway: ArweaveGatewayInterface;
+  readonly arweaveGateways: ArweaveGatewayConfig[] | undefined;
   readonly peggedTokenPrices: { [pegTokenSymbol: string]: Set<string> } = {};
+  readonly botIdentifier: string;
+  readonly runIdentifier: string;
 
   // State we'll load after we update the config store client and fetch all chains we want to support.
   public multiCallChunkSize: { [chainId: number]: number } = {};
   public toBlockOverride: Record<number, number> = {};
   public fromBlockOverride: Record<number, number> = {};
-  public addressFilter: Set<string>;
+  public addressFilter?: Set<string>;
 
-  constructor(env: ProcessEnv) {
+  constructor(env: ProcessEnv, opts: { botIdentifier?: string } = {}) {
     const {
       MAX_RELAYER_DEPOSIT_LOOK_BACK,
       BLOCK_RANGE_END_BLOCK_BUFFER,
@@ -38,21 +50,25 @@ export class CommonConfig {
       MAX_BLOCK_LOOK_BACK,
       SEND_TRANSACTIONS,
       SPOKE_POOL_CHAINS_OVERRIDE,
+      L1_TOKENS_OVERRIDE,
       ACROSS_BOT_VERSION,
       ACROSS_MAX_CONFIG_VERSION,
       HUB_POOL_TIME_TO_CACHE,
-      ARWEAVE_GATEWAY,
+      ARWEAVE_GATEWAYS,
       PEGGED_TOKEN_PRICES,
+      BOT_IDENTIFIER,
+      RUN_IDENTIFIER,
     } = env;
 
-    const mergeConfig = <T>(config: T, envVar: string): T => {
+    const mergeConfig = <T>(config: T, envVar: string | undefined): T => {
       const shallowCopy = { ...config };
       Object.entries(JSON.parse(envVar ?? "{}")).forEach(([k, v]) => {
+        const _k = k as keyof T;
         assert(
-          typeof v === typeof shallowCopy[k] || !isDefined(shallowCopy[k]),
-          `Invalid ${envVar} configuration on key ${k} (${typeof v} != ${typeof shallowCopy[k]})`
+          typeof v === typeof shallowCopy[_k] || !isDefined(shallowCopy[_k]),
+          `Invalid ${envVar} configuration on key ${k} (${typeof v} != ${typeof shallowCopy[_k]})`
         );
-        shallowCopy[k] = v;
+        shallowCopy[_k] = v as T[keyof T];
       });
       return shallowCopy;
     };
@@ -76,7 +92,8 @@ export class CommonConfig {
     // `maxRelayerLookBack` is how far we fetch events from, modifying the search config's 'fromBlock'
     this.maxRelayerLookBack = Number(MAX_RELAYER_DEPOSIT_LOOK_BACK ?? Constants.MAX_RELAYER_DEPOSIT_LOOK_BACK);
     this.pollingDelay = Number(POLLING_DELAY ?? 60);
-    this.spokePoolChainsOverride = JSON.parse(SPOKE_POOL_CHAINS_OVERRIDE ?? "[]");
+    this.spokePoolChainsOverride = parseJson.numberArray(SPOKE_POOL_CHAINS_OVERRIDE);
+    this.l1TokensOverride = parseJson.stringArray(L1_TOKENS_OVERRIDE);
 
     // Inherit the default eth_getLogs block range config, then sub in any env-based overrides.
     this.maxBlockLookBack = mergeConfig(Constants.CHAIN_MAX_BLOCK_LOOKBACK, MAX_BLOCK_LOOK_BACK);
@@ -84,16 +101,24 @@ export class CommonConfig {
     this.sendingTransactionsEnabled = SEND_TRANSACTIONS === "true";
 
     // Load the Arweave gateway from the environment.
-    const _arweaveGateway = isDefined(ARWEAVE_GATEWAY) ? JSON.parse(ARWEAVE_GATEWAY ?? "{}") : DEFAULT_ARWEAVE_GATEWAY;
-    assert(ArweaveGatewayInterfaceSS.is(_arweaveGateway), "Invalid Arweave gateway");
-    this.arweaveGateway = _arweaveGateway;
+    const _arweaveGateways = isDefined(ARWEAVE_GATEWAYS) ? JSON.parse(ARWEAVE_GATEWAYS) : undefined;
+    assert(
+      !isDefined(_arweaveGateways) ||
+        (Array.isArray(_arweaveGateways) &&
+          _arweaveGateways.every((_arweaveGateway) => ArweaveGatewayConfigSS.is(_arweaveGateway))),
+      "Invalid Arweave gateway"
+    );
+    this.arweaveGateways = _arweaveGateways;
 
     this.peggedTokenPrices = Object.fromEntries(
-      Object.entries(JSON.parse(PEGGED_TOKEN_PRICES ?? "{}")).map(([pegTokenSymbol, tokenSymbolsToPeg]) => [
+      Object.entries(parseJson.stringArrayMap(PEGGED_TOKEN_PRICES)).map(([pegTokenSymbol, tokenSymbolsToPeg]) => [
         pegTokenSymbol,
-        new Set(tokenSymbolsToPeg as string[]),
+        new Set(tokenSymbolsToPeg),
       ])
     );
+
+    this.botIdentifier = BOT_IDENTIFIER ?? opts.botIdentifier ?? "across";
+    this.runIdentifier = RUN_IDENTIFIER ?? randomUUID();
   }
 
   /**
@@ -155,20 +180,34 @@ export class CommonConfig {
    * @param logger Logger instance.
    */
   async update(logger: winston.Logger): Promise<void> {
-    const { DISABLE_ADDRESS_FILTER, ADDRESS_FILTER_PATH: path = "./addresses.json" } = process.env;
+    const {
+      DISABLE_ADDRESS_FILTER,
+      ADDRESS_FILTER_PATH: path = "./addresses.json",
+      OSTIUM_ADDRESS_FILTER_URL: ostiumUrl,
+    } = process.env;
     const noFilter = DISABLE_ADDRESS_FILTER === "true";
     if (noFilter) {
       logger.debug({ at: "Config::update", message: "Skipping address list update." });
       return Promise.resolve();
     }
 
-    const addressAggregator = new AddressAggregator(
-      [
-        new addressAdapters.fs.AddressList({ path, logger }),
-        new addressAdapters.risklabs.AddressList({ logger, throwOnError: false }),
-      ],
-      logger
-    );
-    this.addressFilter = await addressAggregator.update();
+    const localList = new addressAdapters.fs.AddressList({ path, logger });
+    const remoteLists = [
+      new addressAdapters.risklabs.AddressList({ logger, timeout: 5000 }),
+      isDefined(ostiumUrl) ? new httpAdapter.AddressList({ name: "Ostium", path: ostiumUrl, logger }) : undefined,
+    ].filter(isDefined);
+
+    try {
+      this.addressFilter = await new AddressAggregator([localList, ...remoteLists], logger).update();
+    } catch (err) {
+      logger.warn({
+        at: "Config::update",
+        message: "Failed to update address filter; retaining existing addresses.",
+        reason: stringifyThrownValue(err),
+        addresses: this.addressFilter?.size,
+      });
+      // On startup there is no previous filter to retain; fall back to the local address list.
+      this.addressFilter ??= await new AddressAggregator([localList], logger).update();
+    }
   }
 }

@@ -60,7 +60,7 @@ export class MintTransactionFailedError extends CCTPError {
   readonly shouldRetry = true;
   readonly code = "MINT_TRANSACTION_FAILED";
 
-  constructor(originalError: Error | unknown) {
+  constructor(originalError: unknown) {
     const message = originalError instanceof Error ? originalError.message : "Mint transaction failed";
     super(message);
     if (originalError instanceof Error) {
@@ -75,6 +75,24 @@ export class PrivateKeyNotFoundError extends CCTPError {
 
   constructor(type: "evm" | "svm") {
     super(`No private key found for ${type}`);
+  }
+}
+
+export class DestinationUsdcNotConfiguredError extends CCTPError {
+  readonly shouldRetry = false;
+  readonly code = "DEST_USDC_NOT_CONFIGURED";
+
+  constructor(chainId: number) {
+    super(`USDC address not configured for destination chain ${chainId}`);
+  }
+}
+
+export class OriginUsdcNotConfiguredError extends CCTPError {
+  readonly shouldRetry = false;
+  readonly code = "ORIGIN_USDC_NOT_CONFIGURED";
+
+  constructor(chainId: number) {
+    super(`USDC address not configured for origin chain ${chainId}`);
   }
 }
 

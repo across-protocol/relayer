@@ -1,19 +1,24 @@
 import { writeFile } from "node:fs/promises";
 import { config } from "dotenv";
-import { addressAdapters, AddressAggregator, Logger } from "../src/utils";
+import { addressAggregator } from "@across-protocol/sdk";
+import { Logger } from "@risk-labs/logger";
+
+const { AddressAggregator, adapters: addressAdapters } = addressAggregator;
 
 const OUTPUT_PATH = "addresses.json";
 
 let logger: typeof Logger;
 
 async function run(): Promise<number> {
+  const { RISKLABS_ADDRESS_LIST_HOSTNAME: path = "https://blacklist.risklabs.foundation/api/blacklist" } = process.env;
   const addressList = new AddressAggregator(
-    [new addressAdapters.risklabs.AddressList({ throwOnError: false })],
+    [new addressAdapters.risklabs.AddressList({ path, throwOnError: false, timeout: 10000 })],
     logger
   );
-  const addresses = await addressList.update();
+  const addressSet = await addressList.update();
+  const addresses = Array.from(addressSet);
   await writeFile(OUTPUT_PATH, JSON.stringify(addresses, null, 4));
-  console.log(`Stored ${addresses.size} addresses at ${OUTPUT_PATH}.`);
+  console.log(`Stored ${addressSet.size} addresses at ${OUTPUT_PATH}.`);
 
   return 0;
 }

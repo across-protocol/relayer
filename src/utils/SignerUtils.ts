@@ -1,7 +1,8 @@
 import { readFile } from "fs/promises";
 import { constants as ethersConsts, VoidSigner } from "ethers";
+import minimist from "minimist";
 import { typeguards } from "@across-protocol/sdk";
-import { Signer, Wallet, retrieveGckmsKeys, getGckmsConfig, isDefined, assert } from "./";
+import { Signer, Wallet, retrieveGckmsKeys, getGckmsConfig, isDefined, assert, mapAsync, parseJson } from "./";
 import { ArweaveWalletJWKInterface, ArweaveWalletJWKInterfaceSS } from "../interfaces";
 
 /**
@@ -144,7 +145,7 @@ export function getArweaveJWKSigner({ keyType, cleanEnv }: SignerOptions): Arwea
     if (!isDefined(ARWEAVE_WALLET_JWK)) {
       throw new Error("Arweave wallet JWK requested but no ARWEAVE_WALLET_JWK env set!");
     }
-    const arweaveWalletJWK = JSON.parse(process.env.ARWEAVE_WALLET_JWK);
+    const arweaveWalletJWK = JSON.parse(ARWEAVE_WALLET_JWK);
     assert(ArweaveWalletJWKInterfaceSS.is(arweaveWalletJWK), "Invalid Arweave wallet JWK");
     if (cleanEnv) {
       cleanKeysFromEnvironment({ arweave: true, eth: false });
@@ -172,5 +173,27 @@ function cleanKeysFromEnvironment(
 }
 
 export function isSignerWallet(signer: Signer): signer is Wallet {
-  return signer["_signingKey"]?.() !== undefined;
+  return "_signingKey" in signer && typeof signer._signingKey === "function" && signer._signingKey() !== undefined;
+}
+
+export async function getDispatcherKeys(): Promise<Signer[]> {
+  const opts = {
+    string: ["dispatcherKeys"],
+  };
+  const args = minimist(process.argv.slice(2), opts);
+  if (!isDefined(args.dispatcherKeys)) {
+    // If GCKMS keys are undefined. Assume keys are in environment.
+    const keys = parseJson.stringArray(process.env.DISPATCHER_KEYS);
+    return keys.map((key) => new Wallet(key));
+  }
+  const dispatcherKeyNames = args.dispatcherKeys.split(",");
+  if (!Array.isArray(dispatcherKeyNames)) {
+    throw new Error("Dispatcher keys array is malformed");
+  }
+
+  const dispatcherKeys = await mapAsync(dispatcherKeyNames, async (dispatcherKey) => getGckmsSigner([dispatcherKey]));
+  if (dispatcherKeys.length !== dispatcherKeyNames.length) {
+    throw new Error("Failed to retrieve dispatcher keys from GCKMS");
+  }
+  return dispatcherKeys;
 }

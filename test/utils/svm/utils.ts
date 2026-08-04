@@ -1,5 +1,6 @@
 import { CHAIN_IDs } from "@across-protocol/constants";
-import { SpokePool__factory, SvmSpokeClient } from "@across-protocol/contracts";
+import { SpokePool__factory } from "@across-protocol/sdk/typechain";
+import { SvmSpokeClient } from "@across-protocol/contracts";
 import { RelayDataArgs } from "@across-protocol/contracts/dist/src/svm/clients/SvmSpoke";
 import { intToU8Array32 } from "@across-protocol/contracts/dist/src/svm/web3-v1";
 import { SYSTEM_PROGRAM_ADDRESS, getCreateAccountInstruction } from "@solana-program/system";
@@ -14,9 +15,7 @@ import {
 import {
   Address,
   Commitment,
-  CompilableTransactionMessage,
   KeyPairSigner,
-  TransactionMessageWithBlockhashLifetime,
   airdropFactory,
   appendTransactionMessageInstruction,
   createSolanaRpc,
@@ -70,7 +69,7 @@ export const generateKeyPairSignerWithSol = async (
 // Signs, sends and confirms a compiled transaction message.
 export const signAndSendTransaction = async (
   rpcClient: arch.svm.RpcClient,
-  transactionMessage: CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime,
+  transactionMessage: Parameters<typeof signTransactionMessageWithSigners>[0],
   commitment: Commitment = "confirmed"
 ) => {
   const signedTransaction = await signTransactionMessageWithSigners(transactionMessage);

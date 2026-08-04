@@ -1,20 +1,24 @@
 import { TOKEN_APPROVALS_TO_FIRST_ZERO } from "../common";
 import {
+  assert,
   BigNumber,
   spreadEventWithBlockNumber,
   toBN,
   MAX_SAFE_ALLOWANCE,
-  runTransaction,
+  submitTransaction,
+  TransactionResponse,
   bnZero,
   getNetworkName,
   blockExplorerLink,
+  isDefined,
   mapAsync,
   winston,
   Address,
 } from "../utils";
 import { BridgeEvent } from "./bridges/BaseBridgeAdapter";
 import { Log, SortableEvent } from "../interfaces";
-import { ExpandedERC20 } from "@across-protocol/contracts";
+import { ExpandedERC20 } from "@across-protocol/sdk/typechain";
+import { TransactionClient } from "../clients/TransactionClient";
 
 export {
   matchL2EthDepositAndWrapEvents,
@@ -40,25 +44,49 @@ export async function approveTokens(
   hubChainId: number,
   logger: winston.Logger
 ): Promise<string> {
+  const transactionClient = new TransactionClient(logger);
   const bridges = tokens.flatMap(({ token, bridges }) => bridges.map((bridge) => ({ token, bridge })));
   const approvalMarkdwn = await mapAsync(bridges, async ({ token, bridge }) => {
-    const txs = [];
+    const txs: TransactionResponse[] = [];
     if (approvalChainId == hubChainId) {
       if (TOKEN_APPROVALS_TO_FIRST_ZERO[hubChainId]?.includes(token.address)) {
-        txs.push(await runTransaction(logger, token, "approve", [bridge.toNative(), bnZero]));
+        txs.push(
+          await submitTransaction(
+            {
+              contract: token,
+              method: "approve",
+              args: [bridge.toNative(), bnZero],
+              chainId: approvalChainId,
+              ensureConfirmation: true,
+            },
+            transactionClient
+          )
+        );
       }
     }
-    txs.push(await runTransaction(logger, token, "approve", [bridge.toNative(), MAX_SAFE_ALLOWANCE]));
-    const receipts = await Promise.all(txs.map((tx) => tx.wait()));
+    txs.push(
+      await submitTransaction(
+        {
+          contract: token,
+          method: "approve",
+          args: [bridge.toNative(), MAX_SAFE_ALLOWANCE],
+          chainId: approvalChainId,
+          ensureConfirmation: true,
+        },
+        transactionClient
+      )
+    );
     const networkName = getNetworkName(approvalChainId);
 
+    const lastTx = txs.at(-1);
+    assert(isDefined(lastTx), "approvalMarkdwn: expected at least one approval txn");
     let internalMrkdwn =
       ` - Approved token bridge ${blockExplorerLink(bridge.toNative(), approvalChainId)} ` +
       `to spend ${await token.symbol()} ${blockExplorerLink(token.address, approvalChainId)} on ${networkName}.` +
-      `tx: ${blockExplorerLink(receipts.at(-1).transactionHash, approvalChainId)}`;
+      `tx: ${blockExplorerLink(lastTx.hash, approvalChainId)}`;
 
-    if (receipts.length > 1) {
-      internalMrkdwn += ` tx (to zero approval first): ${blockExplorerLink(receipts[0].transactionHash, hubChainId)}`;
+    if (txs.length > 1) {
+      internalMrkdwn += ` tx (to zero approval first): ${blockExplorerLink(txs[0].hash, hubChainId)}`;
     }
     return internalMrkdwn;
   });
@@ -66,7 +94,7 @@ export async function approveTokens(
 }
 
 export function processEvent(event: Log, amountField: string): BridgeEvent {
-  const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent;
+  const eventSpread = spreadEventWithBlockNumber(event) as SortableEvent & { [key: string]: BigNumber };
   return {
     ...eventSpread,
     amount: eventSpread[amountField],

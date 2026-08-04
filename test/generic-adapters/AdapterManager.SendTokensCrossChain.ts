@@ -4,6 +4,7 @@ import { CONTRACT_ADDRESSES } from "../../src/common";
 import {
   bnToHex,
   getL2TokenAddresses,
+  isDefined,
   toBNWei,
   CHAIN_IDs,
   TOKEN_SYMBOLS_MAP,
@@ -38,7 +39,7 @@ let adapterManager: AdapterManager;
 let l1AtomicDepositor: FakeContract;
 
 // Optimism contracts
-let l1OptimismBridge: FakeContract, l1OptimismDaiBridge: FakeContract, l1OptimismSnxBridge: FakeContract;
+let l1OptimismBridge: FakeContract, l1OptimismDaiBridge: FakeContract;
 
 // Polygon contracts
 let l1PolygonRootChainManager: FakeContract;
@@ -59,11 +60,9 @@ const mainnetTokens = {
   weth: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET],
   dai: TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET],
   wbtc: TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET],
-  snx: TOKEN_SYMBOLS_MAP.SNX.addresses[CHAIN_IDs.MAINNET],
-  bal: TOKEN_SYMBOLS_MAP.BAL.addresses[CHAIN_IDs.MAINNET],
 } as const;
 
-describe("AdapterManager: Send tokens cross-chain", async function () {
+describe("AdapterManager: Send tokens cross-chain", function () {
   beforeEach(async function () {
     [relayer, owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());
@@ -95,7 +94,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
         toAddressType(mainnetTokens.usdc, CHAIN_IDs.MAINNET),
         amountToSend
       );
-    } catch (error) {
+    } catch {
       thrown1 = true;
     }
     expect(thrown1).to.be.equal(true);
@@ -104,16 +103,16 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const chainId = CHAIN_IDs.OPTIMISM;
     const l2Gas = 200000; // This is hardcoded in all OVM Bridges
 
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
-      toAddressType(mainnetTokens.bal, CHAIN_IDs.MAINNET),
+      toAddressType(mainnetTokens.wbtc, CHAIN_IDs.MAINNET),
       amountToSend
     );
     expect(l1OptimismBridge.depositERC20).to.have.been.calledWith(
-      mainnetTokens.bal, // l1 token
-      getL2TokenAddresses(mainnetTokens.bal)[chainId], // l2 token
+      mainnetTokens.wbtc, // l1 token
+      getL2TokenAddresses(mainnetTokens.wbtc)[chainId], // l2 token
       amountToSend, // amount
       l2Gas, // l2Gas
       "0x" // data
@@ -133,17 +132,6 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       amountToSend, // amount
       l2Gas, // l2Gas
       "0x" // data
-    );
-
-    await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
-      chainId,
-      toAddressType(mainnetTokens.snx, CHAIN_IDs.MAINNET),
-      amountToSend
-    );
-    expect(l1OptimismSnxBridge.depositTo).to.have.been.calledWith(
-      relayer.address, // to
-      amountToSend // amount
     );
 
     // Non- ERC20 tokens:
@@ -186,7 +174,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
   it("Correctly sends tokens to chain: Polygon", async function () {
     const chainId = CHAIN_IDs.POLYGON;
 
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -237,7 +225,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const l2GasLimit = toBN(150000);
     const l2GasPrice = toBN(20e9);
 
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -295,7 +283,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
       secondBridgeAddress: CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET].zkStackSharedBridge.address, // Shared bridge address
       secondBridgeValue: bnZero,
     };
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -360,7 +348,7 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     const chainId = CHAIN_IDs.BASE;
     const l2Gas = 200000; // This is hardcoded in all OVM Bridges
 
-    //  ERC20 tokens:
+    // ERC20 tokens:
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -372,20 +360,6 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
     expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
       mainnetTokens.usdc, // l1 token
       TOKEN_SYMBOLS_MAP.USDbC.addresses[chainId], // l2 token
-      amountToSend, // amount
-      l2Gas, // l2Gas
-      "0x" // data
-    );
-
-    await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
-      chainId,
-      toAddressType(mainnetTokens.bal, CHAIN_IDs.MAINNET),
-      amountToSend
-    );
-    expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
-      mainnetTokens.bal, // l1 token
-      getL2TokenAddresses(mainnetTokens.bal)[chainId], // l2 token
       amountToSend, // amount
       l2Gas, // l2Gas
       "0x" // data
@@ -429,12 +403,18 @@ describe("AdapterManager: Send tokens cross-chain", async function () {
 });
 
 async function seedMocks() {
-  const allL1Tokens = Object.values(TOKEN_SYMBOLS_MAP).map((details) => details.addresses[CHAIN_IDs.MAINNET]);
-  allL1Tokens.forEach((address) =>
-    Object.entries(getL2TokenAddresses(address)).forEach(([chainId, l2Addr]) =>
+  const allL1Tokens = Object.values(TOKEN_SYMBOLS_MAP)
+    .map((details) => details.addresses[CHAIN_IDs.MAINNET])
+    .filter(isDefined);
+  allL1Tokens.forEach((address) => {
+    const l2Addresses = getL2TokenAddresses(address);
+    if (!l2Addresses) {
+      return;
+    }
+    Object.entries(l2Addresses).forEach(([chainId, l2Addr]) =>
       hubPoolClient.setTokenMapping(address, Number(chainId), l2Addr)
-    )
-  );
+    );
+  });
 
   // Construct fake spoke pool clients. All the adapters need is a signer and a provider on each chain.
   for (const chainId of enabledChainIds) {
@@ -459,7 +439,6 @@ async function constructChainSpecificFakes() {
   // Optimism contracts
   l1OptimismBridge = await makeFake("ovmStandardBridge_10", CONTRACT_ADDRESSES[1].ovmStandardBridge_10.address);
   l1OptimismDaiBridge = await makeFake("daiOptimismBridge", CONTRACT_ADDRESSES[1].daiOptimismBridge.address);
-  l1OptimismSnxBridge = await makeFake("snxOptimismBridge", CONTRACT_ADDRESSES[1].snxOptimismBridge.address);
 
   // Polygon contracts
   l1PolygonRootChainManager = await makeFake(

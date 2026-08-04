@@ -9,14 +9,16 @@ import {
   updateSpokePoolClients,
 } from "../common";
 import { Signer, getArweaveJWKSigner } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import { BundleDataClient, HubPoolClient } from "../clients";
 import { getBlockForChain } from "./DataworkerUtils";
 import { Dataworker } from "./Dataworker";
 import { ProposedRootBundle, SpokePoolClientsByChain } from "../interfaces";
-import { caching } from "@across-protocol/sdk";
+import { caching, interfaces } from "@across-protocol/sdk";
 
 export interface DataworkerClients extends Clients {
   bundleDataClient: BundleDataClient;
+  arweaveTopicCache?: interfaces.CachingMechanismInterface;
 }
 
 export async function constructDataworkerClients(
@@ -36,6 +38,17 @@ export async function constructDataworkerClients(
   await updateClients(commonClients, config, logger);
   await hubPoolClient.update();
 
+  let arweaveTopicCache: interfaces.CachingMechanismInterface | undefined;
+  try {
+    arweaveTopicCache = await getRedisCache(logger);
+  } catch (error) {
+    logger.debug({
+      at: "DataworkerClientHelper#constructDataworkerClients",
+      message: "Failed to initialize Arweave topic cache, continuing without Redis topic caching",
+      error: String(error),
+    });
+  }
+
   // TODO: Remove need to pass in spokePoolClients into BundleDataClient since we pass in empty {} here and pass in
   // clients for each class level call we make. Its more of a static class.
   const bundleDataClient = new BundleDataClient(
@@ -43,7 +56,8 @@ export async function constructDataworkerClients(
     commonClients,
     {},
     configStoreClient.getChainIdIndicesForBlock(),
-    config.blockRangeEndBlockBuffer
+    config.blockRangeEndBlockBuffer,
+    arweaveTopicCache
   );
 
   // Define the Arweave client. We need to use a read-write signer for the
@@ -52,15 +66,14 @@ export async function constructDataworkerClients(
   const arweaveClient = new caching.ArweaveClient(
     getArweaveJWKSigner({ keyType: config.persistingBundleData ? "read-write" : "read-only" }),
     logger,
-    config.arweaveGateway?.url,
-    config.arweaveGateway?.protocol,
-    config.arweaveGateway?.port
+    config.arweaveGateways
   );
 
   return {
     ...commonClients,
     bundleDataClient,
     arweaveClient,
+    arweaveTopicCache,
   };
 }
 
@@ -101,10 +114,10 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
   clients: DataworkerClients,
   dataworker: Dataworker
 ): {
-  fromBundle: ProposedRootBundle;
-  toBundle: ProposedRootBundle;
-  fromBlocks: { [k: string]: number };
-  toBlocks: { [k: string]: number };
+  fromBundle: ProposedRootBundle | undefined;
+  toBundle: ProposedRootBundle | undefined;
+  fromBlocks: { [chainId: number]: number };
+  toBlocks: { [chainId: number]: number };
 } {
   const toBundle =
     config.dataworkerFastStartBundle === "latest"
@@ -115,17 +128,15 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
       ? undefined
       : clients.hubPoolClient.getNthFullyExecutedRootBundle(-config.dataworkerFastLookbackCount, toBundle?.blockNumber);
 
-  const toBlocks =
+  const toBlocks: { [chainId: number]: number } =
     toBundle === undefined
       ? {}
       : Object.fromEntries(
-          dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
-            // If block for chainId doesn't exist in bundleEvaluationBlockNumbers, then leave undefined which will
+          dataworker.chainIdListForBundleEvaluationBlockNumbers
+            // If block for chainId doesn't exist in bundleEvaluationBlockNumbers, then omit it which will
             // result in querying until the latest block.
-            if (i >= toBundle.bundleEvaluationBlockNumbers.length) {
-              return [chainId, undefined];
-            }
-            return [
+            .filter((_chainId, i) => i < toBundle.bundleEvaluationBlockNumbers.length)
+            .map((chainId) => [
               chainId,
               // TODO: I think this has a bug for disabled chains where we don't want to +1 if the chain is disabled
               // at the time of this bundle.
@@ -134,20 +145,17 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
                 chainId,
                 dataworker.chainIdListForBundleEvaluationBlockNumbers
               ) + 1, // Need to add 1 to bundle end block since bundles begin at previous bundle end blocks + 1
-            ];
-          })
+            ])
         );
-  const fromBlocks =
+  const fromBlocks: { [chainId: number]: number } =
     fromBundle === undefined
       ? {}
       : Object.fromEntries(
-          dataworker.chainIdListForBundleEvaluationBlockNumbers.map((chainId, i) => {
-            // If block for chainId doesn't exist in bundleEvaluationBlockNumbers, then leave undefined which
+          dataworker.chainIdListForBundleEvaluationBlockNumbers
+            // If block for chainId doesn't exist in bundleEvaluationBlockNumbers, then omit it which
             // will result in querying from the spoke activation block.
-            if (i >= fromBundle.bundleEvaluationBlockNumbers.length) {
-              return [chainId, undefined];
-            }
-            return [
+            .filter((_chainId, i) => i < fromBundle.bundleEvaluationBlockNumbers.length)
+            .map((chainId) => [
               chainId,
               // TODO: I think this has a bug for disabled chains where we don't want to +1 if the chain is disabled
               // at the time of this bundle.
@@ -156,8 +164,7 @@ export function getSpokePoolClientEventSearchConfigsForFastDataworker(
                 chainId,
                 dataworker.chainIdListForBundleEvaluationBlockNumbers
               ) + 1, // Need to add 1 to bundle end block since bundles begin at previous bundle end blocks + 1
-            ];
-          })
+            ])
         );
 
   return {

@@ -23,7 +23,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Execute relayer refunds", async function () {
+describe("Dataworker: Execute relayer refunds", function () {
   const getNewBalanceAllocator = async (): Promise<BalanceAllocator> => {
     const providers = {
       ...spokePoolClientsToProviders(spokePoolClients),

@@ -45,7 +45,7 @@ import {
 } from "./utils";
 import { EvmAddress, SvmAddress } from "../src/utils";
 
-describe("Relayer: Token balance shortfall", async function () {
+describe("Relayer: Token balance shortfall", function () {
   const noSlowRelays = false; // Don't send slow fills.
   const bn10 = toBN(10);
 
@@ -155,7 +155,7 @@ describe("Relayer: Token balance shortfall", async function () {
     const chainIds = Object.values(spokePoolClients).map(({ chainId }) => chainId);
     inventoryClient = new MockInventoryClient(
       null,
-      null,
+      spyLogger,
       null,
       null,
       null,
@@ -194,12 +194,12 @@ describe("Relayer: Token balance shortfall", async function () {
         [destinationChainId]: erc20_2.address,
       },
     });
-    // Seed Owner and depositor wallets but dont seed relayer to test how the relayer handles being out of funds.
+    // Seed Owner and depositor wallets but don't seed relayer to test how the relayer handles being out of funds.
     await setupTokensForWallet(spokePool_1, owner, [l1Token], null, 100); // Seed owner to LP.
     await setupTokensForWallet(spokePool_1, depositor, [erc20_1], null, 10);
     await setupTokensForWallet(spokePool_2, depositor, [erc20_2], null, 10);
 
-    // Execute large approval so we dont need to worry about this.
+    // Execute large approval so we don't need to worry about this.
     await erc20_1.connect(relayer).approve(spokePool_1.address, toBNWei(100000));
     await erc20_2.connect(relayer).approve(spokePool_2.address, toBNWei(100000));
 

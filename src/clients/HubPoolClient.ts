@@ -61,9 +61,10 @@ export class HubPoolClient extends clients.HubPoolClient {
   }
 
   async computeRealizedLpFeePct(deposit: LpFeeRequest): Promise<interfaces.RealizedLpFee> {
-    if (deposit.quoteTimestamp > this.currentTime) {
+    const { currentTime } = this;
+    if (isDefined(currentTime) && deposit.quoteTimestamp > currentTime) {
       throw new Error(
-        `Cannot compute lp fee percent for quote timestamp ${deposit.quoteTimestamp} in the future. Current time: ${this.currentTime}.`
+        `Cannot compute lp fee percent for quote timestamp ${deposit.quoteTimestamp} in the future. Current time: ${currentTime}.`
       );
     }
 
@@ -78,6 +79,7 @@ export class HubPoolClient extends clients.HubPoolClient {
     return super.getBundleEndBlockForChain(proposeRootBundleEvent, chainId, chainIdList);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async update(eventsToQuery?: any): Promise<void> {
     if (isDefined(this.injectedChain)) {
       const dataToAdd: CrossChainContractsSet = {

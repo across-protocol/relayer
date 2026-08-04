@@ -6,7 +6,7 @@ import { EvmAddress, toBNWei } from "../../src/utils/SDKUtils";
 import { BigNumber, getCctpDomainForChainId } from "../../src/utils";
 import { CCTPV2_FINALITY_THRESHOLD_FAST } from "../../src/common/Constants";
 
-describe("Cross Chain Adapter: USDC CCTP Bridge", async function () {
+describe("Cross Chain Adapter: USDC CCTP Bridge", function () {
   let adapter: MockBaseChainAdapter;
   let monitoredEoa: string;
   let l1USDCToken, l2USDCToken: string;

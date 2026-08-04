@@ -2,16 +2,21 @@ import { ethers } from "ethers";
 import { utils } from "@across-protocol/sdk";
 import { ProcessBurnTransactionResponse, PubSubMessage } from "../types";
 import {
+  assert,
   winston,
   getCctpDestinationChainFromDomain,
+  isDefined,
   PUBLIC_NETWORKS,
   chainIsProd,
   chainIsSvm,
   retrieveGckmsKeys,
   getGckmsConfig,
+  getSvmSignerFromPrivateKey,
+  toAddressType,
 } from "../../utils";
 import { checkIfAlreadyProcessedEvm, processMintEvm, getEvmProvider } from "../utils/evmUtils";
 import { checkIfAlreadyProcessedSvm, processMintSvm, getSvmProvider } from "../utils/svmUtils";
+import { address } from "@solana/kit";
 import {
   NoAttestationFoundError,
   AttestationNotReadyError,
@@ -24,8 +29,8 @@ import {
 } from "../errors";
 
 export class CCTPService {
-  private evmPrivateKey: string;
-  private svmPrivateKey: Uint8Array;
+  private evmPrivateKey?: string;
+  private svmPrivateKey?: Uint8Array;
   private logger: winston.Logger;
 
   constructor(logger?: winston.Logger) {
@@ -47,15 +52,17 @@ export class CCTPService {
         attestation: cctpAttestationUnion,
         destinationChainId: providedDestinationChainIdUnion,
         signature: signatureUnion,
+        quoteDeadline: quoteDeadlineUnion,
       } = message;
 
       this.evmPrivateKey = await this.getPrivateKey("evm");
-      this.svmPrivateKey = Uint8Array.from(await this.getPrivateKey("svm"));
+      this.svmPrivateKey = getSvmSignerFromPrivateKey("0x" + this.evmPrivateKey).secretKey;
 
       const cctpMessage = cctpMessageUnion?.string;
       const cctpAttestation = cctpAttestationUnion?.string;
       const providedDestinationChainId = providedDestinationChainIdUnion?.long;
       const signature = signatureUnion?.string;
+      const quoteDeadline = quoteDeadlineUnion?.long;
 
       this.logger.info({
         at: "CCTPService#processBurnTransaction",
@@ -67,11 +74,11 @@ export class CCTPService {
         hasProvidedDestinationChainId: !!providedDestinationChainId,
       });
 
-      let attestation: { message: string; attestation: string; status?: string };
+      let attestation: { message: string; attestation: string; status?: string; eventNonce?: string };
       let destinationChainId: number;
 
       // If message and attestation are provided, use them directly
-      if (cctpMessage && cctpAttestation) {
+      if (cctpMessage && cctpMessage !== "0x" && cctpAttestation) {
         this.logger.info({
           at: "CCTPService#processBurnTransaction",
           message: "Using provided message and attestation, skipping attestation fetch",
@@ -109,8 +116,50 @@ export class CCTPService {
 
         attestation = attestations.messages[0];
 
-        if (!this.isAttestationReady(attestation.status!)) {
-          throw new AttestationNotReadyError(attestation.status!);
+        const { status, eventNonce } = attestation;
+        assert(
+          isDefined(status),
+          `Attestation status missing for burn ${burnTransactionHash} (eventNonce ${eventNonce ?? "<unknown>"})`
+        );
+        if (!this.isAttestationReady(status)) {
+          throw new AttestationNotReadyError(status);
+        }
+
+        // CCTP V2 API sometimes returns "0x" as the message, even though we can get the full reconstructed message from
+        // the "decodedMessage.messageBody" field.
+        const decodedMessage = (
+          attestation as unknown as {
+            decodedMessage?: {
+              sourceDomain: string;
+              destinationDomain: string;
+              nonce: string;
+              sender: string;
+              recipient: string;
+              destinationCaller: string;
+              minFinalityThreshold: string;
+              finalityThresholdExecuted: string;
+              messageBody: string;
+            };
+          }
+        ).decodedMessage;
+
+        if (decodedMessage && (!attestation.message || attestation.message === "0x")) {
+          const destinationChainId = getCctpDestinationChainFromDomain(Number(decodedMessage.destinationDomain), true);
+          attestation.message = ethers.utils.solidityPack(
+            ["uint32", "uint32", "uint32", "bytes32", "bytes32", "bytes32", "bytes32", "uint32", "uint32", "bytes"],
+            [
+              1, // CCTP V2 message format version
+              decodedMessage.sourceDomain,
+              decodedMessage.destinationDomain,
+              decodedMessage.nonce,
+              toAddressType(decodedMessage.sender, sourceChainId).toBytes32(),
+              toAddressType(decodedMessage.recipient, destinationChainId).toBytes32(),
+              toAddressType(decodedMessage.destinationCaller, destinationChainId).toBytes32(),
+              decodedMessage.minFinalityThreshold,
+              decodedMessage.finalityThresholdExecuted,
+              decodedMessage.messageBody,
+            ]
+          );
         }
 
         if (providedDestinationChainId) {
@@ -128,7 +177,7 @@ export class CCTPService {
       }
 
       // Process the mint
-      return await this.processMint(destinationChainId, attestation, signature);
+      return await this.processMint(destinationChainId, sourceChainId, attestation, signature, quoteDeadline);
     } catch (error) {
       if (isCCTPError(error)) {
         if (error instanceof AlreadyProcessedError) {
@@ -207,34 +256,55 @@ export class CCTPService {
   }
 
   private async processMint(
-    chainId: number,
+    destinationChainId: number,
+    originChainId: number,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     attestation: any,
-    signature?: string
+    signature?: string,
+    quoteDeadline?: number
   ): Promise<ProcessBurnTransactionResponse> {
-    const chainName = PUBLIC_NETWORKS[chainId]?.name || `Chain ${chainId}`;
+    const chainName = PUBLIC_NETWORKS[destinationChainId]?.name || `Chain ${destinationChainId}`;
     this.logger.info({
       at: "CCTPService#processMint",
-      message: `Calling receiveMessage on ${chainName} (${chainId})`,
+      message: `Calling receiveMessage on ${chainName} (${destinationChainId})`,
     });
 
     try {
-      if (chainIsSvm(chainId)) {
+      if (chainIsSvm(destinationChainId)) {
         if (!this.svmPrivateKey) {
           throw new SvmPrivateKeyNotConfiguredError();
         }
 
-        const rpcUrl = this.getRpcUrlForChain(chainId);
+        const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const svmProvider = getSvmProvider(rpcUrl);
-        const result = await processMintSvm(attestation, this.svmPrivateKey, svmProvider, this.logger);
+        const altAddress = process.env.SOLANA_CCTP_V2_ALT ? address(process.env.SOLANA_CCTP_V2_ALT) : undefined;
+        const result = await processMintSvm(
+          attestation,
+          this.svmPrivateKey,
+          svmProvider,
+          destinationChainId,
+          originChainId,
+          this.logger,
+          altAddress
+        );
         return {
           success: true,
           mintTxHash: result.txHash,
           shouldRetry: false,
         };
       } else {
-        const rpcUrl = this.getRpcUrlForChain(chainId);
+        assert(isDefined(this.evmPrivateKey), "cctpService: evmPrivateKey not initialised");
+        const rpcUrl = this.getRpcUrlForChain(destinationChainId);
         const provider = getEvmProvider(rpcUrl);
-        const result = await processMintEvm(chainId, attestation, provider, this.evmPrivateKey, this.logger, signature);
+        const result = await processMintEvm(
+          destinationChainId,
+          attestation,
+          provider,
+          this.evmPrivateKey,
+          this.logger,
+          signature,
+          quoteDeadline
+        );
         return {
           success: true,
           mintTxHash: result.txHash,
@@ -254,29 +324,31 @@ export class CCTPService {
   }
 
   private getRpcUrlForChain(chainId: number): string {
-    const rpcUrlMap: { [chainId: number]: string } = {
+    const rpcUrlMap: { [chainId: number]: string | undefined } = {
       // Production networks
-      1: process.env.ETHEREUM_RPC_URL!,
-      10: process.env.OPTIMISM_RPC_URL!,
-      137: process.env.POLYGON_RPC_URL!,
-      42161: process.env.ARBITRUM_RPC_URL!,
-      8453: process.env.BASE_RPC_URL!,
-      130: process.env.UNICHAIN_RPC_URL!,
-      59144: process.env.LINEA_RPC_URL!,
-      480: process.env.WORLD_CHAIN_RPC_URL!,
-      999: process.env.HYPEREVM_RPC_URL!,
-      56: process.env.BSC_RPC_URL!,
-      143: process.env.MONAD_RPC_URL!,
-      34268394551451: process.env.SOLANA_RPC_URL!,
+      1: process.env.ETHEREUM_RPC_URL,
+      10: process.env.OPTIMISM_RPC_URL,
+      137: process.env.POLYGON_RPC_URL,
+      42161: process.env.ARBITRUM_RPC_URL,
+      8453: process.env.BASE_RPC_URL,
+      130: process.env.UNICHAIN_RPC_URL,
+      59144: process.env.LINEA_RPC_URL,
+      480: process.env.WORLD_CHAIN_RPC_URL,
+      999: process.env.HYPEREVM_RPC_URL,
+      56: process.env.BSC_RPC_URL,
+      143: process.env.MONAD_RPC_URL,
+      57073: process.env.INK_RPC_URL,
+      43114: process.env.AVALANCHE_RPC_URL,
+      34268394551451: process.env.SOLANA_RPC_URL,
       // Test networks
-      11155111: process.env.SEPOLIA_RPC_URL!,
-      11155420: process.env.OPTIMISM_SEPOLIA_RPC_URL!,
-      421614: process.env.ARBITRUM_SEPOLIA_RPC_URL!,
-      84532: process.env.BASE_SEPOLIA_RPC_URL!,
-      80002: process.env.POLYGON_AMOY_RPC_URL!,
-      1301: process.env.ARBITRUM_NOVA_SEPOLIA_RPC_URL!,
-      998: process.env.HYPEREVM_TESTNET_RPC_URL!,
-      133268194659241: process.env.SOLANA_DEVNET_RPC_URL!,
+      11155111: process.env.SEPOLIA_RPC_URL,
+      11155420: process.env.OPTIMISM_SEPOLIA_RPC_URL,
+      421614: process.env.ARBITRUM_SEPOLIA_RPC_URL,
+      84532: process.env.BASE_SEPOLIA_RPC_URL,
+      80002: process.env.POLYGON_AMOY_RPC_URL,
+      1301: process.env.ARBITRUM_NOVA_SEPOLIA_RPC_URL,
+      998: process.env.HYPEREVM_TESTNET_RPC_URL,
+      133268194659241: process.env.SOLANA_DEVNET_RPC_URL,
     };
 
     const rpcUrl = rpcUrlMap[chainId];
@@ -287,9 +359,9 @@ export class CCTPService {
   }
 
   private async getPrivateKey(type: "evm" | "svm"): Promise<string> {
-    const privateKeys = await retrieveGckmsKeys(
-      getGckmsConfig([type === "evm" ? process.env.GCKMS_KEY_EVM : process.env.GCKMS_KEY_SVM])
-    );
+    const gckmsKey = type === "evm" ? process.env.GCKMS_KEY_EVM : process.env.GCKMS_KEY_SVM;
+    assert(isDefined(gckmsKey), `cctpService: GCKMS_KEY_${type.toUpperCase()} env var not set`);
+    const privateKeys = await retrieveGckmsKeys(getGckmsConfig([gckmsKey]));
     if (privateKeys.length === 0) {
       throw new PrivateKeyNotFoundError(type);
     }

@@ -1,13 +1,31 @@
 import winston from "winston";
+import { array, create, number, object, optional, record, string, union } from "superstruct";
 import { CommonConfig, ProcessEnv } from "../common";
-import {
-  CHAIN_IDs,
-  getNativeTokenAddressForChain,
-  isDefined,
-  TOKEN_SYMBOLS_MAP,
-  Address,
-  toAddressType,
-} from "../utils";
+import { CHAIN_IDs, getNativeTokenAddressForChain, isDefined, Address, toAddressType, parseJson } from "../utils";
+
+const MonitoredBalances2Schema = record(
+  string(),
+  record(
+    string(),
+    array(
+      object({
+        token: optional(string()),
+        warnThreshold: optional(number()),
+        errorThreshold: optional(number()),
+      })
+    )
+  )
+);
+
+const MonitoredBalancesSchema = array(
+  object({
+    chainId: union([string(), number()]),
+    account: string(),
+    token: optional(string()),
+    warnThreshold: optional(union([string(), number()])),
+    errorThreshold: optional(union([string(), number()])),
+  })
+);
 
 // Set modes to true that you want to enable in the AcrossMonitor bot.
 export interface BotModes {
@@ -16,9 +34,10 @@ export interface BotModes {
   stuckRebalancesEnabled: boolean;
   utilizationEnabled: boolean; // Monitors pool utilization ratio
   unknownRootBundleCallersEnabled: boolean; // Monitors relay related events triggered by non-whitelisted addresses
-  spokePoolBalanceReportEnabled: boolean;
   binanceWithdrawalLimitsEnabled: boolean;
   closePDAsEnabled: boolean;
+  closeALTsEnabled: boolean;
+  reportOpenHyperliquidOrders: boolean;
 }
 
 export class MonitorConfig extends CommonConfig {
@@ -27,10 +46,7 @@ export class MonitorConfig extends CommonConfig {
   readonly utilizationThreshold: number;
   readonly hubPoolStartingBlock: number | undefined;
   readonly hubPoolEndingBlock: number | undefined;
-  readonly stuckRebalancesEnabled: boolean;
   readonly monitoredRelayers: Address[];
-  readonly monitoredSpokePoolChains: number[];
-  readonly monitoredTokenSymbols: string[];
   readonly whitelistedDataworkers: Address[];
   readonly whitelistedRelayers: Address[];
   readonly knownV1Addresses: Address[];
@@ -43,11 +59,12 @@ export class MonitorConfig extends CommonConfig {
     account: Address;
     token: Address;
   }[] = [];
-  readonly additionalL1NonLpTokens: string[] = [];
   readonly binanceWithdrawWarnThreshold: number;
   readonly binanceWithdrawAlertThreshold: number;
+  readonly hyperliquidOrderMaximumLifetime: number;
+  readonly hyperliquidTokens: string[];
   constructor(env: ProcessEnv) {
-    super(env);
+    super(env, { botIdentifier: "across-monitor" });
 
     const {
       STARTING_BLOCK_NUMBER,
@@ -62,16 +79,15 @@ export class MonitorConfig extends CommonConfig {
       KNOWN_V1_ADDRESSES,
       BALANCES_ENABLED,
       MONITORED_BALANCES,
+      MONITORED_BALANCES_2,
       STUCK_REBALANCES_ENABLED,
-      REPORT_SPOKE_POOL_BALANCES,
-      MONITORED_SPOKE_POOL_CHAINS,
-      MONITORED_TOKEN_SYMBOLS,
-      MONITOR_REPORT_NON_LP_TOKENS,
       BUNDLES_COUNT,
-      MONITOR_USE_FOLLOW_DISTANCE,
       BINANCE_WITHDRAW_WARN_THRESHOLD,
       BINANCE_WITHDRAW_ALERT_THRESHOLD,
       CLOSE_PDAS_ENABLED,
+      CLOSE_ALTS_ENABLED,
+      HYPERLIQUID_ORDER_MAXIMUM_LIFETIME,
+      HYPERLIQUID_SUPPORTED_TOKENS,
     } = env;
 
     this.botModes = {
@@ -80,31 +96,25 @@ export class MonitorConfig extends CommonConfig {
       utilizationEnabled: UTILIZATION_ENABLED === "true",
       unknownRootBundleCallersEnabled: UNKNOWN_ROOT_BUNDLE_CALLERS_ENABLED === "true",
       stuckRebalancesEnabled: STUCK_REBALANCES_ENABLED === "true",
-      spokePoolBalanceReportEnabled: REPORT_SPOKE_POOL_BALANCES === "true",
       closePDAsEnabled: CLOSE_PDAS_ENABLED === "true",
+      closeALTsEnabled: CLOSE_ALTS_ENABLED === "true",
       binanceWithdrawalLimitsEnabled:
         isDefined(BINANCE_WITHDRAW_WARN_THRESHOLD) || isDefined(BINANCE_WITHDRAW_ALERT_THRESHOLD),
+      reportOpenHyperliquidOrders: isDefined(HYPERLIQUID_ORDER_MAXIMUM_LIFETIME),
     };
-
-    if (MONITOR_USE_FOLLOW_DISTANCE !== "true") {
-      Object.values(this.blockRangeEndBlockBuffer).forEach((chainId) => (this.blockRangeEndBlockBuffer[chainId] = 0));
-    }
 
     // Used to monitor activities not from whitelisted data workers or relayers.
     this.whitelistedDataworkers = parseAddressesOptional(WHITELISTED_DATA_WORKERS);
     this.whitelistedRelayers = parseAddressesOptional(WHITELISTED_RELAYERS);
     this.monitoredRelayers = parseAddressesOptional(MONITORED_RELAYERS);
     this.knownV1Addresses = parseAddressesOptional(KNOWN_V1_ADDRESSES);
-    this.monitoredSpokePoolChains = JSON.parse(MONITORED_SPOKE_POOL_CHAINS ?? "[]");
-    this.monitoredTokenSymbols = JSON.parse(MONITORED_TOKEN_SYMBOLS ?? "[]");
     this.bundlesCount = Number(BUNDLES_COUNT ?? 4);
-    this.additionalL1NonLpTokens = JSON.parse(MONITOR_REPORT_NON_LP_TOKENS ?? "[]").map((token) => {
-      if (TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET]) {
-        return TOKEN_SYMBOLS_MAP[token]?.addresses?.[CHAIN_IDs.MAINNET];
-      }
-    });
+
     this.binanceWithdrawWarnThreshold = Number(BINANCE_WITHDRAW_WARN_THRESHOLD ?? 1);
     this.binanceWithdrawAlertThreshold = Number(BINANCE_WITHDRAW_ALERT_THRESHOLD ?? 1);
+
+    this.hyperliquidTokens = parseJson.stringArray(HYPERLIQUID_SUPPORTED_TOKENS ?? '["USDC", "USDT0", "USDH"]');
+    this.hyperliquidOrderMaximumLifetime = Number(HYPERLIQUID_ORDER_MAXIMUM_LIFETIME ?? -1);
 
     // Default pool utilization threshold at 90%.
     this.utilizationThreshold = UTILIZATION_THRESHOLD ? Number(UTILIZATION_THRESHOLD) : 90;
@@ -120,39 +130,63 @@ export class MonitorConfig extends CommonConfig {
     this.hubPoolStartingBlock = STARTING_BLOCK_NUMBER ? Number(STARTING_BLOCK_NUMBER) : undefined;
     this.hubPoolEndingBlock = ENDING_BLOCK_NUMBER ? Number(ENDING_BLOCK_NUMBER) : undefined;
 
-    if (MONITORED_BALANCES) {
-      this.monitoredBalances = JSON.parse(MONITORED_BALANCES).map(
-        ({ errorThreshold, warnThreshold, account, token, chainId }) => {
-          if (!isDefined(errorThreshold) && !isDefined(warnThreshold)) {
-            throw new Error("Must provide either an errorThreshold or a warnThreshold");
-          }
+    const validate = (chainId: number, account: string, warnThreshold?: number, errorThreshold?: number) => {
+      if (!isDefined(errorThreshold) || !isDefined(warnThreshold)) {
+        throw new Error("Must provide both errorThreshold and warnThreshold");
+      }
+    };
 
-          let parsedErrorThreshold: number | null = null;
-          if (isDefined(errorThreshold)) {
-            if (Number.isNaN(Number(errorThreshold))) {
-              throw new Error(`errorThreshold value: ${errorThreshold} cannot be converted to a number`);
-            }
-            parsedErrorThreshold = Number(errorThreshold);
-          }
-
-          let parsedWarnThreshold: number | null = null;
-          if (isDefined(warnThreshold)) {
-            if (Number.isNaN(Number(errorThreshold))) {
-              throw new Error(`warnThreshold value: ${warnThreshold} cannot be converted to a number`);
-            }
-            parsedWarnThreshold = Number(warnThreshold);
-          }
-
-          const isNativeToken = !token || toAddressType(token, chainId).eq(getNativeTokenAddressForChain(chainId));
-          return {
-            token: isNativeToken ? getNativeTokenAddressForChain(chainId) : toAddressType(token, chainId),
-            errorThreshold: parsedErrorThreshold,
-            warnThreshold: parsedWarnThreshold,
-            account: toAddressType(account, chainId),
-            chainId: parseInt(chainId),
-          };
+    if (MONITORED_BALANCES_2) {
+      this.monitoredBalances = [];
+      const config = create(JSON.parse(MONITORED_BALANCES_2), MonitoredBalances2Schema);
+      Object.entries(config).forEach(([account, chainConfig]) => {
+        Object.entries(chainConfig).forEach(([_chainId, tokenConfigs]) => {
+          const chainId = Number(_chainId);
+          tokenConfigs.forEach(({ token, warnThreshold, errorThreshold }) => {
+            validate(chainId, account, warnThreshold, errorThreshold);
+            this.monitoredBalances.push({
+              chainId,
+              account: toAddressType(account, chainId),
+              warnThreshold: warnThreshold ?? null,
+              errorThreshold: errorThreshold ?? null,
+              token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
+            });
+          });
+        });
+      });
+    } else if (MONITORED_BALANCES) {
+      const config = create(JSON.parse(MONITORED_BALANCES), MonitoredBalancesSchema);
+      this.monitoredBalances = config.map(({ errorThreshold, warnThreshold, account, token, chainId: _chainId }) => {
+        const chainId = parseInt(String(_chainId));
+        if (!isDefined(errorThreshold) || !isDefined(warnThreshold)) {
+          throw new Error("Must provide both errorThreshold and warnThreshold");
         }
-      );
+
+        let parsedErrorThreshold: number | null = null;
+        if (isDefined(errorThreshold)) {
+          if (Number.isNaN(Number(errorThreshold))) {
+            throw new Error(`errorThreshold value: ${errorThreshold} cannot be converted to a number`);
+          }
+          parsedErrorThreshold = Number(errorThreshold);
+        }
+
+        let parsedWarnThreshold: number | null = null;
+        if (isDefined(warnThreshold)) {
+          if (Number.isNaN(Number(warnThreshold))) {
+            throw new Error(`warnThreshold value: ${warnThreshold} cannot be converted to a number`);
+          }
+          parsedWarnThreshold = Number(warnThreshold);
+        }
+
+        const isNativeToken = !token || toAddressType(token, chainId).eq(getNativeTokenAddressForChain(chainId));
+        return {
+          token: isNativeToken ? getNativeTokenAddressForChain(chainId) : toAddressType(token, chainId),
+          errorThreshold: parsedErrorThreshold,
+          warnThreshold: parsedWarnThreshold,
+          account: toAddressType(account, chainId),
+          chainId,
+        };
+      });
     }
   }
 
@@ -170,8 +204,10 @@ export class MonitorConfig extends CommonConfig {
 }
 
 const parseAddressesOptional = (addressJson?: string): Address[] => {
-  const rawAddresses: string[] = addressJson ? JSON.parse(addressJson) : [];
-  return rawAddresses.map((address) => {
+  if (!addressJson) {
+    return [];
+  }
+  return parseJson.stringArray(addressJson).map((address) => {
     const chainId = address.startsWith("0x") ? CHAIN_IDs.MAINNET : CHAIN_IDs.SOLANA;
     return toAddressType(address, chainId);
   });

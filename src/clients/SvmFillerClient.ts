@@ -1,43 +1,64 @@
 import {
-  CompilableTransactionMessage,
   getBase64EncodedWireTransaction,
   isSolanaError,
   KeyPairSigner,
   signTransactionMessageWithSigners,
-  TransactionMessageWithBlockhashLifetime,
 } from "@solana/kit";
 import {
   assert,
   getKitKeypairFromEvmSigner,
+  isDefined,
   Signer,
+  SolanaTransaction,
   SvmAddress,
   Address as SDKAddress,
   blockExplorerLink,
   winston,
   chainIsSvm,
   delay,
+  signAndSendTransaction,
+  sendAndConfirmSolanaTransaction,
 } from "../utils";
 import { arch, typeguards } from "@across-protocol/sdk";
 import { RelayData } from "../interfaces";
 
 export const SOLANA_TX_SIZE_LIMIT = 1232; // bytes
+// Maximum size a message on a deposit can be in order to fill on Solana in a single transaction _and_ have that
+// single transaction contain approve and create ATA instructions.
+export const MAXIMUM_MESSAGE_SIZE = 466; // string length. equals 466/2-1 = 232 bytes.
 
-type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
+export type ProtoFill = Omit<RelayData, "recipient" | "outputToken"> & {
   destinationChainId: number;
   recipient: SvmAddress;
   outputToken: SvmAddress;
 };
 
-type ReadyTransactionPromise = Promise<CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime>;
+type ReadyTransactionPromise = Promise<SolanaTransaction>;
+type ReadyTransactionsPromise = Promise<SolanaTransaction[]>;
+
+/** Promises that resolve to fillRelay transaction(s): one tx, or IP txs then fill. */
+export type SvmFillRelayTxPromises = [ReadyTransactionPromise] | [ReadyTransactionsPromise, ReadyTransactionPromise];
+
+/** Which SpokePool method a queued SVM tx invokes. Gates alerting on submission failures. */
+export type SvmTxKind = "fillRelay" | "slowFillRequest";
 
 type QueuedSvmFill = {
-  txPromise: ReadyTransactionPromise;
+  txPromises: SvmFillRelayTxPromises;
+  kind: SvmTxKind;
   message: string;
   mrkdwn: string;
 };
 
-const retryableErrorCodes = [arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE];
+// Known-benign Solana error codes for fillRelay / slowFillRequest submission (recoverable: another
+// actor won the race, or our outer loop retries). EVM parity: `knownRevertReasons` in MultiCallerClient.ts.
+const knownSolanaFillErrorCodes = new Set<number>([arch.svm.SVM_TRANSACTION_PREFLIGHT_FAILURE]);
 const retryDelaySeconds = 1;
+
+// Both fillRelay and slowFillRequest preflight failures can be recoverable races (another actor won
+// the race, or our outer loop retries), so suppression is gated only on the benign error code.
+function canIgnoreSvmFillError(e: unknown): boolean {
+  return isSolanaError(e) && knownSolanaFillErrorCodes.has(e.context.__code);
+}
 
 export class SvmFillerClient {
   private queuedFills: QueuedSvmFill[] = [];
@@ -64,6 +85,54 @@ export class SvmFillerClient {
     return new SvmFillerClient(svmSigner, provider, chainId, logger);
   }
 
+  /**
+   * Returns promises that build the fillRelay transaction(s) for a deposit (single tx or multipart).
+   * Callers can enqueue these via {@link enqueueFillRelayTxPromises} or submit immediately via
+   * {@link executeFillImmediately}.
+   */
+  buildFillRelayTxPromises(
+    spokePool: SvmAddress,
+    relayData: ProtoFill,
+    repaymentChainId: number,
+    repaymentAddress: SDKAddress
+  ): SvmFillRelayTxPromises {
+    assert(
+      repaymentAddress.isValidOn(repaymentChainId),
+      `SvmFillerClient:buildFillRelayTxPromises ${repaymentAddress} not valid on chain ${repaymentChainId}`
+    );
+
+    if (this.isFillMessageTooLarge(relayData)) {
+      return [
+        arch.svm.getIPForFillRelayTxs(
+          spokePool,
+          relayData,
+          repaymentChainId,
+          repaymentAddress,
+          this.signer,
+          this.provider
+        ),
+        arch.svm.getIPFillRelayTx(spokePool, this.provider, relayData, this.signer, repaymentChainId, repaymentAddress),
+      ];
+    }
+
+    return [
+      arch.svm.getFillRelayTx(spokePool, this.provider, relayData, this.signer, repaymentChainId, repaymentAddress),
+    ];
+  }
+
+  buildSlowFillTxPromise(spokePool: SvmAddress, relayData: ProtoFill): ReadyTransactionPromise {
+    return arch.svm.getSlowFillRequestTx(spokePool, this.provider, relayData, this.signer);
+  }
+
+  enqueueFillRelayTxPromises(
+    txPromises: SvmFillRelayTxPromises,
+    kind: SvmTxKind,
+    message: string,
+    mrkdwn: string
+  ): void {
+    this.queuedFills.push({ txPromises, kind, message, mrkdwn });
+  }
+
   enqueueFill(
     spokePool: SvmAddress,
     relayData: ProtoFill,
@@ -72,32 +141,88 @@ export class SvmFillerClient {
     message: string,
     mrkdwn: string
   ): void {
-    assert(
-      repaymentAddress.isValidOn(repaymentChainId),
-      `SvmFillerClient:enqueueFill ${repaymentAddress} not valid on chain ${repaymentChainId}`
-    );
-    const fillTxPromise = arch.svm.getFillRelayTx(
-      spokePool,
-      this.provider,
-      relayData,
-      this.signer,
-      repaymentChainId,
-      repaymentAddress
-    );
-    this.queuedFills.push({ txPromise: fillTxPromise, message, mrkdwn });
+    const txPromises = this.buildFillRelayTxPromises(spokePool, relayData, repaymentChainId, repaymentAddress);
+    this.enqueueFillRelayTxPromises(txPromises, "fillRelay", message, mrkdwn);
   }
 
   enqueueSlowFill(spokePool: SvmAddress, relayData: ProtoFill, message: string, mrkdwn: string): void {
-    const slowFillTxPromise = arch.svm.getSlowFillRequestTx(spokePool, this.provider, relayData, this.signer);
-    this.queuedFills.push({ txPromise: slowFillTxPromise, message, mrkdwn });
+    this.enqueueFillRelayTxPromises(
+      [this.buildSlowFillTxPromise(spokePool, relayData)],
+      "slowFillRequest",
+      message,
+      mrkdwn
+    );
   }
 
-  async _executeTxnQueueWithRetry(txPromise: ReadyTransactionPromise, retryAttempt: number): Promise<string> {
+  /**
+   * Builds and submits fillRelay transaction(s) immediately (each tx is sent as soon as it is ready).
+   */
+  async executeFillImmediately(
+    spokePool: SvmAddress,
+    relayData: ProtoFill,
+    repaymentChainId: number,
+    repaymentAddress: SDKAddress,
+    message: string,
+    mrkdwn: string,
+    maxRetries = 2
+  ): Promise<string | undefined> {
+    const txPromises = this.buildFillRelayTxPromises(spokePool, relayData, repaymentChainId, repaymentAddress);
+
     try {
-      const transaction = await txPromise;
-      const signature = await signAndSendTransaction(this.provider, transaction);
-      const signatureString = signature.toString();
-      return signatureString;
+      const signatureStrings = await this._executeTxnPromisesWithRetry(txPromises, maxRetries, true);
+      const lastSignature = signatureStrings.at(-1);
+      if (isDefined(lastSignature)) {
+        this.logger.info({
+          at: "SvmFillerClient#executeFillImmediately",
+          message,
+          mrkdwn,
+          signatures: signatureStrings,
+          explorer: blockExplorerLink(lastSignature, this.chainId),
+        });
+      }
+      return lastSignature;
+    } catch (e: unknown) {
+      if (!typeguards.isError(e)) {
+        throw e;
+      }
+
+      let errorMessage = "";
+      if (!isSolanaError(e)) {
+        errorMessage = e?.message ?? "Unknown error";
+      } else {
+        errorMessage = `Solana error code: ${e.context.__code}`;
+      }
+
+      const ignorable = canIgnoreSvmFillError(e);
+      this.logger[ignorable ? "debug" : "error"]({
+        at: "SvmFillerClient#executeFillImmediately",
+        message: `Failed to send fill transaction (${errorMessage})`,
+        mrkdwn,
+        error: e,
+        notificationPath: ignorable ? undefined : "across-error",
+      });
+      return undefined;
+    }
+  }
+
+  private async _executeTxnPromisesWithRetry(
+    txPromises: SvmFillRelayTxPromises,
+    retryAttempt: number,
+    confirmAll: boolean
+  ): Promise<string[]> {
+    try {
+      const transactions = await Promise.all(txPromises);
+      const signatures: string[] = [];
+      const transactionBatch = transactions.flat();
+      const sendAndConfirm = confirmAll || transactionBatch.length !== 1;
+
+      for (const transaction of transactionBatch) {
+        const txSignature = sendAndConfirm
+          ? sendAndConfirmSolanaTransaction(transaction, this.provider)
+          : signAndSendTransaction(this.provider, transaction);
+        signatures.push(await txSignature);
+      }
+      return signatures;
     } catch (e: unknown) {
       let code: number | undefined;
 
@@ -107,9 +232,9 @@ export class SvmFillerClient {
         code = undefined;
       }
 
-      if (retryableErrorCodes.includes(code) && retryAttempt > 0) {
+      if (isDefined(code) && knownSolanaFillErrorCodes.has(code) && retryAttempt > 0) {
         await delay(retryDelaySeconds);
-        return this._executeTxnQueueWithRetry(txPromise, --retryAttempt);
+        return this._executeTxnPromisesWithRetry(txPromises, --retryAttempt, confirmAll);
       }
 
       throw e;
@@ -127,40 +252,43 @@ export class SvmFillerClient {
       return [];
     }
 
-    // @dev Execute transactions sequentially, returning signatures of successful ones.
-    const signatures: string[] = [];
-    for (const { txPromise, message, mrkdwn } of queue) {
+    const signatures: string[][] = [];
+    for (const { txPromises, kind, message, mrkdwn } of queue) {
       try {
-        const signatureString = await this._executeTxnQueueWithRetry(txPromise, maxRetries);
-        signatures.push(signatureString);
+        const signatureStrings = await this._executeTxnPromisesWithRetry(txPromises, maxRetries, false);
+        const lastSignature = signatureStrings.at(-1);
         this.logger.info({
           at: "SvmFillerClient#executeTxnQueue",
           message,
           mrkdwn,
-          signature: signatureString,
-          explorer: blockExplorerLink(signatureString, this.chainId),
+          signatures: signatureStrings,
+          explorer: isDefined(lastSignature) ? blockExplorerLink(lastSignature, this.chainId) : undefined,
         });
+        signatures.push(signatureStrings);
       } catch (e: unknown) {
         if (!typeguards.isError(e)) {
           throw e;
         }
 
-        let message = "";
+        let errorMessage = "";
         if (!isSolanaError(e)) {
-          message = e?.message ?? "Unknown error";
+          errorMessage = e?.message ?? "Unknown error";
         } else {
-          message = `Solana error code: ${e.context.__code}`;
+          errorMessage = `Solana error code: ${e.context.__code}`;
         }
 
-        this.logger.error({
+        const ignorable = canIgnoreSvmFillError(e);
+        this.logger[ignorable ? "debug" : "error"]({
           at: "SvmFillerClient#executeTxnQueue",
-          message: `Failed to send fill transaction (${message})`,
+          message: `Failed to send fill transaction (${errorMessage})`,
+          kind,
           mrkdwn,
           error: e,
+          notificationPath: ignorable ? undefined : "across-error",
         });
       }
     }
-    return signatures.map((hash) => ({ hash }));
+    return signatures.flat().map((hash) => ({ hash }));
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -170,16 +298,35 @@ export class SvmFillerClient {
   }
 
   // @dev simulates all transactions from the queue in parallel, logging their results
-  private async simulateQueue(queue: QueuedSvmFill[]) {
+  private async simulateQueue(_queue: QueuedSvmFill[]) {
+    // It is not possible to simulate a multipart fill, so if we have one in the queue, then skip it.
+    const queue = _queue.filter(({ txPromises }) => txPromises.length === 1);
+    const nMultipart = _queue.length - queue.length;
+
+    if (nMultipart > 0) {
+      this.logger.debug({
+        at: "SvmFillerClient#simulateQueue",
+        message: `Cannot simulate ${nMultipart} multipart transaction(s).`,
+      });
+    }
+
     if (queue.length === 0) {
       return;
     }
 
     const simulationResults = await Promise.allSettled(
-      queue.map(({ txPromise }) => txPromise.then((tx) => signAndSimulateTransaction(this.provider, tx)))
+      queue.map(({ txPromises }) =>
+        txPromises[0].then((tx) => {
+          if (Array.isArray(tx)) {
+            throw new Error("Unexpected multipart transaction in simulation queue");
+          }
+          return signAndSimulateTransaction(this.provider, tx);
+        })
+      )
     );
 
     const successfulSims: { logs: string[]; message: string; mrkdwn: string }[] = [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const failedSims: { error: any; message: string; mrkdwn: string }[] = [];
 
     simulationResults.forEach((result, idx) => {
@@ -187,7 +334,7 @@ export class SvmFillerClient {
       if (result.status === "fulfilled") {
         const simValue = result.value.value;
         if (simValue.err === null) {
-          successfulSims.push({ logs: simValue.logs, message, mrkdwn });
+          successfulSims.push({ logs: simValue.logs ?? [], message, mrkdwn });
         } else {
           failedSims.push({ error: simValue.err, message, mrkdwn });
         }
@@ -218,42 +365,18 @@ export class SvmFillerClient {
     return this.queuedFills.length;
   }
 
-  // @throws if unable to construct fill tx
-  async calculateFillSizeBytes(
-    spokePool: SvmAddress,
-    relayData: ProtoFill,
-    repaymentChainId: number,
-    repaymentAddress: SDKAddress
-  ): Promise<number> {
-    const fillTx = await arch.svm.getFillRelayTx(
-      spokePool,
-      this.provider,
-      relayData,
-      this.signer,
-      repaymentChainId,
-      repaymentAddress
-    );
-    const signedTransaction = await signTransactionMessageWithSigners(fillTx);
-    const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
-    return base64StrToByteSize(serializedTx);
+  // Approximation since we cannot asynchronously compute the fillRelay tx when assigning this deposit to
+  // a fill or multipart fill queue.
+  // This function will not be exact when the recipient has an ATA on Solana, in which case it overestimates the
+  // size of the transaction.
+  isFillMessageTooLarge(relayData: Pick<ProtoFill, "message">): boolean {
+    // Assuming a fill which contains the approve and createAta instructions in the transaction, the maximum message size
+    // is SOLANA_TX_SIZE_LIMIT - MAXIMUM_MESSAGE_SIZE.
+    return relayData.message.length > MAXIMUM_MESSAGE_SIZE;
   }
 }
 
-const signAndSendTransaction = async (
-  provider: arch.svm.SVMProvider,
-  unsignedTxn: CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime
-) => {
-  const signedTransaction = await signTransactionMessageWithSigners(unsignedTxn);
-  const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
-  return provider
-    .sendTransaction(serializedTx, { preflightCommitment: "confirmed", skipPreflight: false, encoding: "base64" })
-    .send();
-};
-
-const signAndSimulateTransaction = async (
-  provider: arch.svm.SVMProvider,
-  unsignedTxn: CompilableTransactionMessage & TransactionMessageWithBlockhashLifetime
-) => {
+const signAndSimulateTransaction = async (provider: arch.svm.SVMProvider, unsignedTxn: arch.svm.SolanaTransaction) => {
   const signedTransaction = await signTransactionMessageWithSigners(unsignedTxn);
   const serializedTx = getBase64EncodedWireTransaction(signedTransaction);
   return provider
@@ -269,10 +392,3 @@ const signAndSimulateTransaction = async (
     )
     .send();
 };
-
-function base64StrToByteSize(base64TxString: string): number {
-  // base64 string has 6 bits per character, so every 4 symbols represent 3 bytes
-  // However, we also need to account for padding: https://en.wikipedia.org/wiki/Base64#Padding
-  const paddingLen = base64TxString.endsWith("==") ? 2 : base64TxString.endsWith("=") ? 1 : 0;
-  return (base64TxString.length * 3) / 4 - paddingLen;
-}

@@ -10,8 +10,10 @@ import {
   getL2TokenAddresses,
   EvmAddress,
   winston,
+  assert,
+  isDefined,
 } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractAbi, getContractEntry } from "../../common";
 import { BridgeTransactionDetails, BaseBridgeAdapter, BridgeEvents } from "./BaseBridgeAdapter";
 import { processEvent } from "../utils";
 
@@ -37,10 +39,17 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     // either the SDK or the constants dependency in the SDK is not
     // up-to-date.
     const l2TokenAddresses = getL2TokenAddresses(l1Token.toNative(), hubChainId);
-    const { address: l1Address, abi: l1Abi } = CONTRACT_ADDRESSES[hubChainId].polygonWethBridge;
-    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = CONTRACT_ADDRESSES[hubChainId].atomicDepositor;
-    const { address: rootChainManagerAddress, abi: rootChainManagerAbi } =
-      CONTRACT_ADDRESSES[hubChainId].polygonRootChainManager;
+    const l2TokenAddress = l2TokenAddresses?.[l2chainId];
+    assert(isDefined(l2TokenAddress), `No Polygon L2 token mapping for ${l1Token.toNative()} on ${l2chainId}`);
+    const { address: l1Address, abi: l1Abi } = getContractEntry(hubChainId, "polygonWethBridge");
+    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = getContractEntry(
+      hubChainId,
+      "atomicDepositor"
+    );
+    const { address: rootChainManagerAddress, abi: rootChainManagerAbi } = getContractEntry(
+      hubChainId,
+      "polygonRootChainManager"
+    );
     super(l2chainId, hubChainId, l1Signer, [EvmAddress.from(atomicDepositorAddress)]);
 
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
@@ -48,8 +57,8 @@ export class PolygonWethBridge extends BaseBridgeAdapter {
     this.rootChainManager = new Contract(rootChainManagerAddress, rootChainManagerAbi, l1Signer);
 
     // For Polygon, we look for mint events triggered by the L2 token, not the L2 Bridge.
-    const l2Abi = CONTRACT_ADDRESSES[l2chainId].withdrawableErc20.abi;
-    this.l2Bridge = new Contract(l2TokenAddresses[l2chainId], l2Abi, l2SignerOrProvider);
+    const l2Abi = getContractAbi(l2chainId, "withdrawableErc20");
+    this.l2Bridge = new Contract(l2TokenAddress, l2Abi, l2SignerOrProvider);
   }
 
   async constructL1ToL2Txn(

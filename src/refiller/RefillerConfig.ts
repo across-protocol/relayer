@@ -1,5 +1,19 @@
+import { boolean, create, number, object, optional, record, string } from "superstruct";
 import { CommonConfig, ProcessEnv } from "../common";
 import { getNativeTokenAddressForChain, Address, toAddressType, isDefined, toBNWei, BigNumber } from "../utils";
+
+const RefillBalances2Schema = record(
+  string(),
+  record(
+    string(),
+    object({
+      target: number(),
+      trigger: number(),
+      isHubPool: optional(boolean()),
+      token: optional(string()),
+    })
+  )
+);
 
 export type RefillBalanceData = {
   chainId: number;
@@ -13,27 +27,53 @@ export type RefillBalanceData = {
 
 export class RefillerConfig extends CommonConfig {
   readonly refillEnabledBalances: RefillBalanceData[] = [];
-  readonly nativeMarketsApiConfig: { apiKey: string; apiUrl: string };
+  readonly nativeMarketsApiConfig?: { apiKey: string; apiUrl: string };
   readonly minUsdhRebalanceAmount: BigNumber;
+  readonly minUsdgSweepAmount: BigNumber;
 
   constructor(env: ProcessEnv) {
-    super(env);
+    super(env, { botIdentifier: "across-refiller" });
 
-    const { REFILL_BALANCES, NATIVE_MARKETS_API_KEY, NATIVE_MARKETS_API_BASE, MIN_USDH_REBALANCE_AMOUNT } = env;
+    const {
+      REFILL_BALANCES,
+      REFILL_BALANCES_2,
+      NATIVE_MARKETS_API_KEY,
+      NATIVE_MARKETS_API_BASE,
+      MIN_USDH_REBALANCE_AMOUNT,
+      MIN_USDG_SWEEP_AMOUNT,
+    } = env;
+
+    const validate = (chainId: number, account: string, target: number, trigger: number) => {
+      if (Number.isNaN(target) || target <= 0) {
+        throw new Error(`target for ${chainId} and ${account} must be > 0, got ${target}`);
+      }
+      if (Number.isNaN(trigger) || trigger <= 0) {
+        throw new Error(`trigger for ${chainId} and ${account} must be > 0, got ${trigger}`);
+      }
+      if (trigger >= target) {
+        throw new Error("trigger must be < target");
+      }
+    };
 
     // Used to send tokens if available in wallet to balances under target balances.
     if (REFILL_BALANCES) {
       this.refillEnabledBalances = JSON.parse(REFILL_BALANCES).map(
-        ({ chainId, account, isHubPool, target, trigger, token }) => {
-          if (Number.isNaN(target) || target <= 0) {
-            throw new Error(`target for ${chainId} and ${account} must be > 0, got ${target}`);
-          }
-          if (Number.isNaN(trigger) || trigger <= 0) {
-            throw new Error(`trigger for ${chainId} and ${account} must be > 0, got ${trigger}`);
-          }
-          if (trigger >= target) {
-            throw new Error("trigger must be < target");
-          }
+        ({
+          chainId,
+          account,
+          isHubPool,
+          target,
+          trigger,
+          token,
+        }: {
+          chainId: number;
+          account: string;
+          isHubPool?: boolean;
+          target: number;
+          trigger: number;
+          token?: string;
+        }) => {
+          validate(chainId, account, target, trigger);
           return {
             // Required fields:
             chainId,
@@ -46,6 +86,24 @@ export class RefillerConfig extends CommonConfig {
           };
         }
       );
+    } else if (REFILL_BALANCES_2) {
+      this.refillEnabledBalances = [];
+      const config = create(JSON.parse(REFILL_BALANCES_2), RefillBalances2Schema);
+      Object.entries(config).forEach(([account, chainConfig]) => {
+        Object.entries(chainConfig).forEach(([_chainId, tokenConfig]) => {
+          const chainId = Number(_chainId);
+          const { target, trigger, isHubPool, token } = tokenConfig;
+          validate(chainId, account, target, trigger);
+          this.refillEnabledBalances.push({
+            chainId,
+            account: toAddressType(account, chainId),
+            target,
+            trigger,
+            isHubPool: Boolean(isHubPool),
+            token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
+          });
+        });
+      });
     }
 
     if (isDefined(NATIVE_MARKETS_API_KEY) && isDefined(NATIVE_MARKETS_API_BASE)) {
@@ -54,6 +112,9 @@ export class RefillerConfig extends CommonConfig {
 
     // Default minimum is 10 USDH. USDH only exists on HyperEVM and has 6 decimals.
     this.minUsdhRebalanceAmount = toBNWei(MIN_USDH_REBALANCE_AMOUNT ?? "10", 6);
+
+    // Default minimum is 10 USDG. Mainnet USDG should be swept to Robinhood when above this threshold.
+    this.minUsdgSweepAmount = toBNWei(MIN_USDG_SWEEP_AMOUNT ?? "10", 6);
 
     // Should only have 1 HubPool.
     if (Object.values(this.refillEnabledBalances).filter((x) => x.isHubPool).length > 1) {

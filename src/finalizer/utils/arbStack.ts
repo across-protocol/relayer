@@ -14,11 +14,10 @@ import {
   getUniqueLogIndex,
   Signer,
   getCurrentTime,
-  getRedisCache,
   getBlockForTimestamp,
   Multicall2Call,
   CHAIN_IDs,
-  TOKEN_SYMBOLS_MAP,
+  resolveAcrossToken,
   getProvider,
   paginatedEventQuery,
   getNetworkName,
@@ -26,33 +25,21 @@ import {
   getNativeTokenSymbol,
   getTokenInfo,
   assert,
+  isDefined,
   isEVMSpokePoolClient,
   EvmAddress,
 } from "../../utils";
+import { getRedisCache } from "../../cache/Redis";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
+import { ARB_ORBIT_NETWORK_CONFIGS, getArbitrumOrbitFinalizationTime } from "../../utils/ArbSdkUtils";
 
 let LATEST_MAINNET_BLOCK: number;
 let MAINNET_BLOCK_TIME: number;
-
-type PartialArbitrumNetwork = Omit<ArbitrumNetwork, "confirmPeriodBlocks"> & {
-  challengePeriodSeconds: number;
-  registered: boolean;
-};
-// These network configs are defined in the Arbitrum SDK, and we need to register them in the SDK's memory.
-// We should export this out of a common file but we don't use this SDK elsewhere currentlyl.
-const ARB_ORBIT_NETWORK_CONFIGS: PartialArbitrumNetwork[] = [];
-
-function getOrbitNetwork(chainId: number): PartialArbitrumNetwork | undefined {
-  return ARB_ORBIT_NETWORK_CONFIGS.find((network) => network.chainId === chainId);
-}
-function getArbitrumOrbitFinalizationTime(chainId: number): number {
-  return getOrbitNetwork(chainId)?.challengePeriodSeconds ?? 7 * 60 * 60 * 24;
-}
 
 export async function arbStackFinalizer(
   logger: winston.Logger,
@@ -106,9 +93,9 @@ export async function arbStackFinalizer(
 
   // ERC20 withdrawals emit events in the erc20GatewayRouter.
   // Native token withdrawals emit events in the ArbSys contract.
-  const l2ArbSys = CONTRACT_ADDRESSES[chainId].arbSys;
+  const l2ArbSys = getContractEntry(chainId, "arbSys");
   const arbSys = new Contract(l2ArbSys.address, l2ArbSys.abi, spokePoolClient.spokePool.provider);
-  const l2Erc20GatewayRouter = CONTRACT_ADDRESSES[chainId].erc20GatewayRouter;
+  const l2Erc20GatewayRouter = getContractEntry(chainId, "erc20GatewayRouter");
   const gatewayRouter = new Contract(
     l2Erc20GatewayRouter.address,
     l2Erc20GatewayRouter.abi,
@@ -161,7 +148,8 @@ export async function arbStackFinalizer(
   );
   const _withdrawalEvents = [
     ...withdrawalErc20Events.map((e) => {
-      const l2Token = getL2TokenAddresses(e.args.l1Token)[chainId];
+      const l2Token = getL2TokenAddresses(e.args.l1Token)?.[chainId];
+      assert(isDefined(l2Token), `Missing L2 token mapping for L1 token ${e.args.l1Token} on chain ${chainId}`);
       return {
         ...e,
         amount: e.args._amount,
@@ -170,7 +158,7 @@ export async function arbStackFinalizer(
     }),
     ...withdrawalNativeEvents.map((e) => {
       const nativeTokenSymbol = getNativeTokenSymbol(chainId);
-      const l2Token = TOKEN_SYMBOLS_MAP[nativeTokenSymbol].addresses[chainId];
+      const l2Token = resolveAcrossToken(nativeTokenSymbol, chainId, true);
       return {
         ...e,
         amount: e.args.callvalue,
@@ -192,7 +180,7 @@ export async function arbStackFinalizer(
         txnIndex: transactionIndex,
       };
       withdrawalEvents.push(tokenBridgedEvent);
-    } catch (err) {
+    } catch {
       logger.debug({
         at: `Finalizer#${networkName}Finalizer`,
         message: `Skipping ERC20 withdrawal event for unknown token ${event.l2TokenAddress} on chain ${networkName}`,
@@ -235,7 +223,7 @@ async function multicallArbitrumFinalizations(
 async function finalizeArbitrum(message: ChildToParentMessageWriter, chainId: number): Promise<Multicall2Call> {
   const l2Provider = getCachedProvider(chainId, true);
   const proof = await message.getOutboxProof(l2Provider);
-  const { address, abi } = CONTRACT_ADDRESSES[CHAIN_IDs.MAINNET][`orbitOutbox_${chainId}`];
+  const { address, abi } = getContractEntry(CHAIN_IDs.MAINNET, `orbitOutbox_${chainId}`);
   const outbox = new Contract(address, abi);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const eventData = (message as any).nitroWriter.event; // nitroWriter is a private property on the
@@ -252,6 +240,7 @@ async function finalizeArbitrum(message: ChildToParentMessageWriter, chainId: nu
     eventData.data,
     {}
   );
+  assert(isDefined(callData.to) && isDefined(callData.data), "Failed to populate orbitOutbox executeTransaction");
   return {
     callData: callData.data,
     target: callData.to,
@@ -301,20 +290,15 @@ async function getAllMessageStatuses(
   // For each token bridge event, store a unique log index for the event within the arbitrum transaction hash.
   // This is important for bridge transactions containing multiple events.
   const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
-  return (
-    await Promise.all(
-      tokensBridged.map((e, i) =>
-        getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i], chainId)
-      )
+  const results = await Promise.all(
+    tokensBridged.map((e, i) =>
+      getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i], chainId)
     )
-  )
-    .map((result, i) => {
-      return {
-        ...result,
-        info: tokensBridged[i],
-      };
-    })
-    .filter((result) => result.message !== undefined);
+  );
+  return results.flatMap((result, i) => {
+    const { message, status } = result;
+    return isDefined(message) ? [{ info: tokensBridged[i], message, status }] : [];
+  });
 }
 
 async function getMessageOutboxStatusAndProof(
@@ -324,7 +308,7 @@ async function getMessageOutboxStatusAndProof(
   logIndex: number,
   chainId: number
 ): Promise<{
-  message: ChildToParentMessageWriter;
+  message: ChildToParentMessageWriter | undefined;
   status: string;
 }> {
   const networkName = getNetworkName(chainId);
@@ -362,6 +346,7 @@ async function getMessageOutboxStatusAndProof(
     }
     if (outboxMessageExecutionStatus !== ChildToParentMessageStatus.CONFIRMED) {
       const estimatedFinalizationBlock = await l2Message.getFirstExecutableBlock(l2Provider);
+      assert(estimatedFinalizationBlock !== null, `${networkName}: getFirstExecutableBlock returned null`);
       const estimatedFinalizationBlockDelta = estimatedFinalizationBlock.toNumber() - LATEST_MAINNET_BLOCK;
       logger.debug({
         at: `Finalizer#${networkName}Finalizer`,
@@ -381,7 +366,7 @@ async function getMessageOutboxStatusAndProof(
       message: l2Message,
       status: ChildToParentMessageStatus[outboxMessageExecutionStatus],
     };
-  } catch (error) {
+  } catch {
     // Likely L1 message hasn't been included in an arbitrum batch yet, so ignore it for now.
     return {
       message: undefined,

@@ -1,15 +1,17 @@
 {
   "compilerOptions": {
-    "target": "es2022",
+    "target": "es2024",
     "module": "commonjs",
     "esModuleInterop": true,
+    "rootDir": ".",
     "outDir": "./dist",
     "declaration": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
-    "strict": true,
-    "strictNullChecks": false,
-    "noImplicitAny": false
+    "paths": {
+      "ox/*": ["./node_modules/viem/node_modules/ox/_types/*"]
+    },
+    "strict": true
   },
   "include": ["./src", "index.ts", "./scripts"],
   "files": ["./hardhat.config.ts"],

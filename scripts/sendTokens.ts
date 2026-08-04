@@ -1,23 +1,25 @@
 import {
+  assert,
   ethers,
   retrieveSignerFromCLIArgs,
   getProvider,
   ERC20,
   ZERO_ADDRESS,
+  isDefined,
   toBN,
   getGasPrice,
   toGWei,
   getNativeTokenSymbol,
-  LEGACY_TRANSACTION_CHAINS,
 } from "../src/utils";
 import { askYesNoQuestion } from "./utils";
 import minimist from "minimist";
+import { LEGACY_TRANSACTION_CHAINS } from "../src/clients/TransactionClient";
 const args = minimist(process.argv.slice(2), {
   string: ["token", "to", "amount", "chainId", "nonce", "maxFeePerGas", "maxPriorityFeePerGas"],
 });
 
 // Example run:
-// ts-node ./scripts/sendTokens.ts
+// tsx ./scripts/sendTokens.ts
 // \ --token 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
 // \ --amount 350000000000 --to 0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48
 // \ --chainId 1
@@ -25,7 +27,7 @@ const args = minimist(process.argv.slice(2), {
 // \ --keys bot1
 
 // Example run to clear up a stuck nonce with a maxFeePerGas of 1 Gwei and a maxPriorityFeePerGas of 2 Gwei
-// ts-node ./scripts/sendTokens.ts
+// tsx ./scripts/sendTokens.ts
 // \ --token 0x
 // \ --amount 0 --to <self-EOA>
 // \ --chainId 1868
@@ -61,10 +63,10 @@ export async function run(): Promise<void> {
   const nonce = args.nonce ? Number(args.nonce) : undefined;
   const maxFeePerGas = args.maxFeePerGas ? toGWei(args.maxFeePerGas) : undefined;
   const maxPriorityFeePerGas = args.maxFeePerGas ? toGWei(args.maxFeePerGas) : undefined;
+  const { provider } = connectedSigner;
+  assert(isDefined(provider), "Connected signer must have a provider");
   const gas =
-    maxFeePerGas && maxPriorityFeePerGas
-      ? { maxFeePerGas, maxPriorityFeePerGas }
-      : await getGasPrice(connectedSigner.provider);
+    maxFeePerGas && maxPriorityFeePerGas ? { maxFeePerGas, maxPriorityFeePerGas } : await getGasPrice(provider);
   console.log(
     `Submitting txn with maxFeePerGas ${gas.maxFeePerGas.toString()} and priority fee ${gas.maxPriorityFeePerGas.toString()} with overridden nonce ${nonce}`
   );

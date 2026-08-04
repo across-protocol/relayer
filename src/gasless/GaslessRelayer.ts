@@ -1,0 +1,1297 @@
+import winston from "winston";
+import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
+import { arch } from "@across-protocol/sdk";
+import {
+  Address,
+  isDefined,
+  delay,
+  Signer,
+  scheduleTask,
+  forEachAsync,
+  Provider,
+  getCurrentTime,
+  getSpokePool,
+  getProvider,
+  paginatedEventQuery,
+  getBlockForTimestamp,
+  EventSearchConfig,
+  Contract,
+  spreadEventWithBlockNumber,
+  unpackFillEvent,
+  unpackDepositEvent,
+  mapAsync,
+  TransactionReceipt,
+  EvmAddress,
+  SvmAddress,
+  toBN,
+  blockExplorerLink,
+  getNetworkName,
+  relayFillStatus,
+  sendAndConfirmTransaction,
+  getTokenInfo,
+  createFormatFunction,
+  toAddressType,
+  getSpokePoolPeriphery,
+  getSpokePoolAddress,
+  getPermit2,
+  compareAddressesSimple,
+  ConvertDecimals,
+  assert,
+  InstanceCoordinator,
+  MAX_UINT_VAL,
+  toBNWei,
+  utils,
+  willSucceed,
+  chainIsSvm,
+  chainIsEvm,
+  getSvmProvider,
+  SvmCpiEventsClient,
+  isStablecoin,
+} from "../utils";
+import { getRedisCache, RedisCacheInterface } from "../cache/Redis";
+import {
+  AnyGaslessDepositMessage,
+  APIGaslessDepositResponse,
+  DepositWithBlock,
+  FillStatus,
+  GaslessDepositMessage,
+  RelayData,
+} from "../interfaces";
+import { AcrossSwapApiClient, SvmFillerClient, TransactionClient } from "../clients";
+import EIP3009_ABI from "../common/abi/EIP3009.json";
+import {
+  buildGaslessDepositTx,
+  buildGaslessFillRelayTx,
+  buildSyntheticDeposit,
+  getGaslessAuthorizerAddress,
+  extractGaslessDepositFields,
+  getGaslessPermitNonce,
+  isPermit2NonceUsed,
+  isErc2612PermitNonceConsumed,
+  isAllowedGaslessPair,
+  isExclusivityRelative,
+  normalizeIntegratorId,
+  restructureGaslessDeposits,
+  resolveTokenInfoForLog,
+  validateDeposit,
+} from "../utils/GaslessUtils";
+
+const DEPOSIT_EVENT = "FundsDeposited";
+
+/** Result of a submitted gasless fill (EVM receipt or Solana signature). */
+export type GaslessFillSubmissionResult = TransactionReceipt | { svmSignature: string };
+
+export enum MessageState {
+  INITIAL = 0,
+  DEPOSIT_SUBMIT,
+  DEPOSIT_CONFIRM,
+  FILL_PENDING,
+  FILLED,
+  DONE,
+  ERROR,
+}
+
+const MESSAGE_STATES = {
+  [MessageState.INITIAL]: "INITIAL",
+  [MessageState.DEPOSIT_SUBMIT]: "DEPOSIT_SUBMIT",
+  [MessageState.DEPOSIT_CONFIRM]: "DEPOSIT_CONFIRM",
+  [MessageState.FILL_PENDING]: "FILL_PENDING",
+  [MessageState.FILLED]: "FILLED",
+  [MessageState.DONE]: "DONE",
+  [MessageState.ERROR]: "ERROR",
+};
+
+const terminalStates = [MessageState.FILLED, MessageState.DONE, MessageState.ERROR];
+
+const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
+
+/**
+ * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
+ */
+export class GaslessRelayer {
+  private abortController = new AbortController();
+  private _instanceCoordinator?: InstanceCoordinator;
+  private initialized = false;
+
+  // instanceCoordinator is populated by initialize(); reads pre-init throw, writes go through the setter.
+  protected get instanceCoordinator(): InstanceCoordinator {
+    assert(isDefined(this._instanceCoordinator), "GaslessRelayer: instanceCoordinator accessed before initialize()");
+    return this._instanceCoordinator;
+  }
+  protected set instanceCoordinator(value: InstanceCoordinator) {
+    this._instanceCoordinator = value;
+  }
+
+  protected messageState: { [key: string]: MessageState } = {};
+  protected providersByChain: { [chainId: number]: Provider } = {};
+  // The object is indexed by `chainId`. An `AuthorizationUsed` event is marked by adding `${token}:${authorizer}:${nonce}` to the respective chain's set.
+  protected observedDeposits: { [chainId: number]: Set<string> } = {};
+  /**
+   * Origin deposits observed at init with an SVM {@link Deposit.destinationChainId}, keyed by {@link _getDepositKey}.
+   * Used for fill status / fillRelay instead of synthetic API-derived relay data.
+   */
+  protected cachedSvmOriginDeposits: {
+    [depositKey: string]: Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber">;
+  } = {};
+  // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
+  protected observedFills: { [chainId: number]: Set<string> } = {};
+  // The object is indexed by `chainId`. A SpokePoolPeriphery contract is indexed by the chain ID.
+  protected spokePoolPeripheries: { [chainId: number]: Contract } = {};
+  // The object is indexed by `chainId`. A SpokePool contract is indexed by the chain ID (EVM destinations only).
+  protected spokePools: { [chainId: number]: Contract } = {};
+  /** Solana destination fill client (at most one SVM destination chain). */
+  protected svmFillerClient?: SvmFillerClient;
+  /** SVM CPI events client for {@link arch.svm.relayFillStatus} on destination Solana. */
+  protected svmEventsClient?: SvmCpiEventsClient;
+  /** Spoke pool program id for the single SVM destination chain (if configured). */
+  protected svmSpokePoolAddress?: SvmAddress;
+  /** Permit2 on each origin chain, connected to that chain's provider (nonce bitmap reads). */
+  protected permit2Contracts: { [chainId: number]: Contract } = {};
+  // Tracks whether a fill is currently in progress for a given user/originChainId combo.
+  // Keyed by `${authorizer}:${originChainId}`.
+  protected fillLock: { [key: string]: string } = {};
+
+  private api: AcrossSwapApiClient;
+  private _signerAddress?: EvmAddress;
+
+  // signerAddress is populated by initialize(); reads pre-init throw, writes go through the setter.
+  protected get signerAddress(): EvmAddress {
+    assert(isDefined(this._signerAddress), "GaslessRelayer: signerAddress accessed before initialize()");
+    return this._signerAddress;
+  }
+  protected set signerAddress(value: EvmAddress) {
+    this._signerAddress = value;
+  }
+
+  private transactionClient;
+  private redisCache: RedisCacheInterface | undefined;
+
+  public constructor(
+    readonly logger: winston.Logger,
+    readonly config: GaslessRelayerConfig,
+    readonly baseSigner: Signer,
+    readonly depositSigners: Signer[]
+  ) {
+    this.api = new AcrossSwapApiClient(this.logger, this.config.apiTimeoutOverride, this.config.swapApiKey);
+    this.transactionClient = new TransactionClient(this.logger, depositSigners);
+  }
+
+  /*
+   * @notice Initializes a GaslessRelayer instance.
+   */
+  public async initialize(): Promise<void> {
+    this.logger.debug({
+      at: "GaslessRelayer#initialize",
+      message: "Initializing GaslessRelayer",
+    });
+
+    // Set the signer address.
+    this.signerAddress = EvmAddress.from(await this.baseSigner.getAddress());
+    this.redisCache = await getRedisCache(this.logger);
+    assert(isDefined(this.redisCache), "GaslessRelayer: requires a Redis cache for handover state");
+
+    // Initialize the map with newly allocated sets.
+    await forEachAsync(this.config.relayerOriginChains, async (chainId) => {
+      const provider = await getProvider(chainId);
+      this.providersByChain[chainId] = provider;
+      this.observedDeposits[chainId] = new Set<string>();
+      this.spokePoolPeripheries[chainId] = getSpokePoolPeriphery(
+        chainId,
+        this.config.spokePoolPeripheryOverrides[chainId]
+      ).connect(provider);
+      if (!this.config.noPermit2ContractChainIds.has(chainId)) {
+        this.permit2Contracts[chainId] = getPermit2(chainId).connect(provider);
+      }
+    });
+    const svmDestinationChains = this.config.relayerDestinationChains.filter(chainIsSvm);
+    assert(
+      svmDestinationChains.length <= 1,
+      `Gasless relayer supports at most one SVM destination chain, got: ${svmDestinationChains.join(", ")}`
+    );
+
+    if (svmDestinationChains.length === 1) {
+      const svmChainId = svmDestinationChains[0];
+      const svmProvider = getSvmProvider(this.redisCache, this.logger, svmChainId);
+      this.svmEventsClient = await SvmCpiEventsClient.create(svmProvider);
+      this.svmFillerClient = await SvmFillerClient.from(this.baseSigner, svmProvider, svmChainId, this.logger);
+      const spokePoolAddress = getSpokePoolAddress(svmChainId);
+      if (!spokePoolAddress.isSVM()) {
+        throw new Error(`Expected SVM spoke pool for chain ${svmChainId}`);
+      }
+      this.svmSpokePoolAddress = spokePoolAddress;
+      this.observedFills[svmChainId] = new Set<string>();
+    }
+
+    await forEachAsync(this.config.relayerDestinationChains.filter(chainIsEvm), async (chainId) => {
+      this.providersByChain[chainId] ??= await getProvider(chainId);
+      this.observedFills[chainId] = new Set<string>();
+      this.spokePools[chainId] = getSpokePool(chainId).connect(this.baseSigner.connect(this.providersByChain[chainId]));
+    });
+
+    // Exit if OS instructs us to do so.
+    process.on("SIGHUP", () => {
+      this.logger.debug({
+        at: "GaslessRelayer#initialize",
+        message: "Received SIGHUP on gasless relayer. stopping...",
+      });
+      this.abortController.abort();
+    });
+
+    process.on("disconnect", () => {
+      this.logger.debug({
+        at: "GaslessRelayer#initialize",
+        message: "Gasless relayer disconnected, stopping...",
+      });
+      this.abortController.abort();
+    });
+
+    this.logger.debug({
+      at: "GaslessRelayer#initialize",
+      message: "Querying gasless API for initial messages",
+    });
+    const initialMessages = await this._queryGaslessApi(this.config.initializationRetryAttempts);
+
+    // Index on-chain deposits/fills for API messages (lookback), then mark terminal state when already complete.
+    await this.updateObserved(initialMessages);
+    await this.updateObservedCctpDeposits(initialMessages);
+    const markedTerminalCount = this._markFilledFromInitialObservation(initialMessages);
+
+    this.logger.debug({
+      at: "GaslessRelayer#initialize",
+      message: "Marked terminal state from initial chain observation",
+      markedTerminalCount,
+      apiMessages: initialMessages.length,
+    });
+
+    // Establish a new bot instance.
+    this.instanceCoordinator = new InstanceCoordinator(
+      this.logger,
+      this.redisCache,
+      this.config.botIdentifier,
+      this.config.runIdentifier,
+      this.abortController
+    );
+    await this.instanceCoordinator.initiateHandover();
+
+    this.initialized = true;
+  }
+
+  /*
+   * @notice Polls the Across gasless API and starts background deposit/fill tasks.
+   */
+  public pollAndExecute(): void {
+    scheduleTask(
+      () => this.evaluateApiSignatures(),
+      this.config.apiPollingInterval,
+      this.abortController.signal,
+      (err) =>
+        this.logger.error({
+          at: "GaslessRelayer#pollAndExecute",
+          message: "evaluateApiSignatures failed; batch skipped this tick",
+          error: err instanceof Error ? err.message : String(err),
+        })
+    );
+  }
+
+  /*
+   * @notice Starts a promise which expires when the InstanceCoordinator's lifetime ends, or when a handover signal
+   * is observed.
+   */
+  public async waitForDisconnect(): Promise<void> {
+    // Wait for the instance coordinator to receive a handover signal. Once one is received (or we expire), abort.
+    await this.instanceCoordinator.subscribe();
+    this.abortController.abort();
+  }
+
+  /**
+   * Look back on origin/destination chains and populate {@link observedDeposits} / {@link observedFills} for use by
+   * {@link _markFilledFromInitialObservation} (and any future logic that reads those sets).
+   */
+  private async updateObserved(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
+    await Promise.all([
+      mapAsync(this.config.relayerOriginChains, async (originChainId) => {
+        const provider = this.providersByChain[originChainId];
+        const observedDeposits = this.observedDeposits[originChainId];
+
+        const searchConfig = await this._getEventSearchConfig(originChainId);
+
+        const originSpokePool = getSpokePool(originChainId).connect(provider);
+        const originFundsDepositedEvents = await paginatedEventQuery(
+          originSpokePool,
+          originSpokePool.filters.FundsDeposited(),
+          searchConfig
+        );
+        originFundsDepositedEvents
+          .map((event) => unpackDepositEvent(spreadEventWithBlockNumber(event), originChainId))
+          .filter((deposit) => apiMessages.some(({ depositId }) => deposit.depositId.eq(depositId)))
+          .forEach((deposit) => {
+            const depositKey = this._getDepositKey(
+              deposit.inputToken.toNative(),
+              originChainId,
+              deposit.depositId.toString()
+            );
+            observedDeposits.add(depositKey);
+
+            if (chainIsSvm(deposit.destinationChainId)) {
+              this.cachedSvmOriginDeposits[depositKey] = deposit;
+            }
+          });
+      }),
+
+      mapAsync(this.config.relayerDestinationChains, async (destinationChainId) => {
+        if (chainIsEvm(destinationChainId)) {
+          await this._updateObservedEvmFills(destinationChainId);
+        } else if (chainIsSvm(destinationChainId)) {
+          await this._updateObservedSvmFills(destinationChainId, apiMessages);
+        }
+      }),
+    ]);
+  }
+
+  /**
+   * Populates {@link observedFills} for an EVM destination by scanning {@link FilledRelay} events.
+   */
+  private async _updateObservedEvmFills(destinationChainId: number): Promise<void> {
+    const provider = this.providersByChain[destinationChainId];
+    const observedFills = this.observedFills[destinationChainId];
+
+    const searchConfig = await this._getEventSearchConfig(destinationChainId);
+    const destinationSpokePool = getSpokePool(destinationChainId).connect(provider);
+
+    const destinationFilledRelayEvents = await paginatedEventQuery(
+      destinationSpokePool,
+      destinationSpokePool.filters.FilledRelay(),
+      searchConfig
+    );
+    for (const filledRelay of destinationFilledRelayEvents) {
+      const fill = unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId);
+      observedFills.add(this._getFilledRelayKey(fill.originChainId, fill.depositId.toString()));
+    }
+  }
+
+  /**
+   * Marks already-filled Solana destination relays in {@link observedFills} by querying fill status per API message.
+   */
+  private async _updateObservedSvmFills(
+    destinationChainId: number,
+    apiMessages: AnyGaslessDepositMessage[]
+  ): Promise<void> {
+    if (!isDefined(this.svmSpokePoolAddress)) {
+      return;
+    }
+
+    const svmMessages = apiMessages.filter((msg) => {
+      const { destinationChainId: msgDestinationChainId } = extractGaslessDepositFields(msg);
+      return msgDestinationChainId === destinationChainId;
+    });
+
+    await mapAsync(svmMessages, async (depositMessage) => {
+      const deposit = this.cachedSvmOriginDeposits[this._getDepositKeyFromMessage(depositMessage)];
+      if (!isDefined(deposit)) {
+        return;
+      }
+
+      const fillStatus = await this._getDestinationFillStatus(deposit);
+      if (fillStatus === FillStatus.Filled) {
+        this.observedFills[deposit.destinationChainId].add(
+          this._getFilledRelayKey(deposit.originChainId, deposit.depositId.toString())
+        );
+      }
+    });
+  }
+
+  private async _getDestinationFillStatus(deposit: RelayData & { destinationChainId: number }): Promise<FillStatus> {
+    const { destinationChainId } = deposit;
+    if (chainIsSvm(destinationChainId)) {
+      const svmEventsClient = this.svmEventsClient;
+      const spokePoolAddress = this.svmSpokePoolAddress;
+      assert(isDefined(svmEventsClient), "Missing svmEventsClient for SVM destination");
+      assert(isDefined(spokePoolAddress), "Missing SVM spoke pool address");
+      assert(deposit.recipient.isSVM() && deposit.outputToken.isSVM(), "SVM fill status requires SVM addresses");
+
+      return arch.svm.relayFillStatus(
+        arch.svm.toAddress(spokePoolAddress),
+        {
+          ...deposit,
+          recipient: deposit.recipient,
+          outputToken: deposit.outputToken,
+        },
+        destinationChainId,
+        svmEventsClient,
+        this.logger
+      );
+    }
+
+    return relayFillStatus(this.spokePools[destinationChainId], deposit, "latest", destinationChainId);
+  }
+
+  /**
+   * Provide a simple yes/no on whether the deposit is eligible for an "instant fill".
+   * @param deposit Deposit object to evaluate.
+   * @todo Token prices are not considered here; this only works with USD stables.
+   * @todo This is mostly placeholder; the logic here should be more sophisticated than simple USD limits.
+   */
+  protected fillImmediate(
+    deposit: Pick<RelayData, "originChainId" | "outputToken" | "outputAmount"> & {
+      destinationChainId: number;
+      exclusivityParameter: number;
+    },
+    spokePool: string
+  ): boolean {
+    if (!this.config.fillsEnabled) {
+      return false;
+    }
+
+    if (this._isCctpDeposit(deposit.originChainId, spokePool)) {
+      return false;
+    }
+
+    // Solana fills require an on-chain origin deposit; never fill from API-derived synthetic relay data.
+    if (chainIsSvm(deposit.destinationChainId)) {
+      return false;
+    }
+
+    // If the deposit is a refund test deposit, we do not want to fill it at all.
+    if (this.isRefundFlowTestDeposit(deposit.outputAmount)) {
+      return false;
+    }
+
+    // Verify that deposit.exclusivityParameter will produce an absolute exclusivityDeadline,
+    // not relative to the deposit block timestamp.
+    if (isExclusivityRelative(deposit.exclusivityParameter)) {
+      return false;
+    }
+
+    const threshold = Number(
+      process.env[`RELAYER_GASLESS_FILL_IMMEDIATE_USD_THRESHOLD_${deposit.originChainId}`] ?? "0"
+    );
+    if (isNaN(threshold) || threshold === 0) {
+      return false;
+    }
+
+    if (!isStablecoin(deposit.outputToken, deposit.destinationChainId)) {
+      return false;
+    }
+
+    const { decimals } = getTokenInfo(deposit.outputToken, deposit.destinationChainId);
+    return toBNWei(threshold, decimals).gt(deposit.outputAmount);
+  }
+
+  /*
+   * @notice For each CCTP deposit in the API messages, detects an already-submitted deposit on origin and adds
+   * the corresponding key to observedDeposits so we do not re-submit.
+   * - EIP-3009 (bridge): AuthorizationUsed on bridge inputToken.
+   * - EIP-3009 / erc3009 (swap-and-bridge): AuthorizationUsed on swapToken (the signed token); observed key uses depositData.inputToken to match messageFilter / FundsDeposited.
+   * - Permit2 (bridge only): FundsDeposited on SpokePool by depositId (no AuthorizationUsed on the transfer token).
+   * - Permit2 (swap-and-bridge): Permit2 nonceBitmap on canonical Permit2 — if nonce used, treat deposit as already submitted.
+   * - Permit (swap-and-bridge): SpokePoolPeriphery.permitNonces(owner) > signed nonce means it's already used.
+   */
+  protected async updateObservedCctpDeposits(apiMessages: AnyGaslessDepositMessage[]): Promise<void> {
+    const cctpMessages = apiMessages.filter((msg) => this._isCctpDeposit(msg.originChainId, msg.spokePool));
+    await mapAsync(cctpMessages, async (depositMessage) => {
+      const { originChainId, depositId } = depositMessage;
+
+      if (depositMessage.depositFlowType === "swapAndBridge") {
+        const swapTokenAddr = toAddressType(depositMessage.swapToken, originChainId);
+        if (["permit2", "permit"].includes(depositMessage.permitType)) {
+          const owner = getGaslessAuthorizerAddress(depositMessage);
+          const permitNonce = getGaslessPermitNonce(depositMessage);
+          const nonceUsed =
+            depositMessage.permitType === "permit2"
+              ? await isPermit2NonceUsed(this.permit2Contracts[originChainId], owner, permitNonce)
+              : await isErc2612PermitNonceConsumed({
+                  spokePoolPeriphery: this.spokePoolPeripheries[originChainId],
+                  owner,
+                  signedNonce: permitNonce,
+                });
+          if (!nonceUsed) {
+            return;
+          }
+          const depositKey = this._getDepositKey(
+            toAddressType(depositMessage.depositData.inputToken, originChainId).toNative(),
+            originChainId,
+            depositId
+          );
+          this.observedDeposits[originChainId].add(depositKey);
+          return;
+        }
+        const authorizer = getGaslessAuthorizerAddress(depositMessage);
+        const nonce = getGaslessPermitNonce(depositMessage);
+        const transactionHash = await this._findAuthorizationUsed(originChainId, swapTokenAddr, authorizer, nonce);
+        if (!isDefined(transactionHash)) {
+          return;
+        }
+        const depositKey = this._getDepositKey(
+          toAddressType(depositMessage.depositData.inputToken, originChainId).toNative(),
+          originChainId,
+          depositId
+        );
+        this.observedDeposits[originChainId].add(depositKey);
+        return;
+      }
+
+      const inputToken = toAddressType(depositMessage.baseDepositData.inputToken, originChainId);
+      const authorizer = getGaslessAuthorizerAddress(depositMessage);
+      const nonce = getGaslessPermitNonce(depositMessage);
+      const transactionHash = await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
+      if (!isDefined(transactionHash)) {
+        return;
+      }
+      const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId.toString());
+      this.observedDeposits[originChainId].add(depositKey);
+    });
+  }
+
+  /**
+   * For each API message, set a terminal state when the deposit is already fully handled on-chain so
+   * {@link evaluateApiSignatures} skips it.
+   * - CCTP (non-default spoke pool) and deposits-only: origin deposit observed → DONE.
+   * - Swap-and-bridge is covered when its deposit uses a non-default spoke pool (same CCTP detection).
+   * - Standard bridge: both origin deposit and destination fill observed → FILLED.
+   * Otherwise leave state unset so the message runs through the normal state machine.
+   */
+  protected _markFilledFromInitialObservation(apiMessages: AnyGaslessDepositMessage[]): number {
+    let markedTerminalCount = 0;
+    for (const depositMessage of apiMessages) {
+      const { originChainId, depositId } = depositMessage;
+      const { destinationChainId, inputToken } = extractGaslessDepositFields(depositMessage);
+      const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
+
+      const depositSeen = this.observedDeposits[originChainId]?.has(depositKey) ?? false;
+      if (!depositSeen) {
+        continue;
+      }
+
+      if (this._skipsDestinationFill(depositMessage)) {
+        this._setState(depositKey, MessageState.DONE);
+        markedTerminalCount++;
+        continue;
+      }
+
+      const fillKey = this._getFilledRelayKey(originChainId, depositId);
+      const fillSeen = this.observedFills[destinationChainId]?.has(fillKey) ?? false;
+      if (fillSeen) {
+        this._setState(depositKey, MessageState.FILLED);
+        markedTerminalCount++;
+      }
+    }
+    return markedTerminalCount;
+  }
+
+  /*
+   * @notice Polls the API and creates deposits/fills for all messages which are missing deposits/fills.
+   */
+  protected async evaluateApiSignatures(): Promise<void> {
+    const processDepositMessage = async (depositMessage: AnyGaslessDepositMessage) => {
+      const isSwap = depositMessage.depositFlowType === "swapAndBridge";
+      const { originChainId, depositId, spokePool } = depositMessage;
+      const authorizer = getGaslessAuthorizerAddress(depositMessage);
+      const nonce = getGaslessPermitNonce(depositMessage);
+
+      const {
+        destinationChainId,
+        fillDeadline,
+        inputToken,
+        outputToken,
+        inputAmountForValidation,
+        outputAmount,
+        exclusivityParameter,
+        swapToken,
+        swapTokenAmount,
+      } = extractGaslessDepositFields(depositMessage);
+
+      const depositKey = this._getDepositKeyFromMessage(depositMessage);
+      const fillKey = `${authorizer}:${originChainId}`;
+
+      const at = "GaslessRelayer#evaluateApiSignatures";
+      const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) =>
+        this.logger[level]({
+          at,
+          message,
+          state: stateToStr(getState()),
+          originChainId,
+          depositId,
+          amount: outputAmount,
+          token: outputToken.toNative(),
+          authorizer,
+          nonce,
+          requestId: depositMessage.requestId,
+          ...(isSwap ? { swapToken, swapTokenAmount } : {}),
+          ...args,
+        });
+
+      const setState = (state: MessageState) => {
+        const currentState = getState();
+        log("debug", `State transition: ${stateToStr(currentState)} -> ${stateToStr(state)}.`, {
+          currentState,
+          nextState: state,
+        });
+        this._setState(depositKey, state);
+      };
+      const getState = () => this._getState(depositKey);
+
+      if (getState() !== MessageState.INITIAL) {
+        return;
+      }
+
+      const isCctpDeposit = this._isCctpDeposit(originChainId, spokePool);
+      const instantFill = depositMessage.metadata?.instantFill ?? false;
+      log("debug", `Instant fill: ${instantFill}`);
+      const expired = () => getCurrentTime() >= fillDeadline;
+      const [origin, destination] = [originChainId, destinationChainId].map(getNetworkName);
+      const tStart = performance.now();
+
+      let fillImmediate = false;
+      let deposit: (RelayData & { destinationChainId: number }) | undefined;
+      let depositReceiptPromise: Promise<TransactionReceipt | null | undefined> | undefined;
+
+      const bridgeMessage = depositMessage as GaslessDepositMessage;
+
+      do {
+        // If we are currently processing a fill for the user, then do not process another fill until the first fill is completed.
+        if (isDefined(this.fillLock[fillKey]) && this.fillLock[fillKey] !== depositKey) {
+          log("debug", `Skipping deposit due to held lock on key ${fillKey} (held by ${this.fillLock[fillKey]})`);
+          await delay(1);
+          continue;
+        }
+        this.fillLock[fillKey] ??= depositKey;
+
+        if (expired()) {
+          log("warn", `Skipping expired deposit destined for ${origin}.`);
+          setState(MessageState.ERROR);
+        }
+
+        const messageState = getState();
+        switch (messageState) {
+          case MessageState.INITIAL: {
+            const valid = validateDeposit(
+              originChainId,
+              inputToken,
+              inputAmountForValidation,
+              destinationChainId,
+              outputToken,
+              outputAmount,
+              this.config.refundFlowTestEnabled,
+              this.config.allowedPeggedPairs,
+              this.logger,
+              this.config.depositUsdPageThreshold,
+              this.config.fillsEnabled
+            );
+            let nextState = MessageState.ERROR;
+            if (!valid) {
+              log("warn", `Rejected malformed deposit destined for ${origin}.`);
+            } else {
+              fillImmediate =
+                !isSwap &&
+                instantFill &&
+                this.fillImmediate(
+                  { originChainId, destinationChainId, outputToken, outputAmount, exclusivityParameter },
+                  spokePool
+                );
+              log("debug", `Fill immediate: ${fillImmediate}`);
+              nextState = MessageState.DEPOSIT_SUBMIT;
+            }
+            setState(nextState);
+            break;
+          }
+
+          case MessageState.DEPOSIT_SUBMIT: {
+            if (fillImmediate) {
+              const depositTx = buildGaslessDepositTx(depositMessage, this.getPeripheryContract(originChainId));
+              const { succeed, reason } = await willSucceed(depositTx);
+              if (!succeed) {
+                log("warn", "Deposit simulation failed, falling back to standard path.", { reason });
+                fillImmediate = false;
+                // Drop synthetic (or any in-memory) deposit so DEPOSIT_CONFIRM's standard branch must re-resolve from receipt / chain.
+                deposit = undefined;
+              }
+            }
+
+            depositReceiptPromise = this.initiateDeposit(depositMessage);
+            const nextState = fillImmediate ? MessageState.FILL_PENDING : MessageState.DEPOSIT_CONFIRM;
+            setState(nextState);
+            break;
+          }
+
+          case MessageState.DEPOSIT_CONFIRM: {
+            const depositReceipt = await depositReceiptPromise;
+
+            // Swap-and-bridge and CCTP bridge: no fill; confirm via receipt hash and/or nonce/auth usage.
+            // Permit2: nonceBitmap, Permit (EIP-2612): token nonce advancement, EIP-3009: AuthorizationUsed.
+            if (isCctpDeposit) {
+              let found: string | undefined = depositReceipt?.transactionHash;
+
+              if (!found) {
+                const authToken = isSwap ? toAddressType(depositMessage.swapToken, originChainId) : inputToken;
+                if (depositMessage.permitType === "erc3009") {
+                  found = await this._findAuthorizationUsed(originChainId, authToken, authorizer, nonce);
+                } else if (depositMessage.permitType === "permit") {
+                  const nonceConsumed = await isErc2612PermitNonceConsumed({
+                    spokePoolPeriphery: this.spokePoolPeripheries[originChainId],
+                    owner: authorizer,
+                    signedNonce: nonce,
+                  });
+                  if (nonceConsumed) {
+                    found = "permit-nonce-consumed";
+                  }
+                } else if (depositMessage.permitType === "permit2") {
+                  const nonceUsed = await isPermit2NonceUsed(this.permit2Contracts[originChainId], authorizer, nonce);
+                  // Same outcome as AuthorizationUsed: confirm origin submission without a tx receipt (no EIP-3009 event).
+                  if (nonceUsed) {
+                    found = "permit2-nonce-consumed";
+                  }
+                }
+              }
+
+              if (isDefined(found)) {
+                const hasTxHash = utils.isHexString(found);
+                log(
+                  "info",
+                  `Gasless ${isSwap ? "swapAndBridge" : "cctp"} deposit confirmed on ${origin}. Moving to DONE.`,
+                  { txHash: hasTxHash ? blockExplorerLink(found, originChainId) : found }
+                );
+                setState(MessageState.DONE);
+              } else {
+                log("info", `Could not locate ${isSwap ? "swapAndBridge" : "cctp"} deposit on ${origin}. Retrying.`);
+                await delay(1);
+                setState(MessageState.DEPOSIT_SUBMIT);
+              }
+              break;
+            }
+
+            let nextState: MessageState;
+            if (fillImmediate && isDefined(deposit)) {
+              const verifiedDeposit = depositReceipt
+                ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId)
+                : await this._findDeposit(bridgeMessage);
+
+              if (isDefined(verifiedDeposit)) {
+                log("info", `Verified deposit on ${origin} after immediate fill.`, {
+                  txHash: blockExplorerLink(verifiedDeposit.txnRef, originChainId),
+                });
+                deposit = verifiedDeposit;
+                nextState = MessageState.FILLED;
+              } else {
+                log("warn", `Deposit not found on ${origin} after immediate fill - unreimbursable fill risk!`);
+                await delay(1);
+                nextState = MessageState.DEPOSIT_SUBMIT;
+              }
+            } else {
+              deposit ??= depositReceipt
+                ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId)
+                : await this._findDeposit(bridgeMessage);
+              if (isDefined(deposit)) {
+                if (this._skipsDestinationFill(depositMessage)) {
+                  log("info", `Verified deposit on ${origin}. Marking DONE (no destination fill).`);
+                  nextState = MessageState.DONE;
+                } else {
+                  log("info", `Verified deposit on ${origin}`);
+                  nextState = MessageState.FILL_PENDING;
+                }
+              } else {
+                log("info", `Could not locate deposit on ${origin}.`);
+                // It's possible the deposit will always fail in simulation (e.g. insufficient balance). In this
+                // case, drop the lock on the deposit in case there were follow-up requests we need to unblock.
+                delete this.fillLock[fillKey];
+                nextState = MessageState.DEPOSIT_SUBMIT;
+                await delay(1);
+              }
+            }
+            setState(nextState);
+            break;
+          }
+
+          case MessageState.FILL_PENDING: {
+            if (this._skipsDestinationFill(depositMessage)) {
+              log("info", `Marking DONE without fill on ${destination}.`);
+              setState(MessageState.DONE);
+              break;
+            }
+
+            let fillStatus: FillStatus;
+
+            if (deposit) {
+              if (this.isRefundFlowTestDeposit(deposit.outputAmount)) {
+                log("info", `Skipped fill on ${destination} for ${origin} deposit (deposit refund test).`);
+                setState(MessageState.FILLED);
+                break;
+              }
+
+              const fillSubmission = await this.initiateFill(deposit, spokePool);
+              if (isDefined(fillSubmission)) {
+                log("info", `Completed fill on ${destination} for ${origin} deposit.`);
+                fillStatus = FillStatus.Filled;
+              }
+            } else {
+              deposit = buildSyntheticDeposit(bridgeMessage);
+              const fillSubmission = await this.initiateFill(deposit, spokePool);
+              if (isDefined(fillSubmission)) {
+                log("info", `Completed immediate fill on ${destination} for ${origin} deposit.`);
+                fillStatus = FillStatus.Filled;
+              }
+            }
+
+            fillStatus ??= await this._getDestinationFillStatus(deposit);
+
+            if (fillStatus === FillStatus.Filled) {
+              log("info", `Recognised fill on ${destination}.`);
+              const nextState = fillImmediate ? MessageState.DEPOSIT_CONFIRM : MessageState.FILLED;
+              setState(nextState);
+            } else {
+              await delay(1);
+            }
+            break;
+          }
+        }
+      } while (!terminalStates.includes(getState()));
+      delete this.fillLock[fillKey];
+      const tEnd = performance.now();
+      const delta = (tEnd - tStart) / 1000;
+      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
+    };
+
+    const messageFilter = (deposit: AnyGaslessDepositMessage): boolean => {
+      if (!isDefined(this.observedDeposits[deposit.originChainId])) {
+        return false;
+      }
+
+      const rawInputToken =
+        deposit.depositFlowType === "swapAndBridge"
+          ? deposit.depositData.inputToken
+          : deposit.baseDepositData.inputToken;
+      const { depositId, originChainId } = deposit;
+      const depositKey = this._getDepositKey(EvmAddress.from(rawInputToken).toNative(), originChainId, depositId);
+
+      // If there's already known state for this deposit nonce, skip it.
+      return !isDefined(this.messageState[depositKey]);
+    };
+
+    const apiMessages = await this._queryGaslessApi();
+    await forEachAsync(apiMessages.filter(messageFilter), processDepositMessage);
+  }
+
+  /*
+   * @notice Builds and sends depositWithAuthorization tx, then waits for execution.
+   * @returns The transaction receipt, or null if skipped or failed.
+   */
+  protected getPeripheryContract(originChainId: number): Contract {
+    const contract = this.spokePoolPeripheries[originChainId];
+    return this.depositSigners.length === 0
+      ? contract.connect(this.baseSigner.connect(this.providersByChain[originChainId]))
+      : contract;
+  }
+
+  protected async initiateDeposit(
+    depositMessage: AnyGaslessDepositMessage
+  ): Promise<TransactionReceipt | null | undefined> {
+    const { originChainId, depositId } = depositMessage;
+    const authorizer = getGaslessAuthorizerAddress(depositMessage);
+    const spokePoolPeripheryContract = this.getPeripheryContract(originChainId);
+    const _depositTx = buildGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
+
+    if (!this.config.sendingTransactionsEnabled) {
+      this.logger.debug({
+        at: "GaslessRelayer#initiateDeposit",
+        message: "Sending transactions disabled, skipping",
+      });
+      return null;
+    }
+
+    const isSwap = depositMessage.depositFlowType === "swapAndBridge";
+    // Bridge and swapAndBridge have different path to the destinationChainId field.
+    const destinationChainId = isSwap
+      ? depositMessage.depositData.destinationChainId
+      : depositMessage.baseDepositData.destinationChainId;
+
+    const amountToken = isSwap ? depositMessage.swapToken : depositMessage.baseDepositData.inputToken;
+    const rawAmount = isSwap ? depositMessage.swapTokenAmount : depositMessage.baseDepositData.inputAmount;
+    // Resolve symbol/decimals for the Slack log line only. This MUST NOT throw: the
+    // user-signed swapToken is frequently a long-tail token missing from the static
+    // TOKEN_SYMBOLS_MAP, and a throw here used to silently drop the deposit before it was
+    // ever submitted (ACB-552). resolveTokenInfoForLog falls back to an on-chain probe and
+    // then a neutral placeholder.
+    const { decimals, symbol } = await resolveTokenInfoForLog(
+      toAddressType(amountToken, originChainId),
+      originChainId,
+      this.logger,
+      { redisCache: this.redisCache }
+    );
+    const formattedAmount = createFormatFunction(2, 4, false, decimals)(rawAmount);
+
+    const message = "Completed gasless deposit 😎";
+    const mrkdwn = `Completed gasless deposit from ${getNetworkName(originChainId)} to ${getNetworkName(
+      destinationChainId
+    )} 
+    with authorizer ${blockExplorerLink(authorizer, originChainId)}, 
+    ${isSwap ? "swap amount" : "input amount"} ${formattedAmount} ${symbol}, and deposit ID ${depositId}`;
+
+    const gaslessDeposit = {
+      ..._depositTx,
+      message,
+      mrkdwn,
+    };
+
+    const txReceipt = await sendAndConfirmTransaction(
+      gaslessDeposit,
+      this.transactionClient,
+      this.depositSigners.length > 0
+    );
+    if (!isDefined(txReceipt)) {
+      this.logger.warn({
+        at: "GaslessRelayer#initiateDeposit",
+        message: "Failed to submit gasless deposit",
+        depositId,
+        originChainId,
+        destinationChainId,
+      });
+      this.logger.debug({
+        at: "GaslessRelayer#initiateDeposit",
+        message: "Failed to submit gasless deposit. Debug information:",
+        depositMessage,
+      });
+    }
+    return txReceipt;
+  }
+
+  /*
+   * @notice Builds and sends the associated `fillRelay` call from the input API message.
+   */
+  protected async initiateFill(
+    deposit: RelayData & { destinationChainId: number },
+    originChainSpokePool: string
+  ): Promise<GaslessFillSubmissionResult | null | undefined> {
+    const { originChainId, depositId, destinationChainId, outputToken, outputAmount, inputToken, inputAmount } =
+      deposit;
+
+    assert(!this._isCctpDeposit(originChainId, originChainSpokePool), "Cannot fill CCTP deposit");
+
+    // Do sanity checks. We should never fill a deposit with outputAmount > inputAmount.
+    const outputTokenInfo = getTokenInfo(outputToken, destinationChainId);
+    const inputTokenInfo = getTokenInfo(inputToken, originChainId);
+    const inputAmountInOutputDecimals = ConvertDecimals(inputTokenInfo.decimals, outputTokenInfo.decimals)(inputAmount);
+    if (this.isRefundFlowTestDeposit(outputAmount)) {
+      this.logger.info({
+        at: "GaslessRelayer#initiateFill",
+        message: "Refund flow test: skipping fill (deposit already made).",
+        depositId,
+      });
+      return null;
+    }
+    assert(inputAmountInOutputDecimals.gte(outputAmount), "Cannot fill deposit with outputAmount > inputAmount");
+    const tokenPairAllowed = isAllowedGaslessPair(
+      inputToken,
+      outputToken,
+      originChainId,
+      destinationChainId,
+      this.config.allowedPeggedPairs
+    );
+    assert(
+      tokenPairAllowed,
+      "Cannot fill deposit with mismatching input/output tokens (not same L1 or in allowedPeggedPairs)."
+    );
+
+    const logMessage = "Completed gasless fill 🔮";
+    const mrkdwn = `Completed gasless fill from ${getNetworkName(originChainId)} to ${getNetworkName(
+      destinationChainId
+    )} with output amount ${createFormatFunction(2, 4, false, outputTokenInfo.decimals)(outputAmount)} ${
+      outputTokenInfo.symbol
+    } and deposit ID ${depositId}`;
+
+    if (!this.config.sendingTransactionsEnabled) {
+      this.logger.debug({
+        at: "GaslessRelayer#initiateFill",
+        message: "Sending transactions disabled, skipping",
+      });
+      return null;
+    }
+
+    if (chainIsSvm(destinationChainId)) {
+      const svmFillerClient = this.svmFillerClient;
+      const spokePoolAddress = this.svmSpokePoolAddress;
+      assert(isDefined(svmFillerClient), "Missing svmFillerClient for SVM destination");
+      assert(isDefined(spokePoolAddress), "Missing SVM spoke pool address");
+      assert(
+        deposit.recipient.isSVM() && deposit.outputToken.isSVM(),
+        "SVM fill requires SVM recipient and outputToken"
+      );
+
+      const svmSignature = await svmFillerClient.executeFillImmediately(
+        spokePoolAddress,
+        {
+          ...deposit,
+          recipient: deposit.recipient,
+          outputToken: deposit.outputToken,
+        },
+        originChainId,
+        this.signerAddress,
+        logMessage,
+        mrkdwn
+      );
+      if (!isDefined(svmSignature)) {
+        this.logger.warn({
+          at: "GaslessRelayer#initiateFill",
+          message: "Failed to submit gasless SVM fill",
+          depositId,
+        });
+        return null;
+      }
+      return { svmSignature };
+    }
+
+    const spokePool = this.spokePools[destinationChainId];
+    const _gaslessFill = buildGaslessFillRelayTx(deposit, spokePool, originChainId, this.signerAddress);
+    const gaslessFill = {
+      ..._gaslessFill,
+      message: logMessage,
+      mrkdwn,
+    };
+
+    const txReceipt = await sendAndConfirmTransaction(gaslessFill, this.transactionClient);
+    if (!isDefined(txReceipt)) {
+      this.logger.warn({
+        at: "GaslessRelayer#initiateFill",
+        message: "Failed to submit gasless fill",
+        depositId,
+      });
+    }
+    return txReceipt;
+  }
+
+  /*
+   * @notice Queries the API for all pending gasless transactions. By default, do not retry since this endpoint is being polled.
+   */
+  protected async _queryGaslessApi(retriesRemaining = 0): Promise<AnyGaslessDepositMessage[]> {
+    let apiResponseData: { deposits: APIGaslessDepositResponse[] } | undefined = undefined;
+    try {
+      apiResponseData = await this.api.get<{ deposits: APIGaslessDepositResponse[] }>(this.config.apiEndpoint, {});
+    } catch {
+      // Error log should have been emitted in AcrossSwapApiClient.
+    }
+    if (!isDefined(apiResponseData)) {
+      return retriesRemaining > 0 ? this._queryGaslessApi(--retriesRemaining) : [];
+    }
+    const deposits = restructureGaslessDeposits(apiResponseData.deposits, this.logger);
+    return this._filterDepositsByIntegratorId(deposits);
+  }
+
+  protected _filterDepositsByIntegratorId(deposits: AnyGaslessDepositMessage[]): AnyGaslessDepositMessage[] {
+    const { allowedIntegratorIds, blockedIntegratorIds } = this.config;
+    if (!isDefined(allowedIntegratorIds) && !isDefined(blockedIntegratorIds)) {
+      return deposits;
+    }
+
+    return deposits.filter((deposit) => {
+      const integratorId = isDefined(deposit.integratorId) ? normalizeIntegratorId(deposit.integratorId) : undefined;
+      const depositLogFields = {
+        requestId: deposit.requestId,
+        depositId: deposit.depositId,
+        integratorId: deposit.integratorId,
+      };
+      if (isDefined(allowedIntegratorIds)) {
+        const allowed = isDefined(integratorId) && allowedIntegratorIds.has(integratorId);
+        if (!allowed) {
+          this.logger.debug({
+            at: "GaslessRelayer#_queryGaslessApi",
+            message: "Skipping gasless deposit with integratorId outside allow-list",
+            ...depositLogFields,
+          });
+        }
+        return allowed;
+      }
+
+      if (isDefined(blockedIntegratorIds) && isDefined(integratorId) && blockedIntegratorIds.has(integratorId)) {
+        this.logger.debug({
+          at: "GaslessRelayer#_queryGaslessApi",
+          message: "Skipping gasless deposit with blocked integratorId",
+          ...depositLogFields,
+        });
+        return false;
+      }
+
+      return true;
+    });
+  }
+
+  /*
+   * @notice Finds a deposit via EIP-3009 AuthorizationUsed on the token, then extracts the deposit from the tx receipt.
+   */
+  protected async _findDepositByAuthorization(
+    originChainId: number,
+    inputToken: Address,
+    authorizer: string,
+    nonce: string
+  ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
+    const provider = this.providersByChain[originChainId];
+    const transactionHash = await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
+    if (!transactionHash) {
+      return undefined;
+    }
+    // Otherwise, find the associated deposit event.
+    const transactionReceipt = await provider.getTransactionReceipt(transactionHash);
+    return this._extractDepositFromTransactionReceipt(transactionReceipt, originChainId);
+  }
+
+  private async _findAuthorizationUsed(
+    originChainId: number,
+    inputToken: Address,
+    authorizer: string,
+    nonce: string
+  ): Promise<string | undefined> {
+    const provider = this.providersByChain[originChainId];
+    const authToken = new Contract(inputToken.toNative(), EIP3009_ABI, provider);
+    const searchConfig = await this._getEventSearchConfig(originChainId);
+    const spentNonces = await paginatedEventQuery(
+      authToken,
+      authToken.filters.AuthorizationUsed(authorizer, nonce),
+      searchConfig
+    );
+    if (spentNonces.length === 0) {
+      // The nonce is not used, so exit.
+      return undefined;
+    }
+    assert(spentNonces.length === 1, "Same user cannot spend same nonce");
+    return spentNonces[0].transactionHash;
+  }
+
+  /*
+   * @notice Finds the whole deposit event for a non-CCTP message: Permit2 by depositId on SpokePool, EIP-3009 by AuthorizationUsed then tx receipt.
+   */
+  protected async _findDeposit(
+    depositMessage: GaslessDepositMessage
+  ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
+    const { originChainId, depositId, spokePool } = depositMessage;
+    assert(
+      !this._isCctpDeposit(originChainId, spokePool),
+      "_findDeposit must not be used for CCTP deposits; use _findAuthorizationUsed"
+    );
+
+    if (depositMessage.permitType === "permit2") {
+      return this._findDepositByDepositId(originChainId, depositId);
+    }
+
+    // Bridge-only: look up by EIP-3009 AuthorizationUsed event on the inputToken.
+    const inputToken = toAddressType(depositMessage.baseDepositData.inputToken, originChainId);
+    const authorizer = getGaslessAuthorizerAddress(depositMessage);
+    const nonce = getGaslessPermitNonce(depositMessage);
+
+    return this._findDepositByAuthorization(originChainId, inputToken, authorizer, nonce);
+  }
+
+  /*
+   * @notice Finds a deposit by depositId (and optional depositor) by querying SpokePool FundsDeposited events.
+   * @dev Used for Permit2 flow where there is no AuthorizationUsed on the token; the SpokePool still emits FundsDeposited when depositWithPermit2 is used.
+   */
+  private async _findDepositByDepositId(
+    originChainId: number,
+    depositId: string
+  ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
+    const provider = this.providersByChain[originChainId];
+    const originSpokePool = this.spokePools[originChainId].connect(provider);
+    const searchConfig = await this._getEventSearchConfig(originChainId);
+    const events = await paginatedEventQuery(
+      originSpokePool,
+      originSpokePool.filters.FundsDeposited(null, null, null, null, null, toBN(depositId)),
+      searchConfig
+    );
+    if (events.length === 0) {
+      return undefined;
+    }
+    return unpackDepositEvent(spreadEventWithBlockNumber(events[0]), originChainId);
+  }
+
+  /*
+   * @notice Extracts the deposit event from an input transaction receipt. This function assumes the input transaction receipt does indeed contain a deposit in the logs.
+   */
+  protected _extractDepositFromTransactionReceipt(
+    transactionReceipt: TransactionReceipt,
+    originChainId: number
+  ): Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> {
+    const originSpokePool = this.spokePools[originChainId];
+    const fundsDepositedSignature = originSpokePool.interface.getEventTopic(DEPOSIT_EVENT);
+    const depositLogs = transactionReceipt.logs.filter(
+      ({ address, topics }) => address === originSpokePool.address && topics[0] === fundsDepositedSignature
+    );
+
+    assert(depositLogs.length === 1, "Deposit with authorization should only contain a single FundsDeposited event.");
+    // We must decode the log data manually and tell `spreadEventWithBlockNumber` that this log is a `FundsDeposited` event.
+    const depositLog = {
+      event: DEPOSIT_EVENT,
+      ...depositLogs[0],
+      ...originSpokePool.interface.parseLog(depositLogs[0]),
+    };
+    return unpackDepositEvent(spreadEventWithBlockNumber(depositLog), originChainId);
+  }
+
+  /*
+   * @notice Gets the event search config for the input network.
+   * @returns an EventSearchConfig type based on the relayer's lookback and current chain's height.
+   */
+  private async _getEventSearchConfig(chainId: number): Promise<EventSearchConfig> {
+    const provider = this.providersByChain[chainId];
+    const to = await provider.getBlock("latest");
+    const from = await getBlockForTimestamp(this.logger, chainId, to.timestamp - this.config.depositLookback);
+    return {
+      to: to.number,
+      from,
+      maxLookBack: this.config.maxBlockLookBack[chainId],
+    };
+  }
+
+  /*
+   * @notice Returns true when this bot submits the origin deposit but does not perform a destination fill.
+   */
+  private _skipsDestinationFill(depositMessage: AnyGaslessDepositMessage): boolean {
+    return !this.config.fillsEnabled || this._isCctpDeposit(depositMessage.originChainId, depositMessage.spokePool);
+  }
+
+  /*
+   * @notice Returns true if the deposit is a CCTP gasless deposit (API spokePool differs from our default SpokePool for the origin chain).
+   * For CCTP we still submit the deposit on SpokePoolPeriphery but never perform a fill.
+   */
+  private _isCctpDeposit(originChainId: number, spokePool: string): boolean {
+    const defaultSpokePool = this.spokePools[originChainId];
+    if (!defaultSpokePool) {
+      return false;
+    }
+    return !compareAddressesSimple(spokePool, defaultSpokePool.address);
+  }
+
+  /*
+   * @notice Gets the key for `this.observedDeposits` from a relevant 3009 authorization.
+   */
+  protected _getDepositKey(token: string, originChainId: number, depositId: string): string {
+    return `${token}:${originChainId}:${depositId}`;
+  }
+
+  protected _getDepositKeyFromMessage(depositMessage: AnyGaslessDepositMessage): string {
+    const { inputToken } = extractGaslessDepositFields(depositMessage);
+    return this._getDepositKey(inputToken.toNative(), depositMessage.originChainId, depositMessage.depositId);
+  }
+
+  /*
+   * @notice Sets the message state for a deposit. Can be overridden by subclasses to observe state changes.
+   */
+  protected _setState(depositKey: string, state: MessageState): void {
+    this.messageState[depositKey] = state;
+  }
+
+  /*
+   * @notice Gets the message state for a deposit, initializing to INITIAL if not set.
+   */
+  protected _getState(depositKey: string): MessageState {
+    return (this.messageState[depositKey] ??= MessageState.INITIAL);
+  }
+
+  private isRefundFlowTestDeposit(outputAmount: RelayData["outputAmount"]): boolean {
+    return this.config.refundFlowTestEnabled && outputAmount.eq(MAX_UINT_VAL);
+  }
+
+  /*
+   * @notice Gets the key for `this.observedFills` from a relevant FilledRelay event.
+   * @dev We key on the origin chain and depositId only since this is what uniquely identifies a deposit on an origin chain for a specific user (the only way to have a collision here with
+   * a valid, unfilled deposit is by finding a collision in keccak).
+   */
+  private _getFilledRelayKey(originChainId: number, depositId: string): string {
+    return `${originChainId}:${depositId}`;
+  }
+}

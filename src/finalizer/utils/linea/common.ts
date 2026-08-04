@@ -1,5 +1,5 @@
 import { LineaSDK, Message, OnChainMessageStatus } from "@consensys/linea-sdk";
-import { Linea_Adapter__factory } from "@across-protocol/contracts";
+import { Linea_Adapter__factory } from "@across-protocol/sdk/typechain";
 import {
   BigNumber,
   Contract,
@@ -11,7 +11,6 @@ import {
   getBlockForTimestamp,
   getCurrentTime,
   getNodeUrlList,
-  getRedisCache,
   paginatedEventQuery,
   CHAIN_IDs,
   getTokenInfo,
@@ -20,8 +19,9 @@ import {
   isSignerWallet,
   assert,
 } from "../../../utils";
+import { getRedisCache } from "../../../cache/Redis";
 import { HubPoolClient } from "../../../clients";
-import { CONTRACT_ADDRESSES } from "../../../common";
+import { getContractAbi } from "../../../common";
 import { Log } from "../../../interfaces";
 import { L1ClaimingService, L1MessageServiceContract, L2MessageServiceContract, MessageSentEvent } from "./imports";
 
@@ -40,7 +40,7 @@ export interface ParsedMessageSentLog {
 
 export const lineaAdapterIface = Linea_Adapter__factory.createInterface() as ethers.utils.Interface;
 
-export function initLineaSdk(l1ChainId: number, l2ChainId: number, signer?: Signer): LineaSDK {
+export function initLineaSdk(l1ChainId: number, l2ChainId: number, signer: Signer): LineaSDK {
   assert(isSignerWallet(signer), "Signer is not a Wallet");
   return new LineaSDK({
     l1RpcUrl: Object.values(getNodeUrlList(l1ChainId))[0],
@@ -76,7 +76,7 @@ export function makeGetMessagesWithStatusByTxHash(
 
     const messages = txReceipt.logs
       .filter((log) => log.address === l2MessageService.contractAddress)
-      .flatMap((log) => {
+      .flatMap((log): Omit<MessageWithStatus, "status"> | never[] => {
         const parsedLog = l2MessageService.contract.interface.parseLog(log);
 
         if (!parsedLog || parsedLog.name !== "MessageSent") {
@@ -241,10 +241,9 @@ export function determineMessageType(
 
   // Start with the TokenBridge calldata format.
   try {
-    const contractInterface = new ethers.utils.Interface(
-      CONTRACT_ADDRESSES[hubPoolClient.chainId].lineaL1TokenBridge.abi
-    );
-    const decoded = contractInterface.decodeFunctionData("completeBridging", _calldata);
+    const abi = getContractAbi(hubPoolClient.chainId, "lineaL1TokenBridge");
+    assert(Array.isArray(abi), "lineaL1TokenBridge abi must be a fragment array");
+    const decoded = new ethers.utils.Interface(abi).decodeFunctionData("completeBridging", _calldata);
     // If we've made it this far, then the calldata is a valid TokenBridge calldata.
     const token = getTokenInfo(decoded._nativeToken, hubPoolClient.chainId);
     return {

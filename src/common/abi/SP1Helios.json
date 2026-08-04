@@ -44,6 +44,13 @@
     "type": "function"
   },
   {
+    "inputs": [],
+    "name": "heliosProgramVkey",
+    "outputs": [{ "name": "", "type": "bytes32", "internalType": "bytes32" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       { "internalType": "bytes", "name": "proof", "type": "bytes" },
       { "internalType": "bytes", "name": "publicValues", "type": "bytes" }

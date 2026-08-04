@@ -1,6 +1,6 @@
 import { Contract, Signer } from "ethers";
 import { BridgeTransactionDetails, BridgeEvents } from "./BaseBridgeAdapter";
-import { CONTRACT_ADDRESSES } from "../../common";
+import { getContractEntry } from "../../common";
 import {
   BigNumber,
   Provider,
@@ -27,8 +27,10 @@ export class OFTWethBridge extends OFTBridge {
   ) {
     super(l2ChainId, l1ChainId, l1Signer, l2SignerOrProvider, l1TokenAddress, logger);
 
-    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } =
-      CONTRACT_ADDRESSES[this.hubChainId].atomicDepositor;
+    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = getContractEntry(
+      this.hubChainId,
+      "atomicDepositor"
+    );
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, l1Signer);
 
     // Overwrite the l1 gateway to the atomic depositor address.

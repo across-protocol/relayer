@@ -51,7 +51,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Execute pool rebalances", async function () {
+describe("Dataworker: Execute pool rebalances", function () {
   function getNewBalanceAllocator(): BalanceAllocator {
     const providers = {
       ...spokePoolClientsToProviders(spokePoolClients),

@@ -40,7 +40,6 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         await acrossMonitor.reportRelayerBalances();
         await acrossMonitor.reportUnfilledDeposits();
         await acrossMonitor.reportInvalidFills();
-        await acrossMonitor.reportInvalidFillsRelatedToSvm();
       } else {
         logger.debug({ at: "AcrossMonitor", message: "Report disabled" });
       }
@@ -49,12 +48,6 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         await acrossMonitor.checkBalances();
       } else {
         logger.debug({ at: "Monitor#index", message: "CheckBalances monitor disabled" });
-      }
-
-      if (config.botModes.spokePoolBalanceReportEnabled) {
-        await acrossMonitor.checkSpokePoolRunningBalances();
-      } else {
-        logger.debug({ at: "Monitor#index", message: "Check spoke pool balances monitor disabled" });
       }
 
       if (config.botModes.binanceWithdrawalLimitsEnabled) {
@@ -67,6 +60,18 @@ export async function runMonitor(_logger: winston.Logger, baseSigner: Signer): P
         await acrossMonitor.closePDAs();
       } else {
         logger.debug({ at: "Monitor#index", message: "Close PDAs disabled" });
+      }
+
+      if (config.botModes.closeALTsEnabled) {
+        await acrossMonitor.closeALTs();
+      } else {
+        logger.debug({ at: "Monitor#index", message: "Close ALTs disabled" });
+      }
+
+      if (config.botModes.reportOpenHyperliquidOrders) {
+        await acrossMonitor.reportOpenHyperliquidOrders();
+      } else {
+        logger.debug({ at: "Monitor#index", message: "Hyperliquid order monitoring disabled" });
       }
 
       await clients.multiCallerClient.executeTxnQueues();

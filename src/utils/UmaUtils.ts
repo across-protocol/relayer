@@ -1,12 +1,12 @@
 import { HubPoolClient } from "../clients";
-import { CONTRACT_ADDRESSES } from "../common";
+import { getContractEntry } from "../common";
 import { ProposedRootBundle, SortableEvent } from "../interfaces";
 import { isEventOlder, paginatedEventQuery, sortEventsDescending, spreadEventWithBlockNumber } from "./EventUtils";
 import { Contract, ethers, getBlockForTimestamp } from ".";
 
 export async function getDvmContract(provider: ethers.providers.Provider): Promise<Contract> {
   const { chainId } = await provider.getNetwork();
-  const { address, abi } = CONTRACT_ADDRESSES[chainId].VotingV2;
+  const { address, abi } = getContractEntry(chainId, "VotingV2");
   return new Contract(address, abi, provider);
 }
 

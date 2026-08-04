@@ -2,6 +2,7 @@ import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import winston from "winston";
 import {
   AcrossApiClient,
+  BinanceClient,
   EVMSpokePoolClient,
   SVMSpokePoolClient,
   HubPoolClient,
@@ -22,11 +23,11 @@ import {
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
+  binanceCredentialsConfigured,
   chainIsEvm,
   getBlockForTimestamp,
   getCurrentTime,
   getProvider,
-  getRedisCache,
   getSvmProvider,
   Signer,
   SpokePool,
@@ -35,8 +36,10 @@ import {
   getSvmSignerFromEvmSigner,
   chainIsSvm,
 } from "../utils";
+import { getRedisCache } from "../cache/Redis";
 import { RelayerConfig } from "./RelayerConfig";
 import { AdapterManager, CrossChainTransferClient } from "../clients/bridges";
+import { constructReadOnlyRebalancerClient } from "../rebalancer/RebalancerClientHelper";
 
 export interface RelayerClients extends Clients {
   spokePoolClients: SpokePoolClientsByChain;
@@ -60,7 +63,7 @@ async function indexedSpokePoolClient(
   const signer = baseSigner.connect(await getProvider(chainId));
   const spokePoolAddr = hubPoolClient.getSpokePoolForBlock(chainId);
 
-  const blockFinder = undefined;
+  const blockFinder: undefined = undefined;
   const redis = await getRedisCache(hubPoolClient.logger);
   const [activationBlock, from] = await Promise.all([
     resolveSpokePoolActivationBlock(chainId, hubPoolClient),
@@ -105,10 +108,10 @@ async function indexedSpokePoolClient(
 export async function constructRelayerClients(
   logger: winston.Logger,
   config: RelayerConfig,
-  baseSigner: Signer
+  baseSigner: Signer,
+  relayerAddressOverride?: string
 ): Promise<RelayerClients> {
-  const _signerAddr = await baseSigner.getAddress();
-  const signerAddr = EvmAddress.from(_signerAddr);
+  const signerAddr = EvmAddress.from(relayerAddressOverride ?? (await baseSigner.getAddress()));
   // The relayer only uses the HubPoolClient to query repayments refunds for the latest validated
   // bundle and the pending bundle. 8 hours should cover the latest two bundles on production in
   // almost all cases. Look back to genesis on testnets.
@@ -172,7 +175,8 @@ export async function constructRelayerClients(
     Object.fromEntries(dstChainIds.map((chainId) => [chainId, spokePoolClients[chainId]])),
     hubPoolClient,
     relayerTokens,
-    config.relayerDestinationTokens
+    config.relayerDestinationTokens,
+    config.l1TokensOverride
   );
 
   const profitClient = new ProfitClient(
@@ -188,7 +192,8 @@ export async function constructRelayerClients(
     config.relayerMessageGasMultiplier,
     config.relayerGasPadding,
     relayerTokens,
-    config.peggedTokenPrices
+    config.peggedTokenPrices,
+    config.l1TokensOverride
   );
   await profitClient.update();
 
@@ -202,6 +207,19 @@ export async function constructRelayerClients(
     adapterManager
   );
 
+  const rebalancerClient = await constructReadOnlyRebalancerClient(logger, baseSigner);
+
+  // Degrade to undefined on construction failure (e.g. GCKMS) so startup isn't blocked.
+  let binanceClient: BinanceClient | undefined;
+  try {
+    binanceClient = binanceCredentialsConfigured()
+      ? await BinanceClient.create({ logger, url: process.env.BINANCE_API_BASE })
+      : undefined;
+  } catch (err) {
+    const error = err instanceof Error ? err.message : String(err);
+    logger.warn({ at: "RelayerClientHelper", message: "BinanceClient construction failed", error });
+  }
+
   const inventoryClient = new InventoryClient(
     signerAddr,
     logger,
@@ -211,7 +229,10 @@ export async function constructRelayerClients(
     hubPoolClient,
     adapterManager,
     crossChainTransferClient,
-    !config.sendingTransactionsEnabled
+    rebalancerClient,
+    !config.sendingTransactionsEnabled,
+    config.l1TokensOverride,
+    binanceClient
   );
 
   const tryMulticallClient = new TryMulticallClient(logger, multiCallerClient.chunkSize, multiCallerClient.baseSigner);

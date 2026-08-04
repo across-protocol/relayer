@@ -43,7 +43,7 @@ let spokePoolClients: { [chainId: number]: SpokePoolClient };
 
 let updateAllClients: () => Promise<void>;
 
-describe("Dataworker: Utilities to execute pool rebalance leaves", async function () {
+describe("Dataworker: Utilities to execute pool rebalance leaves", function () {
   function getNewBalanceAllocator(): BalanceAllocator {
     const providers = {
       ...spokePoolClientsToProviders(spokePoolClients),
@@ -74,7 +74,11 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       fakeHubPool,
     };
   }
-  beforeEach(async function () {
+  // "update exchange rates" smock-fakes hubPool.address (permanent for the file),
+  // so restore hubPoolClient by reference rather than reinstantiate.
+  let originalHubPoolClient: HubPoolClient;
+
+  before(async function () {
     ({
       hubPool,
       erc20_1,
@@ -92,6 +96,13 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       0,
       destinationChainId
     ));
+    originalHubPoolClient = dataworkerInstance.clients.hubPoolClient;
+  });
+
+  beforeEach(function () {
+    spy.resetHistory();
+    multiCallerClient.clearTransactionQueue();
+    dataworkerInstance.clients.hubPoolClient = originalHubPoolClient;
   });
   describe("update exchange rates", function () {
     let mockHubPoolClient: MockHubPoolClient, fakeHubPool: FakeContract;
@@ -569,12 +580,12 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       });
     });
   });
-  describe("_executePoolRebalanceLeaves", async function () {
+  describe("_executePoolRebalanceLeaves", function () {
     let token1: EvmAddress, token2: EvmAddress, balanceAllocator: BalanceAllocator;
     beforeEach(function () {
-      (token1 = EvmAddress.from(randomAddress())),
-        (token2 = EvmAddress.from(randomAddress())),
-        (balanceAllocator = getNewBalanceAllocator());
+      token1 = EvmAddress.from(randomAddress());
+      token2 = EvmAddress.from(randomAddress());
+      balanceAllocator = getNewBalanceAllocator();
       balanceAllocator.testSetBalance(hubPoolClient.chainId, token1, EvmAddress.from(hubPool.address), toBNWei("2"));
       balanceAllocator.testSetBalance(hubPoolClient.chainId, token2, EvmAddress.from(hubPool.address), toBNWei("2"));
     });
@@ -614,6 +625,30 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       expect(queuedTransactions[0].message).to.match(/chain 10/);
       expect(queuedTransactions[1].method).to.equal("executeRootBundle");
       expect(queuedTransactions[1].message).to.match(/chain 137/);
+    });
+    it("universal spoke pool orbit chain skips orbit L1->L2 fee funding", async function () {
+      const leaves: PoolRebalanceLeaf[] = [
+        {
+          chainId: CHAIN_IDs.ROBINHOOD,
+          groupIndex: 0,
+          bundleLpFees: [toBNWei("1")],
+          netSendAmounts: [toBNWei("1")],
+          runningBalances: [toBNWei("1")],
+          leafId: 0,
+          l1Tokens: [token1],
+        },
+      ];
+      const result = await dataworkerInstance._executePoolRebalanceLeaves(
+        spokePoolClients,
+        leaves,
+        balanceAllocator,
+        buildPoolRebalanceLeafTree(leaves)
+      );
+      expect(result).to.equal(1);
+      expect(multiCallerClient.transactionCount()).to.equal(1);
+      const [queuedTransaction] = multiCallerClient.getQueuedTransactions(hubPoolClient.chainId);
+      expect(queuedTransaction.method).to.equal("executeRootBundle");
+      expect(queuedTransaction.message).to.match(new RegExp(`chain ${CHAIN_IDs.ROBINHOOD}`));
     });
     it("Subtracts virtual balance from hub pool", async function () {
       // All chain leaves remove virtual balance from hub pool
@@ -760,10 +795,15 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
   });
   describe("_getExecutablePoolRebalanceLeaves", function () {
     let token1: EvmAddress, token2: EvmAddress, balanceAllocator: BalanceAllocator;
+    let claimedBitMapStub: sinon.SinonStub | undefined;
     beforeEach(function () {
-      (token1 = EvmAddress.from(randomAddress())),
-        (token2 = EvmAddress.from(randomAddress())),
-        (balanceAllocator = getNewBalanceAllocator());
+      token1 = EvmAddress.from(randomAddress());
+      token2 = EvmAddress.from(randomAddress());
+      balanceAllocator = getNewBalanceAllocator();
+    });
+    afterEach(function () {
+      claimedBitMapStub?.restore();
+      claimedBitMapStub = undefined;
     });
     it("All l1 tokens on single leaf are executable", async function () {
       balanceAllocator.testSetBalance(
@@ -908,6 +948,86 @@ describe("Dataworker: Utilities to execute pool rebalance leaves", async functio
       expect(leaves[0].chainId).to.equal(10);
       const errorLogs = spy.getCalls().filter((call) => call.lastArg.level === "error");
       expect(errorLogs.length).to.equal(1);
+    });
+    it("Skips a leaf already claimed on chain by a competing executor, without erroring", async function () {
+      // Fund the leaf, so the only reason to drop it is the claimed bit.
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token1,
+        EvmAddress.from(hubPoolClient.hubPool.address),
+        toBNWei("1")
+      );
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token2,
+        EvmAddress.from(hubPoolClient.hubPool.address),
+        toBNWei("1")
+      );
+      // leafId 0 already claimed (bit 0 set).
+      claimedBitMapStub = sinon
+        .stub(dataworkerInstance, "_readPoolRebalanceClaimedBitMap")
+        .resolves(ethers.BigNumber.from(1));
+      const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeaves(
+        [
+          {
+            chainId: 10,
+            groupIndex: 0,
+            bundleLpFees: [toBNWei("1"), toBNWei("1")],
+            netSendAmounts: [toBNWei("1"), toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            leafId: 0,
+            l1Tokens: [token1, token2],
+          },
+        ],
+        balanceAllocator
+      );
+      expect(leaves.length).to.equal(0);
+      expect(spy.getCalls().filter((call) => call.lastArg.level === "error").length).to.equal(0);
+      expect(lastSpyLogIncludes(spy, "already claimed")).to.be.true;
+    });
+    it("Skips only the claimed leaf and keeps the unclaimed leaf", async function () {
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token1,
+        EvmAddress.from(hubPoolClient.hubPool.address),
+        toBNWei("2")
+      );
+      balanceAllocator.testSetBalance(
+        hubPoolClient.chainId,
+        token2,
+        EvmAddress.from(hubPoolClient.hubPool.address),
+        toBNWei("2")
+      );
+      // Only leafId 0 is claimed (bit 0 set).
+      claimedBitMapStub = sinon
+        .stub(dataworkerInstance, "_readPoolRebalanceClaimedBitMap")
+        .resolves(ethers.BigNumber.from(1));
+      const leaves = await dataworkerInstance._getExecutablePoolRebalanceLeaves(
+        [
+          {
+            chainId: 10,
+            groupIndex: 0,
+            bundleLpFees: [toBNWei("1"), toBNWei("1")],
+            netSendAmounts: [toBNWei("1"), toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            leafId: 0,
+            l1Tokens: [token1, token2],
+          },
+          {
+            chainId: 42161,
+            groupIndex: 0,
+            bundleLpFees: [toBNWei("1"), toBNWei("1")],
+            netSendAmounts: [toBNWei("1"), toBNWei("1")],
+            runningBalances: [toBNWei("1"), toBNWei("1")],
+            leafId: 1,
+            l1Tokens: [token1, token2],
+          },
+        ],
+        balanceAllocator
+      );
+      expect(leaves.length).to.equal(1);
+      expect(leaves[0].leafId).to.equal(1);
+      expect(spy.getCalls().filter((call) => call.lastArg.level === "error").length).to.equal(0);
     });
   });
 });

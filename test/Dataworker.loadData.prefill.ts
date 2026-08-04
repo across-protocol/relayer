@@ -12,12 +12,13 @@ import {
   expect,
   fillV3Relay,
   getDefaultBlockRange,
+  getLastBlockTime,
+  mineRandomBlocks,
   randomAddress,
   smock,
 } from "./utils";
 import { Dataworker } from "../src/dataworker/Dataworker"; // Tested
 import {
-  getCurrentTime,
   toBNWei,
   ZERO_ADDRESS,
   bnZero,
@@ -27,10 +28,16 @@ import {
   toBytes32,
 } from "../src/utils";
 import { MockBundleDataClient, MockHubPoolClient, MockSpokePoolClient } from "./mocks";
-import { constants as sdkConstants, interfaces, utils as sdkUtils, providers } from "@across-protocol/sdk";
+import {
+  clients as sdkClients,
+  constants as sdkConstants,
+  interfaces,
+  utils as sdkUtils,
+  providers,
+} from "@across-protocol/sdk";
 import { FillWithBlock } from "../src/interfaces";
 
-describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic", async function () {
+describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic", function () {
   const { EMPTY_MESSAGE } = sdkConstants;
 
   let erc20_1: Contract, erc20_2: Contract;
@@ -41,12 +48,13 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
   let hubPoolClient: HubPoolClient, configStoreClient: ConfigStoreClient;
   let dataworkerInstance: Dataworker;
   let spokePoolClients: { [chainId: number]: SpokePoolClient };
+  let currentTime: number;
 
   let spy: sinon.SinonSpy;
 
   let updateAllClients: () => Promise<void>;
 
-  beforeEach(async function () {
+  before(async function () {
     ({
       erc20_1,
       erc20_2,
@@ -62,7 +70,17 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       spokePoolClients,
       updateAllClients,
     } = await setupDataworker(ethers, 25, 25, 0));
+  });
+
+  // Clear the spy log so tests can count their own calls without leakage
+  // from prior tests.
+  beforeEach(function () {
+    spy.resetHistory();
+  });
+
+  beforeEach(async function () {
     await updateAllClients();
+    currentTime = await getLastBlockTime(spokePoolClient_1.spokePool.provider);
   });
 
   describe("Tests with real events", function () {
@@ -115,19 +133,24 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
       );
       // Mock a realized lp fee pct for each deposit so we can check refund amounts and bundle lp fees.
       mockHubPoolClient.setDefaultRealizedLpFeePct(lpFeePct);
+      // Anchor each fresh EventManager to the live chain head; outer before() leaves it lagging at deploymentBlock.
       mockOriginSpokePoolClient = new MockSpokePoolClient(
         spokePoolClient_1.logger,
         spokePoolClient_1.spokePool,
         spokePoolClient_1.chainId,
-        spokePoolClient_1.deploymentBlock
+        spokePoolClient_1.deploymentBlock,
+        { eventManager: new sdkClients.mocks.EventManager(spokePoolClient_1.latestHeightSearched) }
       );
       mockDestinationSpokePool = await smock.fake(spokePoolClient_2.spokePool.interface);
       mockDestinationSpokePoolClient = new MockSpokePoolClient(
         spokePoolClient_2.logger,
         mockDestinationSpokePool as Contract,
         spokePoolClient_2.chainId,
-        spokePoolClient_2.deploymentBlock
+        spokePoolClient_2.deploymentBlock,
+        { eventManager: new sdkClients.mocks.EventManager(spokePoolClient_2.latestHeightSearched) }
       );
+      // Headroom so `eventManager.blockNumber + N` lookups resolve to real blocks.
+      await mineRandomBlocks(256);
       spokePoolClients = {
         ...spokePoolClients,
         [originChainId]: mockOriginSpokePoolClient,
@@ -165,8 +188,8 @@ describe("Dataworker: Load bundle data: Pre-fill and Pre-Slow-Fill request logic
         inputAmount: eventOverride?.inputAmount ?? undefined,
         outputToken: toAddressType(eventOverride?.outputToken ?? erc20_2.address, destinationChainId),
         message: eventOverride?.message ?? "0x",
-        quoteTimestamp: eventOverride?.quoteTimestamp ?? getCurrentTime() - 10,
-        fillDeadline: eventOverride?.fillDeadline ?? getCurrentTime() + 14400,
+        quoteTimestamp: eventOverride?.quoteTimestamp ?? currentTime - 10,
+        fillDeadline: eventOverride?.fillDeadline ?? currentTime + 14400,
         destinationChainId,
         blockNumber: eventOverride?.blockNumber ?? spokePoolClient_1.latestHeightSearched, // @dev use latest block searched from non-mocked client
         // so that mocked client's latestHeightSearched gets set to the same value.

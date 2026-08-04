@@ -34,5 +34,6 @@ export function getHubPoolStoreContract(chainId: number, signerOrProvider: Signe
     throw new Error(`HubPoolStore contract address or ABI not found for chain ${chainId}.`);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return new ethers.Contract(hubPoolStoreInfo.address, hubPoolStoreInfo.abi as any, signerOrProvider);
 }

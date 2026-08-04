@@ -17,8 +17,7 @@ import {
   blockExplorerLink,
 } from "../src/utils";
 import { CUSTOM_L2_BRIDGE, CANONICAL_L2_BRIDGE } from "../src/common/Constants";
-import { BaseL2BridgeAdapter } from "../src/adapter/l2Bridges/BaseL2BridgeAdapter";
-import { MultiCallerClient } from "../src/clients";
+import { MultiCallerClient, isAugmentedTransaction } from "../src/clients";
 import { askYesNoQuestion } from "./utils";
 
 const args = minimist(process.argv.slice(2), {
@@ -27,9 +26,9 @@ const args = minimist(process.argv.slice(2), {
 });
 
 // Example run:
-// ts-node ./scripts/withdrawTokenFromL2.ts --token USDC --chainId 143 --amount 3  # Shows calldata, doesn't execute
-// ts-node ./scripts/withdrawTokenFromL2.ts --token USDT --chainId 8453 --amount 5 --sendTx  # Actually sends transaction
-// ts-node ./scripts/withdrawTokenFromL2.ts --token USDC --chainId 137 --amount 2
+// tsx ./scripts/withdrawTokenFromL2.ts --token USDC --chainId 143 --amount 3  # Shows calldata, doesn't execute
+// tsx ./scripts/withdrawTokenFromL2.ts --token USDT --chainId 8453 --amount 5 --sendTx  # Actually sends transaction
+// tsx ./scripts/withdrawTokenFromL2.ts --token USDC --chainId 137 --amount 2
 
 const MAINNET_CHAIN_ID = CHAIN_IDs.MAINNET;
 
@@ -148,18 +147,22 @@ async function run(): Promise<void> {
 
   // Initialize L2 bridge adapter
   logger.info(`Initializing ${BridgeConstructor.name}...`);
-  const l2Bridge = new BridgeConstructor(
-    l2ChainId,
-    MAINNET_CHAIN_ID,
-    l2Signer,
-    mainnetSigner,
-    l1Token
-  ) as BaseL2BridgeAdapter;
+  const l2Bridge = new BridgeConstructor(l2ChainId, MAINNET_CHAIN_ID, l2Signer, mainnetSigner, l1Token, logger);
 
   // Construct withdrawal transaction
   logger.info("Constructing withdrawal transaction...");
   const toAddress = EvmAddress.from(signerAddr);
   const txns = await l2Bridge.constructWithdrawToL1Txns(toAddress, l2Token, l1Token, amountInWei);
+  if (txns.length === 0) {
+    // Bridges skip withdrawals they deem non-viable right now (e.g. OFT paths with insufficient or
+    // dust-sized quoted capacity) by returning no transactions; the bot retries on a later run, but
+    // this one-shot script must fail loudly instead.
+    throw new Error(
+      `${BridgeConstructor.name} produced no withdrawal transactions for this amount — the bridge is ` +
+        "skipping the withdrawal, typically because its quoted capacity is currently insufficient. " +
+        "Retry later or with a different amount."
+    );
+  }
 
   // Confirm transaction
   console.log("\n📍 Withdrawal Details:");
@@ -173,14 +176,14 @@ async function run(): Promise<void> {
   // Only execute if --sendTx is explicitly set
   if (!sendTransactions) {
     console.log(`\n📋 Transaction Calldata (${txns.length} transaction(s)):`);
-    txns.forEach((txn, index) => {
+    txns.filter(isAugmentedTransaction).forEach((txn, index) => {
       const calldata = txn.contract.interface.encodeFunctionData(txn.method, txn.args);
       console.log(`\n   Transaction ${index + 1}:`);
       console.log(`   ${calldata}`);
     });
     console.log("\n💡 To execute transactions, run with --sendTx flag");
     console.log(
-      `   Example: yarn ts-node ./scripts/withdrawTokenFromL2.ts --token ${tokenSymbol} --chainId ${l2ChainId} --amount ${withdrawAmount} --sendTx --wallet gckms --keys bot1`
+      `   Example: yarn tsx ./scripts/withdrawTokenFromL2.ts --token ${tokenSymbol} --chainId ${l2ChainId} --amount ${withdrawAmount} --sendTx --wallet gckms --keys bot1`
     );
     return;
   }
@@ -194,7 +197,7 @@ async function run(): Promise<void> {
   // Execute withdrawal
   logger.info("Executing withdrawal...");
   const multicallerClient = new MultiCallerClient(logger);
-  txns.forEach((txn) => multicallerClient.enqueueTransaction(txn));
+  txns.filter(isAugmentedTransaction).forEach((txn) => multicallerClient.enqueueTransaction(txn));
   const txnReceipts = await multicallerClient.executeTxnQueues(false, [l2ChainId]);
   const transactionHashes = txnReceipts[l2ChainId] || [];
 

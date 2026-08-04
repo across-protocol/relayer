@@ -5,8 +5,10 @@ export interface SpokePoolClientsByChain {
   [chainId: number]: SpokePoolClient;
 }
 
-export interface ConvertedRelayData
-  extends Omit<RelayData, "depositor" | "recipient" | "inputToken" | "outputToken" | "exclusiveRelayer"> {
+export interface ConvertedRelayData extends Omit<
+  RelayData,
+  "depositor" | "recipient" | "inputToken" | "outputToken" | "exclusiveRelayer"
+> {
   depositor: string;
   recipient: string;
   inputToken: string;

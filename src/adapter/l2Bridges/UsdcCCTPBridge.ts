@@ -16,13 +16,13 @@ import {
   createFormatFunction,
   getTokenInfo,
   getV2DepositForBurnMaxFee,
-  getCctpV2TokenMessenger,
   CCTPV2_FINALITY_THRESHOLD_STANDARD,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
-import { CCTP_MAX_SEND_AMOUNT } from "../../common";
+import { CCTP_MAX_SEND_AMOUNT, getContractEntry } from "../../common";
 import { TransferTokenParams } from "../utils";
+import { PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 
 /**
  * This adapter uses CCTP V2 to bridge USDC between L2's.
@@ -34,10 +34,13 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
   constructor(l2chainId: number, hubChainId: number, l2Signer: Signer, l1Signer: Signer, l1Token: EvmAddress) {
     super(l2chainId, hubChainId, l2Signer, l1Signer, l1Token);
 
-    const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } = getCctpV2TokenMessenger(l2chainId);
+    const { address: l2TokenMessengerAddress, abi: l2TokenMessengerAbi } = getContractEntry(
+      l2chainId,
+      "cctpV2TokenMessenger"
+    );
     this.l2Bridge = new Contract(l2TokenMessengerAddress, l2TokenMessengerAbi, l2Signer);
 
-    const { address: l1TokenMessengerAddress, abi: l1Abi } = getCctpV2TokenMessenger(hubChainId);
+    const { address: l1TokenMessengerAddress, abi: l1Abi } = getContractEntry(hubChainId, "cctpV2TokenMessenger");
     this.l1Bridge = new Contract(l1TokenMessengerAddress, l1Abi, l1Signer);
 
     this.l1UsdcTokenAddress = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[this.hubChainId]);
@@ -71,7 +74,7 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     const amountToSend = amountWithFee.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amountWithFee;
     return Promise.resolve([
       {
-        contract: this.l2Bridge,
+        contract: this.getL2Bridge(),
         chainId: this.l2chainId,
         method: "depositForBurn",
         nonMulticall: true,
@@ -107,11 +110,30 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     // for all use cases of this adapter.
     const l1EventFilterArgs = [fromAddress.toNative(), undefined, this.l1UsdcTokenAddress.toNative()];
     const [withdrawalInitiatedEvents, withdrawalFinalizedEvents] = await Promise.all([
-      paginatedEventQuery(this.l2Bridge, this.l2Bridge.filters.DepositForBurn(...l2EventFilterArgs), l2EventConfig),
-      paginatedEventQuery(this.l1Bridge, this.l1Bridge.filters.MintAndWithdraw(...l1EventFilterArgs), l1EventConfig),
+      paginatedEventQuery(
+        this.getL2Bridge(),
+        this.getL2Bridge().filters.DepositForBurn(...l2EventFilterArgs),
+        l2EventConfig
+      ),
+      paginatedEventQuery(
+        this.getL1Bridge(),
+        this.getL1Bridge().filters.MintAndWithdraw(...l1EventFilterArgs),
+        l1EventConfig
+      ),
     ]);
+    const ignoredPendingBridgeTxnRefs = await this.getIgnoredPendingBridgeTxnRefs(
+      this.l2chainId,
+      this.hubChainId,
+      fromAddress
+    );
     const counted = new Set<number>();
-    const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, { args: l2Args }) => {
+    const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, { args: l2Args, transactionHash }) => {
+      if (l2Args.destinationDomain !== this.l1DestinationDomain) {
+        return totalAmount;
+      }
+      if (ignoredPendingBridgeTxnRefs.has(transactionHash)) {
+        return totalAmount;
+      }
       const matchingFinalizedEvent = withdrawalFinalizedEvents.find(({ args: l1Args }, idx) => {
         // Protect against double-counting the same l1 withdrawal events.
         // @dev: If we begin to send "fast-finalized" messages via CCTP V2 then the amounts will not exactly match
@@ -133,12 +155,16 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     return [
       {
         token: this.l2UsdcTokenAddress,
-        bridge: EvmAddress.from(this.l2Bridge.address),
+        bridge: EvmAddress.from(this.getL2Bridge().address),
       },
     ];
   }
 
   async _getCctpV2DepositForBurnMaxFee(amount: BigNumber): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
     return getV2DepositForBurnMaxFee(this.l2UsdcTokenAddress, this.l2chainId, this.hubChainId, amount);
+  }
+
+  override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {
+    return "cctp";
   }
 }

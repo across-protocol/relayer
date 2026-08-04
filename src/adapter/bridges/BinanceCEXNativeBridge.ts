@@ -1,5 +1,15 @@
-import { Contract, BigNumber, Signer, Provider, EvmAddress, assert, bnZero, winston } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common";
+import {
+  Contract,
+  BigNumber,
+  Signer,
+  Provider,
+  EvmAddress,
+  assert,
+  bnZero,
+  getBinanceDepositAddress,
+  winston,
+} from "../../utils";
+import { getContractEntry } from "../../common";
 import { BridgeTransactionDetails } from "./BaseBridgeAdapter";
 import { BinanceCEXBridge } from "./";
 
@@ -17,12 +27,16 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     // No L1 gateways needed since no L1 bridge transfers tokens from the EOA.
     super(l2chainId, hubChainId, l1Signer, l2SignerOrProvider, l1Token, logger);
 
-    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } =
-      CONTRACT_ADDRESSES[this.hubChainId].atomicDepositor;
+    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = getContractEntry(
+      this.hubChainId,
+      "atomicDepositor"
+    );
     this.atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, this.l1Signer);
 
-    const { address: transferProxyAddress, abi: transferProxyAbi } =
-      CONTRACT_ADDRESSES[this.hubChainId].atomicDepositorTransferProxy;
+    const { address: transferProxyAddress, abi: transferProxyAbi } = getContractEntry(
+      this.hubChainId,
+      "atomicDepositorTransferProxy"
+    );
     this.transferProxy = new Contract(transferProxyAddress, transferProxyAbi);
     // Overwrite the token symbol to ETH.
     this.tokenSymbol = "ETH";
@@ -40,7 +54,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
     // Fetch the deposit address from the binance API.
 
     const binanceApiClient = await this.getBinanceClient();
-    const depositAddress = await binanceApiClient.depositAddress({
+    const depositAddress = await getBinanceDepositAddress(binanceApiClient, {
       coin: this.tokenSymbol,
       network: "ETH",
     });

@@ -1,4 +1,8 @@
-import { CHAIN_IDs } from "../utils";
+import assert from "assert";
+import { ContractInterface } from "ethers";
+import { JsonFragment } from "@ethersproject/abi";
+import { CHAIN_IDs, getDeployedAddress } from "../utils";
+import { isDefined } from "../utils/TypeGuards";
 import CCTP_MESSAGE_TRANSMITTER_ABI from "./abi/CctpMessageTransmitter.json";
 import CCTP_TOKEN_MESSENGER_ABI from "./abi/CctpTokenMessenger.json";
 import CCTP_V2_TOKEN_MESSENGER_ABI from "./abi/CctpV2TokenMessenger.json";
@@ -11,8 +15,6 @@ import OP_USDC_BRIDGE_ABI from "./abi/OpStackUSDCBridge.json";
 import SPONSORED_CCTP_DST_PERIPHERY_ABI from "./abi/SponsoredCCTPDstPeriphery.json";
 import OVM_L1_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL1.json";
 import OVM_L2_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL2.json";
-import SNX_OPTIMISM_BRIDGE_L1_ABI from "./abi/SnxOptimismBridgeL1.json";
-import SNX_OPTIMISM_BRIDGE_L2_ABI from "./abi/SnxOptimismBridgeL2.json";
 import DAI_OPTIMISM_BRIDGE_L1_ABI from "./abi/DaiOptimismBridgeL1.json";
 import DAI_OPTIMISM_BRIDGE_L2_ABI from "./abi/DaiOptimismBridgeL2.json";
 import POLYGON_BRIDGE_ABI from "./abi/PolygonBridge.json";
@@ -29,15 +31,14 @@ import ARBITRUM_OUTBOX_ABI from "./abi/ArbitrumOutbox.json";
 import ARBSYS_L2_ABI from "./abi/ArbSysL2.json";
 import LINEA_MESSAGE_SERVICE_ABI from "./abi/LineaMessageService.json";
 import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
-import SCROLL_RELAY_MESSENGER_ABI from "./abi/ScrollRelayMessenger.json";
 import BLAST_BRIDGE_ABI from "./abi/BlastBridge.json";
 import BLAST_YIELD_MANAGER_ABI from "./abi/BlastYieldManager.json";
 import BLAST_DAI_RETRIEVER_ABI from "./abi/BlastDaiRetriever.json";
 import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
-import SCROLL_GATEWAY_ROUTER_L1_ABI from "./abi/ScrollGatewayRouterL1.json";
-import SCROLL_GATEWAY_ROUTER_L2_ABI from "./abi/ScrollGatewayRouterL2.json";
-import SCROLL_GAS_PRICE_ORACLE_ABI from "./abi/ScrollGasPriceOracle.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
+import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
+import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
+import PERMIT2_ABI from "./abi/Permit2.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
 
@@ -63,6 +64,14 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8829AD80E425C646DAB305381ff105169FeEcE56",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
+    // The L1Nullifier is the contract that actually verifies withdrawal proofs and processes
+    // finalizeDeposit calls. The L1AssetRouter (aka zkStackSharedBridge) forwards to it, but
+    // its own finalizeDeposit has a different signature, so withdrawal finalizations must be
+    // sent directly to the L1Nullifier.
+    zkStackL1Nullifier: {
+      address: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB",
+      abi: ZKSTACK_SHARED_BRIDGE_ABI,
+    },
     zkStackBridgeHub: {
       address: "0x303a465B659cBB0ab36eE643eA362c509EEb5213",
       abi: ZKSTACK_BRIDGE_HUB_ABI,
@@ -78,10 +87,6 @@ export const CONTRACT_ADDRESSES: {
     daiOptimismBridge: {
       address: "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f",
       abi: DAI_OPTIMISM_BRIDGE_L1_ABI,
-    },
-    snxOptimismBridge: {
-      address: "0x39Ea01a0298C315d149a490E34B59Dbf2EC7e48F",
-      abi: SNX_OPTIMISM_BRIDGE_L1_ABI,
     },
     // OVM, ZkSync, Linea, and Polygon can't deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
@@ -109,6 +114,10 @@ export const CONTRACT_ADDRESSES: {
     },
     ovmStandardBridge_480: {
       address: "0x470458C91978D2d929704489Ad730DC3E3001113",
+      abi: OVM_L1_STANDARD_BRIDGE_ABI,
+    },
+    ovmStandardBridge_4326: {
+      address: "0x0CA3A2FBC3D770b578223FBB6b062fa875a2eE75",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
     ovmStandardBridge_690: {
@@ -159,6 +168,23 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8484Ef722627bf18ca5Ae6BcF031c23E6e922B30",
       abi: POLYGON_BRIDGE_ABI,
     },
+    orbitOutbox_4663: {
+      address: "0xf0ce991ea4A0d2400A4AB49b20ae333f6Dce3DE9",
+      abi: ARBITRUM_OUTBOX_ABI,
+    },
+    orbitErc20GatewayRouter_4663: {
+      address: "0x6a2E3a1e16FC29f27Ce61429746D558d656975bB", // Is this the right address for Robinhood?
+      abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
+    },
+    orbitErc20Gateway_4663: {
+      abi: ARBITRUM_ERC20_GATEWAY_L1_ABI,
+    },
+    paxosTransitStation: {
+      address: "0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28",
+    },
+    paxosTransitBoringVault: {
+      address: "0x91fe06c6e9f97e7de4580a280e03046155f8e1e3",
+    },
     orbitOutbox_42161: {
       address: "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
       abi: ARBITRUM_OUTBOX_ABI,
@@ -190,14 +216,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
-    scrollRelayMessenger: {
-      address: "0x6774Bcbd5ceCeF1336b5300fb5186a12DDD8b367",
-      abi: SCROLL_RELAY_MESSENGER_ABI,
-    },
-    scrollGatewayRouter: {
-      address: "0xF8B1378579659D8F7EE5f3C929c2f3E332E41Fd6",
-      abi: SCROLL_GATEWAY_ROUTER_L1_ABI,
-    },
     hubPool: {
       address: "0xc186fA914353c44b2E33eBE05f21846F1048bEda",
       abi: HUB_POOL_ABI,
@@ -226,13 +244,20 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0Ec68c5B10F21EFFb74f2A5C61DFe6b08C0Db6Cb",
       abi: BLAST_OPTIMISM_PORTAL_ABI,
     },
-    scrollGasPriceOracle: {
-      address: "0x0d7E906BD9cAFa154b048cFa766Cc1E54E39AF9B",
-      abi: SCROLL_GAS_PRICE_ORACLE_ABI,
-    },
     atomicDepositorTransferProxy: {
       address: "0xd8938466fE02dA664b806583edE9c77dCD968692",
       abi: ATOMIC_DEPOSITOR_TRANSFER_PROXY_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x5616194d65638086a3191b1fef436f503ff329ec",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.MONAD]: {
@@ -244,15 +269,22 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x647aFB7d935Ff0aaE4F0DdEfE0499d13AdE69178",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.OPTIMISM]: {
     daiOptimismBridge: {
       address: "0x467194771dae2967aef3ecbedd3bf9a310c76c65",
       abi: DAI_OPTIMISM_BRIDGE_L2_ABI,
-    },
-    snxOptimismBridge: {
-      address: "0x136b1EC699c62b0606854056f02dC7Bb80482d63",
-      abi: SNX_OPTIMISM_BRIDGE_L2_ABI,
     },
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
@@ -277,6 +309,17 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x7caAe751f8eAfEC5646A730d86c6Ae2d47a31Ca6",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.POLYGON]: {
     withdrawableErc20: {
@@ -298,8 +341,19 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x02a00425f619C5e2B25e3d138Fe80a71201B007E",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
     nativeToken: {
       address: "0x0000000000000000000000000000000000001010",
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.HYPEREVM]: {
@@ -312,8 +366,27 @@ export const CONTRACT_ADDRESSES: {
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
     sponsoredCCTPDstPeriphery: {
-      address: undefined, // TODO: Deploy and add mainnet address
+      // @across-protocol/contracts 5.0.11 split the HyperEVM periphery into
+      // per-token deployments. The USDC variant is the default destination
+      // periphery; USDH callers go through `dstUsdhHandler` instead.
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery_CCTP_USDC", CHAIN_IDs.HYPEREVM),
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    dstCctpHandler: {
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery_CCTP_USDC", CHAIN_IDs.HYPEREVM),
+    },
+    dstUsdhHandler: {
+      address: getDeployedAddress("SponsoredCCTPDstPeriphery_CCTP_USDH", CHAIN_IDs.HYPEREVM),
+    },
+    dstOftHandler: {
+      address: getDeployedAddress("DstOFTHandler_OFT_USDT", CHAIN_IDs.HYPEREVM),
+    },
+    hyperliquidDepositHandler: {
+      address: getDeployedAddress("HyperliquidDepositHandler", CHAIN_IDs.HYPEREVM),
+      abi: HYPERLIQUID_DEPOSIT_HANDLER_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
@@ -354,6 +427,13 @@ export const CONTRACT_ADDRESSES: {
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.SOLANA]: {
     cctpTokenMessenger: {
@@ -379,6 +459,22 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
+  [CHAIN_IDs.ROBINHOOD]: {
+    paxosTransitStation: {
+      address: "0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28",
+    },
+    paxosTransitBoringVault: {
+      address: "0x91fe06c6e9f97e7de4580a280e03046155f8e1e3",
+    },
+    erc20GatewayRouter: {
+      address: "0x1E324B9316138CA9a73F960213621AD1aaf01B89",
+      abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI,
+    },
+    arbSys: {
+      address: "0x0000000000000000000000000000000000000064",
+      abi: ARBSYS_L2_ABI,
+    },
+  },
   [CHAIN_IDs.WORLD_CHAIN]: {
     cctpV2MessageTransmitter: {
       address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
@@ -388,15 +484,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
-    ovmStandardBridge: {
-      address: "0x4200000000000000000000000000000000000010",
-      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    sponsoredCCTPDstPeriphery: {
+      address: "0x219044ECb0Eb0b3f0D8A614A9633A89f0b5f81f8",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
-    nativeToken: {
-      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
-    },
-  },
-  [CHAIN_IDs.REDSTONE]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
@@ -442,6 +533,17 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0xd9dc78b969e9efb1e54b625c33a21aaf2509e6a1",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.MODE]: {
     ovmStandardBridge: {
@@ -452,6 +554,31 @@ export const CONTRACT_ADDRESSES: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
   },
+  [CHAIN_IDs.MEGAETH]: {
+    ovmStandardBridge: {
+      address: "0x4200000000000000000000000000000000000010",
+      abi: OVM_L2_STANDARD_BRIDGE_ABI,
+    },
+    nativeToken: {
+      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
+  },
+  [CHAIN_IDs.PLASMA]: {
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
+  },
   [CHAIN_IDs.INK]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
@@ -459,6 +586,25 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x087B70E43BF01359678E7b927bbAC76D175F3293",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.BLAST]: {
@@ -505,6 +651,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0xc384694df2Be9c381d596DEd22f2A69D3aBA07d3",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
     arbSys: {
       address: "0x0000000000000000000000000000000000000064",
       abi: ARBSYS_L2_ABI,
@@ -512,6 +662,44 @@ export const CONTRACT_ADDRESSES: {
     erc20GatewayRouter: {
       address: "0x5288c571Fd7aD117beA99bF60FE0846C4E84F933",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
+  },
+  [CHAIN_IDs.ARC]: {
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+  },
+  [CHAIN_IDs.AVALANCHE]: {
+    cctpV2MessageTransmitter: {
+      address: "0x81D40F21F12A8F0E3252Bccb954D722d4c464B64",
+      abi: CCTP_MESSAGE_TRANSMITTER_ABI,
+    },
+    cctpV2TokenMessenger: {
+      address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
+      abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x40ad479382Ad2a5c3061487A5094a677B00f6Cb0",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.LENS]: {
@@ -549,6 +737,10 @@ export const CONTRACT_ADDRESSES: {
       address: "0x28b5a0e9C621a5BadaA536219b3a228C8168cf5d",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    sponsoredCCTPDstPeriphery: {
+      address: "0x6BD167bff542Ab595F0296333d70202aE09CC334",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
     l2MessageService: {
       address: "0x508Ca82Df566dCD1B0DE8296e70a96332cD644ec",
       abi: LINEA_MESSAGE_SERVICE_ABI,
@@ -560,19 +752,21 @@ export const CONTRACT_ADDRESSES: {
     nativeToken: {
       address: "0x0000000000000000000000000000000000000000",
     },
-  },
-  [CHAIN_IDs.SCROLL]: {
-    scrollGatewayRouter: {
-      address: "0x4C0926FF5252A435FD19e10ED15e5a249Ba19d79",
-      abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
-    // The Scroll canonical bridge will send WETH on a WETH deposit,
-    // so the dataworker will never use this address to wrap eth in
-    // the spoke pool. However, the relayer may need to wrap eth on
-    // the L2; therefore, we need to define an address here so the
-    // dataworker won't error.
-    nativeToken: {
-      address: "0x0000000000000000000000000000000000000000",
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
+  },
+  [CHAIN_IDs.TRON]: {
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0xBE365314f2E77FD1257d60C346Bb32DbDa369403",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.ZORA]: {
@@ -582,6 +776,11 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
+    },
+  },
+  [CHAIN_IDs.TEMPO]: {
+    nativeToken: {
+      address: "0x20C0000000000000000000000000000000000000",
     },
   },
   // Testnets
@@ -663,6 +862,12 @@ export const CONTRACT_ADDRESSES: {
       address: "0xfD3130Ea0e8B7Dd61Ac3663328a66d97eb02f84b",
       abi: ZKSTACK_SHARED_BRIDGE_ABI,
     },
+    // The L1Nullifier is where withdrawal finalizations (finalizeDeposit) must be sent; see
+    // mainnet note above.
+    zkStackL1Nullifier: {
+      address: "0x6f03861D12E6401623854E494BeAcD66BC46e6F0",
+      abi: ZKSTACK_SHARED_BRIDGE_ABI,
+    },
     zkStackNativeTokenVault: {
       address: "0x257CE1e946c9C6531E2C9deBF7fcf821F9467f73",
       abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
@@ -670,6 +875,13 @@ export const CONTRACT_ADDRESSES: {
     hubPool: {
       address: "0x14224e63716afAcE30C9a417E0542281869f7d9e",
       abi: HUB_POOL_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: {
@@ -688,6 +900,13 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.BASE_SEPOLIA]: {
@@ -710,6 +929,17 @@ export const CONTRACT_ADDRESSES: {
     cctpV2TokenMessenger: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
+    },
+    sponsoredCCTPDstPeriphery: {
+      address: "0xA2cBA9cFcD2427C1201df51c19422E043c5bDe7a",
+      abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.BLAST_SEPOLIA]: {
@@ -769,6 +999,13 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.POLYGON_AMOY]: {
     withdrawableErc20: {
@@ -790,16 +1027,12 @@ export const CONTRACT_ADDRESSES: {
       address: "0x8FE6B999Dc680CcFDD5Bf7EB0974218be2542DAA",
       abi: CCTP_V2_TOKEN_MESSENGER_ABI,
     },
-  },
-  [CHAIN_IDs.SCROLL_SEPOLIA]: {
-    scrollGatewayRouter: {
-      address: "0x9aD3c5617eCAa556d6E166787A97081907171230",
-      abi: SCROLL_GATEWAY_ROUTER_L2_ABI,
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
     },
-  },
-  [CHAIN_IDs.TATARA]: {
-    withdrawableErc20: {
-      abi: POLYGON_WITHDRAWABLE_ERC20_ABI,
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
@@ -831,3 +1064,41 @@ export const CONTRACT_ADDRESSES: {
     },
   },
 };
+
+// Narrow `unknown[]` (the table's loose ABI typing) to a shape assignable to `ContractInterface`.
+export function isJsonAbi(value: unknown[]): value is JsonFragment[] {
+  return value.every((item) => typeof item === "object" && item !== null);
+}
+
+/**
+ * Look up a contract entry that is required to have both `address` and `abi` populated.
+ * Throws if either is missing — useful for adapter constructors that immediately build a Contract.
+ */
+export function getContractEntry(chainId: number, name: string): { address: string; abi: ContractInterface } {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.address) && isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES entry: ${chainId}/${name}`);
+  assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
+  return { address: entry.address, abi: entry.abi };
+}
+
+/**
+ * Look up only the `abi` for a contract entry (address resolved via deployment metadata).
+ * Throws if the abi is missing or malformed.
+ */
+export function getContractAbi(chainId: number, name: string): ContractInterface {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.abi), `Missing CONTRACT_ADDRESSES abi: ${chainId}/${name}`);
+  assert(isJsonAbi(entry.abi), `Invalid ABI shape: ${chainId}/${name}`);
+  return entry.abi;
+}
+
+/**
+ * Look up only the `address` for a contract entry. Use this for entries that may not define an `abi`
+ * (e.g. nativeToken on most OP Stack chains, SVM cctp* entries).
+ * Throws if the address is missing.
+ */
+export function getContractAddress(chainId: number, name: string): string {
+  const entry = CONTRACT_ADDRESSES[chainId]?.[name];
+  assert(isDefined(entry?.address), `Missing CONTRACT_ADDRESSES address: ${chainId}/${name}`);
+  return entry.address;
+}

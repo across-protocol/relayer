@@ -1,7 +1,8 @@
+import { utils as sdkUtils } from "@across-protocol/sdk";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { HubPoolClient, SpokePoolClient } from "../clients";
 import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
-import { Address, CHAIN_IDs, compareAddressesSimple, EMPTY_MESSAGE, TOKEN_SYMBOLS_MAP } from "../utils";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { Address, compareAddressesSimple, EMPTY_MESSAGE } from "../utils";
 
 export type RelayerUnfilledDeposit = {
   deposit: DepositWithBlock;
@@ -67,37 +68,31 @@ export function getUnfilledDeposits(
     });
 }
 
+/**
+ * Returns true if `(chainId, token)` can be drained off via an unmetered, low-latency bridge
+ * (CCTP for USDC, OFT for USDT, or the hub chain itself via canonical bridges).
+ *
+ * Pure over the static CCTP/OFT chain registries plus a single hub-chain id, so it's safe to
+ * call without taking a dependency on InventoryClient.
+ */
+export function isUnmeteredFastRebalance(chainId: number, token: Address, hubChainId: number): boolean {
+  const cctp =
+    sdkUtils.chainIsCCTPEnabled(chainId) &&
+    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], token.toNative());
+  // OFT withdrawals from HyperEVM take ~12h, so they aren't fast.
+  const oft =
+    sdkUtils.chainIsOFTEnabled(chainId) &&
+    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[chainId], token.toNative()) &&
+    chainId !== CHAIN_IDs.HYPEREVM;
+  return cctp || oft || chainId === hubChainId;
+}
+
 export function depositForcesOriginChainRepayment(
   deposit: Pick<DepositWithBlock, "inputToken" | "originChainId" | "fromLiteChain">,
   hubPoolClient: HubPoolClient
 ): boolean {
   return (
     deposit.fromLiteChain || !hubPoolClient.l2TokenHasPoolRebalanceRoute(deposit.inputToken, deposit.originChainId)
-  );
-}
-
-/**
- * @notice Returns true if after filling this deposit, the repayment can be quickly rebalanced to a different chain.
- * @dev This function can be used by the InventoryClient and Relayer to help determine whether a deposit should
- * be filled or ignored given current inventory allocation levels.
- */
-export function repaymentChainCanBeQuicklyRebalanced(
-  repaymentChainId: number,
-  repaymentToken: Address,
-  hubPoolClient: HubPoolClient
-): boolean {
-  const originChainIsCctpEnabled =
-    sdkUtils.chainIsCCTPEnabled(repaymentChainId) &&
-    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDC.addresses[repaymentChainId], repaymentToken.toNative());
-  const originChainIsOFTEnabled =
-    sdkUtils.chainIsOFTEnabled(repaymentChainId) &&
-    compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[repaymentChainId], repaymentToken.toNative());
-  return (
-    originChainIsCctpEnabled ||
-    originChainIsOFTEnabled ||
-    // We assume that all repayments sent to Mainnet and BSC can be quickly rebalanced to a different chain using
-    // canonical bridges out of L1 or the Binance API respectively.
-    [hubPoolClient.chainId, CHAIN_IDs.BSC].includes(repaymentChainId)
   );
 }
 

@@ -25,7 +25,7 @@ import {
 } from "../../utils";
 import { AddressesToFinalize, CrossChainMessage, FinalizerPromise } from "../types";
 
-const OFT_RETRY_TOKENS = ["USDT"];
+const OFT_RETRY_TOKENS: (keyof typeof TOKEN_SYMBOLS_MAP)[] = ["USDT"];
 
 /**
  * Finalizes failed lzCompose messages on destination by checking for failed transactions and resubmitting its calldata..
@@ -69,15 +69,17 @@ export async function oftRetryFinalizer(
   const _outstandingMessages = [];
   for (const depositChunk of chunk(deposits, chunkSize)) {
     _outstandingMessages.push(
-      ...(await mapAsync(depositChunk, async ({ txnRef }) => await OFT.getLzTransactionDetails(txnRef)))
+      ...(await mapAsync(depositChunk, async ({ txnRef }) => {
+        return (await OFT.getLzTransactionDetails(txnRef)).flat();
+      }))
     );
   }
-  const outstandingMessages = _outstandingMessages.map(({ data }) => data.flat()).flat();
+  const outstandingMessages = _outstandingMessages.flat();
 
   // Lz messages are executed automatically and must be retried only if their execution reverts on chain.
   const knownEids = Object.values(PRODUCTION_OFT_EIDs);
   const uniqueEids: number[] = [];
-  const checkStatus = (status?: string) => !["WAITING", "SUCCEEDED"].includes(status);
+  const checkStatus = (status?: string) => !["WAITING", "SUCCEEDED"].includes(status ?? "");
   const unprocessedMessages = outstandingMessages.filter(({ pathway, destination }) => {
     if (!knownEids.includes(pathway.dstEid)) {
       return false;

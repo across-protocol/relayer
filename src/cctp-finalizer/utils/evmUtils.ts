@@ -1,7 +1,18 @@
 import { ethers } from "ethers";
 import { utils } from "@across-protocol/sdk";
-import { winston, runTransaction, getCctpV2MessageTransmitter, CHAIN_IDs } from "../../utils";
-import { CONTRACT_ADDRESSES } from "../../common/ContractAddresses";
+import {
+  winston,
+  submitTransaction,
+  CHAIN_IDs,
+  decodeCctpV2HookData,
+  TOKEN_SYMBOLS_MAP,
+  CCTPHookData,
+  isDefined,
+} from "../../utils";
+import { getContractAbi, getContractEntry } from "../../common/ContractAddresses";
+import { DestinationInfo } from "../types";
+import { TransactionClient } from "../../clients";
+import { extractMintRecipientAddress } from "./commonUtils";
 
 /**
  * Gets EVM provider from RPC URL
@@ -18,14 +29,102 @@ export async function checkIfAlreadyProcessedEvm(
   message: string,
   provider: ethers.providers.JsonRpcProvider
 ): Promise<boolean> {
-  const { address, abi } = getCctpV2MessageTransmitter(chainId);
-  const contract = new ethers.Contract(address!, abi, provider);
+  const { address, abi } = getContractEntry(chainId, "cctpV2MessageTransmitter");
+  const contract = new ethers.Contract(address, abi, provider);
 
   const messageBytes = ethers.utils.arrayify(message);
   const nonceBytes = messageBytes.slice(12, 44);
   const nonce = ethers.utils.hexlify(nonceBytes);
 
   return await utils.hasCCTPMessageBeenProcessedEvm(nonce, contract);
+}
+
+export function shouldCreateHyperCoreAccount(hookData: CCTPHookData): boolean {
+  const isDestinationUsdc = hookData.finalToken === TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.HYPEREVM];
+  const isSponsoredFlow = hookData.maxBpsToSponsor > 0;
+  return isSponsoredFlow || isDestinationUsdc;
+}
+
+export async function createHyperCoreAccountIfNotExists(
+  message: string,
+  contract: ethers.Contract,
+  chainId: number,
+  logger: winston.Logger
+): Promise<void> {
+  const hookData = decodeCctpV2HookData(message);
+  if (!isDefined(hookData) || !shouldCreateHyperCoreAccount(hookData)) {
+    logger.info({
+      at: "evmUtils#createHyperCoreAccountIfNotExists",
+      message: "Skipping account activation because its not sponsored flow",
+      maxBpsToSponsor: hookData?.maxBpsToSponsor,
+      finalRecipient: hookData?.finalRecipient,
+    });
+    return;
+  }
+  const isHypercoreAccountActive = await utils.isHlAccountActive(hookData.finalRecipient);
+  if (!isHypercoreAccountActive) {
+    logger.info({
+      at: "evmUtils#createHyperCoreAccountIfNotExists",
+      message: "Recipient account not activated, calling activateUserAccount",
+      finalRecipient: hookData.finalRecipient,
+    });
+    const transactionClient = new TransactionClient(logger);
+    const fundingToken = TOKEN_SYMBOLS_MAP.USDC.addresses[chainId];
+    const activationTx = await submitTransaction(
+      {
+        contract,
+        method: "activateUserAccount",
+        args: [hookData.nonce, hookData.finalRecipient, fundingToken],
+        chainId,
+        ensureConfirmation: true,
+      },
+      transactionClient
+    );
+    logger.info({
+      at: "evmUtils#createHyperCoreAccountIfNotExists",
+      message: "Account activation confirmed",
+      finalRecipient: hookData.finalRecipient,
+      txHash: activationTx.hash,
+    });
+  }
+}
+
+/**
+ * Determines the destination type and contract info based on chainId and signature presence.
+ * All destination-based finalizer calls will pass signature.
+ * - HyperCore: chainId = 999 or 998 with signature
+ * - Lighter: chainId = 1 with signature
+ * - Direct EVM: Any other EVM chain with signature
+ * - Standard: All other cases without signature
+ */
+function getDestination(chainId: number, messageBytes: string, signature?: string): DestinationInfo {
+  if (signature) {
+    const isHyperEVM = chainId === CHAIN_IDs.HYPEREVM || chainId === CHAIN_IDs.HYPEREVM_TESTNET;
+    const isMainnet = chainId === CHAIN_IDs.MAINNET;
+
+    // Extract mint recipient from CCTP message - this is the SponsoredCCTPDstPeriphery contract
+    const mintRecipient = extractMintRecipientAddress(messageBytes);
+    const abi = getContractAbi(chainId, "sponsoredCCTPDstPeriphery");
+
+    const type = isHyperEVM ? "hypercore" : isMainnet ? "lighter" : "direct-evm";
+    const accountInitialization = isHyperEVM ? createHyperCoreAccountIfNotExists : undefined;
+
+    return {
+      type,
+      address: mintRecipient,
+      abi,
+      requiresSignature: true,
+      accountInitialization,
+    };
+  }
+
+  const { address, abi } = getContractEntry(chainId, "cctpV2MessageTransmitter");
+  return {
+    type: "standard",
+    address,
+    abi,
+    requiresSignature: false,
+  };
 }
 
 /**
@@ -37,53 +136,54 @@ export async function processMintEvm(
   provider: ethers.providers.JsonRpcProvider,
   privateKey: string,
   logger: winston.Logger,
-  signature?: string
+  signature?: string,
+  quoteDeadline?: number
 ): Promise<{ txHash: string }> {
   const signer = new ethers.Wallet(privateKey, provider);
 
-  const isHyperEVM = chainId === CHAIN_IDs.HYPEREVM || chainId === CHAIN_IDs.HYPEREVM_TESTNET;
+  const destination = getDestination(chainId, attestation.message, signature);
+  const contract = new ethers.Contract(destination.address, destination.abi, signer);
 
-  let contract: ethers.Contract;
-  let receiveMessageArgs: unknown[];
-
-  const isHyperCoreDestination = isHyperEVM && signature;
-
-  if (isHyperCoreDestination) {
-    // Use SponsoredCCTPDstPeriphery for HyperCore destinations (both sponsored and non-sponsored flows)
-    const { address, abi } = CONTRACT_ADDRESSES[chainId].sponsoredCCTPDstPeriphery;
-    if (!address) {
-      throw new Error(`SponsoredCCTPDstPeriphery address not configured for chain ${chainId}`);
-    }
-    contract = new ethers.Contract(address, abi, signer);
-    receiveMessageArgs = [attestation.message, attestation.attestation, signature];
-    logger.info({
-      at: "evmUtils#processMintEvm",
-      message: "Using SponsoredCCTPDstPeriphery contract for HyperCore destination",
-      chainId,
-      contractAddress: address,
-    });
-  } else {
-    // Use standard MessageTransmitter for non-HyperCore destinations
-    const { address, abi } = getCctpV2MessageTransmitter(chainId);
-    contract = new ethers.Contract(address!, abi, signer);
-    receiveMessageArgs = [attestation.message, attestation.attestation];
-    logger.info({
-      at: "evmUtils#processMintEvm",
-      message: "Using standard MessageTransmitter contract",
-      chainId,
-      contractAddress: address,
-    });
+  if (destination.accountInitialization) {
+    await destination.accountInitialization(attestation.message, contract, chainId, logger);
   }
 
-  const mintTx = await runTransaction(logger, contract, "receiveMessage", receiveMessageArgs);
+  let receiveMessageArgs = destination.requiresSignature
+    ? [attestation.message, attestation.attestation, signature]
+    : [attestation.message, attestation.attestation];
 
-  const mintTxReceipt = await mintTx.wait();
+  // if the quote deadline has expired, we don't need to pass the signature
+  let method = "receiveMessage";
+  if (destination.requiresSignature && isDefined(quoteDeadline) && quoteDeadline < Date.now() / 1000) {
+    receiveMessageArgs = [attestation.message, attestation.attestation];
+    method = "emergencyReceiveMessage";
+  }
+
+  logger.info({
+    at: "evmUtils#processMintEvm",
+    message: `Using ${destination.type} destination contract`,
+    chainId,
+    destinationType: destination.type,
+    contractAddress: destination.address,
+  });
+  const transactionClient = new TransactionClient(logger);
+
+  const mintTx = await submitTransaction(
+    {
+      contract: contract,
+      method,
+      args: receiveMessageArgs,
+      chainId,
+      ensureConfirmation: true,
+    },
+    transactionClient
+  );
 
   logger.info({
     at: "evmUtils#processMintEvm",
     message: "Mint transaction confirmed",
-    txHash: mintTxReceipt.transactionHash,
+    txHash: mintTx.hash,
   });
 
-  return { txHash: mintTxReceipt.transactionHash };
+  return { txHash: mintTx.hash };
 }

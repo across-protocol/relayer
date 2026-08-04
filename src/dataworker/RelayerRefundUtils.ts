@@ -29,6 +29,32 @@ export function sortRefundAddresses(refunds: Refund, chainId: number): Address[]
     .map((address) => toAddressType(address, chainId));
 }
 
+// Shared `{ message, mrkdwn }` for a relayer-refund-leaf execution log. Both EVM and SVM call
+// this with the same args; pass `explorerLink` when the explorer link is known at log time (SVM
+// has the signature in hand). EVM omits it and lets TransactionClient#submit append the
+// parenthetical from the tx response in the same `<message> (<explorer>): <mrkdwn>` shape.
+export function formatRelayerRefundLeafExecutionLog(args: {
+  rootBundleId: number;
+  relayerRefundRoot: string;
+  leafId: number;
+  chainId: number;
+  symbol: string;
+  amountToReturn: BigNumber;
+  explorerLink?: string;
+}): { message: string; mrkdwn: string } {
+  const baseMessage = "Executed RelayerRefundLeaf 🌿!";
+  return {
+    message: args.explorerLink ? `${baseMessage} (${args.explorerLink})` : baseMessage,
+    mrkdwn:
+      `rootBundleId: ${args.rootBundleId}\n` +
+      `relayerRefundRoot: ${args.relayerRefundRoot}\n` +
+      `Leaf: ${args.leafId}\n` +
+      `chainId: ${args.chainId}\n` +
+      `token: ${args.symbol}\n` +
+      `amount: ${args.amountToReturn.toString()}`,
+  };
+}
+
 // Sort leaves by chain ID and then L2 token address in ascending order. Assign leaves unique, ascending ID's
 // beginning from 0.
 export function sortRelayerRefundLeaves(relayerRefundLeaves: RelayerRefundLeafWithGroup[]): RelayerRefundLeaf[] {
@@ -45,8 +71,8 @@ export function sortRelayerRefundLeaves(relayerRefundLeaves: RelayerRefundLeafWi
       }
     })
     .map((leaf: RelayerRefundLeafWithGroup, i: number): RelayerRefundLeaf => {
-      delete leaf.groupIndex; // Delete group index now that we've used it to sort leaves for the same
-      // { repaymentChain, l2TokenAddress } since it doesn't exist in RelayerRefundLeaf
-      return { ...leaf, leafId: i };
+      // Drop groupIndex: only used for sorting within { repaymentChain, l2TokenAddress }; not part of RelayerRefundLeaf.
+      const { groupIndex: _groupIndex, ...rest } = leaf;
+      return { ...rest, leafId: i };
     });
 }

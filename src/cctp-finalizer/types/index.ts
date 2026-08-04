@@ -1,3 +1,6 @@
+import type { ContractInterface, ethers } from "ethers";
+import type winston from "winston";
+
 export interface ProcessBurnTransactionResponse {
   success: boolean;
   mintTxHash?: string;
@@ -20,6 +23,7 @@ export interface PubSubMessage {
   attestation?: StringUnion | null;
   destinationChainId?: LongUnion | null;
   signature?: StringUnion | null;
+  quoteDeadline?: LongUnion | null;
 }
 
 export interface ChainConfig {
@@ -29,4 +33,19 @@ export interface ChainConfig {
   messageTransmitterAddress: string;
   tokenMessengerAddress: string;
   cctpDomain: number;
+}
+
+export type DestinationType = "hypercore" | "lighter" | "direct-evm" | "standard";
+
+export interface DestinationInfo {
+  type: DestinationType;
+  address: string;
+  abi: ContractInterface;
+  requiresSignature: boolean;
+  accountInitialization?: (
+    message: string,
+    contract: ethers.Contract,
+    chainId: number,
+    logger: winston.Logger
+  ) => Promise<void>;
 }
