@@ -175,6 +175,23 @@ export function loadCumulativeModeBalances(
   return { currentBalances, cumulativeBalances };
 }
 
+// Fail closed when pending-rebalance accounting is degraded: the deficit/excess math that sizes new rebalances is
+// derived from the InventoryClient's virtual balances, and if any adapter's pending read failed then those balances
+// are missing every in-flight rebalance credit (the aggregate degrades to net debits only), so sending now could
+// duplicate rebalances that are already pending — including through adapters whose reads succeeded.
+function canSendRebalances(inventoryClient: InventoryClient, logLabel: string): boolean {
+  const failedPendingReads = inventoryClient.rebalancerClient.getPendingReadFailures();
+  if (failedPendingReads.length === 0) {
+    return true;
+  }
+  logger.warn({
+    at: `index.ts:${logLabel}`,
+    message: "Skipping new rebalances this run because pending-rebalance reads failed for some adapters",
+    failedPendingReads,
+  });
+  return false;
+}
+
 export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const logLabel = "runCumulativeBalanceRebalancer";
   const { rebalancerConfig, inventoryClient, rebalancerClient } = await initializeRebalancerRun(
@@ -188,7 +205,7 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
   let timerStart = performance.now();
   // Finally, send out new rebalances:
   try {
-    if (process.env.SEND_REBALANCES === "true") {
+    if (process.env.SEND_REBALANCES === "true" && canSendRebalances(inventoryClient, logLabel)) {
       timerStart = performance.now();
       const maxFeePct = toBNWei(process.env.MAX_FEE_PCT ?? "2.5", 18);
       await (rebalancerClient as CumulativeBalanceRebalancerClient).rebalanceInventory(
@@ -226,7 +243,7 @@ export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner
 
   let timerStart = performance.now();
   try {
-    if (process.env.SEND_REBALANCES === "true") {
+    if (process.env.SEND_REBALANCES === "true" && canSendRebalances(inventoryClient, logLabel)) {
       timerStart = performance.now();
       const maxFeePct = toBNWei(process.env.MAX_FEE_PCT ?? "2.5", 18);
       await (rebalancerClient as SameAssetRebalancerClient).rebalanceInventory(inventoryClient, maxFeePct);

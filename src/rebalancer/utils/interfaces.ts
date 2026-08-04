@@ -28,6 +28,9 @@ export interface RebalanceRoute {
 export interface RebalancerClient {
   adapters: Record<string, RebalancerAdapter>;
   getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
+  // Names of adapters whose reads failed during the most recent getPendingRebalances() call. Non-empty means that
+  // call degraded to a net-debits-only aggregate and in-flight rebalance credits are currently uncounted.
+  getPendingReadFailures(): string[];
 }
 
 export interface OrderDetails {
