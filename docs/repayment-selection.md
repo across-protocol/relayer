@@ -36,7 +36,9 @@ flowchart TD
     deposit[Deposit] --> possible[getPossibleRepaymentChainIds]
     possible --> precompute[batchComputeLpFees]
     precompute --> eligible[determineRefundChainId]
-    eligible --> resolve[resolveRepaymentChain]
+    eligible --> fundable[filterFundableRepaymentChains]
+    fundable -->|none left| unfundable[UnfundableRepaymentSkipFill]
+    fundable -->|some remain| resolve[resolveRepaymentChain]
     resolve --> prof{AnyPreferredChainProfitable}
     prof -->|yes| firstProfitable[ChooseFirstProfitablePreferredChain]
     prof -->|no| fallback{DestinationFallbackPathAllowed}
@@ -71,6 +73,28 @@ If none are returned, relayer treats deposit as not currently selectable (with u
 
 For the full eligibility internals, see `docs/repayment-eligibility.md`.
 
+## Step 2a: HubPool liquidity filter
+
+`filterFundableRepaymentChains()` drops eligible chains whose relayer refund could not currently be funded by the
+HubPool, based on the `/liquid-reserves` limits held by `AcrossApiClient`.
+
+Key properties:
+
+- the constraint belongs to the **repayment chain**, not the deposit: a refund on the origin chain is funded by the
+  deposit itself, so origin chain repayment always survives the filter. A deposit that is forced to take origin chain
+  repayment - whether by protocol rules (`fromLiteChain`, no PoolRebalanceRoute) or by
+  `forceOriginRepayment` / `forceOriginRepaymentPerChain` config - is therefore never refused for want of reserves.
+- `getLimit()` returns `uint256Max` when the origin chain is the hub chain, so hub-origin deposits are unconstrained.
+- the filter is inert until `AcrossApiClient.updatedLimits` is set, and when `ignoreLimits` is configured. A failed
+  `/liquid-reserves` query leaves `updatedLimits` unset rather than reporting zero reserves.
+- when the filter empties a non-empty eligible list, `resolveRepaymentChain()` returns `unfundableRepayment: true`.
+  `evaluateFill()` skips the deposit *without* marking it ignored, since reserves recover as LPs deposit and as bundles
+  execute.
+
+Caveat: origin chain repayment is only strictly self-funding when the deposit and the refund land in the same bundle.
+If the origin chain's excess running balance was already swept back to the HubPool, an origin refund does draw on
+HubPool liquidity. This has always been true for forced-origin deposits and is treated as an accepted approximation.
+
 ## Step 3: Profitability pass
 
 For each preferred chain:
@@ -104,6 +128,7 @@ This protects against accidental policy violations even if upstream selection lo
 ## Failure outcomes
 
 - no preferred chains: no eligible path from inventory stage
+- no fundable chains: every eligible chain needs HubPool liquidity that isn't currently available (deposit is retried)
 - preferred chains but no profitability: economics fail at current LP fee/gas conditions
 - fallback profitable but top preferred chosen: intentional inventory-priority behavior
 
@@ -112,6 +137,7 @@ This protects against accidental policy violations even if upstream selection lo
 - eligibility/precompute contract drift: if `getPossibleRepaymentChainIds()` and eligibility logic diverge, LP-fee data can be missing for candidate chains.
 - ordering sensitivity: changing preferred-chain ordering in InventoryClient can change selected repayment chain even when profitability code is unchanged.
 - force-origin invariant: removing or weakening `fillRelay()` guardrails can permit invalid repayment-chain submissions.
+- liquidity-filter placement: applying the `/liquid-reserves` limit before a repayment chain is known reintroduces refusal of fills that only ever needed origin chain repayment.
 
 ## Contributor recommendations
 

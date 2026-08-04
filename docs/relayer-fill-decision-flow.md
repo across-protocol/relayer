@@ -46,7 +46,8 @@ Major gates:
 - input/output token compatibility via `inventoryClient.validateOutputToken()`
 - minimum confirmations per value bucket
 - future quote-timestamp guard
-- API fill-limit checks (except forced-origin deposits)
+
+Note: the API-sourced HubPool liquid reserves limit is **not** applied here. It constrains repayment chains rather than deposits, so it is evaluated during repayment selection - see `docs/repayment-selection.md`.
 
 Important behavior: many failures are marked in `ignoredDeposits` to avoid repeated reevaluation churn.
 
@@ -59,12 +60,14 @@ For each filtered deposit:
 3. optionally force slow-fill request for configured slow depositors
 4. apply minimum fill age per destination chain (if configured)
 5. resolve repayment-chain + profitability data (`resolveRepaymentChain`)
-6. check local output-token balance availability
-7. if unprofitable or insufficient balance:
+6. return early when no eligible repayment chain can be funded by HubPool liquidity (`unfundableRepayment`), without
+   marking the deposit ignored - HubPool liquidity recovers over time, so the deposit is re-evaluated on later loops
+7. check local output-token balance availability
+8. if unprofitable or insufficient balance:
    - capture shortfall/unprofitability telemetry
    - optionally request slow fill when enabled and valid
    - return
-8. if profitable and funded:
+9. if profitable and funded:
    - apply origin-chain commitment limits
    - decrement local destination balance virtually
    - enqueue `fillRelay`

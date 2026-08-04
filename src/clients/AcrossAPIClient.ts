@@ -84,6 +84,18 @@ export class AcrossApiClient {
     // /liquid-reserves
     // Store the max available HubPool liquidity (less API-imposed cushioning) for each L1 token.
     const liquidReserves = await this.callLimits(tokens);
+
+    // A failed query is not the same as zero available liquidity. Retain any previously-fetched reserves and leave
+    // updatedAt alone so that the next update retries immediately, rather than treating every token as exhausted.
+    if (!isDefined(liquidReserves)) {
+      this.logger.warn({
+        at: "AcrossAPIClient",
+        message: "Failed to fetch HubPool liquid reserves; retaining previously-fetched limits.",
+        updatedLimits: this.updatedLimits,
+      });
+      return;
+    }
+
     tokens.forEach((token, i) => (this.limits[token.toEvmAddress()] = liquidReserves[i]));
 
     this.logger.debug({
@@ -114,7 +126,11 @@ export class AcrossApiClient {
     return `limits_api_${l1Tokens.map((token) => token.toEvmAddress()).join(",")}`;
   }
 
-  private async callLimits(l1Tokens: EvmAddress[], timeout = this.timeout): Promise<BigNumber[]> {
+  /**
+   * Query the API for the HubPool liquid reserves backing each of `l1Tokens`.
+   * @returns An array of liquid reserves, ordered as per `l1Tokens`, or undefined if the query failed.
+   */
+  private async callLimits(l1Tokens: EvmAddress[], timeout = this.timeout): Promise<BigNumber[] | undefined> {
     const path = "liquid-reserves";
     const url = `${this.endpoint}/${path}`;
 
@@ -139,17 +155,18 @@ export class AcrossApiClient {
       if (!result) {
         this.logger.error({
           at: "AcrossAPIClient",
-          message: `Invalid response from /${path}, expected maxDeposit field.`,
+          message: `Invalid response from /${path}, expected one reserves entry per l1Token.`,
           url,
           params,
           result,
         });
+        return undefined;
       }
       liquidReserves = l1Tokens.map((l1Token) => BigNumber.from(result[l1Token.toEvmAddress()] ?? bnZero));
     } catch (err) {
       const msg = (err as Error).message;
       this.logger.warn({ at: "AcrossAPIClient", message: `Failed to get ${path},`, url, params, msg });
-      return l1Tokens.map(() => bnZero);
+      return undefined;
     }
 
     if (redis) {

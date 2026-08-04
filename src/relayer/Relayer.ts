@@ -195,11 +195,10 @@ export class Relayer {
    */
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
     const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, blockNumber } = deposit;
-    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
+    const { configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
     const {
       addressFilter,
       allowedRecipients,
-      ignoreLimits,
       relayerTokens,
       acceptInvalidFills,
       minDepositConfirmations,
@@ -439,28 +438,9 @@ export class Relayer {
       return false;
     }
 
-    // We query the relayer API to get the deposit limits for different token and origin combinations.
-    // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
-    // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
-    // queries for limits on supported tokens.
-    if (!ignoreLimits && !depositForcesOriginChainRepayment(deposit, hubPoolClient) && isDefined(l1Token)) {
-      const { inputAmount } = deposit;
-      const limit = acrossApiClient.getLimit(originChainId, l1Token);
-      if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
-        this.logger.warn({
-          ...common,
-          message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
-          limit,
-          l1Token,
-          depositId,
-          inputToken,
-          inputAmount,
-          originChainId,
-          txnRef: deposit.txnRef,
-        });
-        return false;
-      }
-    }
+    // @dev The API-sourced HubPool liquid reserves constraint is deliberately *not* evaluated here. It only binds on
+    // repayments taken away from the origin chain, so it can't be resolved until a repayment chain has been selected.
+    // See filterFundableRepaymentChains().
 
     // The deposit passed all checks, so we can include it in the list of unfilled deposits.
     return true;
@@ -521,6 +501,61 @@ export class Relayer {
     }
 
     return true;
+  }
+
+  /**
+   * Drop any candidate repayment chain whose relayer refund could not currently be funded by the HubPool. A refund
+   * taken on the origin chain is funded by the deposit itself, so it never draws on HubPool liquidity. A refund on any
+   * other chain does, and if the HubPool can't cover it then the refund may be stuck for as long as it takes for
+   * liquidity to return - potentially 7 days. The constraint is therefore a property of the repayment chain, not of
+   * the deposit, and is only applied once the API has supplied at least one set of limits.
+   * @param deposit Deposit under evaluation.
+   * @param repaymentChainIds Candidate repayment chain IDs, ordered from highest to lowest priority.
+   * @returns The subset of repaymentChainIds whose refund can be funded, preserving the input ordering.
+   */
+  protected filterFundableRepaymentChains(deposit: DepositWithBlock, repaymentChainIds: number[]): number[] {
+    const { acrossApiClient, inventoryClient } = this.clients;
+    const { depositId, inputAmount, inputToken, originChainId, txnRef } = deposit;
+
+    // There's nothing to constrain, so don't bother resolving a limit. Deposits that are forced to take origin chain
+    // repayment always land here.
+    if (repaymentChainIds.every((chainId) => chainId === originChainId)) {
+      return repaymentChainIds;
+    }
+
+    if (this.config.ignoreLimits || !acrossApiClient.updatedLimits) {
+      return repaymentChainIds;
+    }
+
+    // Note: the relayer only queries limits for supported tokens, so an unmapped token has no constraint to apply.
+    const l1Token = inventoryClient.getL1TokenAddress(inputToken, originChainId);
+    if (!isDefined(l1Token)) {
+      return repaymentChainIds;
+    }
+
+    const limit = acrossApiClient.getLimit(originChainId, l1Token);
+    if (inputAmount.lte(limit)) {
+      return repaymentChainIds;
+    }
+
+    const fundableChainIds = repaymentChainIds.filter((chainId) => chainId === originChainId);
+    if (fundableChainIds.length !== repaymentChainIds.length) {
+      this.logger.debug({
+        at: "Relayer::filterFundableRepaymentChains",
+        message: "😱 Dropped repayment chains requiring more HubPool liquidity than the API suggested limit.",
+        depositId,
+        originChainId,
+        inputToken,
+        inputAmount,
+        l1Token,
+        limit,
+        repaymentChainIds,
+        fundableChainIds,
+        txnRef,
+      });
+    }
+
+    return fundableChainIds;
   }
 
   /**
@@ -800,6 +835,7 @@ export class Relayer {
 
     const {
       repaymentChainId,
+      unfundableRepayment,
       repaymentChainProfitability: {
         relayerFeePct,
         gasCost,
@@ -809,6 +845,12 @@ export class Relayer {
         gasPrice,
       },
     } = await this.resolveRepaymentChain(deposit, lpFees);
+
+    // A repayment that the HubPool can't currently fund is not an unprofitable fill; HubPool liquidity recovers as LPs
+    // deposit and as bundles execute, so leave this deposit eligible for re-evaluation on subsequent loops.
+    if (unfundableRepayment) {
+      return;
+    }
 
     const isProfitable = isDefined(repaymentChainId);
     // Limit the ability of persistently-unprofitable deposits to congest the deposit/fill evaluation pipeline.
@@ -1275,6 +1317,7 @@ export class Relayer {
     repaymentFees: RepaymentFee[]
   ): Promise<{
     repaymentChainId?: number;
+    unfundableRepayment?: boolean;
     repaymentChainProfitability: RepaymentChainProfitability;
   }> {
     const { inventoryClient, profitClient } = this.clients;
@@ -1283,19 +1326,34 @@ export class Relayer {
     const destinationChain = getNetworkName(destinationChainId);
 
     const mark = this.profiler.start("resolveRepaymentChain");
-    const preferredChainIds = await inventoryClient.determineRefundChainId(deposit);
+    const eligibleChainIds = await inventoryClient.determineRefundChainId(deposit);
+
+    // Origin chain repayment survives this filter unconditionally, so a deposit that is forced to take origin chain
+    // repayment is never refused on the basis of HubPool liquid reserves.
+    const preferredChainIds = this.filterFundableRepaymentChains(deposit, eligibleChainIds);
+    const unfundableRepayment = preferredChainIds.length === 0 && eligibleChainIds.length > 0;
+
     if (preferredChainIds.length === 0) {
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
       // that the origin chain, the only possible repayment chain, is over-allocated. We should log this case because
       // it is a special edge case the relayer should be aware of.
-      this.logger.debug({
+      let message: string;
+      if (unfundableRepayment) {
+        message =
+          `😱 Skipping ${originChain} deposit ${depositId.toString()}: no eligible repayment chain ` +
+          `${JSON.stringify(eligibleChainIds)} can be funded by available HubPool liquidity.`;
+      } else if (depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient)) {
+        message = `Deposit ${depositId.toString()} forces origin chain repayment and has an over-allocated origin chain ${originChain}`;
+      } else {
+        message = `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId.toString()}.`;
+      }
+      this.logger[unfundableRepayment ? "warn" : "debug"]({
         at: "Relayer::resolveRepaymentChain",
-        message: depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient)
-          ? `Deposit ${depositId.toString()} forces origin chain repayment and has an over-allocated origin chain ${originChain}`
-          : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId.toString()}.`,
+        message,
         txn: blockExplorerLink(txnRef, originChainId),
       });
       return {
+        unfundableRepayment,
         repaymentChainProfitability: {
           gasLimit: bnZero,
           gasCost: bnUint256Max,
