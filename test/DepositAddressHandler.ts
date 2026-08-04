@@ -9,11 +9,19 @@ import {
   toAddressType,
   toBN,
   TransactionReceipt,
+  TransactionResponse,
   utils,
   winston,
 } from "../src/utils";
 import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
-import { DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } from "../src/clients";
+import {
+  AugmentedTransaction,
+  DepositAddressExecuteResponse,
+  DepositAddressSignWithdrawResponse,
+  TransactionClient,
+} from "../src/clients";
+import { PendingExecute } from "../src/deposit-address/pendingExecutes";
+import * as txUtils from "../src/utils/TransactionUtils";
 import { DepositAddressHandler } from "../src/deposit-address/DepositAddressHandler";
 import { DepositAddressHandlerConfig } from "../src/deposit-address/DepositAddressHandlerConfig";
 import { ERC20_TRANSFER_TOPIC } from "../src/deposit-address/withdrawPayload";
@@ -1055,5 +1063,667 @@ describe("DepositAddressHandler._publishDepositExecuted", function () {
       true;
     await (handler as unknown as Internals)._publishDepositExecuted(receipt, depositMessageV3());
     expect(publishStub.called).to.equal(false);
+  });
+});
+
+/** Fake of the Redis hash commands the claim store uses, backed by `hashKey -> field -> value`. */
+function redisHashFake(hashes: Map<string, Map<string, string>>) {
+  return {
+    hSet: async (key: string, field: string, val: string) => {
+      const hash = hashes.get(key) ?? new Map<string, string>();
+      hash.set(field, val);
+      hashes.set(key, hash);
+      return 1;
+    },
+    hGet: async (key: string, field: string) => hashes.get(key)?.get(field),
+    hGetAll: async (key: string) => Object.fromEntries(hashes.get(key) ?? new Map<string, string>()),
+    hDel: async (key: string, field: string) => (hashes.get(key)?.delete(field) ? 1 : 0),
+    hDelIfEquals: async (key: string, field: string, expected: string) => {
+      const hash = hashes.get(key);
+      if (hash?.get(field) !== expected) {
+        return false;
+      }
+      hash.delete(field);
+      return true;
+    },
+  };
+}
+
+/**
+ * Cover for the duplicate-sweep failure mode this change limits: a run broadcasts an execute, is
+ * evicted mid-confirmation (routine — runs overlap on every handover), and its successor has no
+ * record that the transfer was already swept. The balance check cannot save it, because the deposit
+ * address is a shared pot: an unrelated inbound transfer makes the stale message executable again.
+ */
+describe("DepositAddressHandler pending-execute claim", function () {
+  const chainId = 42161;
+  const refTxHash = "0x" + "3".repeat(64); // depositMessageV3().erc20Transfer.transactionHash
+  const depositKey = `${DEPOSIT_ADDRESS}:${refTxHash}`;
+  const executeTxHash = "0x" + "e".repeat(64);
+  const redisKey = "deposit-address:pending-execute-claims:test-bot";
+
+  let handler: DepositAddressHandler;
+  let store: Map<string, string>;
+  let hashes: Map<string, Map<string, string>>;
+  let getReceiptStub: sinon.SinonStub;
+  let publishStub: sinon.SinonStub;
+  let executeStub: sinon.SinonStub;
+  let balanceStub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
+  let errorStub: sinon.SinonStub;
+
+  type Internals = {
+    initiateDepositV3: (m: DepositAddressMessageV3) => Promise<void>;
+    _settlePendingExecute: (k: string, p: PendingExecute) => Promise<"executed" | "unclaimed" | "unresolved">;
+    _recordPendingExecute: (k: string, p: PendingExecute) => Promise<void>;
+    _readPendingExecutes: () => Promise<{ claims: Record<string, PendingExecute>; unparseable: Set<string> }>;
+    _resolvePendingExecutes: (inherited: Record<string, PendingExecute>) => Promise<void>;
+    _loadExecutedDepositsFromRedis: () => Promise<void>;
+    executedDepositTxHashes: Set<string>;
+    pendingExecutes: Record<string, PendingExecute>;
+    lastSettleAttempt: Record<string, number>;
+  };
+
+  function pendingRecord(overrides: Partial<PendingExecute> = {}): PendingExecute {
+    return { txHash: executeTxHash, chainId, refTxHash, submittedAt: getCurrentTime(), ...overrides };
+  }
+
+  function sweepReceipt(status: number): TransactionReceipt {
+    return { blockNumber: 5_000_000, transactionHash: executeTxHash, status } as unknown as TransactionReceipt;
+  }
+
+  /** Seeds a claim directly into the persisted hash, as a previous run would have left it. */
+  function seedClaim(pending: PendingExecute, key = depositKey): void {
+    const hash = hashes.get(redisKey) ?? new Map<string, string>();
+    hash.set(key, JSON.stringify(pending));
+    hashes.set(redisKey, hash);
+  }
+
+  beforeEach(function () {
+    store = new Map<string, string>();
+    hashes = new Map<string, Map<string, string>>();
+    warnStub = sinon.stub();
+    errorStub = sinon.stub();
+    const logger = {
+      warn: warnStub,
+      debug: sinon.stub(),
+      info: sinon.stub(),
+      error: errorStub,
+    } as unknown as winston.Logger;
+    const config = {
+      botIdentifier: "test-bot",
+      relayerOriginChains: [chainId],
+      enableDepositAddressDepositPublisher: true,
+      enableExecuteErc20Transfer: false,
+    } as unknown as DepositAddressHandlerConfig;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    (handler as unknown as { redisCache: unknown }).redisCache = {
+      get: async (key: string) => store.get(key) ?? null,
+      set: async (key: string, val: unknown) => {
+        store.set(key, String(val));
+        return "OK";
+      },
+      ...redisHashFake(hashes),
+    };
+    getReceiptStub = sinon.stub();
+    (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
+      [chainId]: { getTransactionReceipt: getReceiptStub },
+    };
+    publishStub = sinon.stub().resolves("msg-id");
+    (handler as unknown as { executionPublisher: unknown }).executionPublisher = { publishJson: publishStub };
+    executeStub = sinon.stub().resolves(undefined);
+    (handler as unknown as { api: unknown }).api = { executeDepositAddress: executeStub };
+    (handler as unknown as { observedExecutedDeposits: Record<number, Set<string>> }).observedExecutedDeposits = {
+      [chainId]: new Set<string>(),
+    };
+    balanceStub = sinon.stub().resolves(toBN("5000"));
+    (handler as unknown as { getDepositAddressBalance: sinon.SinonStub }).getDepositAddressBalance = balanceStub;
+    (handler as unknown as { _signerAddress: EvmAddress })._signerAddress = EvmAddress.from(SIGNER);
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("persists the claim so a later run can read it back", async function () {
+    await (handler as unknown as Internals)._recordPendingExecute(depositKey, pendingRecord());
+    expect(hashes.get(redisKey)?.has(depositKey)).to.equal(true);
+    const persisted = await (handler as unknown as Internals)._readPendingExecutes();
+    expect(persisted.claims[depositKey].txHash).to.equal(executeTxHash);
+    expect(persisted.claims[depositKey].refTxHash).to.equal(refTxHash);
+  });
+
+  it("does not request execute calldata while a recently-checked claim is outstanding", async function () {
+    (handler as unknown as Internals).pendingExecutes = { [depositKey]: pendingRecord() };
+    (handler as unknown as Internals).lastSettleAttempt = { [depositKey]: getCurrentTime() };
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+    // The throttle also means no redundant receipt lookup on every 1s poll.
+    expect(getReceiptStub.notCalled).to.equal(true);
+  });
+
+  it("adopts an inherited execute that confirmed on-chain", async function () {
+    seedClaim(pendingRecord());
+    getReceiptStub.resolves(sweepReceipt(1));
+
+    const inherited = await (handler as unknown as Internals)._readPendingExecutes();
+    await (handler as unknown as Internals)._resolvePendingExecutes(inherited.claims);
+
+    // Adopted into the executed set, so no later run re-submits for this transfer.
+    expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(true);
+    expect((handler as unknown as Internals).pendingExecutes).to.deep.equal({});
+
+    // And the deposit is now skipped outright rather than swept a second time.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+  });
+
+  it("clears the claim when the inherited execute reverted, so the deposit is re-attempted", async function () {
+    seedClaim(pendingRecord());
+    getReceiptStub.resolves(sweepReceipt(0));
+
+    const inherited = await (handler as unknown as Internals)._readPendingExecutes();
+    await (handler as unknown as Internals)._resolvePendingExecutes(inherited.claims);
+
+    expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(false);
+    expect((handler as unknown as Internals).pendingExecutes).to.deep.equal({});
+    expect(publishStub.called).to.equal(false);
+    expect(warnStub.firstCall.firstArg.message).to.contain("reverted on-chain");
+  });
+
+  it("keeps the claim while the transaction is still unmined, and never discards it", async function () {
+    // No staleness rule: an unresolved claim is retained indefinitely, since stranding a transfer is
+    // reversible but a second sweep is not. Ops release it by deleting the Redis hash field.
+    seedClaim(pendingRecord({ submittedAt: getCurrentTime() - 86_400 }));
+    getReceiptStub.resolves(null);
+
+    const inherited = await (handler as unknown as Internals)._readPendingExecutes();
+    await (handler as unknown as Internals)._resolvePendingExecutes(inherited.claims);
+
+    expect((handler as unknown as Internals).pendingExecutes[depositKey].txHash).to.equal(executeTxHash);
+    expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(false);
+    // The retained claim is what blocks a second submission.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+  });
+
+  // Without this the bot would wait for the next run to retry a revert, where today it retries on the
+  // next 1s poll — the claim must not cost liveness on the common failure.
+  it("re-settles an outstanding claim past the throttle and re-attempts a reverted execute", async function () {
+    (handler as unknown as Internals).pendingExecutes = { [depositKey]: pendingRecord() };
+    (handler as unknown as Internals).lastSettleAttempt = { [depositKey]: getCurrentTime() - 3600 };
+    getReceiptStub.resolves(sweepReceipt(0));
+
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+
+    expect(getReceiptStub.calledOnce).to.equal(true);
+    expect((handler as unknown as Internals).pendingExecutes).to.deep.equal({});
+    // Claim cleared, so the execute proceeded to request fresh calldata in this same poll.
+    expect(executeStub.called).to.equal(true);
+  });
+
+  it("does not submit when another run claimed the transfer during the quote round trip", async function () {
+    // Written to Redis only: the in-memory mirror predates it, exactly as it would for a run that
+    // snapshotted state before an overlapping instance broadcast.
+    executeStub.resolves({
+      depositAddress: DEPOSIT_ADDRESS,
+      executeTx: { ecosystem: "evm", chainId, to: TOKEN, data: "0x", value: "0" },
+      signer: SIGNER,
+      signatureDeadline: getCurrentTime() + 600,
+      isPlaceholder: false,
+    });
+    (handler as unknown as { getExecuteContract: sinon.SinonStub }).getExecuteContract = sinon
+      .stub()
+      .returns({ address: TOKEN });
+    seedClaim(pendingRecord());
+
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+
+    expect(warnStub.calledOnce).to.equal(true);
+    expect(warnStub.firstCall.firstArg.message).to.contain("already been broadcast");
+  });
+
+  // Overlapping runs write the same hash field. If an older transaction reverts while a newer one is
+  // still in flight, clearing unconditionally would drop the live claim and unblock a mid-sweep
+  // transfer — turning a two-sweep interleaving into a three-sweep one.
+  it("keeps a newer in-flight claim when the transaction it replaced reverted", async function () {
+    const newerTxHash = "0x" + "f".repeat(64);
+    seedClaim(pendingRecord({ txHash: newerTxHash }));
+    // This run's mirror still points at its own, older transaction.
+    const ours = pendingRecord({ txHash: executeTxHash });
+    (handler as unknown as Internals).pendingExecutes = { [depositKey]: ours };
+    // Ours reverted; the newer one is still unmined.
+    getReceiptStub.withArgs(executeTxHash).resolves(sweepReceipt(0));
+    getReceiptStub.withArgs(newerTxHash).resolves(null);
+
+    const outcome = await (handler as unknown as Internals)._settlePendingExecute(depositKey, ours);
+
+    // Not "unclaimed": that would let the caller re-submit immediately.
+    expect(outcome).to.equal("unresolved");
+    expect(hashes.get(redisKey)?.get(depositKey)).to.equal(JSON.stringify(pendingRecord({ txHash: newerTxHash })));
+    // And this run now tracks the live transaction instead of its own.
+    expect((handler as unknown as Internals).pendingExecutes[depositKey].txHash).to.equal(newerTxHash);
+    expect(warnStub.args.some((a) => a[0].message.includes("Keeping a newer in-flight claim"))).to.equal(true);
+
+    // The transfer stays blocked.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+  });
+
+  // A cached hash with no receipt may have been replaced in Redis by another run's timeout resubmit.
+  // Without reconciling, every later poll re-settles the same dead hash and returns before the
+  // pre-broadcast read, so the transfer would stay blocked for this process's lifetime.
+  it("adopts a replacement hash another run recorded when the cached one has no receipt", async function () {
+    const replacementTxHash = "0x" + "9".repeat(64);
+    const ours = pendingRecord({ txHash: executeTxHash });
+    (handler as unknown as Internals).pendingExecutes = { [depositKey]: ours };
+    // Redis has moved on to the replacement; ours was replaced at the same nonce and never mined.
+    seedClaim(pendingRecord({ txHash: replacementTxHash }));
+    getReceiptStub.withArgs(executeTxHash).resolves(null);
+    getReceiptStub.withArgs(replacementTxHash).resolves(sweepReceipt(0));
+
+    expect(await (handler as unknown as Internals)._settlePendingExecute(depositKey, ours)).to.equal("unresolved");
+    expect((handler as unknown as Internals).pendingExecutes[depositKey].txHash).to.equal(replacementTxHash);
+
+    // The next poll settles the live hash, sees the revert, and lets the deposit be re-attempted.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.called).to.equal(true);
+  });
+
+  // Claims are deliberately never pruned, so the per-transfer path must not read the whole hash:
+  // otherwise its cost scales with every unrelated claim being retained. hGetAll is startup-only.
+  it("reads a single field when syncing one transfer's claim", async function () {
+    const cache = (handler as unknown as { redisCache: Record<string, sinon.SinonStub> }).redisCache;
+    const hGetAllSpy = sinon.spy(cache, "hGetAll" as never);
+    const hGetSpy = sinon.spy(cache, "hGet" as never);
+    // Unrelated retained claims, as a neglected deployment would accumulate.
+    for (let i = 0; i < 5; i++) {
+      seedClaim(pendingRecord({ txHash: `0x${i}`.padEnd(66, "0") }), `${DEPOSIT_ADDRESS}:other-${i}`);
+    }
+    seedClaim(pendingRecord());
+
+    await (handler as unknown as { _syncClaim: (k: string) => Promise<unknown> })._syncClaim(depositKey);
+
+    expect(hGetSpy.calledOnceWith(sinon.match.string, depositKey)).to.equal(true);
+    expect(hGetAllSpy.notCalled).to.equal(true);
+  });
+
+  // The README's recovery is to delete a confirmed-dead claim. Without honouring an absent field the
+  // mirror kept the dead hash, rechecked it every minute, and blocked the transfer until restart.
+  it("releases the transfer when an operator deletes a cached claim", async function () {
+    const ours = pendingRecord({ txHash: executeTxHash });
+    (handler as unknown as Internals).pendingExecutes = { [depositKey]: ours };
+    getReceiptStub.resolves(null); // never mined, so the claim can only be released by hand
+    // Operator deletes the field; nothing seeded in Redis.
+
+    const outcome = await (handler as unknown as Internals)._settlePendingExecute(depositKey, ours);
+
+    expect(outcome).to.equal("unclaimed");
+    expect((handler as unknown as Internals).pendingExecutes[depositKey]).to.equal(undefined);
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.called).to.equal(true);
+  });
+
+  // The pre-broadcast gate is the only place a claim written after startup is seen. Not caching it
+  // meant every later poll re-ran the balance check and quote request before blocking here again,
+  // and _settlePendingExecute was never reached to resolve it.
+  it("caches a claim discovered by the pre-broadcast check so later polls settle it", async function () {
+    (handler as unknown as { getExecuteContract: sinon.SinonStub }).getExecuteContract = sinon
+      .stub()
+      .returns({ address: TOKEN });
+    executeStub.resolves({
+      depositAddress: DEPOSIT_ADDRESS,
+      executeTx: { ecosystem: "evm", chainId, to: TOKEN, data: "0x", value: "0" },
+      signer: SIGNER,
+      signatureDeadline: getCurrentTime() + 600,
+      isPlaceholder: false,
+    });
+    // Recorded by an overlapping run after this process snapshotted, so absent from the mirror.
+    seedClaim(pendingRecord());
+    getReceiptStub.resolves(sweepReceipt(0));
+
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.calledOnce).to.equal(true);
+    expect((handler as unknown as Internals).pendingExecutes[depositKey].txHash).to.equal(executeTxHash);
+
+    // Next poll resolves it instead of re-quoting: reverted, so the deposit is re-attempted.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(getReceiptStub.called).to.equal(true);
+    expect(executeStub.callCount).to.equal(2);
+  });
+
+  // The README tells operators to repair or delete a malformed field to release a stuck transfer. The
+  // quarantine set is only rebuilt on a Redis read, so without re-reading here that recovery would
+  // need a restart to take effect.
+  it("picks up an operator's repair of a quarantined claim without a restart", async function () {
+    const hash = new Map<string, string>();
+    hash.set(depositKey, "{not-valid-json");
+    hashes.set(redisKey, hash);
+    // Startup quarantines it, and the transfer is blocked.
+    await (handler as unknown as Internals)._readPendingExecutes();
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+
+    // Operator deletes the field; no restart.
+    hashes.get(redisKey)?.delete(depositKey);
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+
+    expect(executeStub.called).to.equal(true);
+  });
+
+  // A failed claim delete must not cost the lifecycle event: the executed set already guards the
+  // transfer, so later polls skip it and startup adoption deliberately does not re-publish.
+  it("publishes deposit_executed even if clearing the redundant claim fails", async function () {
+    (handler as unknown as { getExecuteContract: sinon.SinonStub }).getExecuteContract = sinon
+      .stub()
+      .returns({ address: TOKEN });
+    executeStub.resolves({
+      depositAddress: DEPOSIT_ADDRESS,
+      executeTx: { ecosystem: "evm", chainId, to: TOKEN, data: "0x", value: "0" },
+      signer: SIGNER,
+      signatureDeadline: getCurrentTime() + 600,
+      isPlaceholder: false,
+    });
+    sinon.stub(txUtils, "sendAndConfirmTransaction").resolves(sweepReceipt(1));
+
+    // Order is what matters: the publish is unrecoverable, the claim delete is not.
+    const calls: string[] = [];
+    const publishSpy = sinon.stub().callsFake(async () => void calls.push("publish"));
+    (handler as unknown as { _publishDepositExecuted: unknown })._publishDepositExecuted = publishSpy;
+    (handler as unknown as { redisCache: { hDel: sinon.SinonStub } }).redisCache.hDel = sinon
+      .stub()
+      .callsFake(async () => {
+        calls.push("hDel");
+        throw new Error("redis unavailable");
+      });
+
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+
+    expect(calls).to.deep.equal(["publish", "hDel"]);
+    expect((handler as unknown as Internals).executedDepositTxHashes.has(refTxHash)).to.equal(true);
+    expect(warnStub.args.some((a) => a[0].message.includes("startup will tidy it"))).to.equal(true);
+  });
+
+  // The compare and the delete are separate Redis commands, so a claim written in between would be
+  // lost to a plain hDel. The delete is a compare-and-swap on the exact bytes read: if they changed,
+  // it fails and the claim stays.
+  it("does not delete a claim rewritten between the compare and the delete", async function () {
+    const ours = pendingRecord({ txHash: executeTxHash });
+    seedClaim(ours);
+    (handler as unknown as Internals).pendingExecutes = { [depositKey]: ours };
+    getReceiptStub.resolves(sweepReceipt(0));
+    // Stands in for another run's hSet landing in the gap: the CAS no longer matches.
+    (handler as unknown as { redisCache: { hDelIfEquals: sinon.SinonStub } }).redisCache.hDelIfEquals = sinon
+      .stub()
+      .resolves(false);
+
+    const outcome = await (handler as unknown as Internals)._settlePendingExecute(depositKey, ours);
+
+    expect(outcome).to.equal("unresolved");
+    expect(hashes.get(redisKey)?.has(depositKey)).to.equal(true);
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+  });
+
+  // The per-field hash isolates writes, so the read must isolate too: one corrupt field previously
+  // threw for the whole map, which bricked startup and made the pre-broadcast check block every v3
+  // deposit indefinitely. A bad field is quarantined — still blocking its own transfer, nothing else.
+  it("quarantines one unparseable claim without affecting other transfers", async function () {
+    const otherKey = `${DEPOSIT_ADDRESS}:0x${"7".repeat(64)}`;
+    const hash = new Map<string, string>();
+    hash.set(depositKey, "{not-valid-json");
+    hash.set(otherKey, JSON.stringify(pendingRecord({ refTxHash: "0x" + "7".repeat(64) })));
+    hashes.set(redisKey, hash);
+
+    const { claims, unparseable } = await (handler as unknown as Internals)._readPendingExecutes();
+
+    expect(Object.keys(claims)).to.deep.equal([otherKey]);
+    expect([...unparseable]).to.deep.equal([depositKey]);
+    // Alerted, and the corrupt field is retained rather than dropped.
+    expect(errorStub.calledOnce).to.equal(true);
+    expect(errorStub.firstCall.firstArg.notificationPath).to.equal("across-bot-error");
+    expect(hashes.get(redisKey)?.has(depositKey)).to.equal(true);
+
+    // The quarantined transfer stays blocked; no calldata is requested for it.
+    await (handler as unknown as Internals).initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+  });
+
+  // Regression for the startup ordering invariant. An incumbent that confirms concurrently persists
+  // the executed hash and only then clears its claim, so the successor must snapshot claims BEFORE
+  // loading the executed set (or it can see neither) but apply them AFTER (or adoption's whole-array
+  // persist drops every other hash). This pins the second half: swapping the two clobbers Redis.
+  it("preserves previously-executed hashes when adopting an inherited claim", async function () {
+    const priorHash = "0x" + "a".repeat(64);
+    const executedKey = "deposit-address:executed:test-bot";
+    store.set(executedKey, JSON.stringify([priorHash]));
+    seedClaim(pendingRecord());
+    getReceiptStub.resolves(sweepReceipt(1));
+
+    const inherited = await (handler as unknown as Internals)._readPendingExecutes();
+    await (handler as unknown as Internals)._loadExecutedDepositsFromRedis();
+    await (handler as unknown as Internals)._resolvePendingExecutes(inherited.claims);
+
+    expect(JSON.parse(store.get(executedKey) as string).sort()).to.deep.equal([priorHash, refTxHash].sort());
+  });
+
+  // Regression: rewriting a whole serialized map from a fresh read let concurrent broadcasts (polls
+  // run under Promise.all) drop each other's claims, losing a transaction already on the wire.
+  it("keeps both claims when two deposits broadcast concurrently", async function () {
+    const otherKey = `${DEPOSIT_ADDRESS}:0x${"7".repeat(64)}`;
+    await Promise.all([
+      (handler as unknown as Internals)._recordPendingExecute(depositKey, pendingRecord()),
+      (handler as unknown as Internals)._recordPendingExecute(
+        otherKey,
+        pendingRecord({ txHash: "0x" + "8".repeat(64), refTxHash: "0x" + "7".repeat(64) })
+      ),
+    ]);
+
+    const persisted = await (handler as unknown as Internals)._readPendingExecutes();
+    expect(Object.keys(persisted.claims).sort()).to.deep.equal([depositKey, otherKey].sort());
+  });
+});
+
+describe("DepositAddressHandler pending-execute claim on Tron", function () {
+  const chainId = CHAIN_IDs.TRON;
+  const depositKey = `${TRON_DEPOSIT_ADDRESS}:${TRON_TX_HASH}`;
+  // TronWeb reports an un-prefixed txid, which is what `onBroadcast` records verbatim.
+  const executeTxid = "9f2c" + "0".repeat(60);
+
+  let handler: DepositAddressHandler;
+  let getReceiptStub: sinon.SinonStub;
+
+  type Internals = {
+    _settlePendingExecute: (k: string, p: PendingExecute) => Promise<"executed" | "unclaimed" | "unresolved">;
+  };
+
+  beforeEach(function () {
+    const logger = {
+      warn: sinon.stub(),
+      debug: sinon.stub(),
+      info: sinon.stub(),
+      error: sinon.stub(),
+    } as unknown as winston.Logger;
+    const config = {
+      botIdentifier: "test-bot",
+      relayerOriginChains: [chainId],
+    } as unknown as DepositAddressHandlerConfig;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    (handler as unknown as { redisCache: unknown }).redisCache = redisHashFake(new Map());
+    getReceiptStub = sinon.stub().resolves(null);
+    (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
+      [chainId]: { getTransactionReceipt: getReceiptStub },
+    };
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("0x-prefixes the Tron txid before looking the receipt up", async function () {
+    await (handler as unknown as Internals)._settlePendingExecute(depositKey, {
+      txHash: executeTxid,
+      chainId,
+      refTxHash: TRON_TX_HASH,
+      submittedAt: getCurrentTime(),
+    });
+    // Un-prefixed would be rejected by the eth-JSON-RPC provider, leaving every Tron claim unresolved.
+    expect(getReceiptStub.calledOnceWith(`0x${executeTxid}`)).to.equal(true);
+  });
+});
+
+describe("TransactionClient onBroadcast hook", function () {
+  const chainId = 1;
+  const broadcastHash = "0x" + "b".repeat(64);
+  let events: string[];
+
+  // Stubs out broadcasting so the hook's ordering relative to the confirmation wait is observable.
+  class TestTransactionClient extends TransactionClient {
+    protected _getTransactionPromise(): Promise<TransactionResponse> {
+      return Promise.resolve({
+        hash: broadcastHash,
+        nonce: 7,
+        wait: async () => {
+          events.push("wait");
+          return {
+            blockNumber: 1,
+            transactionHash: broadcastHash,
+            status: 1,
+            logs: [],
+          } as unknown as TransactionReceipt;
+        },
+      } as unknown as TransactionResponse);
+    }
+  }
+
+  type Internals = {
+    _submit: (txn: AugmentedTransaction, opts: { nonce: number | null }) => Promise<TransactionResponse>;
+  };
+
+  function transaction(onBroadcast?: (r: TransactionResponse) => Promise<void>): AugmentedTransaction {
+    return {
+      contract: { address: TOKEN } as unknown as AugmentedTransaction["contract"],
+      chainId,
+      method: "",
+      args: ["0x"],
+      ensureConfirmation: true,
+      onBroadcast,
+    };
+  }
+
+  beforeEach(function () {
+    events = [];
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("invokes the hook with the broadcast response before awaiting confirmation", async function () {
+    const client = new TestTransactionClient({ warn: sinon.stub(), debug: sinon.stub() } as unknown as winston.Logger);
+    const seen: string[] = [];
+    await (client as unknown as Internals)._submit(
+      transaction(async (response) => {
+        events.push("hook");
+        seen.push(response.hash);
+      }),
+      { nonce: null }
+    );
+    // Intent must be recorded before the wait, since the wait is where an eviction lands.
+    expect(events).to.deep.equal(["hook", "wait"]);
+    expect(seen).to.deep.equal([broadcastHash]);
+  });
+
+  it("does not abort the submission when the hook rejects", async function () {
+    const warnStub = sinon.stub();
+    const client = new TestTransactionClient({ warn: warnStub, debug: sinon.stub() } as unknown as winston.Logger);
+    const response = await (client as unknown as Internals)._submit(
+      transaction(async () => {
+        throw new Error("redis unavailable");
+      }),
+      { nonce: null }
+    );
+    // The transaction is already on the wire; losing the claim must not lose the transaction.
+    expect(response.hash).to.equal(broadcastHash);
+    expect(events).to.deep.equal(["wait"]);
+    expect(warnStub.calledOnce).to.equal(true);
+    expect(warnStub.firstCall.firstArg.message).to.contain("onBroadcast hook failed");
+  });
+
+  // Regression: the "repriced" branch adopts a replacement whose hash differs from the one already
+  // broadcast, and only that replacement will ever have a receipt. Without re-notifying, a durably
+  // recorded claim points at a hash that never mines, stranding the transfer permanently.
+  it("re-invokes the hook with the replacement hash when a repriced transaction is adopted", async function () {
+    const replacementHash = "0x" + "c".repeat(64);
+    class RepricedTransactionClient extends TransactionClient {
+      protected _getTransactionPromise(): Promise<TransactionResponse> {
+        return Promise.resolve({
+          hash: broadcastHash,
+          nonce: 7,
+          wait: async () => {
+            const error = new Error("repriced") as Error & Record<string, unknown>;
+            error.code = "TRANSACTION_REPLACED";
+            error.reason = "repriced";
+            error.receipt = { blockNumber: 10, status: 1 };
+            error.replacement = { hash: replacementHash };
+            throw error;
+          },
+        } as unknown as TransactionResponse);
+      }
+    }
+
+    const client = new RepricedTransactionClient({
+      warn: sinon.stub(),
+      debug: sinon.stub(),
+    } as unknown as winston.Logger);
+    const seen: string[] = [];
+    const response = await (client as unknown as Internals)._submit(
+      transaction(async (r) => {
+        seen.push(r.hash);
+      }),
+      { nonce: null }
+    );
+
+    expect(response.hash).to.equal(replacementHash);
+    // The original at broadcast, then the replacement that actually mined.
+    expect(seen).to.deep.equal([broadcastHash, replacementHash]);
+  });
+
+  // A reverted replacement must be notified too. Only the replacement has a receipt, so a caller left
+  // holding the original hash could never resolve it — the transfer would block forever instead of
+  // being retried after the revert.
+  it("re-invokes the hook when the repriced replacement reverted", async function () {
+    const replacementHash = "0x" + "d".repeat(64);
+    class RevertedRepriceClient extends TransactionClient {
+      protected _getTransactionPromise(): Promise<TransactionResponse> {
+        return Promise.resolve({
+          hash: broadcastHash,
+          nonce: 7,
+          wait: async () => {
+            const error = new Error("repriced") as Error & Record<string, unknown>;
+            error.code = "TRANSACTION_REPLACED";
+            error.reason = "repriced";
+            error.receipt = { blockNumber: 10, status: 0 };
+            error.replacement = { hash: replacementHash };
+            throw error;
+          },
+        } as unknown as TransactionResponse);
+      }
+    }
+
+    const client = new RevertedRepriceClient({
+      warn: sinon.stub(),
+      debug: sinon.stub(),
+    } as unknown as winston.Logger);
+    const seen: string[] = [];
+    let threw = false;
+    try {
+      await (client as unknown as Internals)._submit(
+        transaction(async (r) => {
+          seen.push(r.hash);
+        }),
+        { nonce: null }
+      );
+    } catch {
+      threw = true;
+    }
+
+    expect(threw).to.equal(true);
+    // The claim now points at the reverted replacement, which resolves to status 0 and is retried.
+    expect(seen).to.deep.equal([broadcastHash, replacementHash]);
   });
 });

@@ -75,8 +75,8 @@ re-derives the deposit address and all counterfactual merkle materials server-si
 identity (`destination.token`, `destination.recipient`, `userAddress`); the bot relays funding
 context only — origin chain, swept `depositAddress`, funding `inputToken`, amount, destination
 route, refund identity — plus its own `executionFeeRecipient` and the `integratorId` the address
-was derived with. `executionFee` is currently omitted (the API defaults it to 0); bot-side fee
-pricing is a follow-up task.
+was derived with. `executionFee` is
+currently omitted (the API defaults it to 0); bot-side fee pricing is a follow-up task.
 
 The `integratorId` (2-byte hex) is sourced from the indexer message's `integrator` projection (a
 property of the deposit address, not the bot's auth key) and is **required** by the execute
@@ -126,9 +126,20 @@ The flow (`initiateDepositV3`):
    must match the origin chain, `isPlaceholder` must be false, and `signatureDeadline` must have
    ≥60s of headroom. The calldata embeds a deadline-bounded signature — it is perishable, and on
    any failure the next poll **re-requests fresh calldata; stale payloads are never patched**.
-7. Sign and submit via `TransactionClient` (gas, nonce, rebroadcast), then persist the tx hash to
-   Redis exactly like v1.
-8. Publish a `deposit_executed` lifecycle event to GCP Pub/Sub (if `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`).
+7. Re-read the claim hash from Redis via `_syncClaim` (see "In-flight execute claims") and skip if
+   another run has already broadcast for this transfer during the quote round trip.
+8. Sign and submit via `TransactionClient` (gas, nonce, rebroadcast), recording a claim from the
+   `onBroadcast` hook before the confirmation wait.
+9. On confirmation, persist the tx hash to Redis exactly like v1, **then** publish a
+   `deposit_executed` lifecycle event to GCP Pub/Sub (if
+   `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`), **then** clear the claim.
+
+   This order is load-bearing in both directions and must not be rearranged. The executed set is
+   written before the claim is cleared, because the reverse would reopen the duplicate-sweep window.
+   The publish precedes the clear, and the clear is best-effort, because once the executed set is
+   written the claim is redundant — the executed-set check runs first on later polls, and startup
+   tidies a leftover — whereas a skipped publish is lost for good: later polls skip the transfer and
+   claim adoption deliberately does not re-publish.
 
 The v3 message's `counterfactualMaterials`/`initialRoot`/`salt` are relayed by the indexer but not
 read by the execute path — the API re-derives them, so they are carried for diagnostics only.
@@ -137,9 +148,8 @@ read by the execute path — the API re-derives them, so they are carried for di
 (`depositAddressNamespace: "tron"`). No dedicated gate: Tron activates by adding its chainId
 (728126428) to `RELAYER_ORIGIN_CHAINS`, which also provisions the provider and dedup sets. v3
 messages stay un-normalized, so Tron fields flow **base58 end-to-end to the quote-api**
-(`userAddress`, `depositAddress`, `inputToken.address`; the bot re-encodes its own
-`executionFeeRecipient` to base58 via `toAddressType`). The API responds with
-`executeTx.ecosystem: "tvm"`, a **0x-hex `to`** (the
+(`userAddress`, `depositAddress`, `inputToken.address`; the bot re-encodes its own `executionFeeRecipient` to base58
+via `toAddressType`). The API responds with `executeTx.ecosystem: "tvm"`, a **0x-hex `to`** (the
 RPC-facing format), and the `depositAddress` echoed in base58; the bot validates the ecosystem
 against the chain family and compares deposit addresses canonically (base58 → hex) since base58 is
 case-sensitive. On-chain reads (`getDepositAddressBalance`) and receipt-log matching
@@ -215,6 +225,61 @@ Three sets persist across runs so handover does not double-spend, double-refund,
 - `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
 
 On each poll, entries whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages.
+
+A fourth key, `deposit-address:pending-execute-claims:<botIdentifier>`, is a **hash** (one field per
+`depositKey`) rather than a set, carries no TTL, and is **not** pruned against the indexer — a claim
+must outlive the message that produced it.
+
+## In-flight execute claims
+
+Runs overlap: a successor overwrites the instance key at startup while the incumbent only notices on
+its next 1s `InstanceCoordinator.subscribe()` poll. A run can therefore broadcast an execute and be
+evicted before the receipt lands. Since the executed set is only written *after* confirmation, that
+sweep would leave no trace — and because the deposit address is a shared pot, a later inbound
+transfer makes the stale message look executable again.
+
+So on the v3 execute path the broadcast hash is persisted from `TransactionClient`'s `onBroadcast`
+hook, before the confirmation wait, and cleared once the executed set is written and the lifecycle
+event published (step 9 above gives the ordering and why it matters). Claims are written per hash
+field so overlapping runs recording different transfers cannot clobber each other, and the repriced
+branch re-notifies — including for a replacement that reverted — so the persisted hash is always one
+that can actually be resolved on-chain.
+
+Redis is the source of truth, not the in-memory mirror: this process only snapshots claims at startup, while an overlapping run can record, replace or (via the ops procedure below) remove one at any time. Every decision that depends on a claim therefore reads through `_syncClaim`, so a stale entry can neither block a transfer indefinitely nor hide a live one. `_syncClaim` reads the **single** field it needs (`HGET`), because claims are never pruned and a per-transfer path must not cost more as unrelated claims accumulate; `HGETALL` is reserved for the startup snapshot. A field that fails to parse is quarantined per key and keeps blocking only its own transfer.
+
+Startup read order matters. An incumbent that confirms concurrently persists the executed hash and
+only then clears its claim, so the successor snapshots the claim hash **before** loading the executed
+set: a claim already gone by then had its hash persisted earlier, so the load picks it up. Reading
+claims after the load would leave a window where the successor sees neither. The snapshot is applied
+**after** the loads, because adoption writes to the executed set and the load replaces it wholesale.
+
+A claim is resolved against the chain at startup, and again (throttled to once a minute per key) when
+a poll encounters an outstanding one:
+
+| Receipt | Outcome | Action |
+| --- | --- | --- |
+| no provider / RPC error | `unresolved` | warn, keep the claim |
+| absent | `unresolved` | keep the claim; the transfer stays blocked |
+| absent, and the field was released externally | `unclaimed` | the deposit is re-attempted |
+| `status === 0` | `unclaimed` | clear; the deposit is re-attempted |
+| mined, `status !== 0` | `executed` | adopt into the executed set, clear |
+
+Only an explicit `status === 0` counts as a revert: ethers leaves `status` undefined on some chains,
+and treating that as success can strand a deposit but can never cause a second sweep. Adoption does
+not re-publish `deposit_executed`.
+
+**Deliberately not covered.** This narrows the failure window rather than closing it:
+
+- Two overlapping runs can still both broadcast. The pre-broadcast re-read shrinks that window from
+  the whole quote-api round trip to one Redis read; it does not eliminate it. Note it is only a real
+  double-sweep where a resubmit lands in a different nonce space — always on nonce-less TVM, and on
+  EVM when dispatcher keys rotate the retry onto another signer.
+- A claim whose transaction never mines is **never** discarded, so that transfer stays blocked
+  indefinitely. Stranding a deposit is reversible; a second sweep is not. Find them with
+  `HGETALL deposit-address:pending-execute-claims:<botIdentifier>` and release one by deleting its
+  field once its transaction is confirmed dead. A field whose JSON doesn't parse is quarantined the
+  same way — alerted once, its own transfer blocked, everything else unaffected.
+- The v1 deposit path and both refund-withdraw paths still persist only after confirmation.
 
 ## Refund-withdraw flow (high level)
 

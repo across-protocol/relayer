@@ -11,6 +11,11 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   decr(key: string): Promise<number>;
   decrBy(key: string, amount: number): Promise<number>;
   del(key: string): Promise<number>;
+  hDel(key: string, field: string): Promise<number>;
+  hDelIfEquals(key: string, field: string, expected: string): Promise<boolean>;
+  hGet(key: string, field: string): Promise<string | undefined>;
+  hGetAll(key: string): Promise<Record<string, string>>;
+  hSet(key: string, field: string, value: string): Promise<number>;
   releaseLock(key: string, token: string): Promise<boolean>;
   renewLock(key: string, token: string, ttlMs: number): Promise<boolean>;
   incr(key: string): Promise<number>;
@@ -101,6 +106,42 @@ export class RedisCache implements RedisCacheInterface {
       {
         keys: [this.getNamespacedKey(key)],
         arguments: [token],
+      }
+    );
+    return reply === 1;
+  }
+
+  // Hash fields are written and deleted independently, so concurrent writers touching different
+  // fields cannot clobber each other the way a read-modify-write of one serialized blob can.
+  hSet(key: string, field: string, value: string): Promise<number> {
+    return this.client.hSet(this.getNamespacedKey(key), field, value);
+  }
+
+  // Prefer this over hGetAll wherever one field answers the question: the caller's cost then does not
+  // scale with unrelated fields the hash happens to be retaining.
+  async hGet(key: string, field: string): Promise<string | undefined> {
+    return (await this.client.hGet(this.getNamespacedKey(key), field)) ?? undefined;
+  }
+
+  hGetAll(key: string): Promise<Record<string, string>> {
+    return this.client.hGetAll(this.getNamespacedKey(key));
+  }
+
+  hDel(key: string, field: string): Promise<number> {
+    return this.client.hDel(this.getNamespacedKey(key), field);
+  }
+
+  /**
+   * Deletes `field` only if it still holds exactly `expected`. Same token-checked pattern as
+   * `releaseLock`: a read followed by a delete is a TOCTOU, so callers that must not clobber a value
+   * another writer replaced in between use this instead.
+   */
+  async hDelIfEquals(key: string, field: string, expected: string): Promise<boolean> {
+    const reply = await this.client.eval(
+      "if redis.call('hget', KEYS[1], ARGV[1]) == ARGV[2] then return redis.call('hdel', KEYS[1], ARGV[1]) else return 0 end",
+      {
+        keys: [this.getNamespacedKey(key)],
+        arguments: [field, expected],
       }
     );
     return reply === 1;

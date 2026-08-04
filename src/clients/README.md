@@ -101,3 +101,16 @@ RELAYER_POLICY_EXAMPLE_GAS_MULTIPLIER=0
 This client is responsible for submitting transactions on-chain and therefore for setting the transaction's gas price values, nonce, and implements important retry and error decoding logic. It is designed to be shared across all code modules that submit on-chain transactions.
 
 For transactions submitted with `ensureConfirmation: true`, confirmation is awaited with a bounded wait (6 s, or 24 s on mainnet) that retains ethers' replacement detection. The wait bound is only a sampling cadence — replacement decisions are block-driven: a transaction is resubmitted at the same nonce with freshly-priced gas once the chain has produced at least 2 blocks without including it. An externally-replaced transaction (`TRANSACTION_REPLACED`) is resubmitted immediately, except when the mined replacement carries identical calldata ("repriced" — i.e. the original won the race against its own replacement), which is adopted as-is. Reverted transactions propagate as submission failures; exhausted resubmissions emit an error-level log (paging the on-call) and return the unconfirmed response.
+
+### `onBroadcast` — durably recording submission intent
+
+`AugmentedTransaction.onBroadcast?: (response: TransactionResponse) => Promise<void>` is invoked once a transaction is broadcast and its hash is known, **before** the confirmation wait. It exists for callers that must survive being killed mid-confirmation: a caller that only records success after the receipt has no record of a transaction already on the wire. `src/deposit-address` uses it to persist an in-flight execute claim.
+
+Contract:
+
+- **Best-effort.** The transaction is already on the wire when the hook runs, so a rejection is logged and swallowed — losing the record must never lose the transaction. Callers cannot use it to veto a submission.
+- **Invoked again whenever the hash to track changes.** A repriced replacement is notified with the replacement hash, because only the replacement will ever have a receipt. This includes a replacement that **reverted**: a caller left holding the original hash could never resolve it.
+- **Fires on both submission paths**, dispatcher and non-dispatcher, since `dispatch()` and `submit()` both route through `_submit`. The bot's own resubmits (timeout and non-repriced replacement) recurse into `_submit` and so notify their new hash too.
+- **Not called if the broadcast itself fails**, so no hook means no transaction to account for.
+
+Callers are expected to treat the recorded hash as "outcome unknown" and resolve it against the chain later; the hook says a transaction exists, not that it succeeded.

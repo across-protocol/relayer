@@ -49,6 +49,7 @@ import {
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 import { GcpPubSubPublisher, getGcpPubSubPublisher } from "../messaging/gcp";
 import { buildDepositExecutedPayload, buildWithdrawExecutedPayload } from "./withdrawPayload";
+import { PendingExecute, parsePendingExecute } from "./pendingExecutes";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
 /**
@@ -80,6 +81,9 @@ const HEARTBEAT_TIMEOUT_MS = 5_000;
 // outage, rather than once per tick or once ever).
 const HEARTBEAT_FAILURE_WARN_THRESHOLD = 10;
 
+/** Minimum seconds between re-checking the same unresolved claim on-chain during a run. */
+const PENDING_EXECUTE_RESETTLE_INTERVAL = 60;
+
 /**
  * Account namespace expected for addresses living on `chainId`; undefined = chain family the v3
  * execute path does not support. Note zkSync-family chains are EVM here, so a `zksync`-namespaced
@@ -87,6 +91,14 @@ const HEARTBEAT_FAILURE_WARN_THRESHOLD = 10;
  */
 function expectedNamespaceForChain(chainId: number): "evm" | "tron" | undefined {
   return chainIsTvm(chainId) ? "tron" : chainIsEvm(chainId) ? "evm" : undefined;
+}
+
+/**
+ * TVM records TronWeb's un-prefixed `txid` as the response hash, but providers speak eth-JSON-RPC
+ * and need it 0x-prefixed. Mirrors the normalization `_runTransactionTvm` applies.
+ */
+function receiptLookupHash(chainId: number, txHash: string): string {
+  return chainIsTvm(chainId) && !txHash.startsWith("0x") ? `0x${txHash}` : txHash;
 }
 
 /**
@@ -136,6 +148,18 @@ export class DepositAddressHandler {
    * `observedExecutedDeposits` on the deposit path.
    */
   private observedExecutedWithdraws: { [chainId: number]: Set<string> } = {};
+
+  /**
+   * Executes broadcast on the v3 path whose on-chain outcome is not yet known, keyed by depositKey.
+   * An in-memory mirror of the Redis claim hash, which is the source of truth.
+   */
+  private pendingExecutes: Record<string, PendingExecute> = {};
+
+  /** Unix seconds of the last on-chain settle attempt per depositKey; throttles re-checks. */
+  private lastSettleAttempt: Record<string, number> = {};
+
+  /** depositKeys whose persisted claim could not be parsed. Treated as claimed; never re-attempted. */
+  private unparseableClaimKeys: Set<string> = new Set();
 
   private api: AcrossSwapApiClient;
   private indexerApi: AcrossIndexerApiClient;
@@ -219,9 +243,18 @@ export class DepositAddressHandler {
     );
     await this.instanceCoordinator.initiateHandover();
 
+    // Snapshot claims *before* the executed-set load. An incumbent that confirms concurrently
+    // persists the executed hash and only then clears its claim, so reading in this order means a
+    // claim already gone by now had its hash persisted earlier — and the load below therefore sees
+    // it. Reading the claims after the load would leave a window where the successor sees neither.
+    const { claims: inheritedClaims } = await this._readPendingExecutes();
+
     await this._loadExecutedDepositsFromRedis();
     await this._loadWithdrawnKeysFromRedis();
     await this._loadSkippedWithdrawKeysFromRedis();
+    // Settling must follow the loads: adopting a claim adds to the executed set, which the load
+    // replaces wholesale (and would then persist back to Redis minus every other hash).
+    await this._resolvePendingExecutes(inheritedClaims);
 
     this.initialized = true;
   }
@@ -236,6 +269,12 @@ export class DepositAddressHandler {
 
   private getSkippedWithdrawKeysRedisKey(): string {
     return `deposit-address:skipped-withdraw-keys:${this.config.botIdentifier}`;
+  }
+
+  // A Redis hash (one field per depositKey), carrying no TTL: a claim must outlive the indexer
+  // message that produced it, and is only removed once its outcome is known.
+  private getPendingExecutesRedisKey(): string {
+    return `deposit-address:pending-execute-claims:${this.config.botIdentifier}`;
   }
 
   /** Loads executed deposit tx hashes from Redis (e.g. after handover). */
@@ -323,6 +362,317 @@ export class DepositAddressHandler {
       message: "Loaded terminally-skipped withdraw deposit keys from Redis",
       count: this.terminallySkippedWithdrawKeys.size,
     });
+  }
+
+  /**
+   * Reads every persisted claim, parsing each hash field independently so one bad field cannot stop
+   * the rest from resolving — the same isolation the per-field hash gives writes. An unparseable
+   * field is quarantined, not dropped: its `depositKey` still blocks submission, since a claim we
+   * cannot read may well describe a transfer already swept. A failure of the read itself (rather than
+   * of a field) still throws, and callers treat that as claimed.
+   */
+  private async _readPendingExecutes(): Promise<{
+    claims: Record<string, PendingExecute>;
+    unparseable: Set<string>;
+  }> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const redisKey = this.getPendingExecutesRedisKey();
+    const raw = await this.redisCache.hGetAll(redisKey);
+
+    const claims: Record<string, PendingExecute> = {};
+    const unparseable = new Set<string>();
+    for (const [depositKey, claim] of Object.entries(raw)) {
+      try {
+        claims[depositKey] = parsePendingExecute(claim);
+      } catch (err) {
+        unparseable.add(depositKey);
+        // This read runs on every poll that reaches submission, so alert once per key per process.
+        if (!this.unparseableClaimKeys.has(depositKey)) {
+          this.logger.error({
+            at: "DepositAddressHandler#_readPendingExecutes",
+            message: "Quarantined an unparseable pending-execute claim; its transfer stays blocked",
+            redisKey,
+            depositKey,
+            err: err instanceof Error ? err.message : String(err),
+            notificationPath: "across-bot-error",
+          });
+        }
+      }
+    }
+
+    this.unparseableClaimKeys = unparseable;
+    return { claims, unparseable };
+  }
+
+  /**
+   * Durably records a broadcast execute before its confirmation is awaited. Invoked from the
+   * TransactionClient's `onBroadcast` hook, so the window in which an eviction loses track of a
+   * transfer already on the wire shrinks from the confirmation wait to a single Redis write.
+   */
+  private async _recordPendingExecute(depositKey: string, pending: PendingExecute): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    // Only this transfer's field, so a concurrent run recording a different one cannot drop it.
+    await this.redisCache.hSet(this.getPendingExecutesRedisKey(), depositKey, JSON.stringify(pending));
+    this.pendingExecutes[depositKey] = pending;
+    this.logger.debug({
+      at: "DepositAddressHandler#_recordPendingExecute",
+      message: "Recorded in-flight execute before awaiting confirmation",
+      depositKey,
+      txHash: pending.txHash,
+      chainId: pending.chainId,
+    });
+  }
+
+  /**
+   * Removes a claim. Pass `settledTxHash` to delete only if the stored claim is still that
+   * transaction: overlapping runs write the same field, so an unconditional delete can drop a *newer*
+   * claim whose transaction is still in flight, unblocking a transfer that is mid-sweep. When the
+   * stored claim has moved on, adopt it locally instead so this run resolves the live transaction.
+   *
+   * Callers that have already recorded the transfer in the executed set may omit `settledTxHash` —
+   * that set guards the transfer by `refTxHash` from then on, whatever the claim says.
+   *
+   * @returns whether the claim was actually removed.
+   */
+  private async _clearPendingExecute(depositKey: string, settledTxHash?: string): Promise<boolean> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    const redisKey = this.getPendingExecutesRedisKey();
+    const forget = () => {
+      delete this.pendingExecutes[depositKey];
+      delete this.lastSettleAttempt[depositKey];
+    };
+
+    if (!isDefined(settledTxHash)) {
+      await redisCache.hDel(redisKey, depositKey);
+      forget();
+      return true;
+    }
+
+    const raw = await redisCache.hGet(redisKey, depositKey);
+    if (!isDefined(raw)) {
+      forget();
+      return true;
+    }
+
+    let stored: PendingExecute;
+    try {
+      stored = parsePendingExecute(raw);
+    } catch {
+      // Quarantined elsewhere; never delete a claim whose contents we could not read.
+      return false;
+    }
+
+    // Compare-and-delete on the exact bytes read, so a claim another run writes between the read and
+    // the delete survives rather than being lost to the gap between two commands.
+    if (stored.txHash === settledTxHash && (await redisCache.hDelIfEquals(redisKey, depositKey, raw))) {
+      forget();
+      return true;
+    }
+
+    // Either a newer transaction already owned the claim, or one replaced it mid-delete. Track what is
+    // there: that transaction, not the one just resolved, decides this transfer's outcome. The
+    // throttle is dropped so the next poll re-settles against the live hash immediately.
+    this.pendingExecutes[depositKey] = stored;
+    delete this.lastSettleAttempt[depositKey];
+    this.logger.warn({
+      at: "DepositAddressHandler#_clearPendingExecute",
+      message: "Keeping a newer in-flight claim rather than clearing the one just resolved",
+      depositKey,
+      settledTxHash,
+      storedTxHash: stored.txHash,
+      notificationPath: "across-bot-error",
+    });
+    return false;
+  }
+
+  /**
+   * Refreshes the local mirror for one transfer from Redis and returns the live claim.
+   *
+   * Redis is the source of truth and this process only snapshots it at startup, while an overlapping
+   * run can record a new claim, replace one (a resubmit at the same nonce), or have one removed by an
+   * operator at any point. Every decision that depends on a claim therefore reads through here, so a
+   * stale mirror entry can neither block a transfer indefinitely nor hide a live one.
+   */
+  private async _syncClaim(depositKey: string): Promise<PendingExecute | undefined> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    // One field, not the whole hash: claims are deliberately never pruned, so reading all of them here
+    // would make this per-transfer path cost scale with every unrelated claim being retained.
+    const raw = await this.redisCache.hGet(this.getPendingExecutesRedisKey(), depositKey);
+
+    if (!isDefined(raw)) {
+      this.unparseableClaimKeys.delete(depositKey);
+      delete this.pendingExecutes[depositKey];
+      delete this.lastSettleAttempt[depositKey];
+      return undefined;
+    }
+
+    let live: PendingExecute;
+    try {
+      live = parsePendingExecute(raw);
+    } catch (err) {
+      // Quarantine this field alone. Callers must consult `unparseableClaimKeys`, since a claim that
+      // cannot be read has to keep blocking its transfer rather than read as absent.
+      if (!this.unparseableClaimKeys.has(depositKey)) {
+        this.logger.error({
+          at: "DepositAddressHandler#_syncClaim",
+          message: "Quarantined an unparseable pending-execute claim; its transfer stays blocked",
+          depositKey,
+          err: err instanceof Error ? err.message : String(err),
+          notificationPath: "across-bot-error",
+        });
+      }
+      this.unparseableClaimKeys.add(depositKey);
+      delete this.pendingExecutes[depositKey];
+      delete this.lastSettleAttempt[depositKey];
+      return undefined;
+    }
+
+    this.unparseableClaimKeys.delete(depositKey);
+
+    // A different hash is a different transaction; re-settle it without waiting out the throttle.
+    if (this.pendingExecutes[depositKey]?.txHash !== live.txHash) {
+      delete this.lastSettleAttempt[depositKey];
+    }
+    this.pendingExecutes[depositKey] = live;
+    return live;
+  }
+
+  /**
+   * Resolves one claim against the chain. A claim with no receipt is deliberately never discarded:
+   * stranding a transfer for manual recovery is reversible, a second sweep is not. See the module
+   * README for how to release one by hand.
+   */
+  private async _settlePendingExecute(
+    depositKey: string,
+    pending: PendingExecute
+  ): Promise<"executed" | "unclaimed" | "unresolved"> {
+    const logContext = {
+      at: "DepositAddressHandler#_settlePendingExecute",
+      depositKey,
+      txHash: pending.txHash,
+      refTxHash: pending.refTxHash,
+      chainId: pending.chainId,
+    };
+    this.lastSettleAttempt[depositKey] = getCurrentTime();
+
+    const provider = this.providersByChain[pending.chainId];
+    if (!isDefined(provider)) {
+      this.logger.warn({ ...logContext, message: "Cannot resolve pending execute: no provider for chain" });
+      return "unresolved";
+    }
+
+    let receipt: TransactionReceipt | null;
+    try {
+      receipt = await provider.getTransactionReceipt(receiptLookupHash(pending.chainId, pending.txHash));
+    } catch (err) {
+      this.logger.warn({
+        ...logContext,
+        message: "Failed to fetch receipt for pending execute; leaving the record in place",
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return "unresolved";
+    }
+
+    if (!isDefined(receipt) || !isDefined(receipt.blockNumber)) {
+      // A hash with no receipt may simply be pending — or may have been replaced by another run, or
+      // released by an operator, since this process cached it. Reconcile before settling for "keep
+      // waiting", or a hash that can never resolve would block the transfer for this process's
+      // lifetime: later polls would re-settle it and return before the pre-broadcast read.
+      let live: PendingExecute | undefined;
+      try {
+        live = await this._syncClaim(depositKey);
+      } catch {
+        // Already logged. Unverifiable state keeps the transfer blocked, never unblocks it.
+        return "unresolved";
+      }
+
+      if (!isDefined(live)) {
+        // Quarantined is not the same as gone: we could not read the claim, so keep blocking.
+        if (this.unparseableClaimKeys.has(depositKey)) {
+          this.logger.warn({ ...logContext, message: "Pending execute claim is unreadable; transfer stays blocked" });
+          return "unresolved";
+        }
+        this.logger.warn({
+          ...logContext,
+          message: "Pending execute claim no longer present; deposit may be re-attempted",
+        });
+        return "unclaimed";
+      }
+      if (live.txHash !== pending.txHash) {
+        this.logger.info({
+          ...logContext,
+          message: "Adopted a replacement claim recorded by another run; settling that instead",
+          liveTxHash: live.txHash,
+        });
+        return "unresolved";
+      }
+
+      this.logger.debug({
+        ...logContext,
+        message: "Pending execute not mined yet; keeping the claim",
+        ageSeconds: getCurrentTime() - pending.submittedAt,
+      });
+      return "unresolved";
+    }
+
+    // Only an explicit status of 0 is a revert; ethers leaves it undefined on some chains, and
+    // treating that as success can strand a deposit but can never cause a second sweep.
+    if (receipt.status === 0) {
+      // Only report a revert if this really was the transfer's live claim. If a newer broadcast has
+      // replaced it, that transaction — not this revert — decides the outcome, and the transfer must
+      // stay blocked meanwhile.
+      if (!(await this._clearPendingExecute(depositKey, pending.txHash))) {
+        return "unresolved";
+      }
+      this.logger.warn({ ...logContext, message: "Pending execute reverted on-chain; deposit will be re-attempted" });
+      return "unclaimed";
+    }
+
+    this.executedDepositTxHashes.add(pending.refTxHash);
+    await this._persistExecutedDepositsRedis();
+    await this._clearPendingExecute(depositKey);
+    this.logger.info({
+      ...logContext,
+      message: "Adopted an execute broadcast by a previous run and confirmed on-chain",
+      blockNumber: receipt.blockNumber,
+    });
+    return "executed";
+  }
+
+  /**
+   * Settles executes a previous run broadcast but never saw confirmed. Runs once at startup, right
+   * after handover, so a successor inherits the incumbent's in-flight work. Takes the claim snapshot
+   * as an argument because it must be read before the executed-set load, but applied after it — see
+   * `initialize()`.
+   */
+  private async _resolvePendingExecutes(inherited: Record<string, PendingExecute>): Promise<void> {
+    this.pendingExecutes = inherited;
+    const entries = Object.entries(this.pendingExecutes);
+    if (entries.length === 0) {
+      return;
+    }
+
+    this.logger.debug({
+      at: "DepositAddressHandler#_resolvePendingExecutes",
+      message: "Resolving in-flight executes inherited from a previous run",
+      count: entries.length,
+    });
+
+    for (const [depositKey, pending] of entries) {
+      // One unresolvable record must not prevent startup; it stays in Redis for the next run.
+      try {
+        await this._settlePendingExecute(depositKey, pending);
+      } catch (err) {
+        this.logger.warn({
+          at: "DepositAddressHandler#_resolvePendingExecutes",
+          message: "Failed to settle inherited pending execute",
+          depositKey,
+          txHash: pending.txHash,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   }
 
   /*
@@ -1034,6 +1384,42 @@ export class DepositAddressHandler {
       return;
     }
 
+    // An execute for this transfer is already on the wire — either this run broadcast it, or a
+    // previous run did and was evicted before confirmation. Re-check it on-chain rather than
+    // skipping blindly, so a revert is retried on a later poll instead of waiting for the next run.
+    // A quarantined claim can't be settled (its txHash is unreadable), but it may describe a transfer
+    // already swept, so it must keep blocking. Cleared by fixing or deleting the Redis field.
+    if (this.unparseableClaimKeys.has(depositKey)) {
+      // Re-read first: the quarantine set is otherwise only refreshed at startup, so the documented
+      // ops recovery — repair or delete the malformed field — would not take effect until the process
+      // was replaced.
+      // _syncClaim updates the mirror and this key's quarantine state, so a repaired or removed field
+      // takes effect here without a restart.
+      await this._syncClaim(depositKey);
+      if (this.unparseableClaimKeys.has(depositKey)) {
+        this.logger.debug({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Skipping deposit: this transfer's persisted claim is unparseable",
+          refTxHash,
+          depositKey,
+        });
+        return;
+      }
+    }
+
+    const pending = this.pendingExecutes[depositKey];
+    if (isDefined(pending)) {
+      const lastAttempt = this.lastSettleAttempt[depositKey] ?? 0;
+      if (getCurrentTime() - lastAttempt < PENDING_EXECUTE_RESETTLE_INTERVAL) {
+        return;
+      }
+      // "unclaimed" = no live claim remains (reverted, or released by an operator), so fall through and
+      // re-attempt. "executed" is covered by executedDepositTxHashes; "unresolved" must not resubmit.
+      if ((await this._settlePendingExecute(depositKey, pending)) !== "unclaimed") {
+        return;
+      }
+    }
+
     if (this.observedExecutedDeposits[originChainId]?.has(depositKey)) {
       return;
     }
@@ -1127,8 +1513,47 @@ export class DepositAddressHandler {
         )}, using deposit address ${blockExplorerLink(depositAddress, originChainId)}`,
       };
 
-      const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
+      // Last gate before the transaction goes out. The checks at the top of this method ran before
+      // the quote-api round trip, during which an overlapping run may have broadcast its own
+      // execute; re-read from Redis rather than the mirror, which only this run writes to. This
+      // narrows the overlap window to a single Redis read — it does not close it.
+      try {
+        // _syncClaim caches whatever it finds, so a claim an overlapping run recorded after this
+        // process started is settled by the next poll rather than re-quoted on every one.
+        const claimed = await this._syncClaim(depositKey);
+        if (isDefined(claimed) || this.unparseableClaimKeys.has(depositKey)) {
+          this.logger.warn({
+            at: "DepositAddressHandler#initiateDepositV3",
+            message: "Skipping execute: an execute for this transfer has already been broadcast",
+            depositKey,
+            pendingTxHash: claimed?.txHash ?? "unparseable claim",
+          });
+          return;
+        }
+      } catch {
+        // Already logged. Treat unverifiable state as claimed rather than risk a duplicate sweep.
+        return;
+      }
+
+      const depositReceipt = await sendAndConfirmTransaction(
+        {
+          ...executeTx,
+          // Persist the hash the moment it exists, so an eviction during the confirmation wait
+          // cannot lose the fact that this transfer has already been swept.
+          onBroadcast: (response) =>
+            this._recordPendingExecute(depositKey, {
+              txHash: response.hash,
+              chainId: originChainId,
+              refTxHash,
+              submittedAt: getCurrentTime(),
+            }),
+        },
+        this.transactionClient,
+        useDispatcher
+      );
       if (!isDefined(depositReceipt)) {
+        // A revert also surfaces here as an undefined receipt. Any claim recorded above stays in
+        // place; a later poll resolves its real outcome against the chain.
         this.logger.warn({
           at: "DepositAddressHandler#initiateDepositV3",
           message: "Failed to submit execute tx",
@@ -1142,11 +1567,26 @@ export class DepositAddressHandler {
       }
 
       // The execute is on-chain; keep the in-flight lock and persist to Redis immediately so
-      // handover cannot miss this execute.
+      // handover cannot miss this execute. The executed set is written before the claim is cleared:
+      // a crash in between leaves a redundant claim that startup tidies, whereas the reverse order
+      // would reopen the duplicate-sweep window.
       this.executedDepositTxHashes.add(refTxHash);
       executeCommitted = true;
       await this._persistExecutedDepositsRedis();
+      // Publish before clearing. The executed set already guards this transfer, so the claim is now
+      // redundant and a leftover is tidied at startup — whereas a skipped publish is lost for good,
+      // since later polls skip the transfer and adoption deliberately does not re-publish.
       await this._publishDepositExecuted(depositReceipt, depositMessage);
+      try {
+        await this._clearPendingExecute(depositKey);
+      } catch (err) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Failed to clear a now-redundant execute claim; startup will tidy it",
+          depositKey,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      }
     } finally {
       if (!executeCommitted) {
         this.observedExecutedDeposits[originChainId].delete(depositKey);
