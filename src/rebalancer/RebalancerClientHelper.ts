@@ -8,7 +8,7 @@ import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRe
 import { ReadOnlyRebalancerClient } from "./clients/ReadOnlyRebalancerClient";
 
 import { RebalancerConfig } from "./RebalancerConfig";
-import { buildRebalanceRoutes } from "./buildRebalanceRoutes";
+import { buildBridgeSupportRoutes, buildRebalanceRoutes } from "./buildRebalanceRoutes";
 import { RebalancerAdapter, RebalanceRoute } from "./utils/interfaces";
 import { SameAssetRebalancerClient } from "./clients/SameAssetRebalancerClient";
 import { buildSameAssetRebalanceRoutes } from "./buildSameAssetRebalanceRoutes";
@@ -69,11 +69,12 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
 ): Promise<T> {
   const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
   const rebalanceRoutes = getRebalanceRoutes(rebalancerConfig);
+  const bridgeSupportRoutes = buildBridgeSupportRoutes(rebalanceRoutes);
   const rebalancerClient = new Client(logger, rebalancerConfig, adapters, baseSigner, isReadonly);
 
   await Promise.all(
     ["cctp", "oft"].flatMap((adapterName) =>
-      adapters[adapterName] ? [adapters[adapterName].initialize(rebalanceRoutes)] : []
+      adapters[adapterName] ? [adapters[adapterName].initialize(bridgeSupportRoutes)] : []
     )
   );
   await rebalancerClient.initialize(rebalanceRoutes);
