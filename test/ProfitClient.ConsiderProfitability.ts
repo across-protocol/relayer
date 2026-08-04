@@ -344,7 +344,8 @@ describe("ProfitClient: Consider relay profit", () => {
           const inputAmountUsd = scaledInputAmount.mul(tokenPriceUsd).div(fixedPoint);
           const outputAmountUsd = scaledOutputAmount.mul(tokenPriceUsd).div(fixedPoint);
 
-          const lpFeeUsd = inputAmountUsd.mul(lpFeePct).div(fixedPoint);
+          const scaledLpFeeAmount = scaledInputAmount.mul(lpFeePct).div(fixedPoint);
+          const lpFeeUsd = scaledLpFeeAmount.mul(tokenPriceUsd).div(fixedPoint);
           const gasToken = profitClient.resolveGasToken(destinationChainId);
           const gasTokenPriceUsd = profitClient.getPriceOfToken(gasToken.symbol);
 
@@ -423,7 +424,8 @@ describe("ProfitClient: Consider relay profit", () => {
 
           for (const lpFeeMultiplier of lpFeeMultipliers) {
             const effectiveLpFeePct = lpFeePct.mul(lpFeeMultiplier).div(fixedPoint);
-            const lpFeeUsd = inputAmountUsd.mul(effectiveLpFeePct).div(fixedPoint);
+            const scaledLpFeeAmount = scaledInputAmount.mul(effectiveLpFeePct).div(fixedPoint);
+            const lpFeeUsd = scaledLpFeeAmount.mul(tokenPriceUsd).div(fixedPoint);
 
             const expected = testProfitability(inputAmountUsd, outputAmountUsd, gasCostUsd, lpFeeUsd);
             spyLogger.debug({
