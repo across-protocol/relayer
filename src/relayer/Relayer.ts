@@ -29,6 +29,7 @@ import {
   TvmAddress,
   isStablecoin,
   min,
+  retry,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -40,6 +41,8 @@ const UNPROFITABLE_DEPOSIT_NOTICE_PERIOD = 60 * 60; // 1 hour
 const RELAYER_DEPOSIT_RATE_LIMIT = 25;
 const RELAYER_DEPOSITOR_RATE_LIMIT = 10;
 const HUB_SPOKE_BLOCK_LAG = 2; // Permit SpokePool timestamps to be ahead of the HubPool by 2 HubPool blocks.
+const API_UPDATE_ATTEMPTS = 3; // Number of retries permitted on the initial Across API limits update.
+const API_UPDATE_BACKOFF = 2; // Exponential backoff base (seconds) between Across API limits update attempts.
 const SPOKEPOOL_EVENTS = [
   "FundsDeposited",
   "RequestedSpeedUpDeposit",
@@ -107,7 +110,15 @@ export class Relayer {
     const { acrossApiClient, tokenClient } = this.clients;
     await Promise.all([
       this.config.update(this.logger), // Update address filter.
-      acrossApiClient.update(this.config.ignoreLimits),
+      // The relayer does not enforce fill limits until the API limits have been fetched at least once, so retry
+      // before giving up and failing init rather than starting up and filling without limits.
+      retry(
+        async () => {
+          assert(await acrossApiClient.update(this.config.ignoreLimits), "Failed to update Across API limits");
+        },
+        API_UPDATE_ATTEMPTS,
+        API_UPDATE_BACKOFF
+      ),
       tokenClient.update(),
     ]);
 

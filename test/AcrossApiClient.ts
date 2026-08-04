@@ -47,7 +47,7 @@ describe("AcrossApiClient", function () {
   it("Stores limits on successful update", async function () {
     const limit = toBN(100);
     apiClient.setLiquidReserves([limit]);
-    await apiClient.update(false);
+    expect(await apiClient.update(false)).to.be.true;
 
     expect(apiClient.updatedLimits).to.be.true;
     expect(apiClient.getLimit(OPTIMISM, mainnetWeth).eq(limit)).to.be.true;
@@ -59,10 +59,10 @@ describe("AcrossApiClient", function () {
     await apiClient.update(false);
     expect(apiClient.getLimit(OPTIMISM, mainnetWeth).eq(limit)).to.be.true;
 
-    // A subsequent failed update falls back to the previously fetched limit.
+    // A subsequent failed update reports failure but falls back to the previously fetched limit.
     apiClient.setLiquidReserves(undefined);
     apiClient.expireUpdate();
-    await apiClient.update(false);
+    expect(await apiClient.update(false)).to.be.false;
     expect(apiClient.updatedLimits).to.be.true;
     expect(apiClient.getLimit(OPTIMISM, mainnetWeth).eq(limit)).to.be.true;
 
@@ -70,22 +70,30 @@ describe("AcrossApiClient", function () {
     const newLimit = toBN(50);
     apiClient.setLiquidReserves([newLimit]);
     apiClient.expireUpdate();
-    await apiClient.update(false);
+    expect(await apiClient.update(false)).to.be.true;
     expect(apiClient.getLimit(OPTIMISM, mainnetWeth).eq(newLimit)).to.be.true;
   });
 
-  it("Requires the initial limits update to succeed", async function () {
+  it("Reports failure without throwing when no update has succeeded", async function () {
     apiClient.setLiquidReserves(undefined);
-    await expect(apiClient.update(false)).to.be.rejectedWith("Failed to fetch HubPool liquid reserves");
+    expect(await apiClient.update(false)).to.be.false;
+
+    // Limits are not enforced until an update succeeds, so the caller must retry rather than fill.
     expect(apiClient.updatedLimits).to.be.false;
     expect(apiClient.getLimit(OPTIMISM, mainnetWeth).eq(bnZero)).to.be.true;
 
-    // updatedAt is left unset on failure, so the next update retries instead of skipping on the retention window.
+    // updatedAt is left unset on failure, so a retry queries again instead of skipping on the retention window.
     const limit = toBN(100);
     apiClient.setLiquidReserves([limit]);
-    await apiClient.update(false);
+    expect(await apiClient.update(false)).to.be.true;
     expect(apiClient.updatedLimits).to.be.true;
     expect(apiClient.getLimit(OPTIMISM, mainnetWeth).eq(limit)).to.be.true;
+  });
+
+  it("Skips the update when limits are ignored", async function () {
+    apiClient.setLiquidReserves(undefined);
+    expect(await apiClient.update(true)).to.be.true;
+    expect(apiClient.updatedLimits).to.be.false;
   });
 
   it("Applies no limit to hub chain origins", async function () {

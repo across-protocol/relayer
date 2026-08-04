@@ -56,13 +56,20 @@ export class AcrossApiClient {
     this.chainIds = chainIds.filter((chainId) => chainId !== hubChainId);
   }
 
-  async update(ignoreLimits: boolean): Promise<void> {
+  /**
+   * Refresh the HubPool liquid reserves for each L1 token supported by the relayer.
+   * @param ignoreLimits Skip the update; the relayer does not enforce limits.
+   * @returns true if the limits are current, otherwise false. A failed query does not overwrite previously-fetched
+   * limits, so the caller may retry. Note that `updatedLimits` is only set once a query has succeeded, so the
+   * relayer does not enforce limits until then; the caller must therefore not proceed to fill on a false return.
+   */
+  async update(ignoreLimits: boolean): Promise<boolean> {
     const now = getCurrentTime();
     const updateAge = now - this.updatedAt;
     // If no chainIds are specified, the origin chain is assumed to be the HubPool chain, so skip update.
     if (updateAge < API_UPDATE_RETENTION_TIME || ignoreLimits || this.chainIds.length === 0) {
       this.logger.debug({ at: "AcrossAPIClient", message: "Skipping querying /limits", updateAge });
-      return;
+      return true;
     }
 
     const { hubPoolClient } = this;
@@ -84,29 +91,28 @@ export class AcrossApiClient {
     // /liquid-reserves
     // Store the max available HubPool liquidity (less API-imposed cushioning) for each L1 token.
     const liquidReserves = await this.callLimits(tokens);
-    if (isDefined(liquidReserves)) {
-      tokens.forEach((token, i) => (this.limits[token.toEvmAddress()] = liquidReserves[i]));
-      this.logger.debug({
-        at: "AcrossAPIClient",
-        message: "🏁 Fetched HubPool liquid reserves",
-        limits: this.limits,
-      });
-    } else if (this.updatedLimits) {
-      // A previous update succeeded, so fall back to those limits rather than zeroing them out.
+    if (!isDefined(liquidReserves)) {
+      // Retain any previously-fetched limits rather than zeroing them out. updatedAt is left unset so that the
+      // caller can retry immediately rather than waiting out the update retention window.
       this.logger.warn({
         at: "AcrossAPIClient",
-        message: "Failed to fetch HubPool liquid reserves. Retaining last known limits.",
+        message: `Failed to fetch HubPool liquid reserves.${this.updatedLimits ? " Retaining last known limits." : ""}`,
         limits: this.limits,
       });
-    } else {
-      // Nothing has ever been fetched, so there are no limits to fall back on. Bail instead of proceeding with an
-      // empty limits set, which would silently suppress every fill. updatedAt is left unset so that the caller
-      // retries immediately rather than waiting out the update retention window.
-      throw new Error("Failed to fetch HubPool liquid reserves");
+      return false;
     }
+
+    tokens.forEach((token, i) => (this.limits[token.toEvmAddress()] = liquidReserves[i]));
+    this.logger.debug({
+      at: "AcrossAPIClient",
+      message: "🏁 Fetched HubPool liquid reserves",
+      limits: this.limits,
+    });
 
     this.updatedLimits = true;
     this.updatedAt = now;
+
+    return true;
   }
 
   getLimit(originChainId: number, l1Token: EvmAddress): BigNumber {
