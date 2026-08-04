@@ -517,8 +517,9 @@ export class Relayer {
     const { acrossApiClient, inventoryClient } = this.clients;
     const { depositId, inputAmount, inputToken, originChainId, txnRef } = deposit;
 
-    // There's nothing to constrain, so don't bother resolving a limit. Deposits that are forced to take origin chain
-    // repayment always land here.
+    // There's nothing to constrain, so don't bother resolving a limit. determineRefundChainId() dedups its result, so
+    // in practice this is [] (nothing was eligible) or [originChainId] (any deposit forced onto origin chain
+    // repayment); every() covers both, and doesn't oblige a caller of this helper to pre-dedup.
     if (repaymentChainIds.every((chainId) => chainId === originChainId)) {
       return repaymentChainIds;
     }
