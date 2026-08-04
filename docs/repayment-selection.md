@@ -87,6 +87,11 @@ Key properties:
 - `getLimit()` returns `uint256Max` when the origin chain is the hub chain, so hub-origin deposits are unconstrained.
 - the filter is inert until `AcrossApiClient.updatedLimits` is set, and when `ignoreLimits` is configured. A failed
   `/liquid-reserves` query leaves `updatedLimits` unset rather than reporting zero reserves.
+- an input token with no L1 token mapping has no limit to compare against, and is treated like an exhausted reserve:
+  only origin chain repayment survives. This is reachable rather than hypothetical - `filterDeposit()` drops an
+  unmapped input token only when no swap route covers it, and the mapping is symbol-based
+  (`getInventoryEquivalentL1TokenAddress()`) rather than PoolRebalanceRoute-based, so it can be absent even where the
+  HubPool permits destination chain repayment.
 - when the filter empties a non-empty eligible list, `resolveRepaymentChain()` returns `unfundableRepayment: true`.
   `evaluateFill()` skips the deposit *without* marking it ignored, since reserves recover as LPs deposit and as bundles
   execute.

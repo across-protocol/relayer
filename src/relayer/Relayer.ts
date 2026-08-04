@@ -528,14 +528,14 @@ export class Relayer {
       return repaymentChainIds;
     }
 
-    // Note: the relayer only queries limits for supported tokens, so an unmapped token has no constraint to apply.
+    // The relayer only queries limits for supported tokens, so an unmapped input token has no limit to compare against.
+    // That isn't purely hypothetical: filterDeposit() only drops an unmapped input token when no swap route covers it,
+    // and this mapping is symbol-based (getInventoryEquivalentL1TokenAddress) rather than PoolRebalanceRoute-based, so
+    // it can be absent even where the HubPool does permit destination chain repayment. Without a limit there's no basis
+    // to call a non-origin refund fundable, so fall through and keep only origin chain repayment.
     const l1Token = inventoryClient.getL1TokenAddress(inputToken, originChainId);
-    if (!isDefined(l1Token)) {
-      return repaymentChainIds;
-    }
-
-    const limit = acrossApiClient.getLimit(originChainId, l1Token);
-    if (inputAmount.lte(limit)) {
+    const limit = isDefined(l1Token) ? acrossApiClient.getLimit(originChainId, l1Token) : undefined;
+    if (isDefined(limit) && inputAmount.lte(limit)) {
       return repaymentChainIds;
     }
 
@@ -543,7 +543,9 @@ export class Relayer {
     if (fundableChainIds.length !== repaymentChainIds.length) {
       this.logger.debug({
         at: "Relayer::filterFundableRepaymentChains",
-        message: "😱 Dropped repayment chains requiring more HubPool liquidity than the API suggested limit.",
+        message: isDefined(limit)
+          ? "😱 Dropped repayment chains requiring more HubPool liquidity than the API suggested limit."
+          : "😱 Dropped non-origin repayment chains for an input token with no L1 token mapping.",
         depositId,
         originChainId,
         inputToken,

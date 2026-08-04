@@ -1373,6 +1373,28 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
         expect((await txnReceipts[destinationChainId]).length).to.equal(1);
         expect(logged(`with repayment on ${destinationChainId}`)).to.be.true;
       });
+
+      it("Drops non-origin repayment chains for an input token with no L1 token mapping", async function () {
+        // An unmapped input token has no limit to compare against, so there's no basis to call a non-origin refund
+        // fundable. filterDeposit() permits the unmapped token because a swap route covers it.
+        const getL1TokenAddress = sinon.stub(inventoryClient, "getL1TokenAddress").returns(undefined);
+        const isSwapSupported = sinon.stub(inventoryClient, "isSwapSupported").returns(true);
+        getLimit.throws(new Error("getLimit() must not be queried without an L1 token"));
+        determineRefundChainId.resolves([destinationChainId, originChainId]);
+
+        try {
+          await deposit();
+          await updateAllClients();
+
+          const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+          expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+          expect(logged(`with repayment on ${originChainId}`)).to.be.true;
+          expect(logged(`with repayment on ${destinationChainId}`)).to.be.false;
+        } finally {
+          getL1TokenAddress.restore();
+          isSwapSupported.restore();
+        }
+      });
     });
   });
 
