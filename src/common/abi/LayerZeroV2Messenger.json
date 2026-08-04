@@ -1,0 +1,15 @@
+[
+  {
+    "type": "function",
+    "name": "endpoint",
+    "constant": true,
+    "stateMutability": "view",
+    "payable": false,
+    "inputs": [],
+    "outputs": [
+      {
+        "type": "address"
+      }
+    ]
+  }
+]
