@@ -35,8 +35,8 @@ Route construction keeps three token-keyed chain maps:
 
 The current stablecoin endpoint catalogs are:
 
-- `USDT`: Mainnet, Optimism, Unichain, Polygon, Monad, HyperEVM, MegaETH, Plasma, Arbitrum, Avalanche, Ink, BSC, and Tron.
-- `USDC`: Mainnet, Optimism, Unichain, Polygon, Monad, World Chain, HyperEVM, Base, Arbitrum, Avalanche, Ink, Linea, and BSC.
+- `USDT`: Unichain, Tron, Polygon, Plasma, Optimism, Monad, MegaETH, Mainnet, Ink, HyperEVM, BSC, Avalanche, and Arbitrum.
+- `USDC`: World Chain, Unichain, Polygon, Optimism, Monad, Mainnet, Linea, Ink, HyperEVM, BSC, Base, Avalanche, and Arbitrum.
 
 Only chains configured under `cumulativeTargetBalances[token].chains` are selected from these catalogs for that token.
 Adapter initialization separately adds the CCTP/OFT support routes required by the selected operational routes:

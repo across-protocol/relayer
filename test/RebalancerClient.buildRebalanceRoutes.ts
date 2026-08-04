@@ -139,39 +139,39 @@ function buildSyntheticRebalancerConfigWithTron(): RebalancerConfig {
 }
 
 const FULL_MATRIX_USDT_CHAINS = [
-  CHAIN_IDs.MAINNET,
-  CHAIN_IDs.OPTIMISM,
   CHAIN_IDs.UNICHAIN,
-  CHAIN_IDs.POLYGON,
-  CHAIN_IDs.MONAD,
-  CHAIN_IDs.HYPEREVM,
-  CHAIN_IDs.MEGAETH,
-  CHAIN_IDs.PLASMA,
-  CHAIN_IDs.ARBITRUM,
-  CHAIN_IDs.AVALANCHE,
-  CHAIN_IDs.INK,
-  CHAIN_IDs.BSC,
   CHAIN_IDs.TRON,
+  CHAIN_IDs.POLYGON,
+  CHAIN_IDs.PLASMA,
+  CHAIN_IDs.OPTIMISM,
+  CHAIN_IDs.MONAD,
+  CHAIN_IDs.MEGAETH,
+  CHAIN_IDs.MAINNET,
+  CHAIN_IDs.INK,
+  CHAIN_IDs.HYPEREVM,
+  CHAIN_IDs.BSC,
+  CHAIN_IDs.AVALANCHE,
+  CHAIN_IDs.ARBITRUM,
 ] as const;
 
 const FULL_MATRIX_USDC_CHAINS = [
-  CHAIN_IDs.MAINNET,
-  CHAIN_IDs.OPTIMISM,
+  CHAIN_IDs.WORLD_CHAIN,
   CHAIN_IDs.UNICHAIN,
   CHAIN_IDs.POLYGON,
+  CHAIN_IDs.OPTIMISM,
   CHAIN_IDs.MONAD,
-  CHAIN_IDs.WORLD_CHAIN,
-  CHAIN_IDs.HYPEREVM,
-  CHAIN_IDs.BASE,
-  CHAIN_IDs.ARBITRUM,
-  CHAIN_IDs.AVALANCHE,
-  CHAIN_IDs.INK,
+  CHAIN_IDs.MAINNET,
   CHAIN_IDs.LINEA,
+  CHAIN_IDs.INK,
+  CHAIN_IDs.HYPEREVM,
   CHAIN_IDs.BSC,
+  CHAIN_IDs.BASE,
+  CHAIN_IDs.AVALANCHE,
+  CHAIN_IDs.ARBITRUM,
 ] as const;
 
 const HYPERLIQUID_USDT_CHAINS = FULL_MATRIX_USDT_CHAINS.filter(
-  (chainId) => ![CHAIN_IDs.AVALANCHE, CHAIN_IDs.BSC, CHAIN_IDs.TRON].includes(chainId)
+  (chainId) => ![CHAIN_IDs.TRON, CHAIN_IDs.BSC, CHAIN_IDs.AVALANCHE].includes(chainId)
 );
 const HYPERLIQUID_USDC_CHAINS = FULL_MATRIX_USDC_CHAINS.filter((chainId) => chainId !== CHAIN_IDs.BSC);
 
@@ -477,7 +477,7 @@ describe("buildRebalanceRoutes", function () {
       expect(supportedDestinationChains).to.include(destinationChain);
     });
 
-    for (const unsupportedUsdtChain of [CHAIN_IDs.AVALANCHE, CHAIN_IDs.BSC, CHAIN_IDs.TRON]) {
+    for (const unsupportedUsdtChain of [CHAIN_IDs.TRON, CHAIN_IDs.BSC, CHAIN_IDs.AVALANCHE]) {
       expect(routeExists(routes, unsupportedUsdtChain, "USDT", CHAIN_IDs.LINEA, "USDC", "hyperliquid")).to.equal(false);
       expect(routeExists(routes, CHAIN_IDs.LINEA, "USDC", unsupportedUsdtChain, "USDT", "hyperliquid")).to.equal(false);
     }
@@ -488,7 +488,7 @@ describe("buildRebalanceRoutes", function () {
   it("does not advertise unsupported same-asset bridge endpoints", function () {
     const routes = buildRebalanceRoutes(buildStablecoinRebalancerConfig());
 
-    for (const unsupportedUsdtChain of [CHAIN_IDs.AVALANCHE, CHAIN_IDs.BSC, CHAIN_IDs.TRON]) {
+    for (const unsupportedUsdtChain of [CHAIN_IDs.TRON, CHAIN_IDs.BSC, CHAIN_IDs.AVALANCHE]) {
       expect(routeExists(routes, unsupportedUsdtChain, "USDT", CHAIN_IDs.MEGAETH, "USDT", "oft")).to.equal(false);
       expect(routeExists(routes, CHAIN_IDs.MEGAETH, "USDT", unsupportedUsdtChain, "USDT", "oft")).to.equal(false);
     }
