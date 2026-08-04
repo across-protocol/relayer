@@ -29,7 +29,7 @@ export class AcrossApiClient {
   private endpoint: string;
   private chainIds: number[];
   private limits: { [token: string]: BigNumber } = {};
-  private updatedAt = 0;
+  protected updatedAt = 0;
 
   public updatedLimits = false;
 
@@ -39,7 +39,7 @@ export class AcrossApiClient {
     readonly hubPoolClient: HubPoolClient,
     chainIds: number[],
     readonly tokensQuery: EvmAddress[] = [],
-    readonly timeout: number = 3000
+    readonly timeout: number = 10_000
   ) {
     const hubChainId = hubPoolClient.chainId;
     this.endpoint = `https://${getAcrossHost(hubChainId)}/api`;
@@ -56,13 +56,20 @@ export class AcrossApiClient {
     this.chainIds = chainIds.filter((chainId) => chainId !== hubChainId);
   }
 
-  async update(ignoreLimits: boolean): Promise<void> {
+  /**
+   * Refresh the HubPool liquid reserves for each L1 token supported by the relayer.
+   * @param ignoreLimits Skip the update; the relayer does not enforce limits.
+   * @returns true if the limits are current, otherwise false. A failed query does not overwrite previously-fetched
+   * limits, so the caller may retry. Note that `updatedLimits` is only set once a query has succeeded, so the
+   * relayer does not enforce limits until then; the caller must therefore not proceed to fill on a false return.
+   */
+  async update(ignoreLimits: boolean): Promise<boolean> {
     const now = getCurrentTime();
     const updateAge = now - this.updatedAt;
     // If no chainIds are specified, the origin chain is assumed to be the HubPool chain, so skip update.
     if (updateAge < API_UPDATE_RETENTION_TIME || ignoreLimits || this.chainIds.length === 0) {
       this.logger.debug({ at: "AcrossAPIClient", message: "Skipping querying /limits", updateAge });
-      return;
+      return true;
     }
 
     const { hubPoolClient } = this;
@@ -84,27 +91,28 @@ export class AcrossApiClient {
     // /liquid-reserves
     // Store the max available HubPool liquidity (less API-imposed cushioning) for each L1 token.
     const liquidReserves = await this.callLimits(tokens);
-
-    // A failed query is not the same as zero available liquidity. Retain any previously-fetched reserves and leave
-    // updatedAt alone so that the next update retries immediately, rather than treating every token as exhausted.
     if (!isDefined(liquidReserves)) {
+      // Retain any previously-fetched limits rather than zeroing them out. updatedAt is left unset so that the
+      // caller can retry immediately rather than waiting out the update retention window.
       this.logger.warn({
         at: "AcrossAPIClient",
-        message: "Failed to fetch HubPool liquid reserves; retaining previously-fetched limits.",
-        updatedLimits: this.updatedLimits,
+        message: `Failed to fetch HubPool liquid reserves.${this.updatedLimits ? " Retaining last known limits." : ""}`,
+        limits: this.limits,
       });
-      return;
+      return false;
     }
 
     tokens.forEach((token, i) => (this.limits[token.toEvmAddress()] = liquidReserves[i]));
-
     this.logger.debug({
       at: "AcrossAPIClient",
       message: "🏁 Fetched HubPool liquid reserves",
       limits: this.limits,
     });
+
     this.updatedLimits = true;
     this.updatedAt = now;
+
+    return true;
   }
 
   getLimit(originChainId: number, l1Token: EvmAddress): BigNumber {
@@ -130,7 +138,7 @@ export class AcrossApiClient {
    * Query the API for the HubPool liquid reserves backing each of `l1Tokens`.
    * @returns An array of liquid reserves, ordered as per `l1Tokens`, or undefined if the query failed.
    */
-  private async callLimits(l1Tokens: EvmAddress[], timeout = this.timeout): Promise<BigNumber[] | undefined> {
+  protected async callLimits(l1Tokens: EvmAddress[], timeout = this.timeout): Promise<BigNumber[] | undefined> {
     const path = "liquid-reserves";
     const url = `${this.endpoint}/${path}`;
 
@@ -149,7 +157,7 @@ export class AcrossApiClient {
     }
 
     const params = { l1Tokens: l1Tokens.join(",") };
-    let liquidReserves: BigNumber[] = [];
+    let liquidReserves: BigNumber[];
     try {
       const result = await fetchWithTimeout<Record<string, string>>(url, params, {}, timeout);
       if (!result) {
