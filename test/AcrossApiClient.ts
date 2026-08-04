@@ -74,16 +74,22 @@ describe("AcrossApiClient", function () {
     expect(apiClient.getLimit(OPTIMISM, mainnetWeth).eq(newLimit)).to.be.true;
   });
 
-  it("Defaults to a limit of 0 when no update has succeeded", async function () {
+  it("Requires the initial limits update to succeed", async function () {
     apiClient.setLiquidReserves(undefined);
-    await apiClient.update(false);
-
-    expect(apiClient.updatedLimits).to.be.true;
+    await expect(apiClient.update(false)).to.be.rejectedWith("Failed to fetch HubPool liquid reserves");
+    expect(apiClient.updatedLimits).to.be.false;
     expect(apiClient.getLimit(OPTIMISM, mainnetWeth).eq(bnZero)).to.be.true;
+
+    // updatedAt is left unset on failure, so the next update retries instead of skipping on the retention window.
+    const limit = toBN(100);
+    apiClient.setLiquidReserves([limit]);
+    await apiClient.update(false);
+    expect(apiClient.updatedLimits).to.be.true;
+    expect(apiClient.getLimit(OPTIMISM, mainnetWeth).eq(limit)).to.be.true;
   });
 
   it("Applies no limit to hub chain origins", async function () {
-    apiClient.setLiquidReserves(undefined);
+    apiClient.setLiquidReserves([toBN(100)]);
     await apiClient.update(false);
 
     expect(apiClient.getLimit(MAINNET, mainnetWeth).eq(bnUint256Max)).to.be.true;

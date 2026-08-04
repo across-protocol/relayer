@@ -91,16 +91,20 @@ export class AcrossApiClient {
         message: "🏁 Fetched HubPool liquid reserves",
         limits: this.limits,
       });
-    } else {
-      // The query failed, so fall back to the most recently fetched limits rather than zeroing them out.
+    } else if (this.updatedLimits) {
+      // A previous update succeeded, so fall back to those limits rather than zeroing them out.
       this.logger.warn({
         at: "AcrossAPIClient",
         message: "Failed to fetch HubPool liquid reserves. Retaining last known limits.",
         limits: this.limits,
       });
+    } else {
+      // Nothing has ever been fetched, so there are no limits to fall back on. Bail instead of proceeding with an
+      // empty limits set, which would silently suppress every fill. updatedAt is left unset so that the caller
+      // retries immediately rather than waiting out the update retention window.
+      throw new Error("Failed to fetch HubPool liquid reserves");
     }
-    // Flag limits as updated even on failure so that the relayer keeps enforcing the limit check. If the first
-    // query fails, limits is empty and getLimit() defaults to 0, so fills are skipped until a query succeeds.
+
     this.updatedLimits = true;
     this.updatedAt = now;
   }

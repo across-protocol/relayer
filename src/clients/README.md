@@ -104,4 +104,4 @@ For transactions submitted with `ensureConfirmation: true`, confirmation is awai
 
 ## Across API Client
 
-The AcrossApiClient polls the Across API `/liquid-reserves` endpoint for the HubPool liquidity available per enabled L1 token; the relayer skips deposits whose input amount exceeds the limit for their token (hub-chain origins are exempt, since funds can be JIT-bridged from mainnet). A failed or invalid query retains the last known limits rather than zeroing them, so transient API outages don't halt filling; tokens with no successful fetch default to a limit of 0 and are not filled.
+The AcrossApiClient polls the Across API `/liquid-reserves` endpoint for the HubPool liquidity available per enabled L1 token; the relayer skips deposits whose input amount exceeds the limit for their token (hub-chain origins are exempt, since funds can be JIT-bridged from mainnet). The initial update must succeed and throws otherwise, so the relayer fails to start rather than running with no limits. Once limits have been fetched, a failed or invalid query retains the last known values rather than zeroing them, so transient API outages don't halt filling.
