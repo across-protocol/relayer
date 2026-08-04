@@ -319,6 +319,60 @@ describe("Dataworker: Validate pending root bundle", function () {
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected slow relay root, submitting dispute");
     await multiCallerClient.executeTxnQueues();
   });
+  it("Disputes a proposal that under-reports the pool rebalance leaf count", async function () {
+    // Regression test: a proposer that submits the correct roots but a poolRebalanceLeafCount lower than the
+    // number of leaves in the pool rebalance root leaves the excess leaves permanently unexecutable. The
+    // validator must dispute this (UMIP-157 "Determining the Result" requires an exact leaf count match).
+    await updateAllClients();
+
+    // Deposit on the origin chain and fill on the destination chain so the bundle spans two chains and the
+    // pool rebalance root therefore contains more than one leaf.
+    const deposit = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit
+    );
+    await updateAllClients();
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {
+      await hre.network.provider.send("evm_mine");
+    }
+    await updateAllClients();
+
+    const blockRange = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.map((chainId) => [
+      0,
+      spokePoolClients[chainId].latestHeightSearched,
+    ]);
+    const poolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
+    const relayerRefundRoot = await dataworkerInstance.buildRelayerRefundRoot(
+      blockRange,
+      spokePoolClients,
+      poolRebalanceRoot.leaves,
+      poolRebalanceRoot.runningBalances
+    );
+    const slowRelayRoot = await dataworkerInstance.buildSlowRelayRoot(blockRange, spokePoolClients);
+
+    // Precondition: the undercount only strands leaves when there is more than one to begin with.
+    expect(poolRebalanceRoot.leaves.length).to.be.greaterThan(1);
+
+    // Propose the correct roots but report one fewer pool rebalance leaf than the root actually contains.
+    await l1Token_1.approve(hubPool.address, MAX_UINT_VAL); // Approve the proposal bond.
+    await hubPool.proposeRootBundle(
+      blockRange.map((range) => range[1]),
+      poolRebalanceRoot.leaves.length - 1,
+      poolRebalanceRoot.tree.getHexRoot(),
+      relayerRefundRoot.tree.getHexRoot(),
+      slowRelayRoot.tree.getHexRoot()
+    );
+    await updateAllClients();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
+    expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected pool rebalance root, submitting dispute");
+    await multiCallerClient.executeTxnQueues();
+  });
   it("Validates root bundle with large bundleEvaluationBlockNumbers", async function () {
     await updateAllClients();
 

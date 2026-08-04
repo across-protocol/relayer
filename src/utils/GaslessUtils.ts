@@ -20,6 +20,8 @@ import {
   ConvertDecimals,
   convertRelayDataParamsToBytes32,
   getTokenInfo,
+  fetchTokenInfo,
+  getProvider,
   toBN,
   toBytes32,
   toAddressType,
@@ -34,6 +36,119 @@ import {
 import { isStablecoin } from "./TokenUtils";
 import { AugmentedTransaction } from "../clients";
 import { Contract, BigNumber, ethers } from "ethers";
+import { integer, is, max, min, string, type } from "superstruct";
+
+// Token metadata (symbol/decimals) is immutable, so on-chain probe results are cached
+// aggressively to keep the resolver off the RPC hot path once a token has been seen.
+const GASLESS_TOKEN_INFO_CACHE_TTL_SECONDS = 60 * 60 * 24 * 30; // 30 days
+
+/** Minimal cache surface used by {@link resolveTokenInfoForLog} (backed by Redis in prod). */
+export type TokenInfoCache = {
+  get<T>(key: string): Promise<T | null>;
+  set<T>(key: string, val: T, expirySeconds?: number): Promise<string | undefined>;
+};
+
+// `{ symbol, decimals }` shape that is safe to pass to `createFormatFunction` for a log line.
+// Decimals must be an integer in the ERC-20 `uint8` range (0–255); negative, fractional,
+// infinite, or oversized values can assert or explode exponentiation in the formatter.
+const TokenInfoForLog = type({
+  symbol: string(),
+  decimals: max(min(integer(), 0), 255),
+});
+
+/** True when `info` matches {@link TokenInfoForLog}. */
+export function isValidTokenInfoForLog(info: unknown): info is { symbol: string; decimals: number } {
+  return is(info, TokenInfoForLog);
+}
+
+/**
+ * Resolve a token's `{ symbol, decimals }` for logging WITHOUT throwing.
+ *
+ * Gasless swapAndBridge deposits carry a user-signed `swapToken` that is frequently a
+ * long-tail token absent from the static `TOKEN_SYMBOLS_MAP`. `getTokenInfo` throws for
+ * those, and previously that rejection propagated out of `GaslessRelayer#initiateDeposit`
+ * and silently dropped the deposit before it was ever submitted (ACB-552). This resolver
+ * never throws: static map → Redis-cached on-chain ERC-20 probe → neutral placeholder.
+ *
+ * The result feeds only a Slack log line (never the on-chain deposit), so a placeholder or
+ * slightly-off value can at most make a log entry less precise — it cannot affect deposit
+ * correctness.
+ *
+ * @param token The token whose display info is needed.
+ * @param chainId The chain the token lives on.
+ * @param logger Logger for the (best-effort) on-chain probe-failure warning.
+ * @param opts.redisCache Optional cache; misses trigger an on-chain probe, hits are reused.
+ * @param opts.probeOnChain Injectable on-chain lookup (defaults to a live provider probe).
+ */
+export async function resolveTokenInfoForLog(
+  token: Address,
+  chainId: number,
+  logger: winston.Logger,
+  opts: {
+    redisCache?: TokenInfoCache;
+    probeOnChain?: (address: string, chainId: number) => Promise<{ symbol: string; decimals: number }>;
+  } = {}
+): Promise<{ symbol: string; decimals: number }> {
+  try {
+    const { symbol, decimals } = getTokenInfo(token, chainId);
+    return { symbol, decimals };
+  } catch {
+    // Not in the static map — fall through to the on-chain probe below.
+  }
+
+  const address = token.toNative();
+  const cacheKey = `gasless:tokenInfo:${chainId}:${address}`;
+  const { redisCache } = opts;
+
+  let cached: string | null = null;
+  try {
+    cached = (await redisCache?.get<string>(cacheKey)) ?? null;
+  } catch {
+    // Best-effort cache read — fall through to the probe on any error.
+  }
+  if (isDefined(cached)) {
+    try {
+      const parsed = JSON.parse(cached) as unknown;
+      // Reject negative/fractional/oversized decimals — they can crash createFormatFunction.
+      if (isValidTokenInfoForLog(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // Corrupt cache entry — ignore and re-probe.
+    }
+  }
+
+  const probeOnChain = opts.probeOnChain ?? defaultOnChainTokenInfoProbe;
+  let info: { symbol: string; decimals: number } | undefined = undefined;
+  try {
+    info = await probeOnChain(address, chainId);
+
+    await redisCache?.set(cacheKey, JSON.stringify(info), GASLESS_TOKEN_INFO_CACHE_TTL_SECONDS);
+    return info;
+  } catch (error) {
+    if (isDefined(info)) {
+      return info;
+    }
+
+    logger.warn({
+      at: "GaslessUtils#resolveTokenInfoForLog",
+      message: "Failed to resolve token info on-chain; using placeholder for log line only",
+      token: address,
+      chainId,
+      error,
+    });
+    return { symbol: "UNKNOWN", decimals: 18 };
+  }
+}
+
+async function defaultOnChainTokenInfoProbe(
+  address: string,
+  chainId: number
+): Promise<{ symbol: string; decimals: number }> {
+  const provider = await getProvider(chainId);
+  const { symbol, decimals } = await fetchTokenInfo(address, provider);
+  return { symbol, decimals };
+}
 
 /**
  * Pulls normalized token/amount/deadline fields from a bridge or swap-and-bridge gasless message.
@@ -281,12 +396,15 @@ function toContractDepositData(data: BridgeWitnessData) {
   };
 }
 
-function normalizeSignature(signature: string): string {
+// EOA signatures are exactly 65 bytes; smart-wallet (EIP-1271 / ERC-6492) signatures are longer
+// and must be submitted via the periphery's *Bytes methods, which forward them to the token's
+// bytes-signature EIP-3009 overload. The quote API applies the same dispatch at simulation time.
+function normalizeAuthSignature(signature: string): { signature: string; isSmartWallet: boolean } {
   const hex = signature.startsWith("0x") ? signature : `0x${signature}`;
-  if (hex.length !== 132) {
-    throw new Error("receiveWithAuthSignature must be 65 bytes (132 hex chars)");
+  if (hex.length < 132) {
+    throw new Error("receiveWithAuthSignature must be at least 65 bytes (132 hex chars)");
   }
-  return hex;
+  return { signature: hex, isSmartWallet: hex.length > 132 };
 }
 
 function normalizeSignatureBytes(signature: string): string {
@@ -394,7 +512,8 @@ export async function isErc2612PermitNonceConsumed(params: {
 }
 
 /**
- * Builds calldata for SpokePoolPeriphery.depositWithAuthorization(signatureOwner, depositData, validAfter, validBefore, signature).
+ * Builds calldata for SpokePoolPeriphery.depositWithAuthorization[Bytes](signatureOwner, depositData, validAfter, validBefore, signature).
+ * The *Bytes variant is used for smart-wallet (>65-byte) signatures.
  */
 export function buildReceiveWithAuthorizationGaslessDepositTx(
   depositMessage: GaslessDepositMessage,
@@ -405,16 +524,12 @@ export function buildReceiveWithAuthorizationGaslessDepositTx(
   const { from: signatureOwner, validBefore, validAfter } = (permit as ReceiveWithAuthorization).message;
   const witnessData: BridgeWitnessData = { inputAmount, baseDepositData, submissionFees, spokePool, nonce };
   const depositData = toContractDepositData(witnessData);
-  const args = [
-    signatureOwner,
-    depositData,
-    BigNumber.from(validAfter),
-    BigNumber.from(validBefore),
-    normalizeSignature(signature),
-  ];
+  const { signature: authSignature, isSmartWallet } = normalizeAuthSignature(signature);
+  const method = isSmartWallet ? "depositWithAuthorizationBytes" : "depositWithAuthorization";
+  const args = [signatureOwner, depositData, BigNumber.from(validAfter), BigNumber.from(validBefore), authSignature];
 
   if (integratorId) {
-    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData("depositWithAuthorization", args);
+    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData(method, args);
     const taggedCalldata = tagIntegratorId(calldata, integratorId);
     return {
       contract: spokePoolPeripheryContract,
@@ -428,7 +543,7 @@ export function buildReceiveWithAuthorizationGaslessDepositTx(
   return {
     contract: spokePoolPeripheryContract,
     chainId: depositMessage.originChainId,
-    method: "depositWithAuthorization",
+    method,
     args,
     ensureConfirmation: true,
     spray: depositMessage.originChainId === CHAIN_IDs.MAINNET, // If mainnet, send to all available private RPCs.
@@ -436,8 +551,8 @@ export function buildReceiveWithAuthorizationGaslessDepositTx(
 }
 
 /**
- * Builds the origin-chain deposit tx for any gasless API message: bridge (depositWithAuthorization /
- * depositWithPermit2) or swap-and-bridge (swapAndBridgeWithAuthorization / swapAndBridgeWithPermit2).
+ * Builds the origin-chain deposit tx for any gasless API message: bridge (depositWithAuthorization[Bytes] /
+ * depositWithPermit2) or swap-and-bridge (swapAndBridgeWithAuthorization[Bytes] / swapAndBridgeWithPermit2).
  */
 export function buildGaslessDepositTx(
   depositMessage: AnyGaslessDepositMessage,
@@ -488,8 +603,8 @@ function toContractSwapAndDepositData(msg: SwapAndBridgeGaslessDepositMessage) {
 }
 
 /**
- * Builds calldata for SpokePoolPeriphery.swapAndBridgeWithAuthorization or .swapAndBridgeWithPermit2
- * depending on {@link SwapAndBridgeGaslessDepositMessage.permitType}.
+ * Builds calldata for SpokePoolPeriphery.swapAndBridgeWithAuthorization[Bytes] or .swapAndBridgeWithPermit2
+ * depending on {@link SwapAndBridgeGaslessDepositMessage.permitType} (and signature length for erc3009).
  */
 export function buildSwapAndBridgeDepositTx(
   depositMessage: SwapAndBridgeGaslessDepositMessage,
@@ -497,7 +612,11 @@ export function buildSwapAndBridgeDepositTx(
 ): AugmentedTransaction {
   const swapAndDepositData = toContractSwapAndDepositData(depositMessage);
 
-  let method: "swapAndBridgeWithAuthorization" | "swapAndBridgeWithPermit2" | "swapAndBridgeWithPermit";
+  let method:
+    | "swapAndBridgeWithAuthorization"
+    | "swapAndBridgeWithAuthorizationBytes"
+    | "swapAndBridgeWithPermit2"
+    | "swapAndBridgeWithPermit";
   let args: unknown[];
 
   if (depositMessage.permitType === "permit2") {
@@ -530,19 +649,14 @@ export function buildSwapAndBridgeDepositTx(
       normalizeSignatureBytes(depositMessage.signature),
     ];
   } else {
-    method = "swapAndBridgeWithAuthorization";
     const {
       from: signatureOwner,
       validAfter,
       validBefore,
     } = (depositMessage.permit as ReceiveWithAuthorization).message;
-    args = [
-      signatureOwner,
-      swapAndDepositData,
-      BigNumber.from(validAfter),
-      BigNumber.from(validBefore),
-      normalizeSignature(depositMessage.signature),
-    ];
+    const { signature: authSignature, isSmartWallet } = normalizeAuthSignature(depositMessage.signature);
+    method = isSmartWallet ? "swapAndBridgeWithAuthorizationBytes" : "swapAndBridgeWithAuthorization";
+    args = [signatureOwner, swapAndDepositData, BigNumber.from(validAfter), BigNumber.from(validBefore), authSignature];
   }
 
   if (depositMessage.integratorId) {

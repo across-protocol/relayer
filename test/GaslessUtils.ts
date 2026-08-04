@@ -6,12 +6,16 @@ import {
   restructureGaslessDeposits,
   buildGaslessDepositTx,
   isErc2612PermitNonceConsumed,
+  resolveTokenInfoForLog,
 } from "../src/utils/GaslessUtils";
+import { toAddressType, getTokenInfo } from "../src/utils";
 import { APIGaslessDepositResponse } from "../src/interfaces";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
 
 // Minimal valid 65-byte signature (hex)
 const DUMMY_SIGNATURE = "0x" + "ab".repeat(65);
+// >65 bytes — smart-wallet (EIP-1271 / ERC-6492) shape, routed to the *Bytes periphery methods.
+const SMART_WALLET_SIGNATURE = "0x" + "ab".repeat(65) + "cd".repeat(32);
 
 const DUMMY_ADDRESS = "0x" + "11".repeat(20);
 const DUMMY_BYTES32 = "0x" + "22".repeat(32);
@@ -96,6 +100,22 @@ function makeApiResponse(overrides: { integratorId?: string; type?: string } = {
 
 function makeSpokePoolPeripheryContract(): Contract {
   return new Contract(DUMMY_ADDRESS, SPOKE_POOL_PERIPHERY_ABI);
+}
+
+function makeSwapAndBridgeErc3009Message(signature: string) {
+  const bridge = makeDepositMessage({ signature });
+  return {
+    ...bridge,
+    depositFlowType: "swapAndBridge",
+    depositData: bridge.baseDepositData,
+    swapToken: DUMMY_ADDRESS,
+    exchange: DUMMY_ADDRESS,
+    transferType: 0,
+    swapTokenAmount: "123",
+    minExpectedInputTokenAmount: "120",
+    routerCalldata: "0x",
+    enableProportionalAdjustment: true,
+  };
 }
 
 describe("GaslessUtils", function () {
@@ -297,6 +317,50 @@ describe("GaslessUtils", function () {
       expect(calldata.startsWith(selector)).to.be.true;
     });
 
+    it("routes a smart-wallet (>65-byte) signature to depositWithAuthorizationBytes", function () {
+      const msg = makeDepositMessage({ signature: SMART_WALLET_SIGNATURE });
+      const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tx = buildGaslessDepositTx(msg as any, contract);
+      expect(tx.method).to.equal("depositWithAuthorizationBytes");
+      expect(tx.args.length).to.equal(5);
+      expect(tx.args[4]).to.equal(SMART_WALLET_SIGNATURE);
+    });
+
+    it("tagged calldata uses the depositWithAuthorizationBytes selector for smart-wallet signatures", function () {
+      const msg = makeDepositMessage({ signature: SMART_WALLET_SIGNATURE, integratorId: "0x0001" });
+      const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tx = buildGaslessDepositTx(msg as any, contract);
+      const calldata = tx.args[0] as string;
+      const iface = new ethers.utils.Interface(SPOKE_POOL_PERIPHERY_ABI);
+      expect(calldata.startsWith(iface.getSighash("depositWithAuthorizationBytes"))).to.be.true;
+    });
+
+    it("routes swapAndBridge erc3009 with a smart-wallet signature to swapAndBridgeWithAuthorizationBytes", function () {
+      const msg = makeSwapAndBridgeErc3009Message(SMART_WALLET_SIGNATURE);
+      const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tx = buildGaslessDepositTx(msg as any, contract);
+      expect(tx.method).to.equal("swapAndBridgeWithAuthorizationBytes");
+      expect(tx.args.length).to.equal(5);
+    });
+
+    it("keeps swapAndBridge erc3009 with a 65-byte signature on swapAndBridgeWithAuthorization", function () {
+      const msg = makeSwapAndBridgeErc3009Message(DUMMY_SIGNATURE);
+      const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const tx = buildGaslessDepositTx(msg as any, contract);
+      expect(tx.method).to.equal("swapAndBridgeWithAuthorization");
+    });
+
+    it("throws for a signature shorter than 65 bytes", function () {
+      const msg = makeDepositMessage({ signature: "0x" + "ab".repeat(64) });
+      const contract = makeSpokePoolPeripheryContract();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect(() => buildGaslessDepositTx(msg as any, contract)).to.throw(/at least 65 bytes/);
+    });
+
     it("builds swapAndBridgeWithPermit tx for permit flow", function () {
       const msg = {
         depositFlowType: "swapAndBridge",
@@ -395,5 +459,126 @@ describe("GaslessUtils", function () {
         })
       ).to.be.true;
     });
+  });
+});
+
+describe("GaslessUtils#resolveTokenInfoForLog", function () {
+  const USDC_MAINNET = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+  const LONG_TAIL_TOKEN = DUMMY_ADDRESS; // not present in the static TOKEN_SYMBOLS_MAP
+
+  it("returns static token info without probing when the token is in the map", async function () {
+    const token = toAddressType(USDC_MAINNET, 1);
+    // Throws loudly here if the hardcoded address ever drifts from the SDK map.
+    const expected = getTokenInfo(token, 1);
+    let probed = false;
+
+    const info = await resolveTokenInfoForLog(token, 1, TEST_LOGGER, {
+      probeOnChain: async () => {
+        probed = true;
+        return { symbol: "SHOULD_NOT_BE_USED", decimals: 0 };
+      },
+    });
+
+    expect(info).to.deep.equal({ symbol: expected.symbol, decimals: expected.decimals });
+    expect(probed).to.equal(false);
+  });
+
+  it("probes on-chain and caches the result when the token is missing from the static map (ACB-552)", async function () {
+    const token = toAddressType(LONG_TAIL_TOKEN, 1);
+    const address = token.toNative();
+    const setCalls: Array<[string, string]> = [];
+    const cache = {
+      get: async () => null,
+      set: async (key: string, val: unknown) => {
+        setCalls.push([key, String(val)]);
+        return undefined;
+      },
+    };
+    let probeCalls = 0;
+
+    const info = await resolveTokenInfoForLog(token, 1, TEST_LOGGER, {
+      redisCache: cache,
+      probeOnChain: async () => {
+        probeCalls++;
+        return { symbol: "PEPE", decimals: 18 };
+      },
+    });
+
+    expect(info).to.deep.equal({ symbol: "PEPE", decimals: 18 });
+    expect(probeCalls).to.equal(1);
+    expect(setCalls).to.have.length(1);
+    expect(setCalls[0][0]).to.equal(`gasless:tokenInfo:1:${address}`);
+    expect(JSON.parse(setCalls[0][1])).to.deep.equal({ symbol: "PEPE", decimals: 18 });
+  });
+
+  it("returns a cached entry without probing on a cache hit", async function () {
+    const token = toAddressType(LONG_TAIL_TOKEN, 1);
+    const cache = {
+      get: async () => JSON.stringify({ symbol: "CACHED", decimals: 8 }),
+      set: async () => undefined,
+    };
+    let probed = false;
+
+    const info = await resolveTokenInfoForLog(token, 1, TEST_LOGGER, {
+      redisCache: cache,
+      probeOnChain: async () => {
+        probed = true;
+        return { symbol: "SHOULD_NOT_BE_USED", decimals: 0 };
+      },
+    });
+
+    expect(info).to.deep.equal({ symbol: "CACHED", decimals: 8 });
+    expect(probed).to.equal(false);
+  });
+
+  it("re-probes when a cached entry has decimals outside the ERC-20 uint8 range", async function () {
+    const token = toAddressType(LONG_TAIL_TOKEN, 1);
+    const address = token.toNative();
+    const malformedEntries = [
+      { symbol: "X", decimals: -1 },
+      { symbol: "X", decimals: 1.5 },
+      { symbol: "X", decimals: 256 },
+      { symbol: "X", decimals: Number.POSITIVE_INFINITY },
+      { symbol: "X", decimals: Number.NaN },
+    ];
+
+    for (const malformed of malformedEntries) {
+      let probeCalls = 0;
+      const setCalls: Array<[string, string]> = [];
+      const cache = {
+        get: async () => JSON.stringify(malformed),
+        set: async (key: string, val: unknown) => {
+          setCalls.push([key, String(val)]);
+          return undefined;
+        },
+      };
+
+      const info = await resolveTokenInfoForLog(token, 1, TEST_LOGGER, {
+        redisCache: cache,
+        probeOnChain: async () => {
+          probeCalls++;
+          return { symbol: "PEPE", decimals: 18 };
+        },
+      });
+
+      expect(info).to.deep.equal({ symbol: "PEPE", decimals: 18 }, `malformed=${JSON.stringify(malformed)}`);
+      expect(probeCalls).to.equal(1, `malformed=${JSON.stringify(malformed)}`);
+      expect(setCalls).to.have.length(1);
+      expect(setCalls[0][0]).to.equal(`gasless:tokenInfo:1:${address}`);
+    }
+  });
+
+  it("falls back to a neutral placeholder and never throws when the on-chain probe fails", async function () {
+    const token = toAddressType(LONG_TAIL_TOKEN, 1);
+    const cache = { get: async () => null, set: async () => undefined };
+
+    const info = await resolveTokenInfoForLog(token, 1, TEST_LOGGER, {
+      redisCache: cache,
+      probeOnChain: async () => {
+        throw new Error("rpc down");
+      },
+    });
+
+    expect(info).to.deep.equal({ symbol: "UNKNOWN", decimals: 18 });
   });
 });

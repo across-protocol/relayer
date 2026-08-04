@@ -98,15 +98,27 @@ export interface DepositAddressExecuteRequest {
     recipient: string;
   };
   originChainId: number;
-  // The origin token that funded the deposit address.
-  inputToken?: {
+  /**
+   * The funded address being swept, relayed so the API can resolve which contract generation it
+   * belongs to instead of assuming the latest. Origin-chain-native encoding, like `userAddress`.
+   */
+  depositAddress: string;
+  /**
+   * The origin token that funded the deposit address. Relayed explicitly rather than left to the
+   * API's origin-native-USDC default, so non-USDC funding sweeps route off the real token.
+   */
+  inputToken: {
     chainId: number;
     address: string;
   };
-  /** The withdraw "user" identity committed at deposit-address creation (the refund address). */
+  /**
+   * The withdraw "user" identity committed at deposit-address creation (the refund address).
+   * Origin-chain-native encoding: 0x-hex on EVM, base58 on Tron.
+   */
   userAddress: string;
   /** Input amount as a decimal (or 0x-hex) bigint string. */
   amount: string;
+  /** Origin-chain-native encoding, like `userAddress`. */
   executionFeeRecipient: string;
   /** Bot-priced payout, deducted from the bridged amount. Omitted => 0. */
   executionFee?: string;
@@ -136,7 +148,8 @@ export interface DepositAddressExecuteResponse {
   /** The API's re-derived deposit address; must match the funded address from the indexer. */
   depositAddress: string;
   executeTx: {
-    ecosystem: "evm";
+    /** "tvm" for Tron-origin executes; `to` is 0x-hex on both ecosystems. */
+    ecosystem: "evm" | "tvm";
     chainId: number;
     to: string;
     data: string;

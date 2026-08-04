@@ -55,7 +55,7 @@ import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
 type TokenDistributionPerL1Token = { [l1Token: string]: { [chainId: number]: TokenDistribution } };
-type L2Withdrawal = { l2Token: Address; amountToWithdraw: BigNumber };
+type L2Withdrawal = { l2Token: Address; amountToWithdraw: BigNumber; mrkdwn: string };
 
 export type Rebalance = {
   chainId: number;
@@ -464,9 +464,16 @@ export class InventoryClient {
   }
 
   getL1Tokens(): EvmAddress[] {
-    return this.inventoryConfig?.tokenConfig
+    const l1Tokens = this.inventoryConfig?.tokenConfig
       ? this.getL1TokensFromInventoryConfig()
       : this.getL1TokensEnabledInHubPool();
+    if (this.l1TokensOverride.length === 0) {
+      return l1Tokens;
+    }
+    // When L1_TOKENS_OVERRIDE is set, the TokenClient only tracks balances for the override tokens, so restrict
+    // inventory management to that set. Candidates for untracked tokens can't be funded or accounted for locally.
+    const overrideTokens = this.l1TokensOverride.map((l1Token) => EvmAddress.from(l1Token));
+    return l1Tokens.filter((l1Token) => overrideTokens.some((overrideToken) => overrideToken.eq(l1Token)));
   }
 
   getL1TokensFromInventoryConfig(): EvmAddress[] {
@@ -1286,7 +1293,6 @@ export class InventoryClient {
 
     const chainIds = this.getEnabledL2Chains();
     const withdrawalsRequired: { [chainId: number]: L2Withdrawal[] } = {};
-    const chainMrkdwns: { [chainId: number]: string } = {};
 
     await sdkUtils.forEachAsync(this.getL1Tokens(), async (l1Token) => {
       const l1TokenInfo = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
@@ -1304,8 +1310,6 @@ export class InventoryClient {
         if (chainId === this.hubPoolClient.chainId || !this._l1TokenEnabledForChain(l1Token, chainId)) {
           return;
         }
-        let mrkdwn = `*Withdrawals from ${getNetworkName(chainId)}:*\n`;
-
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         await sdkUtils.forEachAsync(l2Tokens, async (l2Token) => {
           const { decimals: l2TokenDecimals } = this.getTokenInfo(l2Token, chainId);
@@ -1417,16 +1421,10 @@ export class InventoryClient {
           if (pendingWithdrawalAmount.gte(maxL2WithdrawalVolume)) {
             return;
           }
-          withdrawalsRequired[chainId] ??= [];
-          withdrawalsRequired[chainId].push({
-            l2Token,
-            amountToWithdraw: desiredWithdrawalAmount,
-          });
-
-          mrkdwn +=
-            ` - ${l2TokenFormatter(desiredWithdrawalAmount)} ${
+          const withdrawalMrkdwn =
+            ` - Requested withdrawal of ${l2TokenFormatter(desiredWithdrawalAmount)} ${
               l1TokenInfo.symbol
-            } withdrawn. This meets target allocation of ` +
+            }. This meets target allocation of ` +
             `${this.formatWei(targetPct.mul(100).toString())}% (trigger of ` +
             `${this.formatWei(excessWithdrawThresholdPct.mul(100).toString())}%) of the total ` +
             `${formatter(cumulativeBalance.toString())} ${
@@ -1436,11 +1434,13 @@ export class InventoryClient {
               l1TokenInfo.symbol
             }.` +
             ` This chain's current allocation is ${this.formatWei(currentAllocPct.mul(100).toString())}%\n`;
+          withdrawalsRequired[chainId] ??= [];
+          withdrawalsRequired[chainId].push({
+            l2Token,
+            amountToWithdraw: desiredWithdrawalAmount,
+            mrkdwn: withdrawalMrkdwn,
+          });
         });
-
-        if (withdrawalsRequired[chainId] && withdrawalsRequired[chainId].length > 0) {
-          chainMrkdwns[chainId] = mrkdwn;
-        }
       });
     });
 
@@ -1460,9 +1460,11 @@ export class InventoryClient {
     // Now, go through each chain and submit transactions. We cannot batch them unfortunately since the bridges
     // pull tokens from the msg.sender.
     const txnReceipts: { [chainId: number]: string[] } = {};
+    const executedWithdrawalMrkdwns: { [chainId: number]: string[] } = {};
     await sdkUtils.forEachAsync(Object.keys(withdrawalsRequired), async (_chainId) => {
       const chainId = Number(_chainId);
       txnReceipts[chainId] = [];
+      executedWithdrawalMrkdwns[chainId] = [];
       await sdkUtils.forEachAsync(withdrawalsRequired[chainId], async (withdrawal) => {
         const txnRef = await this.adapterManager.withdrawTokenFromL2(
           this.relayer,
@@ -1472,6 +1474,12 @@ export class InventoryClient {
           this.simMode
         );
         txnReceipts[chainId].push(...txnRef);
+        // Receipts are always empty in simMode, so gate only live runs. An empty receipt on a live run means
+        // the bridge skipped this withdrawal (e.g. insufficient bridge capacity) and logged a warning, so
+        // don't claim it was withdrawn.
+        if (this.simMode || txnRef.length > 0) {
+          executedWithdrawalMrkdwns[chainId].push(withdrawal.mrkdwn);
+        }
       });
     });
     Object.keys(txnReceipts).forEach((_chainId) => {
@@ -1491,7 +1499,13 @@ export class InventoryClient {
         }),
         txnReceipt: txnReceipts[chainId],
       });
-      this.log("Executed excess L2 inventory withdrawal 📒", { mrkdwn: chainMrkdwns[Number(chainId)] }, "info");
+      if (executedWithdrawalMrkdwns[chainId].length > 0) {
+        this.log(
+          "Executed excess L2 inventory withdrawal 📒",
+          { mrkdwn: `*Withdrawals from ${getNetworkName(chainId)}:*\n${executedWithdrawalMrkdwns[chainId].join("")}` },
+          "info"
+        );
+      }
     });
     return withdrawalsRequired;
   }
