@@ -1,4 +1,5 @@
-import { AugmentedTransaction } from "../src/clients";
+import { FeeData } from "@ethersproject/abstract-provider";
+import { AugmentedTransaction, LEGACY_TRANSACTION_CHAINS, _scaleGasPrice } from "../src/clients";
 import {
   BigNumber,
   ethers,
@@ -180,14 +181,17 @@ describe("TransactionClient", function () {
     class CountingClient extends MockedTransactionClient {
       public submissions = 0;
       public retryScalers: number[] = [];
+      public prevFees: (Partial<FeeData> | undefined)[] = [];
       protected override _getTransactionPromise(
         txn: AugmentedTransaction,
         nonce: number | null,
-        retryScaler = 1.0
+        retryScaler = 1.0,
+        prevFees?: Partial<FeeData>
       ): Promise<TransactionResponse> {
         ++this.submissions;
         this.retryScalers.push(retryScaler);
-        return super._getTransactionPromise(txn, nonce, retryScaler);
+        this.prevFees.push(prevFees);
+        return super._getTransactionPromise(txn, nonce, retryScaler, prevFees);
       }
     }
 
@@ -299,6 +303,35 @@ describe("TransactionClient", function () {
       client.retryScalers.slice(1).forEach((retryScaler, idx) => {
         expect(retryScaler).to.be.greaterThan(client.retryScalers[idx]);
       });
+    });
+
+    it("Bases replacement fees on the outgoing transaction", async function () {
+      const chainId = chainIds[0];
+      const client = new CountingClient(spyLogger);
+      const fees = {
+        maxFeePerGas: ethers.utils.parseUnits("40", 9),
+        maxPriorityFeePerGas: ethers.utils.parseUnits("2", 9),
+      };
+      client.fees = fees; // Attached to every mocked TransactionResponse.
+      let blockNumber = 100;
+      const provider: MockProvider = {
+        getBlockNumber: () => Promise.resolve((blockNumber += 2)), // Blocks are produced without inclusion.
+        getTransactionCount: () => Promise.resolve(0),
+      };
+      let waitCalls = 0;
+      client.waitOverride = () => {
+        return ++waitCalls === 1
+          ? Promise.reject(makeEthersError(ethers.errors.TIMEOUT))
+          : Promise.resolve({} as TransactionReceipt);
+      };
+
+      const txnResponses = await client.submit(chainId, [makeConfirmationTxn(chainId, provider)]);
+      expect(txnResponses.length).to.equal(1);
+      expect(client.submissions).to.equal(2);
+      // The initial submission replaces nothing; the replacement carries the outgoing fee caps.
+      expect(client.prevFees[0]).to.be.undefined;
+      expect(client.prevFees[1]?.maxFeePerGas?.eq(fees.maxFeePerGas)).to.be.true;
+      expect(client.prevFees[1]?.maxPriorityFeePerGas?.eq(fees.maxPriorityFeePerGas)).to.be.true;
     });
 
     it("Tolerates transient RPC errors while confirming", async function () {
@@ -413,6 +446,43 @@ describe("TransactionClient", function () {
       expect(txnResponses.length).to.equal(1);
       // wait() was called maxTries times (default is 10).
       expect(waitCalls).to.equal(10);
+    });
+  });
+
+  describe("_scaleGasPrice replacement floor", function () {
+    type Type2Fees = { maxFeePerGas: BigNumber; maxPriorityFeePerGas: BigNumber };
+    const gwei = (n: string): BigNumber => ethers.utils.parseUnits(n, 9);
+    const minBump = (fee: BigNumber): BigNumber => fee.mul(11).div(10);
+
+    it("Floors replacement fees when the gas estimate falls", function () {
+      const chainId = chainIds[0];
+      const prevFees = { maxFeePerGas: gwei("100"), maxPriorityFeePerGas: gwei("10") };
+      // The estimate halved between attempts; the scaled estimate alone would underprice the replacement.
+      const gas = { maxFeePerGas: gwei("50"), maxPriorityFeePerGas: gwei("5") };
+
+      const scaled = _scaleGasPrice(chainId, gas, 1.1, prevFees) as Type2Fees;
+      expect(scaled.maxFeePerGas.eq(minBump(prevFees.maxFeePerGas))).to.be.true;
+      expect(scaled.maxPriorityFeePerGas.eq(minBump(prevFees.maxPriorityFeePerGas))).to.be.true;
+    });
+
+    it("Prefers the scaled estimate when it clears the floor", function () {
+      const chainId = chainIds[0];
+      const prevFees = { maxFeePerGas: gwei("100"), maxPriorityFeePerGas: gwei("10") };
+      const gas = { maxFeePerGas: gwei("200"), maxPriorityFeePerGas: gwei("20") };
+
+      const scaled = _scaleGasPrice(chainId, gas, 1.1, prevFees) as Type2Fees;
+      const unfloored = _scaleGasPrice(chainId, gas, 1.1) as Type2Fees;
+      expect(scaled.maxFeePerGas.eq(unfloored.maxFeePerGas)).to.be.true;
+      expect(scaled.maxPriorityFeePerGas.eq(unfloored.maxPriorityFeePerGas)).to.be.true;
+    });
+
+    it("Floors legacy gasPrice replacements", function () {
+      const chainId = LEGACY_TRANSACTION_CHAINS[0];
+      const prevFees = { gasPrice: gwei("100") };
+      const gas = { maxFeePerGas: gwei("50"), maxPriorityFeePerGas: gwei("5") };
+
+      const scaled = _scaleGasPrice(chainId, gas, 1.1, prevFees) as { gasPrice: BigNumber };
+      expect(scaled.gasPrice.eq(minBump(prevFees.gasPrice))).to.be.true;
     });
   });
 });

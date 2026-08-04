@@ -144,22 +144,34 @@ export class TransactionClient {
   protected _getTransactionPromise(
     txn: AugmentedTransaction,
     nonce: number | null,
-    retryScaler = 1.0
+    retryScaler = 1.0,
+    prevFees?: Partial<FeeData>
   ): Promise<TransactionResponse> {
     const { contract, method, args, value, gasLimit, chainId } = txn;
     if (chainIsTvm(chainId)) {
       return _runTransactionTvm(this.logger, contract, method, args, value, gasLimit, nonce);
     }
-    return _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce, undefined, retryScaler);
+    return _runTransaction(
+      this.logger,
+      contract,
+      method,
+      args,
+      value,
+      gasLimit,
+      nonce,
+      undefined,
+      retryScaler,
+      prevFees
+    );
   }
 
   protected async _submit(
     txn: AugmentedTransaction,
-    opts: { nonce: number | null; maxTries?: number; retryScaler?: number }
+    opts: { nonce: number | null; maxTries?: number; retryScaler?: number; prevFees?: Partial<FeeData> }
   ): Promise<TransactionResponse> {
     const { chainId } = txn;
-    const { nonce = null, maxTries = 10, retryScaler = 1.0 } = opts;
-    const txnPromise = this._getTransactionPromise(txn, nonce, retryScaler);
+    const { nonce = null, maxTries = 10, retryScaler = 1.0, prevFees } = opts;
+    const txnPromise = this._getTransactionPromise(txn, nonce, retryScaler, prevFees);
 
     if (txn.ensureConfirmation) {
       const at = "TransactionClient#_submit";
@@ -247,14 +259,21 @@ export class TransactionClient {
               // Bump fees on the replacement: the outgoing transaction was evidently not priced for
               // inclusion, and nodes holding it will reject a replacement that doesn't raise both fee
               // caps. Don't rely on REPLACEMENT_UNDERPRICED to escalate — RPCs that route transactions
-              // privately (no public mempool insertion) never emit it.
+              // privately (no public mempool insertion) never emit it. The outgoing fee caps are
+              // passed down so the replacement is priced above them even if the gas estimate fell.
               const bumpedScaler = _bumpRetryScaler(chainId, retryScaler);
+              const { gasPrice, maxFeePerGas, maxPriorityFeePerGas } = txnResponse;
               this.logger.warn({
                 ...common,
                 message: `Transaction on ${chain} timed out at nonce ${txnResponse.nonce}, resubmitting...`,
                 retryScaler: bumpedScaler,
               });
-              return this._submit(txn, { nonce: txnResponse.nonce, maxTries: maxTries - 1, retryScaler: bumpedScaler });
+              return this._submit(txn, {
+                nonce: txnResponse.nonce,
+                maxTries: maxTries - 1,
+                retryScaler: bumpedScaler,
+                prevFees: { gasPrice, maxFeePerGas, maxPriorityFeePerGas },
+              });
             }
             default:
               this.logger.warn({
@@ -375,7 +394,8 @@ async function _runTransaction(
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
   retries?: number,
-  retryScaler = 1.0
+  retryScaler = 1.0,
+  prevFees?: Partial<FeeData>
 ): Promise<TransactionResponse> {
   const at = "TxUtil#_runTransaction";
   const { provider, signer } = contract;
@@ -395,14 +415,25 @@ async function _runTransaction(
       maxFeePerGasScaler,
       sendRawTxn ? undefined : await contract.populateTransaction[method](...args, { value })
     );
-    gas = _scaleGasPrice(chainId, preGas, retryScaler);
+    gas = _scaleGasPrice(chainId, preGas, retryScaler, prevFees);
   } catch (error) {
     // Linea uses linea_estimateGas and will throw on FilledRelay() reverts; skip retries.
     // nb. Requiring low-level chain & method inspection is a wart on the implementation. @todo: refactor it away.
     if ((chainId === CHAIN_IDs.LINEA && method === "fillRelay") || --retries < 0) {
       throw error;
     }
-    return await _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries);
+    return await _runTransaction(
+      logger,
+      contract,
+      method,
+      args,
+      value,
+      gasLimit,
+      nonce,
+      retries,
+      retryScaler,
+      prevFees
+    );
   }
 
   const to = contract.address;
@@ -501,7 +532,18 @@ async function _runTransaction(
       retryScaler = _bumpRetryScaler(chainId, retryScaler, priorityFeeScaler);
     }
 
-    return await _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, retryScaler);
+    return await _runTransaction(
+      logger,
+      contract,
+      method,
+      args,
+      value,
+      gasLimit,
+      nonce,
+      retries,
+      retryScaler,
+      prevFees
+    );
   }
 }
 
@@ -602,12 +644,14 @@ async function _runTransactionTvm(
  * @param chainId Chain ID for transaction submission.
  * @param gas Input gas price (Legacy/type 0 or eip1559/type 2).
  * @param scaler Multiplier to apply to the gas price.
+ * @param prevFees Fee caps of the same-nonce transaction being replaced, if any.
  * @returns A scaled type 0 or type 2 gas price, dependent on chainId.
  */
-function _scaleGasPrice(
+export function _scaleGasPrice(
   chainId: number,
   gas: { maxFeePerGas: BigNumber; maxPriorityFeePerGas: BigNumber },
-  retryScaler = 1.0
+  retryScaler = 1.0,
+  prevFees?: Partial<FeeData>
 ): { maxFeePerGas: BigNumber; maxPriorityFeePerGas: BigNumber } | { gasPrice: BigNumber } {
   let { maxFeePerGas, maxPriorityFeePerGas } = gas;
 
@@ -615,9 +659,19 @@ function _scaleGasPrice(
   const computeFeeDelta = (maxFeePerGas: BigNumber): BigNumber =>
     maxFeePerGas.mul(feeDeltaPct).div(fixedPointAdjustment);
 
+  // The scalers apply to the current gas estimate, but a same-nonce replacement must also exceed
+  // the fee caps of the transaction it displaces by the node-enforced minimum (~10%). If the
+  // estimate fell between attempts, the scaled estimate alone can price the replacement at or
+  // below the outgoing transaction, so floor each cap against its predecessor.
+  const minReplacementFee = (prevFee?: BigNumber | null): BigNumber =>
+    prevFee?.mul(toBNWei(MIN_GAS_RETRY_SCALER_DEFAULT)).div(fixedPointAdjustment) ?? bnZero;
+
   // Legacy/type0 transactions.
   if (LEGACY_TRANSACTION_CHAINS.includes(chainId)) {
-    const gasPrice = maxFeePerGas.add(computeFeeDelta(maxFeePerGas));
+    const gasPrice = sdkUtils.bnMax(
+      maxFeePerGas.add(computeFeeDelta(maxFeePerGas)),
+      minReplacementFee(prevFees?.gasPrice ?? prevFees?.maxFeePerGas)
+    );
     return { gasPrice };
   }
 
@@ -634,6 +688,11 @@ function _scaleGasPrice(
   maxFeeDelta = computeFeeDelta(maxFeePerGas);
   maxFeePerGas = maxFeePerGas.add(maxFeeDelta);
   maxPriorityFeePerGas = maxPriorityFeePerGas.add(maxFeeDelta);
+
+  // nb. prevFees preserves maxPriorityFeePerGas <= maxFeePerGas: each floor is the corresponding
+  // cap of a single previously-accepted transaction, scaled by the same factor.
+  maxFeePerGas = sdkUtils.bnMax(maxFeePerGas, minReplacementFee(prevFees?.maxFeePerGas));
+  maxPriorityFeePerGas = sdkUtils.bnMax(maxPriorityFeePerGas, minReplacementFee(prevFees?.maxPriorityFeePerGas));
 
   return {
     maxFeePerGas,

@@ -1,4 +1,5 @@
 import { ethers } from "ethers";
+import { FeeData } from "@ethersproject/abstract-provider";
 import { random } from "lodash";
 import { AugmentedTransaction, TransactionClient } from "../../src/clients";
 import { BigNumber, TransactionReceipt, TransactionResponse, TransactionSimulationResult } from "../../src/utils";
@@ -8,6 +9,7 @@ export const txnClientPassResult = "pass";
 
 export class MockedTransactionClient extends TransactionClient {
   public gasLimit: BigNumber | undefined = undefined;
+  public fees: Partial<FeeData> = {};
   public waitOverride?: () => Promise<TransactionReceipt>;
 
   constructor(logger: winston.Logger) {
@@ -49,7 +51,8 @@ export class MockedTransactionClient extends TransactionClient {
   protected override _getTransactionPromise(
     txn: AugmentedTransaction,
     nonce: number | null,
-    _retryScaler = 1.0
+    _retryScaler = 1.0,
+    _prevFees?: Partial<FeeData>
   ): Promise<TransactionResponse> {
     if (this.txnFailure(txn)) {
       return Promise.reject(this.txnFailureReason(txn));
@@ -61,6 +64,7 @@ export class MockedTransactionClient extends TransactionClient {
       nonce: _nonce,
       hash: ethers.utils.id(`Across-v2-${txn.contract.address}-${txn.method}-${_nonce}`),
       gasLimit: txn.gasLimit ?? this.randomGasLimit(),
+      ...this.fees,
       ...(this.waitOverride !== undefined && { wait: this.waitOverride }),
     } as TransactionResponse;
 
