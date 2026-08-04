@@ -258,9 +258,10 @@ export class TransactionClient {
               }
               // Bump fees on the replacement: the outgoing transaction was evidently not priced for
               // inclusion, and nodes holding it will reject a replacement that doesn't raise both fee
-              // caps. Don't rely on REPLACEMENT_UNDERPRICED to escalate — RPCs that route transactions
-              // privately (no public mempool insertion) never emit it. The outgoing fee caps are
-              // passed down so the replacement is priced above them even if the gas estimate fell.
+              // caps. Don't rely on REPLACEMENT_UNDERPRICED to escalate — it isn't guaranteed to
+              // surface (it has been observed missing on some RPC submission routes), so escalate
+              // proactively. The outgoing fee caps are passed down so the replacement is priced
+              // above them even if the gas estimate fell.
               const bumpedScaler = _bumpRetryScaler(chainId, retryScaler);
               const { gasPrice, maxFeePerGas, maxPriorityFeePerGas } = txnResponse;
               this.logger.warn({
