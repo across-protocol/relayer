@@ -59,6 +59,17 @@ export const unknownRevertReasonMethodsToIgnore = new Set([
   "executeRootBundle",
 ]);
 
+/**
+ * Is this a revert reason we specifically recognise as benign (typically a race against another bot)?
+ *
+ * Unlike canIgnoreRevertReason() this is independent of the method called and does not forgive a generic,
+ * unattributable revert, so it is safe to apply to a reason that stands in for a whole batch of calls.
+ */
+export function isKnownRevertReason(reason?: string): boolean {
+  const lowerCaseReason = (reason ?? "unknown").toLowerCase();
+  return [...knownRevertReasons].some((knownReason) => lowerCaseReason.includes(knownReason.toLowerCase()));
+}
+
 // @dev The dataworker executor personality typically bundles an Optimism L1 deposit via multicall3 aggregate(). Per
 //      Optimism's Bedrock migration, gas estimates should be padded by 50% to ensure that transactions do not fail
 //      with OoG. Because we optimistically construct an aggregate() transaction without simulating each simulating
@@ -206,18 +217,28 @@ export class MultiCallerClient {
     // First try to simulate the transaction as a batch. If the full batch succeeded, then we don't
     // need to simulate transactions individually. If the batch failed, then we need to
     // simulate the transactions individually and pick out the successful ones.
-    const batchTxns: AugmentedTransaction[] = nonMulticallTxns.concat(
-      await this.buildMultiCallBundles(txns, this.chunkSize[chainId])
-    );
+    const multicallBundles = await this.buildMultiCallBundles(txns, this.chunkSize[chainId]);
+    const batchTxns: AugmentedTransaction[] = nonMulticallTxns.concat(multicallBundles);
+
+    // Only a genuine bundle hides the revert reason of the call that failed. buildMultiCallBundles()
+    // passes a lone queue entry through unwrapped, and nonMulticallTxns are never wrapped, so identify
+    // the bundles by reference rather than by method name.
+    const queuedTxns = new Set(txns);
+    const bundledTxns = new Set(multicallBundles.filter((txn) => !queuedTxns.has(txn)));
+
     const batchSimResults = await this.txnClient.simulate(batchTxns);
     const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction, reason }, idx) => {
       // If txn succeeded or the revert reason is known to be benign, then log at debug level.
-      // @dev Deliberately narrower than canIgnoreRevertReason(): that also forgives a *generic* revert
-      // ("execution reverted", no data) on aggregate/multicall methods, which is exactly what a failing
-      // multicall bundle looks like -- Multicall3 discards the inner revert reason. Forgiving it here
-      // silently drops the entire batch every run, with nothing above debug level to show for it.
-      // Known reasons (races with another bot) stay quiet; unattributable batch failures do not.
-      this.logger[succeed || simulate || this.hasKnownRevertReason(reason) ? "debug" : "error"]({
+      // @dev For a bundle this is deliberately narrower than canIgnoreRevertReason(): that also forgives
+      // a *generic* revert ("execution reverted", no data) on aggregate/multicall methods, which is
+      // exactly what a failing bundle looks like -- Multicall3 discards the inner revert reason.
+      // Forgiving it here silently drops every batched txn for the chain, every run, with nothing above
+      // debug level to show for it. An unwrapped transaction reverts with its own reason, so it keeps the
+      // per-method suppression that stops ordinary relayer/dataworker races from paging anyone.
+      const ignorableRevert = bundledTxns.has(batchTxns[idx])
+        ? isKnownRevertReason(reason)
+        : this.canIgnoreRevertReason({ succeed, transaction, reason });
+      this.logger[succeed || simulate || ignorableRevert ? "debug" : "error"]({
         at: "MultiCallerClient#executeChainTxnQueue",
         message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
         batchTxn: { ...transaction, contract: transaction.contract.address },
@@ -484,17 +505,10 @@ export class MultiCallerClient {
     const { transaction: _txn, reason } = txn;
     const lowerCaseReason = (reason ?? "unknown").toLowerCase();
     return (
-      this.hasKnownRevertReason(reason) ||
+      isKnownRevertReason(reason) ||
       (unknownRevertReasonMethodsToIgnore.has(_txn.method) &&
         unknownRevertReasons.some((_reason) => lowerCaseReason.includes(_reason.toLowerCase())))
     );
-  }
-
-  // A revert reason we specifically recognise as benign, independent of the method called. Unlike
-  // canIgnoreRevertReason() this does not forgive generic/unattributable reverts.
-  protected hasKnownRevertReason(reason?: string): boolean {
-    const lowerCaseReason = (reason ?? "unknown").toLowerCase();
-    return [...knownRevertReasons].some((knownReason) => lowerCaseReason.includes(knownReason.toLowerCase()));
   }
 
   // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may

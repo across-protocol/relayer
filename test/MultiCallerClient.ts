@@ -44,6 +44,14 @@ class DummyMultiCallerClient extends MockedMultiCallerClient {
     this.loggedSimulationFailures = [];
   }
 
+  // Fail every simulation with `reason`, whatever the transaction. MockedTransactionClient's arg-based
+  // mechanism can't reach a bundle, whose args are the encoded calldata of the txns it wraps.
+  forceSimulationFailure(reason: string): void {
+    const txnClient = new MockedTransactionClient(this.logger);
+    txnClient.txnFailureReason = () => reason;
+    this.txnClient = txnClient;
+  }
+
   private txnCount(txnQueue: { [chainId: number]: AugmentedTransaction[] }): number {
     return Object.values(txnQueue).reduce((count, txnQueue) => (count += txnQueue.length), 0);
   }
@@ -328,21 +336,23 @@ describe("MultiCallerClient", function () {
   it("Logs unattributable batch simulation failures at error level", async function () {
     // A failing multicall bundle surfaces only a generic revert, because Multicall3 discards the inner
     // revert reason. Suppressing that to debug hides the fact that every batched txn on the chain was
-    // dropped, so only reasons we specifically recognise as benign may be quiet here.
-    const batchFailure = (reason: string) =>
+    // dropped, so only reasons we specifically recognise as benign may be quiet for a bundle.
+    const queuedTxn = (method: string) =>
       ({
         chainId: chainIds[0],
-        contract: { address },
-        method: "aggregate",
-        nonMulticall: true, // Simulated as-is, rather than being wrapped into a bundle first.
-        args: [{ result: reason }],
-        message: `Batch simulation failure: ${reason}.`,
+        contract: { address, interface: { encodeFunctionData }, multicall: 1, signer },
+        method,
+        args: [{ result: txnClientPassResult }],
+        message: `Test ${method} transaction.`,
       }) as unknown as AugmentedTransaction;
 
-    const simulateBatchFailure = async (reason: string): Promise<string | undefined> => {
+    // The mock forces a failure via the transaction's args, which bundling replaces with encoded
+    // calldata -- so force the reason at the client instead and let the bundling happen for real.
+    const simulateBatchFailure = async (reason: string, txns: AugmentedTransaction[]): Promise<string | undefined> => {
       const { spy, spyLogger } = createSpyLogger();
       const _multiCaller = new DummyMultiCallerClient(spyLogger);
-      _multiCaller.enqueueTransaction(batchFailure(reason));
+      _multiCaller.forceSimulationFailure(reason);
+      txns.forEach((txn) => _multiCaller.enqueueTransaction(txn));
       await _multiCaller.executeTxnQueues();
 
       return spy
@@ -351,14 +361,24 @@ describe("MultiCallerClient", function () {
         .find(({ message }) => (message as string)?.includes("Failed to simulate"))?.level;
     };
 
-    // Generic reverts are unattributable: the batch died and we cannot say why, so shout about it.
+    // Two queued txns are wrapped into a single bundle, whose failure is all that we get to see.
+    const bundled = [queuedTxn("fillRelay"), queuedTxn("fillRelay")];
+
+    // Generic reverts are unattributable: the bundle died and we cannot say why, so shout about it.
     for (const reason of unknownRevertReasons) {
-      expect(await simulateBatchFailure(reason)).to.equal("error");
+      expect(await simulateBatchFailure(reason, bundled)).to.equal("error");
     }
 
     // Reasons we recognise as benign races with another bot stay at debug.
     for (const reason of knownRevertReasons) {
-      expect(await simulateBatchFailure(reason)).to.equal("debug");
+      expect(await simulateBatchFailure(reason, bundled)).to.equal("debug");
+    }
+
+    // A lone queued txn is *not* wrapped, so it reverts with its own reason and keeps the existing
+    // per-method suppression: one fillRelay losing a race to another relayer must not page anyone.
+    for (const reason of unknownRevertReasons) {
+      expect(await simulateBatchFailure(reason, [queuedTxn("fillRelay")])).to.equal("debug");
+      expect(await simulateBatchFailure(reason, [queuedTxn("unrecognizedMethod")])).to.equal("error");
     }
   });
 
