@@ -306,8 +306,30 @@ describe("DepositAddressService app", function () {
     expect(response.status).to.equal(500);
     const failure = lastLine().failure as Record<string, unknown>;
     expect(failure.retriable).to.equal(true);
+    // The guarded serializer degrades only `detail`, so the type and code survive.
+    expect(failure.type).to.equal("object");
+    expect(failure.code).to.equal("UNEXPECTED_ERROR");
+    expect(failure.detail).to.equal("<unserializable object>");
+  });
+
+  it("still NACKs when the thrown value's toString throws", async function () {
+    // The remaining path to describeFailure's own fallback: safeStringifyThrownValue covers the
+    // serializer, but `String(error)` for the message can still throw on a hostile value.
+    handlerStub.callsFake(async () => {
+      throw {
+        toString() {
+          throw new Error("nope");
+        },
+      };
+    });
+    await start();
+
+    const response = await post(pushBody(PAYLOAD));
+
+    expect(response.status).to.equal(500);
+    const failure = lastLine().failure as Record<string, unknown>;
     expect(failure.type).to.equal("unserializable");
-    expect(failure.message).to.equal("failed to serialize thrown value");
+    expect(failure.retriable).to.equal(true);
   });
 
   it("puts the failure under `failure`, never under the reserved `error` key", async function () {
