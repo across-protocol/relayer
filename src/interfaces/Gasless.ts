@@ -295,6 +295,14 @@ export interface GaslessDepositMessage {
   signature: string;
   permitType: GaslessPermitType;
   permit: ReceiveWithAuthorization | Permit2Permit;
+  /**
+   * SpokePoolPeriphery address the user's signature binds (`swapTx.to` from the API).
+   * The signed EIP-3009/Permit2/EIP-2612 payload names the periphery as payee/verifier,
+   * so the deposit can only execute against exactly this contract — any other target
+   * reverts. Absent on feeds that predate the field; the relayer then falls back to its
+   * default (pinned) periphery for the origin chain.
+   */
+  targetAddress?: string;
   /** Destructured from BridgeWitnessData. */
   inputAmount: string;
   baseDepositData: BaseDepositData;
@@ -322,6 +330,8 @@ export interface SwapAndBridgeGaslessDepositMessage {
   permitApprovalSignature?: string;
   /** Required for permitType === "permit" (EIP-2612 flow). */
   permitApprovalDeadline?: number;
+  /** See {@link GaslessDepositMessage.targetAddress}. */
+  targetAddress?: string;
   /** Destructured from BridgeAndSwapWitnessData. */
   depositData: SwapBaseDepositData;
   submissionFees: Fees;

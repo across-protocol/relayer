@@ -23,24 +23,36 @@ Routes are assembled by the rebalancer construction layer and passed at client i
 
 The cumulative-mode production route set is generated in `src/rebalancer/buildRebalanceRoutes.ts`. It covers:
 
-- stablecoin swap routes between `USDC` and `USDT` on Binance and Hyperliquid, excluding Tron from Hyperliquid,
+- stablecoin swap routes between `USDC` and `USDT` on Binance, plus Hyperliquid routes when both token endpoints can bridge to or from HyperEVM,
 - same-asset routes for `USDC` via CCTP and on direct Binance-supported USDC networks via Binance, and for `USDT` via OFT and on direct Binance-supported USDT networks via Binance,
 - Binance-only `WETH <-> USDC` and `WETH <-> USDT` routes sourced or settled through mainnet. `WETH <-> WETH` route handling exists in the adapter, but no cross-chain `WETH <-> WETH` routes are generated while WETH Binance support is limited to mainnet.
 
-Route construction keeps two token-keyed chain maps:
+Route construction keeps three token-keyed chain maps:
 
 - `BINANCE_NETWORKS_BY_SYMBOL`: direct Binance deposit/withdraw networks known for each token.
-- `REBALANCE_CHAINS_BY_SYMBOL`: the narrower set of chains this repo currently enables for rebalancing that token.
+- `REBALANCE_CHAINS_BY_SYMBOL`: every chain this repo currently enables as a rebalancing endpoint for that token, whether the route uses Binance directly or an intermediate bridge.
+- `BRIDGE_CHAINS_BY_SYMBOL`: the subset with validated CCTP or OFT connectivity. Same-asset bridge routes require both endpoints in this map, and Hyperliquid requires each token endpoint to be bridgeable through HyperEVM.
+
+The current stablecoin endpoint catalogs are:
+
+- `USDT`: Unichain, Tron, Polygon, Plasma, Optimism, Monad, MegaETH, Mainnet, Ink, HyperEVM, BSC, Avalanche, and Arbitrum.
+- `USDC`: World Chain, Unichain, Polygon, Optimism, Monad, Mainnet, Linea, Ink, HyperEVM, BSC, Base, Avalanche, and Arbitrum.
+
+Only chains configured under `cumulativeTargetBalances[token].chains` are selected from these catalogs for that token.
+Adapter initialization separately adds the CCTP/OFT support routes required by the selected operational routes:
+Arbitrum legs for non-direct Binance endpoints and HyperEVM legs for Hyperliquid endpoints outside HyperEVM. These
+internal routes do not make an entrypoint a balance target, and direct-only routes do not initialize unused bridge
+entrypoints.
 
 Operational note:
 
 - Same-asset `USDC <-> USDC` and `USDT <-> USDT` Binance routes are included deliberately so they can compete on estimated cost against CCTP/OFT paths, but they are only generated when both chains are direct Binance networks for that asset.
 - USDT on Tron is treated as a direct Binance `TRX` network for both deposits and withdrawals. Tron USDT Binance routes deposit to and withdraw from Binance directly, rather than bridging through an OFT entrypoint network first.
-- Updating Binance venue support for a token does not automatically widen rebalancer support. New chains should usually be added to both maps intentionally after inventory/config/runtime review.
+- Updating Binance venue support for a token does not automatically widen rebalancer support. Add a chain to `REBALANCE_CHAINS_BY_SYMBOL` only after inventory/config/runtime review, and add it to `BRIDGE_CHAINS_BY_SYMBOL` only when the token has validated CCTP or OFT connectivity.
 - Current route construction limits Binance `WETH` support to mainnet because the rebalancer's native-ETH deposit path relies on the mainnet Atomic Depositor and transfer proxy wiring.
 - If additional direct Binance ETH networks are enabled later, same-coin `WETH <-> WETH` routes skip the spot swap leg and treat on-chain `WETH` as Binance `ETH`.
 - Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; current `WETH` routes therefore source or settle through mainnet rather than bridging WETH into another Binance ETH network.
-- Hyperliquid routes intentionally exclude Tron even when Tron USDT is configured, and same-asset USDT routes involving Tron use Binance rather than OFT.
+- Hyperliquid routes intentionally exclude Avalanche, BSC, and Tron USDT endpoints and BSC USDC endpoints because those token/chain combinations cannot bridge through HyperEVM. Same-asset routes involving those endpoints do not use OFT or CCTP.
 
 The dedicated SameAsset mode has a separate route source in `src/rebalancer/buildSameAssetRebalanceRoutes.ts`. Its read-only `SAME_ASSET_REBALANCE_ROUTE_SUPPORT` catalog is the source of truth for token, destination-chain, and adapter combinations that this mode can execute. `buildSameAssetRebalanceRoutes(rebalancerConfig)` returns only the intersection of that catalog and `sameAssetBalances`; adding configuration alone does not enable an unsupported route. Both `SameAssetRebalancerClient` and Jussi topology preparation consume this builder so runtime support and graph edges stay aligned.
 
@@ -281,12 +293,21 @@ Lifecycle note:
   upstream exchange API is down), the client logs a warning and aggregates the remaining adapters instead of throwing.
   Consumers such as the relayer's `InventoryClient` keep running with that adapter's in-flight rebalances temporarily
   uncounted in virtual balances.
+- `getAdaptersWithFailedPendingReads()` reports which adapters were dropped from the most recent
+  `getPendingRebalances()` aggregation. Read-only consumers can ignore it, but the write-mode runtimes must check it
+  before initiating new rebalances: while any adapter's pending state is invisible, an apparent deficit may already be
+  covered by an in-flight rebalance, so initiating against it would duplicate that rebalance.
 
 Runtime entrypoints in `src/rebalancer/`:
 
 - `runCumulativeBalanceRebalancer` (supported operational path).
 - `runSameAssetRebalancer` (directional SameAsset operational path).
 - The runtime updates adapter status/sweeps first, then refreshes `TokenClient` balances before applying adapter-reported pending rebalance adjustments and evaluating new rebalances. The refresh is required because the sweeps and `updateRebalanceStatuses` calls submit OFT/CCTP/Hypercore transactions that leave the initial `TokenClient.update()` snapshot stale; without it, `rebalanceInventory` can size a new bridge against a pre-burn balance and crash on the underlying simulation revert.
+- Venue-outage degradation: the status/sweep update loop isolates per-adapter failures (a venue whose API is down is
+  logged with a warning and skipped for the run while the remaining adapters progress), both run entrypoints skip
+  initiating new rebalances for the run whenever `getAdaptersWithFailedPendingReads()` is non-empty (see the
+  duplicate-rebalance rationale above), and a route whose `getEstimatedCost` read fails is excluded from that
+  round's route competition instead of aborting the pass.
 
 ## Interactions with Other Bots and Clients
 
@@ -326,6 +347,20 @@ signer account and finalizer withdrawal recipients can be configured separately,
 EVM withdrawal recipients and the running signer account before applying this shared Binance-account deduction. Pending
 rebalance loading errors surface normally so operators can investigate instead of silently sweeping without the
 deduction.
+
+Binance suspends withdrawals per coin/network pair during chain upgrades and wallet maintenance, reporting `031026` on
+the withdrawal call. A suspended pair stays listed in `accountCoins().networkList` for the whole window, so the
+`withdrawEnable` flag on the network entry — not the pair's presence in the list — is what determines whether the
+withdrawal leg will be accepted. The Binance adapter handles this on both sides of an order. `initializeRebalance`
+checks `withdrawEnable` on the resolved destination network and skips the route before committing funds, because the
+deposit leg into Binance cannot be reversed from this adapter and an order that cannot be withdrawn would otherwise
+strand its tranche on the exchange until `REBALANCER_PENDING_ORDER_TTL` elapses. Account coins are read with the cache
+bypassed on that path, since the flag flips whenever a withdrawal window opens or closes and the cache entry uses a long
+TTL. For orders already holding an exchange balance, `_withdraw` treats `031026` the same way it treats `RW00441` — a
+retryable wait state that leaves the order pending, warns, and lets the existing prune/finalizer handover reclaim the
+deposit if the suspension outlasts the order TTL. Withdrawal availability is deliberately *not* asserted in
+`initialize()`: those assertions run at boot and throw, so gating them on a transient venue suspension would stop the
+bot from starting at all.
 
 ## Venue-specific operational note
 

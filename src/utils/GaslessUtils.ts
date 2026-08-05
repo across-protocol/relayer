@@ -271,7 +271,7 @@ export function restructureGaslessDeposits(
 ): AnyGaslessDepositMessage[] {
   return depositMessages.flatMap((msg): AnyGaslessDepositMessage[] => {
     const { swapTx, requestId, signature } = msg;
-    const { chainId: originChainId, data } = swapTx;
+    const { chainId: originChainId, to: targetAddress, data } = swapTx;
     const { depositId, witness, integratorId, metadata, type: permitType } = data;
     if (!isGaslessPermitType(permitType)) {
       logger.warn({
@@ -306,6 +306,7 @@ export function restructureGaslessDeposits(
           permit: data.permit as SwapAndBridgeGaslessDepositMessage["permit"],
           permitApprovalSignature: swapMsg.permitApprovalSignature,
           permitApprovalDeadline: swapMsg.permitApprovalDeadline,
+          targetAddress,
           depositData: raw.depositData,
           submissionFees: raw.submissionFees,
           swapToken: raw.swapToken,
@@ -335,6 +336,7 @@ export function restructureGaslessDeposits(
         // permit type for this branch is erc3009 | Permit2Permit.
         // Cast required because data is still the union type after narrowing witness.
         permit: data.permit as GaslessDepositMessage["permit"],
+        targetAddress,
         inputAmount,
         baseDepositData,
         submissionFees,
@@ -345,6 +347,34 @@ export function restructureGaslessDeposits(
       },
     ];
   });
+}
+
+// Previous SpokePoolPeriphery generations, by chain. Most EVM chains share one CREATE2
+// deploy; zk-stack chains and the Avalanche/Robinhood cohort had their own.
+const LEGACY_SPOKE_POOL_PERIPHERY_DEFAULT = ["0x10D8b8DaA26d307489803e10477De69C0492B610"];
+const LEGACY_SPOKE_POOL_PERIPHERY_EXCEPTIONS: { [chainId: number]: string[] } = {
+  [CHAIN_IDs.AVALANCHE]: ["0xe05E3798Ce2ae9afCb637fb53BF5a51253BBe2af"],
+  [CHAIN_IDs.ROBINHOOD]: ["0xe05E3798Ce2ae9afCb637fb53BF5a51253BBe2af"],
+  [CHAIN_IDs.LENS]: ["0x5a148a9260c1f670429361c34d40b477280f01a9"],
+  [CHAIN_IDs.ZK_SYNC]: ["0x5a148a9260c1f670429361c34d40b477280f01a9"],
+};
+
+/**
+ * Previous SpokePoolPeriphery generations that remain valid gasless deposit targets on a chain.
+ *
+ * A gasless deposit can only ever execute against the exact periphery generation the user's
+ * signature binds: the signed EIP-3009/Permit2/EIP-2612 payload names the periphery as the
+ * token-level payee and witness verifier, so submitting it anywhere else reverts. During a
+ * periphery migration the API may still be quoting — or have in-flight intents signed
+ * against — the previous generation, so the relayer accepts these addresses as deposit
+ * targets alongside its default. This lets the relayer roll forward before the API cutover
+ * and keep draining old-generation intents afterwards.
+ *
+ * Retire entries once the API no longer quotes the generation and in-flight authorizations
+ * (bounded by their ~25-minute `validBefore`) have drained.
+ */
+export function getLegacySpokePoolPeripheryAddresses(chainId: number): string[] {
+  return LEGACY_SPOKE_POOL_PERIPHERY_EXCEPTIONS[chainId] ?? LEGACY_SPOKE_POOL_PERIPHERY_DEFAULT;
 }
 
 function toBytes(value: string): string {
@@ -396,12 +426,15 @@ function toContractDepositData(data: BridgeWitnessData) {
   };
 }
 
-function normalizeSignature(signature: string): string {
+// EOA signatures are exactly 65 bytes; smart-wallet (EIP-1271 / ERC-6492) signatures are longer
+// and must be submitted via the periphery's *Bytes methods, which forward them to the token's
+// bytes-signature EIP-3009 overload. The quote API applies the same dispatch at simulation time.
+function normalizeAuthSignature(signature: string): { signature: string; isSmartWallet: boolean } {
   const hex = signature.startsWith("0x") ? signature : `0x${signature}`;
-  if (hex.length !== 132) {
-    throw new Error("receiveWithAuthSignature must be 65 bytes (132 hex chars)");
+  if (hex.length < 132) {
+    throw new Error("receiveWithAuthSignature must be at least 65 bytes (132 hex chars)");
   }
-  return hex;
+  return { signature: hex, isSmartWallet: hex.length > 132 };
 }
 
 function normalizeSignatureBytes(signature: string): string {
@@ -509,7 +542,8 @@ export async function isErc2612PermitNonceConsumed(params: {
 }
 
 /**
- * Builds calldata for SpokePoolPeriphery.depositWithAuthorization(signatureOwner, depositData, validAfter, validBefore, signature).
+ * Builds calldata for SpokePoolPeriphery.depositWithAuthorization[Bytes](signatureOwner, depositData, validAfter, validBefore, signature).
+ * The *Bytes variant is used for smart-wallet (>65-byte) signatures.
  */
 export function buildReceiveWithAuthorizationGaslessDepositTx(
   depositMessage: GaslessDepositMessage,
@@ -520,16 +554,12 @@ export function buildReceiveWithAuthorizationGaslessDepositTx(
   const { from: signatureOwner, validBefore, validAfter } = (permit as ReceiveWithAuthorization).message;
   const witnessData: BridgeWitnessData = { inputAmount, baseDepositData, submissionFees, spokePool, nonce };
   const depositData = toContractDepositData(witnessData);
-  const args = [
-    signatureOwner,
-    depositData,
-    BigNumber.from(validAfter),
-    BigNumber.from(validBefore),
-    normalizeSignature(signature),
-  ];
+  const { signature: authSignature, isSmartWallet } = normalizeAuthSignature(signature);
+  const method = isSmartWallet ? "depositWithAuthorizationBytes" : "depositWithAuthorization";
+  const args = [signatureOwner, depositData, BigNumber.from(validAfter), BigNumber.from(validBefore), authSignature];
 
   if (integratorId) {
-    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData("depositWithAuthorization", args);
+    const calldata = spokePoolPeripheryContract.interface.encodeFunctionData(method, args);
     const taggedCalldata = tagIntegratorId(calldata, integratorId);
     return {
       contract: spokePoolPeripheryContract,
@@ -543,7 +573,7 @@ export function buildReceiveWithAuthorizationGaslessDepositTx(
   return {
     contract: spokePoolPeripheryContract,
     chainId: depositMessage.originChainId,
-    method: "depositWithAuthorization",
+    method,
     args,
     ensureConfirmation: true,
     spray: depositMessage.originChainId === CHAIN_IDs.MAINNET, // If mainnet, send to all available private RPCs.
@@ -551,8 +581,8 @@ export function buildReceiveWithAuthorizationGaslessDepositTx(
 }
 
 /**
- * Builds the origin-chain deposit tx for any gasless API message: bridge (depositWithAuthorization /
- * depositWithPermit2) or swap-and-bridge (swapAndBridgeWithAuthorization / swapAndBridgeWithPermit2).
+ * Builds the origin-chain deposit tx for any gasless API message: bridge (depositWithAuthorization[Bytes] /
+ * depositWithPermit2) or swap-and-bridge (swapAndBridgeWithAuthorization[Bytes] / swapAndBridgeWithPermit2).
  */
 export function buildGaslessDepositTx(
   depositMessage: AnyGaslessDepositMessage,
@@ -603,8 +633,8 @@ function toContractSwapAndDepositData(msg: SwapAndBridgeGaslessDepositMessage) {
 }
 
 /**
- * Builds calldata for SpokePoolPeriphery.swapAndBridgeWithAuthorization or .swapAndBridgeWithPermit2
- * depending on {@link SwapAndBridgeGaslessDepositMessage.permitType}.
+ * Builds calldata for SpokePoolPeriphery.swapAndBridgeWithAuthorization[Bytes] or .swapAndBridgeWithPermit2
+ * depending on {@link SwapAndBridgeGaslessDepositMessage.permitType} (and signature length for erc3009).
  */
 export function buildSwapAndBridgeDepositTx(
   depositMessage: SwapAndBridgeGaslessDepositMessage,
@@ -612,7 +642,11 @@ export function buildSwapAndBridgeDepositTx(
 ): AugmentedTransaction {
   const swapAndDepositData = toContractSwapAndDepositData(depositMessage);
 
-  let method: "swapAndBridgeWithAuthorization" | "swapAndBridgeWithPermit2" | "swapAndBridgeWithPermit";
+  let method:
+    | "swapAndBridgeWithAuthorization"
+    | "swapAndBridgeWithAuthorizationBytes"
+    | "swapAndBridgeWithPermit2"
+    | "swapAndBridgeWithPermit";
   let args: unknown[];
 
   if (depositMessage.permitType === "permit2") {
@@ -645,19 +679,14 @@ export function buildSwapAndBridgeDepositTx(
       normalizeSignatureBytes(depositMessage.signature),
     ];
   } else {
-    method = "swapAndBridgeWithAuthorization";
     const {
       from: signatureOwner,
       validAfter,
       validBefore,
     } = (depositMessage.permit as ReceiveWithAuthorization).message;
-    args = [
-      signatureOwner,
-      swapAndDepositData,
-      BigNumber.from(validAfter),
-      BigNumber.from(validBefore),
-      normalizeSignature(depositMessage.signature),
-    ];
+    const { signature: authSignature, isSmartWallet } = normalizeAuthSignature(depositMessage.signature);
+    method = isSmartWallet ? "swapAndBridgeWithAuthorizationBytes" : "swapAndBridgeWithAuthorization";
+    args = [signatureOwner, swapAndDepositData, BigNumber.from(validAfter), BigNumber.from(validBefore), authSignature];
   }
 
   if (depositMessage.integratorId) {

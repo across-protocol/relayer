@@ -194,7 +194,11 @@ export class CommonConfig {
     const localList = new addressAdapters.fs.AddressList({ path, logger });
     const remoteLists = [
       new addressAdapters.risklabs.AddressList({ logger, timeout: 5000 }),
-      isDefined(ostiumUrl) ? new httpAdapter.AddressList({ name: "Ostium", path: ostiumUrl, logger }) : undefined,
+      // throwOnError: false => an Ostium outage omits only the Ostium list, rather than failing the entire
+      // aggregate (which would also drop the Risk Labs list on a fresh start, where there is no filter to retain).
+      isDefined(ostiumUrl)
+        ? new httpAdapter.AddressList({ name: "Ostium", path: ostiumUrl, logger, throwOnError: false })
+        : undefined,
     ].filter(isDefined);
 
     try {
