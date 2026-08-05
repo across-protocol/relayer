@@ -757,7 +757,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
     const routeRequiresSwap = this._routeRequiresSwap(sourceToken, destinationToken);
 
-    const destinationCoin = await this._getAccountCoins(destinationToken);
+    // Read account coins fresh here: `withdrawEnable` flips whenever Binance opens or closes a withdrawal window, and
+    // a stale cache entry would either keep committing funds to a suspended route or keep skipping one that has
+    // already reopened.
+    const destinationCoin = await this._getAccountCoins(destinationToken, true);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     const destinationBinanceNetwork = destinationCoin.networkList.find(
       (network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork]
@@ -766,6 +769,21 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       isDefined(destinationBinanceNetwork),
       `No Binance network entry for ${destinationToken} on chain ${destinationEntrypointNetwork}`
     );
+    // Binance keeps a suspended coin/network pair listed in `networkList`, so this flag is the only pre-trade signal
+    // that the withdrawal leg will be rejected. Bail out before any funds are committed: the deposit into Binance is
+    // not reversible from this adapter, so initiating an order we cannot withdraw would strand the tranche on the
+    // exchange until its TTL elapses and the finalizer reclaims it.
+    if (!isBinanceNetworkWithdrawEnabled(destinationBinanceNetwork)) {
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `🚧 Skipping rebalance: Binance has suspended ${resolveBinanceCoinSymbol(
+          destinationToken
+        )} withdrawals on network ${BINANCE_NETWORKS[destinationEntrypointNetwork]}`,
+        rebalanceRoute,
+        destinationNetwork: BINANCE_NETWORKS[destinationEntrypointNetwork],
+      });
+      return bnZero;
+    }
     const { withdrawMin, withdrawMax } = destinationBinanceNetwork;
 
     // Make sure that the amount to transfer will be larger than the minimum withdrawal size after expected fees.
@@ -1690,18 +1708,36 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
     } catch (error) {
       const unlockErrorMessage = getBinanceDepositUnlockErrorMessage(error);
-      if (!unlockErrorMessage) {
-        throw error;
+      if (unlockErrorMessage) {
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter._withdraw",
+          message: `Binance rejected withdrawal for order ${cloid} because recent deposits have not reached withdrawal-unlock confirmations. Waiting before retrying.`,
+          cloid,
+          destinationToken,
+          amountToWithdraw,
+          error: unlockErrorMessage,
+        });
+        return false;
       }
-      this.logger.debug({
-        at: "BinanceStablecoinSwapAdapter._withdraw",
-        message: `Binance rejected withdrawal for order ${cloid} because recent deposits have not reached withdrawal-unlock confirmations. Waiting before retrying.`,
-        cloid,
-        destinationToken,
-        amountToWithdraw,
-        error: unlockErrorMessage,
-      });
-      return false;
+      // A suspended withdrawal window is a venue-side outage, not a bug in this order. Leave the order pending so it
+      // retries once Binance reopens withdrawals; if the suspension outlasts REBALANCER_PENDING_ORDER_TTL the prune
+      // path hands the deposit back to the Binance finalizer, which reclaims it.
+      const withdrawDisabledErrorMessage = getBinanceWithdrawDisabledErrorMessage(error);
+      if (withdrawDisabledErrorMessage) {
+        this.logger.warn({
+          at: "BinanceStablecoinSwapAdapter._withdraw",
+          message: `🚧 Binance has suspended ${binanceDestinationCoin} withdrawals on network ${
+            BINANCE_NETWORKS[destinationEntrypointNetwork]
+          }; leaving order ${cloid} pending until withdrawals reopen.`,
+          cloid,
+          destinationToken,
+          destinationNetwork: BINANCE_NETWORKS[destinationEntrypointNetwork],
+          amountToWithdraw,
+          error: withdrawDisabledErrorMessage,
+        });
+        return false;
+      }
+      throw error;
     }
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
     await this.redisCache.set(initiatedWithdrawalKey, withdrawalId.id);
@@ -1758,4 +1794,19 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 function getBinanceDepositUnlockErrorMessage(error: unknown): string | undefined {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes("[RW00441]") ? message : undefined;
+}
+
+// Binance reports [031026] when withdrawals for a coin/network pair are administratively suspended, for example during
+// a chain upgrade or a wallet maintenance window. The pair stays listed in `networkList` for the whole suspension, so
+// presence in the network list is not sufficient to conclude that a withdrawal will be accepted.
+function getBinanceWithdrawDisabledErrorMessage(error: unknown): string | undefined {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("[031026]") ? message : undefined;
+}
+
+// Binance omits `withdrawEnable` on some `accountCoins` responses, so treat an absent flag as enabled — a missing
+// field should never strand an otherwise healthy route. Mirrors `isNetworkEnabledForDirection` in
+// scripts/swapOnBinance.ts.
+function isBinanceNetworkWithdrawEnabled(network: { withdrawEnable?: boolean }): boolean {
+  return network.withdrawEnable ?? true;
 }

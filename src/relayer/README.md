@@ -23,6 +23,20 @@ they fill via `fillRelayWithUpdatedDeposit` — so a speed-up can't redirect fun
 consulted; it's user-set on the origin chain and spoofable. Message deposits are gated by recipient like any other:
 allow-list the executing contract (e.g. `MulticallHandler`) to accept them, or leave it off the list to drop them.
 
+### Allowed swap routes (in-protocol swaps)
+
+Inventory JSON lists fillable cross-asset routes in `allowedSwapRoutes` (v1) or `allowedSwapRoutes2` (v2), selected
+via `RELAYER_ALLOWED_SWAP_ROUTES_VERSION` (`"1"` (default) or `"2"`). v2 additionally accepts an array of chain ids
+in `fromChain`/`toChain`, expanded as a cartesian product; a single id and `"ALL"` behave as in v1. Both forms are
+expanded at load into the flat route list used by `InventoryClient.isSwapSupported`.
+
+```json
+"allowedSwapRoutes2": [
+  { "fromChain": [1, 10, 137, 42161], "fromToken": "USDT", "toChain": [8453, 999], "toToken": "USDC" },
+  { "fromChain": "ALL", "fromToken": "USDC", "toChain": 4663, "toToken": "USDG" }
+]
+```
+
 ## Constructing a Relayer
 
 The functions in `RelayerClientHelper` provide convenient functions for creating all of the helper clients that the Relayer needs to run, updating and initializing them, and then constructing a new Relayer.

@@ -11,6 +11,7 @@ import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "../utils/in
 export abstract class BaseRebalancerClient implements RebalancerClient {
   public rebalanceRoutes: RebalanceRoute[] = [];
   protected baseSignerAddress: EvmAddress = EvmAddress.from(ZERO_ADDRESS);
+  protected adaptersWithFailedPendingReads = new Set<string>();
   constructor(
     readonly logger: winston.Logger,
     readonly config: RebalancerConfig,
@@ -56,6 +57,7 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
    */
   async getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
+    this.adaptersWithFailedPendingReads.clear();
     await forEachAsync(Object.entries(this.adapters), async ([adapterName, adapter]) => {
       let pending: { [chainId: number]: { [token: string]: BigNumber } };
       try {
@@ -63,6 +65,7 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
       } catch (err) {
         // The failed adapter's in-flight rebalances stay invisible to virtual balances until its
         // dependency recovers; that undercount is preferable to aborting the caller's whole run.
+        this.adaptersWithFailedPendingReads.add(adapterName);
         this.logger.warn({
           at: "BaseRebalancerClient.getPendingRebalances",
           message: `Failed to get pending rebalances from ${adapterName} adapter; treating them as empty`,
@@ -79,6 +82,10 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
       });
     });
     return pendingRebalances;
+  }
+
+  getAdaptersWithFailedPendingReads(): string[] {
+    return Array.from(this.adaptersWithFailedPendingReads);
   }
 
   protected async getAvailableAdapters(): Promise<string[]> {

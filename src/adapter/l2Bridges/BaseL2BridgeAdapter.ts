@@ -13,6 +13,7 @@ import {
   SVMProvider,
   SolanaTransaction,
   isDefined,
+  winston,
 } from "../../utils";
 import { CctpOftReadOnlyClient, PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 import { TransferTokenParams } from "../utils";
@@ -35,7 +36,8 @@ export abstract class BaseL2BridgeAdapter {
     protected hubChainId: number,
     protected l2SignerOrSvmProvider: Signer | SVMProvider,
     protected l1Signer: Signer,
-    protected l1Token: EvmAddress
+    protected l1Token: EvmAddress,
+    protected readonly logger?: winston.Logger
   ) {
     this.hubPoolAddress = getHubPoolAddress(hubChainId);
     this.spokePoolAddress = getSpokePoolAddress(l2chainId);
