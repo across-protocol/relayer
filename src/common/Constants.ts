@@ -229,27 +229,16 @@ export const DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER = "1.0"; // Multiplier on pr
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 50;
 
-// Padding on the sized gas limit of a Multicall3 tryAggregate() batch, covering state drift between estimate and
-// inclusion. Small because what it pads is a real requirement rather than a floor: see sizeTryAggregateBatch() in
-// src/finalizer/index.ts for why the batch is not estimated as tryAggregate().
+// State-drift margin on a sized finalization batch. Small because it pads a real requirement, not a floor.
 export const MULTICALL3_BATCH_GAS_MULTIPLIER = 1.1;
 
-// Fallback padding for when a batch cannot be sized as aggregate() and only the tryAggregate() estimate is
-// available. That estimate is a floor rather than a requirement, and EIP-150 withholds 1/64 of the remaining gas at
-// every frame boundary, so a batch whose gas sits d frames below tryAggregate() must be given estimate * (64/63)^d.
-// 1.5 covers d <= 25; a CCTP mint through proxied transmitter/messenger/token contracts already reaches d ~= 7.
-// See test/MultiCallerClient.TryAggregateGas.test.ts for the measurements.
+// Padding for a batch that couldn't be sized, leaving only the tryAggregate() estimate. That estimate is a floor, and
+// EIP-150 withholds 1/64 of remaining gas per frame, so gas sitting d frames down needs estimate * (64/63)^d. 1.5
+// covers d <= 25; a CCTP mint through proxied transmitter/messenger/token contracts reaches d ~= 7.
 export const MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER = 1.5;
 
-// EIP-7825's cap on the gas a single transaction may declare, two orders of magnitude below mainnet's ~60M block gas
-// limit — so the per-transaction cap rather than the block is what bounds a finalization batch as a backlog grows.
-// A transaction declaring more than this is rejected outright, so it is a hard limit rather than a target.
-export const EIP7825_TXN_GAS_CAP = 2 ** 24; // 16,777,216
-
-// Ceiling on the gas limit of a submitted finalization batch, above which the batch is split. Held below
-// EIP7825_TXN_GAS_CAP to leave room for MULTICALL3_BATCH_GAS_MULTIPLIER, for state drift between sizing and
-// inclusion, and for chains whose own cap is lower. Applies to the padded limit that reaches the wire, not to the
-// raw estimate — so the ~1.8M between it and the cap is the margin absorbing any sizing error.
+// Ceiling on a submitted finalization batch's gas limit, above which it is split. Under EIP-7825's 2^24 = 16,777,216
+// per-transaction cap, with ~1.8M spare for the padding above, for state drift, and for chains capped lower.
 export const MULTICALL3_BATCH_GAS_CEILING = 15_000_000;
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
