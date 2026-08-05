@@ -229,11 +229,9 @@ export const DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER = "1.0"; // Multiplier on pr
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 50;
 
-// Padding for a Multicall3 tryAggregate() batch, which must not be submitted on a bare eth_estimateGas: a batch
-// whose inner calls all ran out of gas still "succeeds", so the estimate is a floor, not a requirement. The
-// shortfall is the EIP-150 reserve withheld from the largest call, hence <= 1/64 of the batch; this is ~30x that.
-// Not higher: the finalizer doesn't chunk inner calls, so large batches must stay under block gas limits.
-// See src/clients/README.md, and test/MultiCallerClient.TryAggregateGas.test.ts for the measurements.
+// Padding for a Multicall3 tryAggregate() batch: a batch whose inner calls all ran out of gas still "succeeds", so
+// eth_estimateGas returns a floor rather than a requirement (see src/clients/README.md). The shortfall is bounded by
+// the EIP-150 reserve (<= 1/64 of the batch); not higher, since unchunked batches must clear block gas limits.
 export const MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER = 1.5;
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
