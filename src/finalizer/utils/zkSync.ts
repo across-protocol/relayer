@@ -5,8 +5,6 @@ import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, getContractEntry } from "../../common";
 import {
   convertFromWei,
-  getBlockForTimestamp,
-  getCurrentTime,
   getTokenInfo,
   getUniqueLogIndex,
   Multicall2Call,
@@ -22,7 +20,6 @@ import {
   Provider,
   CHAIN_IDs,
 } from "../../utils";
-import { getRedisCache } from "../../cache/Redis";
 import { FinalizerPromise, CrossChainMessage } from "../types";
 
 type TokensBridged = interfaces.TokensBridged;
@@ -39,15 +36,6 @@ type zkSyncWithdrawalData = {
 const IGNORED_WITHDRAWALS = [
   "0xe93642e22eec21ead2abb20f23a1dc3033b41274cdfe7439cf3ada3dfa1dff06", // Lens USDC 2025-06-13 @todo remove
 ];
-
-// Lower bound on the age of a zkSync withdrawal before it is worth querying its finalization status. A withdrawal
-// becomes finalizable once the L1 batch containing it is executed on the hub chain. Measured over 21 withdrawals
-// between 2026-07-16 and 2026-08-04, execution lands 3.4-3.8h after the L2 withdrawal (batch commit ~0.3h, prove
-// ~1h, execute ~3.6h) -- not the ~6h this filter previously assumed, which held back every withdrawal for ~2.6h
-// after it was already claimable. This is only a cheap pre-filter: sortWithdrawals() and the isWithdrawalFinalized()
-// checks in filterMessageLogs() are authoritative, so a value below zkSync's true batch cadence costs a few extra
-// RPC calls per run, never a bad finalization attempt.
-const MIN_WITHDRAWAL_AGE_SECONDS = 2 * 60 * 60;
 
 /**
  * @returns Withdrawal finalization calldata and metadata.
@@ -67,18 +55,19 @@ export async function zkSyncFinalizer(
   assert(isSignerWallet(signer), "Signer is not a Wallet");
   const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
 
-  const redis = await getRedisCache(logger);
-  const latestBlockToFinalize = await getBlockForTimestamp(
-    logger,
-    l2ChainId,
-    getCurrentTime() - MIN_WITHDRAWAL_AGE_SECONDS,
-    undefined,
-    redis
-  );
+  // A withdrawal is only claimable once the L1 batch containing it has been executed on the hub chain, so the last
+  // L2 block of the highest executed batch is the newest withdrawal worth querying. Read that boundary from the
+  // chains instead of assuming a fixed finalization delay, which drifts as zkSync's batch cadence changes.
+  const mainContract = await wallet.getMainContract();
+  const executedBatch = (await mainContract.getTotalBatchesExecuted()).toNumber();
+  const batchBlockRange = await l2Provider.getL1BatchBlockRange(executedBatch);
+  assert(isDefined(batchBlockRange), `zkSync: getL1BatchBlockRange returned null for executed batch ${executedBatch}`);
+  const latestBlockToFinalize = batchBlockRange[1];
 
   logger.debug({
     at: "Finalizer#ZkSyncFinalizer",
     message: "ZkSync TokensBridged event filter",
+    executedBatch,
     toBlock: latestBlockToFinalize,
   });
   const withdrawalsToQuery = spokePoolClient
