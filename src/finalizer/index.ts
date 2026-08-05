@@ -1,13 +1,14 @@
 import { CCTP_NO_DOMAIN, ChainFamily, PRODUCTION_NETWORKS } from "@across-protocol/constants";
 import { utils as sdkUtils, typeguards } from "@across-protocol/sdk";
 import assert from "assert";
-import { Contract } from "ethers";
+import { BigNumber, Contract } from "ethers";
 import { AugmentedTransaction, HubPoolClient, knownRevertReasons, MultiCallerClient } from "../clients";
 import {
   Clients,
   constructClients,
   constructSpokePoolClientsWithLookback,
   getContractEntry,
+  MULTICALL3_BATCH_GAS_MULTIPLIER,
   MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER,
   updateSpokePoolClients,
   UNIVERSAL_CHAINS,
@@ -198,6 +199,45 @@ async function preflightFinalizations(
   }
 
   return { callsToSubmit, dropped };
+}
+
+/**
+ * Sizes a tryAggregate() batch by estimating the same calls as aggregate().
+ *
+ * eth_estimateGas cannot size tryAggregate(requireSuccess=false) directly. It returns the lowest limit at which the
+ * *outer* transaction succeeds, and tryAggregate() catches inner reverts — so a batch whose every call ran out of gas
+ * still succeeds, and the estimate describes the cost of *failing*. Padding it is not enough when a call's gas
+ * requirement is not a function of what it consumes: OP-stack `SafeCall.callWithMinGas` gates on
+ * `gasleft() >= minGas * 64/63` where `minGas` was declared by the withdrawal on L2 (~5.4M for Across
+ * finalizations), while the reverting path consumes ~150k. The estimator never sees the gate, so no fixed multiplier
+ * reaches it.
+ *
+ * aggregate() has no such blind spot: any inner revert is fatal to the outer call, so the estimator's search cannot
+ * return a limit below every call's true requirement. Size with aggregate(), submit as tryAggregate() — a truthful
+ * limit, and a revert that appears after the pre-flight still can't take the rest of the batch with it.
+ *
+ * Returns undefined if the batch does not estimate as aggregate(), which means some call reverts: the pre-flight
+ * dropped the ones that revert alone, so this is a call that only reverts in combination, or state that moved since.
+ * The caller then falls back to the tryAggregate() estimate, which still lets the healthy calls through.
+ */
+async function sizeTryAggregateBatch(
+  logger: winston.Logger,
+  chainId: number,
+  multisender: Contract,
+  calls: Multicall2Call[]
+): Promise<BigNumber | undefined> {
+  try {
+    return await multisender.estimateGas.aggregate(calls);
+  } catch (error) {
+    logger.warn({
+      at: "Finalizer#sizeTryAggregateBatch",
+      message: `Unable to size the ${getNetworkName(chainId)} finalization batch as aggregate() 🚨`,
+      notificationPath: "across-error",
+      reason: isEthersError(error) ? error.reason : isError(error) ? error.message : "unknown error",
+      calls: calls.length,
+    });
+    return undefined;
+  }
 }
 
 export async function finalize(
@@ -396,6 +436,9 @@ export async function finalize(
           );
           dropped.forEach((crossChainMessage) => droppedMessages.add(crossChainMessage));
           if (multicallTxns.length > 0) {
+            // @dev A tryAggregate() estimate describes the cost of failing, not the cost of succeeding; size the
+            // batch as aggregate() instead. See sizeTryAggregateBatch().
+            const gasLimit = await sizeTryAggregateBatch(logger, Number(chainId), multisender, multicallTxns);
             const txnToSubmit: AugmentedTransaction = {
               contract: multisender,
               chainId: Number(chainId),
@@ -403,8 +446,11 @@ export async function finalize(
               // must not take the rest of the batch with it.
               method: "tryAggregate",
               args: [false, multicallTxns],
-              // @dev A tryAggregate() estimate is a floor, not a requirement; it must be padded.
-              gasLimitMultiplier: MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER,
+              // @dev An aggregate()-derived limit is a real requirement and needs only a state-drift margin; the
+              // fallback tryAggregate() estimate is a floor, and has to absorb the EIP-150 reserve as well.
+              ...(isDefined(gasLimit)
+                ? { gasLimit, gasLimitMultiplier: MULTICALL3_BATCH_GAS_MULTIPLIER }
+                : { gasLimitMultiplier: MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER }),
               unpermissioned: true,
               message: `Batch finalized ${multicallTxns.length} txns`,
               mrkdwn: `Batch finalized ${multicallTxns.length} txns`,
