@@ -8,6 +8,7 @@ import {
   constructClients,
   constructSpokePoolClientsWithLookback,
   getContractEntry,
+  REMOVED_CHAIN_IDS,
   updateSpokePoolClients,
   UNIVERSAL_CHAINS,
 } from "../common";
@@ -105,6 +106,12 @@ function generateChainConfig(): void {
 
   Object.entries(PRODUCTION_NETWORKS).forEach(([_chainId, { cctpDomain, family }]) => {
     const chainId = Number(_chainId);
+    // Chains removed from this repo may still appear in a configured chainsToFinalize list; leaving them
+    // unregistered here makes finalize() warn and skip them instead of running a family-default finalizer
+    // whose CONTRACT_ADDRESSES entries no longer exist.
+    if (REMOVED_CHAIN_IDS.includes(chainId)) {
+      return;
+    }
     const config = (chainFinalizers[chainId] ??= {});
     config.finalizeOnL1 ??= [];
     config.finalizeOnL2 ??= [];

@@ -34,7 +34,6 @@ import {
   ArbitrumOrbitBridge,
   LineaBridge,
   LineaWethBridge,
-  BlastBridge,
   OpStackUSDCBridge,
   UsdcCCTPBridge,
   ZKStackBridge,
@@ -287,7 +286,6 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.ARC]: 493714, // 493714 blocks is approximately 2 days at 350ms/block
   [CHAIN_IDs.AVALANCHE]: 86400,
   [CHAIN_IDs.BASE]: 86400,
-  [CHAIN_IDs.BLAST]: 86400,
   [CHAIN_IDs.BOBA]: 86400,
   [CHAIN_IDs.HYPEREVM]: 86400,
   [CHAIN_IDs.INK]: 86400,
@@ -326,12 +324,20 @@ Object.values(CHAIN_IDs)
     DEFAULT_GAS_FEE_SCALERS[chainId] ??= { maxFeePerGasScaler: 1.1, maxPriorityFeePerGasScaler: 1.1 };
   });
 
+// Chains that Across no longer supports but that still carry a recognized chain family in PUBLIC_NETWORKS.
+// Runtime configs may lag code removal, so registries that are auto-generated from chain families must exclude
+// these chains explicitly rather than resolve family defaults whose CONTRACT_ADDRESSES entries have been removed.
+export const REMOVED_CHAIN_IDS = [CHAIN_IDs.BLAST, CHAIN_IDs.BLAST_SEPOLIA];
+
 // These are the spokes that can hold the native token for that network, so they should be added together when calculating whether
 // a bundle execution is possible with the funds in the pool.
 const resolveNativeTokenSpokes = () => {
   const chains = [CHAIN_IDs.LINEA, CHAIN_IDs.ZK_SYNC];
   Object.entries(PUBLIC_NETWORKS).forEach(([_chainId, config]) => {
     const chainId = Number(_chainId);
+    if (REMOVED_CHAIN_IDS.includes(chainId)) {
+      return; // Their nativeToken CONTRACT_ADDRESSES entries no longer exist.
+    }
     if ([ChainFamily.OP_STACK, ChainFamily.ZK_STACK].includes(config.family)) {
       chains.push(chainId);
     }
@@ -347,7 +353,6 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.ARC]: ["USDC"],
   [CHAIN_IDs.AVALANCHE]: ["USDC", "USDT"],
   [CHAIN_IDs.BASE]: ["DAI", "ETH", "WETH", "USDC", "USDT"],
-  [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
   [CHAIN_IDs.BSC]: ["WBNB", "USDC", "USDT", "WETH"],
   [CHAIN_IDs.HYPEREVM]: ["USDC", "USDT"],
   [CHAIN_IDs.INK]: ["ETH", "WETH", "USDT", "USDC"],
@@ -373,7 +378,6 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   // Testnets:
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: ["USDC", "WETH"],
   [CHAIN_IDs.BASE_SEPOLIA]: ["WETH", "USDC"],
-  [CHAIN_IDs.BLAST_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.POLYGON_AMOY]: ["WETH", "USDC"],
   [CHAIN_IDs.LENS_SEPOLIA]: ["WETH", "GRASS"],
   [CHAIN_IDs.LISK_SEPOLIA]: ["WETH"],
@@ -444,6 +448,7 @@ const resolveCanonicalBridges = (): Record<number, L1BridgeConstructor<BaseBridg
 
   return Object.fromEntries(
     Object.entries(PUBLIC_NETWORKS)
+      .filter(([_chainId]) => !REMOVED_CHAIN_IDS.includes(Number(_chainId)))
       .map(([_chainId, { family }]) => {
         const chainId = Number(_chainId);
         const bridge = bridges[chainId] ?? defaultBridges[family];
@@ -475,10 +480,6 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
   [CHAIN_IDs.BASE]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
-  },
-  [CHAIN_IDs.BLAST]: {
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: BlastBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
   [CHAIN_IDs.BSC]: {
@@ -568,10 +569,6 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
   [CHAIN_IDs.BASE_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcTokenSplitterBridge,
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
-  },
-  [CHAIN_IDs.BLAST_SEPOLIA]: {
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.SEPOLIA]]: BlastBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
   },
   [CHAIN_IDs.HYPEREVM_TESTNET]: {
@@ -750,7 +747,6 @@ export const ARWEAVE_TAG_BYTE_LIMIT = 2048;
 export const SLOW_WITHDRAWAL_CHAINS = [
   CHAIN_IDs.ARBITRUM,
   CHAIN_IDs.BASE,
-  CHAIN_IDs.BLAST,
   CHAIN_IDs.INK,
   CHAIN_IDs.OPTIMISM,
   CHAIN_IDs.SONEIUM,
@@ -828,25 +824,6 @@ const resolveBridgeDelay = () => {
 export const EXPECTED_L1_TO_L2_MESSAGE_TIME = resolveBridgeDelay();
 
 export const OPSTACK_CONTRACT_OVERRIDES = {
-  [CHAIN_IDs.BLAST]: {
-    l1: {
-      AddressManager: "0xE064B565Cf2A312a3e66Fe4118890583727380C0",
-      L1CrossDomainMessenger: "0x5D4472f31Bd9385709ec61305AFc749F0fA8e9d0",
-      L1StandardBridge: getContractAddress(CHAIN_IDs.MAINNET, "ovmStandardBridge_81457"),
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: getContractAddress(CHAIN_IDs.MAINNET, "blastOptimismPortal"),
-      L2OutputOracle: "0x826D1B0D4111Ad9146Eb8941D7Ca2B6a44215c76",
-      OptimismPortal2: ZERO_ADDRESS,
-      DisputeGameFactory: ZERO_ADDRESS,
-    },
-    // https://github.com/blast-io/blast/blob/master/blast-optimism/op-bindings/predeploys/addresses.go
-    l2: {
-      ...DEFAULT_L2_CONTRACT_ADDRESSES,
-      WETH: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.BLAST],
-    },
-  },
   [CHAIN_IDs.MEGAETH]: {
     l1: {
       AddressManager: "0x9754fD3D63B3EAC3fd62b6D54DE4f61b00D6E0Df",
@@ -861,25 +838,6 @@ export const OPSTACK_CONTRACT_OVERRIDES = {
       DisputeGameFactory: "0x8546840adF796875cD9AAcc5B3B048f6B2c9D563",
     },
     l2: DEFAULT_L2_CONTRACT_ADDRESSES,
-  },
-  // Testnets
-  [CHAIN_IDs.BLAST_SEPOLIA]: {
-    l1: {
-      AddressManager: "0x092dD3E2272a372cdfbcCb8F689423F09ED6242a",
-      L1CrossDomainMessenger: "0x9338F298F29D3918D5D1Feb209aeB9915CC96333",
-      L1StandardBridge: getContractAddress(CHAIN_IDs.SEPOLIA, "ovmStandardBridge_168587773"),
-      StateCommitmentChain: ZERO_ADDRESS,
-      CanonicalTransactionChain: ZERO_ADDRESS,
-      BondManager: ZERO_ADDRESS,
-      OptimismPortal: "0x2757E4430e694F27b73EC9C02257cab3a498C8C5",
-      L2OutputOracle: "0x311fF72DfE214ADF97618DD2E731637E8F41bD8c",
-      OptimismPortal2: ZERO_ADDRESS,
-      DisputeGameFactory: ZERO_ADDRESS,
-    },
-    l2: {
-      ...DEFAULT_L2_CONTRACT_ADDRESSES,
-      WETH: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.BLAST_SEPOLIA],
-    },
   },
 };
 

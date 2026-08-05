@@ -154,6 +154,16 @@ export class BaseChainAdapter {
     return isDefined(this.l2Bridges[l1Token.toEvmAddress()]);
   }
 
+  /**
+   * Determine whether this adapter can bridge an l1 token to its L2. Mirrors the preconditions asserted by
+   * sendTokenToTargetChain() so callers can avoid planning transfers that would be rejected there.
+   * @param l1Token an address
+   * @returns True if l1Token has an L1 -> L2 bridge and is a supported token
+   */
+  canBridgeTokenToL2(l1Token: EvmAddress): boolean {
+    return isDefined(this.bridges[l1Token.toNative()]) && this.isSupportedToken(l1Token);
+  }
+
   filterSupportedTokens(l1Tokens: EvmAddress[]): EvmAddress[] {
     return l1Tokens.filter((l1Token) => this.isSupportedToken(l1Token));
   }

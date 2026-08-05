@@ -29,7 +29,6 @@ const AVERAGE_BLOCK_TIMES: { [chainId: number]: number } = {
   [CHAIN_IDs.MAINNET]: 12,
   [CHAIN_IDs.ARBITRUM]: 0.25,
   [CHAIN_IDs.BASE]: 2,
-  [CHAIN_IDs.BLAST]: 2,
   [CHAIN_IDs.BSC]: 3,
   [CHAIN_IDs.HYPEREVM]: 60,
   [CHAIN_IDs.INK]: 1,
@@ -50,7 +49,6 @@ const AVERAGE_BLOCK_TIMES: { [chainId: number]: number } = {
   // Testnets
   [CHAIN_IDs.ARBITRUM_SEPOLIA]: 0.25,
   [CHAIN_IDs.BASE_SEPOLIA]: 2,
-  [CHAIN_IDs.BLAST_SEPOLIA]: 2,
   [CHAIN_IDs.INK_SEPOLIA]: 1,
   [CHAIN_IDs.HYPEREVM_TESTNET]: 60,
   [CHAIN_IDs.LENS_SEPOLIA]: 1,
