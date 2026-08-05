@@ -10,6 +10,15 @@ The primary use case for the refiller originally was to send native token balanc
 
 When a configured native-token balance (e.g. HYPE on HyperEVM, AVAX on Avalanche) falls below its trigger and the signer cannot transfer enough on-chain, the refiller submits an async cross-chain swap via the Across Swap API using the hardcoded route in `SWAP_ROUTES` (`src/common/Constants.ts`). Routes currently source Arbitrum USDC for Avalanche and HyperEVM (and WETH or USDT for other chains). The swap lands as native gas on the destination; a later run can then transfer to the target account if needed.
 
+## Refilling native TRX on Tron
+
+Tron native refills follow the same `REFILL_BALANCES` shape as any other chain (omit `token` so it resolves to the chain's native token; `account` accepts either Base58 or 0x-hex). Two constraints are specific to Tron:
+
+- **No swap fallback.** Tron has no `SWAP_ROUTES` entry, so the refiller can only transfer TRX it already holds. A signer short on TRX logs `Cannot refill balance to target` rather than sourcing it cross-chain.
+- **Local signer required.** Submission builds a TronWeb instance from the signer's private key (`getTronWebFromEvmSigner`), so GCKMS/remote signers are unsupported on this path.
+
+TRX transfers are submitted via `transferNativeTvm` (TronWeb `sendTrx`) rather than the SDK's `submitTransaction`, which routes through `triggerSmartContract` and requires a deployed contract at the target address. `TransactionClient` selects this path automatically for raw transactions that carry a value but no calldata.
+
 ## Refilling USDH on HyperEVM
 
 The Refiller also has a function that lets it transfer USDC from Arbitrum and mint USDH on HyperEVM via the NativeMarkets API.

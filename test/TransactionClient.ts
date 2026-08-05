@@ -1,15 +1,31 @@
-import { AugmentedTransaction } from "../src/clients";
+import sinon from "sinon";
+import { TronWeb } from "tronweb";
+import { AugmentedTransaction, TransactionClient } from "../src/clients";
 import {
   BigNumber,
+  CHAIN_IDs,
   ethers,
   isDefined,
+  toAddressType,
   TransactionReceipt,
   TransactionResponse,
   TransactionSimulationResult,
 } from "../src/utils";
+import * as sdkUtils from "../src/utils/SDKUtils";
+import * as txnUtils from "../src/utils/TransactionUtils";
+import * as tvmSignerUtils from "../src/utils/TvmSignerUtils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
-import { createSpyLogger, Contract, expect, randomAddress, toBN, winston, ethers as testEthers } from "./utils";
+import {
+  assertPromiseError,
+  createSpyLogger,
+  Contract,
+  expect,
+  randomAddress,
+  toBN,
+  winston,
+  ethers as testEthers,
+} from "./utils";
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 const address = randomAddress(); // Test contract address
@@ -385,6 +401,89 @@ describe("TransactionClient", function () {
       expect(txnResponses.length).to.equal(1);
       // wait() was called maxTries times (default is 10).
       expect(waitCalls).to.equal(10);
+    });
+  });
+
+  describe("TVM submission", function () {
+    const chainId = CHAIN_IDs.TRON;
+    const recipient = "0xf7bAc63fc7CEaCf0589F25454Ecf5C2ce904997c";
+    const recipientBase58 = toAddressType(recipient, chainId).toNative();
+    const senderBase58 = "TYZ5ekizCPH4QdsnMfqQUFXBLtsuTuUKjJ";
+    const txid = "3b699036b64d765dea6a9103c33793d343381bab361b3e96051e56de2d174247";
+
+    // TransactionClient#_submit is protected; expose it so submission errors surface to the test
+    // rather than being swallowed by submit()'s per-transaction error handling.
+    class TvmClient extends TransactionClient {
+      submitOne(txn: AugmentedTransaction): Promise<TransactionResponse> {
+        return this._submit(txn, { nonce: null });
+      }
+    }
+
+    let sendTrx: sinon.SinonStub;
+    let client: TvmClient;
+
+    function makeTvmTxn(args: unknown[], value: BigNumber): AugmentedTransaction {
+      return {
+        chainId,
+        contract: {
+          address: recipient,
+          signer: { getAddress: () => Promise.resolve(recipient) },
+          provider: { getNetwork: () => Promise.resolve({ chainId }) },
+        } as unknown as Contract,
+        method: "", // Raw transaction.
+        args,
+        value,
+        message: "",
+        mrkdwn: "",
+      };
+    }
+
+    beforeEach(function () {
+      client = new TvmClient(spyLogger);
+      sendTrx = sinon.stub().resolves({ txID: txid });
+      const tronWeb = {
+        defaultAddress: { base58: senderBase58 },
+        transactionBuilder: { sendTrx },
+        trx: {
+          sign: sinon.stub().callsFake((txn) => Promise.resolve(txn)),
+          sendRawTransaction: sinon.stub().resolves({ result: true, txid }),
+        },
+      };
+      sinon.stub(tvmSignerUtils, "getTronWebFromEvmSigner").returns(tronWeb as unknown as TronWeb);
+    });
+
+    afterEach(function () {
+      sinon.restore();
+    });
+
+    it("Transfers TRX for a value-only raw transaction", async function () {
+      const value = toBN(1_500_000); // 1.5 TRX in SUN.
+      const response = await client.submitOne(makeTvmTxn([], value));
+
+      expect(sendTrx.callCount).to.equal(1);
+      expect(sendTrx.firstCall.args).to.deep.equal([recipientBase58, value.toNumber(), senderBase58]);
+      expect(response.hash).to.equal(txid);
+      expect(response.value).to.equal(value);
+    });
+
+    it("Routes raw transactions carrying calldata through the contract-call path", async function () {
+      const calldata = "0xdeadbeef";
+      const submitTransaction = sinon.stub(sdkUtils, "submitTransactionTvm").resolves({ txid, result: true });
+      sinon.stub(txnUtils, "getGasPrice").resolves({
+        maxFeePerGas: toBN(1_000),
+        maxPriorityFeePerGas: toBN(0),
+      });
+
+      await client.submitOne(makeTvmTxn([calldata], toBN(0)));
+
+      expect(sendTrx.callCount).to.equal(0);
+      expect(submitTransaction.callCount).to.equal(1);
+      expect(submitTransaction.firstCall.args[1].data).to.equal(calldata);
+    });
+
+    it("Rejects a raw transaction with neither calldata nor value", async function () {
+      await assertPromiseError(client.submitOne(makeTvmTxn([], toBN(0))), "native transfer requires a non-zero value");
+      expect(sendTrx.callCount).to.equal(0);
     });
   });
 });

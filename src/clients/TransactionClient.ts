@@ -4,6 +4,7 @@ import {
   winston,
   getNetworkName,
   Contract,
+  toAddressType,
   BigNumber,
   blockExplorerLink,
   toBNWei,
@@ -27,6 +28,7 @@ import {
   chainIsTvm,
   getTronWebFromEvmSigner,
   submitTransactionTvm,
+  transferNativeTvm,
 } from "../utils";
 import { DEFAULT_GAS_FEE_SCALERS } from "../common";
 import { FeeData } from "@ethersproject/abstract-provider";
@@ -515,30 +517,42 @@ async function _runTransactionTvm(
   const chain = getNetworkName(chainId);
   const sendRawTxn = method === "";
 
+  // A raw transaction carrying no calldata is a native TRX transfer, which cannot go through
+  // `triggerSmartContract` because the recipient is an EOA rather than a deployed contract.
+  const calldata = sendRawTxn ? (args as Array<string | undefined>)[0] : undefined;
+  const nativeTransfer = sendRawTxn && (!isDefined(calldata) || calldata === "0x");
+  assert(!nativeTransfer || value.gt(bnZero), `${at}: native transfer requires a non-zero value`);
+
   const { maxFeePerGasScaler, priorityFeeScaler, retries: _retries } = _readTransactionConfig(chainId);
   retries ??= _retries;
 
   // The fee limit is a function of both the gas price and gas limit. We specify the number of TRX we are willing to spend
   // on the transaction, not the number of unit gas to spend nor the max price for each unit gas.
-  // Essentially, the fee limit is just maxFeePerGas * gasLimit.
-  const { maxFeePerGas } = await getGasPrice(
-    provider,
-    priorityFeeScaler, // No priority fee scalar for TRON.
-    maxFeePerGasScaler,
-    sendRawTxn ? undefined : await contract.populateTransaction[method](...args, { value })
-  );
-  const gasLimitNumber = gasLimit?.toNumber() ?? process.env.TVM_GAS_LIMIT;
-  const feeLimit = isDefined(gasLimitNumber) ? Number(gasLimitNumber) * maxFeePerGas.toNumber() : DEFAULT_TVM_FEE_LIMIT;
+  // Essentially, the fee limit is just maxFeePerGas * gasLimit. Native transfers pay bandwidth
+  // instead of energy, so they need no fee limit and can skip the gas price lookup.
+  let feeLimit = 0;
+  if (!nativeTransfer) {
+    const { maxFeePerGas } = await getGasPrice(
+      provider,
+      priorityFeeScaler, // No priority fee scalar for TRON.
+      maxFeePerGasScaler,
+      sendRawTxn ? undefined : await contract.populateTransaction[method](...args, { value })
+    );
+    const gasLimitNumber = gasLimit?.toNumber() ?? process.env.TVM_GAS_LIMIT;
+    feeLimit = isDefined(gasLimitNumber) ? Number(gasLimitNumber) * maxFeePerGas.toNumber() : DEFAULT_TVM_FEE_LIMIT;
+  }
 
   const tronWeb = getTronWebFromEvmSigner(contract.signer);
   const populatedTransaction = sendRawTxn
-    ? { from: await contract.signer.getAddress(), to: contract.address, data: (args as Array<string>)[0] }
+    ? { from: await contract.signer.getAddress(), to: contract.address, data: calldata }
     : await contract.populateTransaction[method](...args, { value });
 
-  logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit });
+  logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit, nativeTransfer });
   let result;
   try {
-    result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
+    result = nativeTransfer
+      ? await transferNativeTvm(tronWeb, toAddressType(contract.address, chainId).toNative(), value.toNumber())
+      : await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
   } catch (error) {
     if (--retries < 0) {
       throw error;
