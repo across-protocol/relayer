@@ -229,9 +229,9 @@ export const DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER = "1.0"; // Multiplier on pr
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 50;
 
-// Padding on the aggregate()-derived gas limit of a Multicall3 tryAggregate() batch, covering state drift between
-// estimate and inclusion. Small because the estimate it pads is a real requirement rather than a floor: see
-// sizeTryAggregateBatch() in src/finalizer/index.ts for why the batch is not estimated as tryAggregate().
+// Padding on the sized gas limit of a Multicall3 tryAggregate() batch, covering state drift between estimate and
+// inclusion. Small because what it pads is a real requirement rather than a floor: see sizeTryAggregateBatch() in
+// src/finalizer/index.ts for why the batch is not estimated as tryAggregate().
 export const MULTICALL3_BATCH_GAS_MULTIPLIER = 1.1;
 
 // Fallback padding for when a batch cannot be sized as aggregate() and only the tryAggregate() estimate is

@@ -120,4 +120,48 @@ describe("Multicall3 tryAggregate gas estimation", function () {
     const sized = Math.floor(aggEstimate * MULTICALL3_BATCH_GAS_MULTIPLIER);
     expect(await allSucceed(tryData, sized, calls.length), `batch should succeed at ${sized}`).to.be.true;
   });
+
+  // Sizing via aggregate() lets one bad call spoil the estimate, so the fallback has to hold up: a call that reverts
+  // only in combination survives the pre-flight (which simulates each call alone), and must not drag the rest of the
+  // batch back onto the tryAggregate floor. Summed per-call estimates are immune — each call is estimated alone.
+  it("Sizes a batch containing a call that only reverts in combination", async function () {
+    const minGas = 3_000_000;
+    const gated = { target: burner.address, callData: burner.interface.encodeFunctionData("requireGas", [minGas]) };
+    // `once()` succeeds the first time and reverts on every later call, so it passes a solo pre-flight but breaks any
+    // batch that already contains it.
+    const once = { target: burner.address, callData: burner.interface.encodeFunctionData("once", []) };
+    const calls = [gated, once, once];
+    const tryData = encode("tryAggregate", calls);
+
+    // Each call passes when simulated alone, as the pre-flight does — nothing is dropped.
+    for (const { target, callData } of calls) {
+      await ethers.provider.call({ from: multicall3.address, to: target, data: callData });
+    }
+
+    // But the batch does not estimate as aggregate(): the duplicate reverts.
+    let aggregateEstimable = true;
+    try {
+      await ethers.provider.estimateGas({ to: multicall3.address, data: encode("aggregate", calls), from });
+    } catch {
+      aggregateEstimable = false;
+    }
+    expect(aggregateEstimable, "aggregate() should not estimate once a call reverts in combination").to.be.false;
+
+    // The fallback estimates each call alone and sums, so the gated call is still funded for real.
+    const perCall = await Promise.all(
+      calls.map(({ target, callData }) =>
+        ethers.provider.estimateGas({ from: multicall3.address, to: target, data: callData }).then((g) => g.toNumber())
+      )
+    );
+    const summed = Math.floor(perCall.reduce((a, b) => a + b, 0) * MULTICALL3_BATCH_GAS_MULTIPLIER);
+    expect(summed, `summed ${summed} should cover the gate ${minGas}`).to.be.at.least(minGas);
+
+    // The healthy calls land and only the duplicate fails — #3660's isolation, preserved.
+    const returned = await ethers.provider.call({ to: multicall3.address, data: tryData, from, gasLimit: summed });
+    const [results] = multicall3.interface.decodeFunctionResult("tryAggregate", returned);
+    expect(
+      results.map((r: { success: boolean }) => r.success),
+      "the gated call and the first `once` should succeed; the duplicate should not"
+    ).to.deep.equal([true, true, false]);
+  });
 });

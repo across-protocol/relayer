@@ -33,6 +33,7 @@ import {
   getProvider,
   chunk,
   isPromiseFulfilled,
+  bnZero,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } from "./types";
 import {
@@ -216,9 +217,20 @@ async function preflightFinalizations(
  * return a limit below every call's true requirement. Size with aggregate(), submit as tryAggregate() — a truthful
  * limit, and a revert that appears after the pre-flight still can't take the rest of the batch with it.
  *
- * Returns undefined if the batch does not estimate as aggregate(), which means some call reverts: the pre-flight
- * dropped the ones that revert alone, so this is a call that only reverts in combination, or state that moved since.
- * The caller then falls back to the tryAggregate() estimate, which still lets the healthy calls through.
+ * Sizing this way does mean one bad call can spoil the *estimate*, which is the failure mode #3660 removed from
+ * execution. It does not come back: the batch is still submitted as tryAggregate(), so the healthy calls still land.
+ * But the fallback must not be the tryAggregate() estimate, or a single bad call silently re-imposes the floor on
+ * every other call in the batch. So fall back to estimating each call on its own, which sees each requirement with no
+ * call able to spoil another's, and sum them. The pre-flight has already dropped the calls that revert alone, so
+ * reaching the fallback means a call that only reverts in combination, or state that moved since.
+ *
+ * The sum over-provisions when several calls carry a large minGas — the reserve is a floor each call must be *given*,
+ * not gas it spends, so successive calls reuse it rather than accumulating (2 x 5.83M sums to 11.65M where the batch
+ * needs 6.13M). That buys safety on a rare path at the cost of a loose limit, not a loose spend; the gas is not
+ * consumed. A batch large enough for the sum to exceed the block gas limit fails submission loudly rather than
+ * mining a no-op, which is the right way round.
+ *
+ * Returns undefined only if no call estimates at all, leaving the caller with the padded tryAggregate() estimate.
  */
 async function sizeTryAggregateBatch(
   logger: winston.Logger,
@@ -229,14 +241,24 @@ async function sizeTryAggregateBatch(
   try {
     return await multisender.estimateGas.aggregate(calls);
   } catch (error) {
+    // @dev Estimate as the multisender, matching both the pre-flight and the calls' real sender: each executes from
+    // Multicall3, and the legacy OptimismPortal keys withdrawal proofs off msg.sender.
+    const results = await Promise.allSettled(
+      calls.map(({ target, callData }) =>
+        multisender.provider.estimateGas({ from: multisender.address, to: target, data: callData })
+      )
+    );
+    const estimates = results.filter(isPromiseFulfilled).map(({ value }) => value);
     logger.warn({
       at: "Finalizer#sizeTryAggregateBatch",
-      message: `Unable to size the ${getNetworkName(chainId)} finalization batch as aggregate() 🚨`,
+      message: `Sized the ${getNetworkName(chainId)} finalization batch per-call: it does not estimate as aggregate() 🚨`,
       notificationPath: "across-error",
       reason: isEthersError(error) ? error.reason : isError(error) ? error.message : "unknown error",
+      estimated: estimates.length,
       calls: calls.length,
     });
-    return undefined;
+
+    return estimates.length > 0 ? estimates.reduce((sum, gas) => sum.add(gas), bnZero) : undefined;
   }
 }
 
@@ -446,8 +468,9 @@ export async function finalize(
               // must not take the rest of the batch with it.
               method: "tryAggregate",
               args: [false, multicallTxns],
-              // @dev An aggregate()-derived limit is a real requirement and needs only a state-drift margin; the
-              // fallback tryAggregate() estimate is a floor, and has to absorb the EIP-150 reserve as well.
+              // @dev A sized limit is a real requirement and needs only a state-drift margin. Only an unsizeable
+              // batch falls through to the tryAggregate() estimate, which is a floor and must also absorb the
+              // EIP-150 reserve.
               ...(isDefined(gasLimit)
                 ? { gasLimit, gasLimitMultiplier: MULTICALL3_BATCH_GAS_MULTIPLIER }
                 : { gasLimitMultiplier: MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER }),
