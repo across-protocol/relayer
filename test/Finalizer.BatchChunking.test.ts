@@ -1,9 +1,22 @@
 import { Multicall3__factory } from "@across-protocol/sdk/src/utils/abi/typechain";
 import { Contract } from "ethers";
+import { AugmentedTransaction, MultiCallerClient } from "../src/clients";
 import { MULTICALL3_BATCH_GAS_CEILING, MULTICALL3_BATCH_GAS_MULTIPLIER } from "../src/common";
-import { chunkFinalizationBatch } from "../src/finalizer";
+import { chunkFinalizationBatch, finalizationBatchTxn } from "../src/finalizer";
 import { Multicall2Call } from "../src/utils";
 import { createSpyLogger, deployMulticall3, ethers, expect, getContractFactory } from "./utils";
+
+// Reads the queues MultiCallerClient routes enqueued transactions into, to tell "submitted on its own" apart from
+// "handed to the bundler".
+class TestMultiCallerClient extends MultiCallerClient {
+  queuedNonMulticallTxns(chainId: number): AugmentedTransaction[] {
+    return this.nonMulticallTxns[chainId] ?? [];
+  }
+
+  queuedMulticallTxns(chainId: number): AugmentedTransaction[] {
+    return this.txns[chainId] ?? [];
+  }
+}
 
 // EIP-7825 caps a single transaction at 2^24 = 16,777,216 gas, so a finalization batch that outgrows
 // MULTICALL3_BATCH_GAS_CEILING has to be split rather than sent whole and rejected. Exercised against real Multicall3
@@ -80,5 +93,33 @@ describe("Finalizer batch chunking", function () {
         `every call in chunk ${idx} should succeed at ${padded}`
       ).to.deep.equal(chunk.map(() => true));
     }
+  });
+
+  // A split that MultiCallerClient bundles back up is no split at all. The finalizer's client has no signer, so it
+  // can't reach a multisender and would wrap same-contract transactions in multicall(bytes[]) — absent from
+  // Multicall3, so encoding throws and the chain's whole batch is abandoned rather than submitted in pieces.
+  it("Submits each chunk as its own transaction", async function () {
+    const batches = await chunkFinalizationBatch(logger, chainId, multicall3, burnCalls(6));
+    expect(batches.length, "test needs a split batch to have anything to bundle").to.be.greaterThan(1);
+
+    // Signerless, exactly as finalize() constructs it.
+    const multicallerClient = new TestMultiCallerClient(logger);
+    const txns = batches.map((batch) => finalizationBatchTxn(chainId, multicall3, batch));
+    txns.forEach((txn) => multicallerClient.enqueueTransaction(txn));
+
+    expect(
+      multicallerClient.queuedNonMulticallTxns(chainId),
+      "every chunk should be queued for its own txn"
+    ).to.have.lengthOf(batches.length);
+    expect(multicallerClient.queuedMulticallTxns(chainId), "and none should be queued for bundling").to.be.empty;
+
+    // The reason that matters: bundling them produces a call Multicall3 has no function for, so the batch dies on
+    // encoding at submission rather than going out in pieces.
+    const bundled = await multicallerClient.buildMultiCallBundles(txns);
+    expect(bundled, "the bundler would have merged the chunks back together").to.have.lengthOf(1);
+    expect(bundled[0].method).to.equal("multicall");
+    expect(() => multicall3.interface.encodeFunctionData(bundled[0].method, bundled[0].args)).to.throw(
+      "no matching function"
+    );
   });
 });

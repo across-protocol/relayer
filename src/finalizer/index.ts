@@ -340,6 +340,39 @@ export async function chunkFinalizationBatch(
   );
 }
 
+/**
+ * The transaction that submits one chunk of a finalization batch.
+ *
+ * nonMulticall is what makes the split reach the wire. Chunks share a target contract, so without it
+ * MultiCallerClient would bundle them back up: this client is constructed without a signer, so it can't reach a
+ * multisender and falls through to wrapping them in multicall(bytes[]) — which Multicall3 doesn't expose, so
+ * encoding throws and the chain's entire batch is abandoned. Given a multisender it would instead re-aggregate the
+ * chunks into the single transaction that didn't fit in the first place. Neither is what a split is for.
+ */
+export function finalizationBatchTxn(
+  chainId: number,
+  multisender: Contract,
+  { calls, gasLimit }: { calls: Multicall2Call[]; gasLimit?: BigNumber }
+): AugmentedTransaction {
+  return {
+    contract: multisender,
+    chainId,
+    // @dev tryAggregate over aggregate: a call that starts reverting after the pre-flight
+    // must not take the rest of the batch with it.
+    method: "tryAggregate",
+    args: [false, calls],
+    // @dev A sized limit is a real requirement and needs only a state-drift margin. Only an unsizeable batch falls
+    // through to the tryAggregate() estimate, which is a floor and must also absorb the EIP-150 reserve.
+    ...(isDefined(gasLimit)
+      ? { gasLimit, gasLimitMultiplier: MULTICALL3_BATCH_GAS_MULTIPLIER }
+      : { gasLimitMultiplier: MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER }),
+    unpermissioned: true,
+    nonMulticall: true,
+    message: `Batch finalized ${calls.length} txns`,
+    mrkdwn: `Batch finalized ${calls.length} txns`,
+  };
+}
+
 export async function finalize(
   logger: winston.Logger,
   hubSigner: Signer,
@@ -540,26 +573,9 @@ export async function finalize(
             // batch as aggregate() instead, and split it if it won't fit in one transaction. See
             // sizeTryAggregateBatch() and chunkFinalizationBatch().
             const batches = await chunkFinalizationBatch(logger, Number(chainId), multisender, multicallTxns);
-            batches.forEach(({ calls, gasLimit }) => {
-              const txnToSubmit: AugmentedTransaction = {
-                contract: multisender,
-                chainId: Number(chainId),
-                // @dev tryAggregate over aggregate: a call that starts reverting after the pre-flight
-                // must not take the rest of the batch with it.
-                method: "tryAggregate",
-                args: [false, calls],
-                // @dev A sized limit is a real requirement and needs only a state-drift margin. Only an unsizeable
-                // batch falls through to the tryAggregate() estimate, which is a floor and must also absorb the
-                // EIP-150 reserve.
-                ...(isDefined(gasLimit)
-                  ? { gasLimit, gasLimitMultiplier: MULTICALL3_BATCH_GAS_MULTIPLIER }
-                  : { gasLimitMultiplier: MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER }),
-                unpermissioned: true,
-                message: `Batch finalized ${calls.length} txns`,
-                mrkdwn: `Batch finalized ${calls.length} txns`,
-              };
-              multicallerClient.enqueueTransaction(txnToSubmit);
-            });
+            batches.forEach((batch) =>
+              multicallerClient.enqueueTransaction(finalizationBatchTxn(Number(chainId), multisender, batch))
+            );
           }
         }
       }
