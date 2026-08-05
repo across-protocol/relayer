@@ -64,6 +64,7 @@ import {
   buildGaslessFillRelayTx,
   buildSyntheticDeposit,
   getGaslessAuthorizerAddress,
+  getLegacySpokePoolPeripheryAddresses,
   extractGaslessDepositFields,
   getGaslessPermitNonce,
   isPermit2NonceUsed,
@@ -136,7 +137,17 @@ export class GaslessRelayer {
   // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
   protected observedFills: { [chainId: number]: Set<string> } = {};
   // The object is indexed by `chainId`. A SpokePoolPeriphery contract is indexed by the chain ID.
+  // This is the default (current-generation) periphery, used when a message names no target.
   protected spokePoolPeripheries: { [chainId: number]: Contract } = {};
+  /**
+   * Allowlist of every periphery generation accepted as a deposit target, indexed by chainId
+   * then lowercased address: the default periphery plus previous generations still draining
+   * (see {@link getLegacySpokePoolPeripheryAddresses}). Deposits execute against the periphery
+   * the message names ({@link AnyGaslessDepositMessage.targetAddress}) — the user's signature
+   * binds that exact contract — validated against this map so the relayer never calls an
+   * address a message nominates outside the known set.
+   */
+  protected peripheryTargets: { [chainId: number]: { [address: string]: Contract } } = {};
   // The object is indexed by `chainId`. A SpokePool contract is indexed by the chain ID (EVM destinations only).
   protected spokePools: { [chainId: number]: Contract } = {};
   /** Solana destination fill client (at most one SVM destination chain). */
@@ -150,6 +161,8 @@ export class GaslessRelayer {
   // Tracks whether a fill is currently in progress for a given user/originChainId combo.
   // Keyed by `${authorizer}:${originChainId}`.
   protected fillLock: { [key: string]: string } = {};
+  /** requestIds already error-logged for an unservable periphery target (avoids per-poll log spam). */
+  protected unservableTargetsLogged = new Set<string>();
 
   private api: AcrossSwapApiClient;
   private _signerAddress?: EvmAddress;
@@ -199,6 +212,14 @@ export class GaslessRelayer {
         chainId,
         this.config.spokePoolPeripheryOverrides[chainId]
       ).connect(provider);
+      this.peripheryTargets[chainId] = Object.fromEntries(
+        [
+          this.spokePoolPeripheries[chainId],
+          ...getLegacySpokePoolPeripheryAddresses(chainId).map((address) =>
+            getSpokePoolPeriphery(chainId, address).connect(provider)
+          ),
+        ].map((contract) => [contract.address.toLowerCase(), contract])
+      );
       if (!this.config.noPermit2ContractChainIds.has(chainId)) {
         this.permit2Contracts[chainId] = getPermit2(chainId).connect(provider);
       }
@@ -496,14 +517,23 @@ export class GaslessRelayer {
         if (["permit2", "permit"].includes(depositMessage.permitType)) {
           const owner = getGaslessAuthorizerAddress(depositMessage);
           const permitNonce = getGaslessPermitNonce(depositMessage);
-          const nonceUsed =
-            depositMessage.permitType === "permit2"
-              ? await isPermit2NonceUsed(this.permit2Contracts[originChainId], owner, permitNonce)
-              : await isErc2612PermitNonceConsumed({
-                  spokePoolPeriphery: this.spokePoolPeripheries[originChainId],
-                  owner,
-                  signedNonce: permitNonce,
-                });
+          let nonceUsed: boolean;
+          if (depositMessage.permitType === "permit2") {
+            nonceUsed = await isPermit2NonceUsed(this.permit2Contracts[originChainId], owner, permitNonce);
+          } else {
+            // permitNonces is periphery-local storage: read the generation the message binds.
+            // An unlisted target can't be checked (or executed) — leave it unobserved; the
+            // message filter drops it before the state machine.
+            const messagePeriphery = this.resolvePeriphery(originChainId, depositMessage.targetAddress);
+            if (!isDefined(messagePeriphery)) {
+              return;
+            }
+            nonceUsed = await isErc2612PermitNonceConsumed({
+              spokePoolPeriphery: messagePeriphery,
+              owner,
+              signedNonce: permitNonce,
+            });
+          }
           if (!nonceUsed) {
             return;
           }
@@ -697,7 +727,10 @@ export class GaslessRelayer {
 
           case MessageState.DEPOSIT_SUBMIT: {
             if (fillImmediate) {
-              const depositTx = buildGaslessDepositTx(depositMessage, this.getPeripheryContract(originChainId));
+              const depositTx = buildGaslessDepositTx(
+                depositMessage,
+                this.getPeripheryContract(originChainId, depositMessage.targetAddress)
+              );
               const { succeed, reason } = await willSucceed(depositTx);
               if (!succeed) {
                 log("warn", "Deposit simulation failed, falling back to standard path.", { reason });
@@ -727,7 +760,8 @@ export class GaslessRelayer {
                   found = await this._findAuthorizationUsed(originChainId, authToken, authorizer, nonce);
                 } else if (depositMessage.permitType === "permit") {
                   const nonceConsumed = await isErc2612PermitNonceConsumed({
-                    spokePoolPeriphery: this.spokePoolPeripheries[originChainId],
+                    // permitNonces is periphery-local storage: read the generation the message binds.
+                    spokePoolPeriphery: this.getPeripheryContract(originChainId, depositMessage.targetAddress),
                     owner: authorizer,
                     signedNonce: nonce,
                   });
@@ -855,6 +889,24 @@ export class GaslessRelayer {
         return false;
       }
 
+      // The deposit can only execute against the periphery generation the signature binds;
+      // a target outside the allowlist is unservable by this relayer (e.g. a generation
+      // newer than this build knows). Skip it — an updated instance must drain it.
+      if (!isDefined(this.resolvePeriphery(deposit.originChainId, deposit.targetAddress))) {
+        if (!this.unservableTargetsLogged.has(deposit.requestId)) {
+          this.unservableTargetsLogged.add(deposit.requestId);
+          this.logger.error({
+            at: "GaslessRelayer#evaluateApiSignatures",
+            message: "Skipping gasless deposit targeting an unknown SpokePoolPeriphery generation.",
+            requestId: deposit.requestId,
+            depositId: deposit.depositId,
+            originChainId: deposit.originChainId,
+            targetAddress: deposit.targetAddress,
+          });
+        }
+        return false;
+      }
+
       const rawInputToken =
         deposit.depositFlowType === "swapAndBridge"
           ? deposit.depositData.inputToken
@@ -874,8 +926,25 @@ export class GaslessRelayer {
    * @notice Builds and sends depositWithAuthorization tx, then waits for execution.
    * @returns The transaction receipt, or null if skipped or failed.
    */
-  protected getPeripheryContract(originChainId: number): Contract {
-    const contract = this.spokePoolPeripheries[originChainId];
+  /**
+   * Resolves the periphery generation a message's deposit must execute against. The user's
+   * signature binds the periphery the API quoted ({@link AnyGaslessDepositMessage.targetAddress}),
+   * so the target is taken from the message, validated against {@link peripheryTargets}. A
+   * message with no target (legacy feed shape) falls back to the chain's default periphery.
+   * Returns undefined for a target outside the allowlist — the caller must skip the message.
+   */
+  protected resolvePeriphery(originChainId: number, targetAddress?: string): Contract | undefined {
+    if (!isDefined(targetAddress)) {
+      return this.spokePoolPeripheries[originChainId];
+    }
+    return this.peripheryTargets[originChainId]?.[targetAddress.toLowerCase()];
+  }
+
+  protected getPeripheryContract(originChainId: number, targetAddress?: string): Contract {
+    const contract = this.resolvePeriphery(originChainId, targetAddress);
+    // messageFilter drops unknown targets before the state machine, so this is unreachable
+    // for API messages; it guards direct callers.
+    assert(isDefined(contract), `No allowlisted SpokePoolPeriphery at ${targetAddress} for chain ${originChainId}`);
     return this.depositSigners.length === 0
       ? contract.connect(this.baseSigner.connect(this.providersByChain[originChainId]))
       : contract;
@@ -886,7 +955,7 @@ export class GaslessRelayer {
   ): Promise<TransactionReceipt | null | undefined> {
     const { originChainId, depositId } = depositMessage;
     const authorizer = getGaslessAuthorizerAddress(depositMessage);
-    const spokePoolPeripheryContract = this.getPeripheryContract(originChainId);
+    const spokePoolPeripheryContract = this.getPeripheryContract(originChainId, depositMessage.targetAddress);
     const _depositTx = buildGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
 
     if (!this.config.sendingTransactionsEnabled) {

@@ -271,7 +271,7 @@ export function restructureGaslessDeposits(
 ): AnyGaslessDepositMessage[] {
   return depositMessages.flatMap((msg): AnyGaslessDepositMessage[] => {
     const { swapTx, requestId, signature } = msg;
-    const { chainId: originChainId, data } = swapTx;
+    const { chainId: originChainId, to: targetAddress, data } = swapTx;
     const { depositId, witness, integratorId, metadata, type: permitType } = data;
     if (!isGaslessPermitType(permitType)) {
       logger.warn({
@@ -306,6 +306,7 @@ export function restructureGaslessDeposits(
           permit: data.permit as SwapAndBridgeGaslessDepositMessage["permit"],
           permitApprovalSignature: swapMsg.permitApprovalSignature,
           permitApprovalDeadline: swapMsg.permitApprovalDeadline,
+          targetAddress,
           depositData: raw.depositData,
           submissionFees: raw.submissionFees,
           swapToken: raw.swapToken,
@@ -335,6 +336,7 @@ export function restructureGaslessDeposits(
         // permit type for this branch is erc3009 | Permit2Permit.
         // Cast required because data is still the union type after narrowing witness.
         permit: data.permit as GaslessDepositMessage["permit"],
+        targetAddress,
         inputAmount,
         baseDepositData,
         submissionFees,
@@ -345,6 +347,34 @@ export function restructureGaslessDeposits(
       },
     ];
   });
+}
+
+// Previous SpokePoolPeriphery generations, by chain. Most EVM chains share one CREATE2
+// deploy; zk-stack chains and the Avalanche/Robinhood cohort had their own.
+const LEGACY_SPOKE_POOL_PERIPHERY_DEFAULT = ["0x10D8b8DaA26d307489803e10477De69C0492B610"];
+const LEGACY_SPOKE_POOL_PERIPHERY_EXCEPTIONS: { [chainId: number]: string[] } = {
+  [CHAIN_IDs.AVALANCHE]: ["0xe05E3798Ce2ae9afCb637fb53BF5a51253BBe2af"],
+  [CHAIN_IDs.ROBINHOOD]: ["0xe05E3798Ce2ae9afCb637fb53BF5a51253BBe2af"],
+  [CHAIN_IDs.LENS]: ["0x5a148a9260c1f670429361c34d40b477280f01a9"],
+  [CHAIN_IDs.ZK_SYNC]: ["0x5a148a9260c1f670429361c34d40b477280f01a9"],
+};
+
+/**
+ * Previous SpokePoolPeriphery generations that remain valid gasless deposit targets on a chain.
+ *
+ * A gasless deposit can only ever execute against the exact periphery generation the user's
+ * signature binds: the signed EIP-3009/Permit2/EIP-2612 payload names the periphery as the
+ * token-level payee and witness verifier, so submitting it anywhere else reverts. During a
+ * periphery migration the API may still be quoting — or have in-flight intents signed
+ * against — the previous generation, so the relayer accepts these addresses as deposit
+ * targets alongside its default. This lets the relayer roll forward before the API cutover
+ * and keep draining old-generation intents afterwards.
+ *
+ * Retire entries once the API no longer quotes the generation and in-flight authorizations
+ * (bounded by their ~25-minute `validBefore`) have drained.
+ */
+export function getLegacySpokePoolPeripheryAddresses(chainId: number): string[] {
+  return LEGACY_SPOKE_POOL_PERIPHERY_EXCEPTIONS[chainId] ?? LEGACY_SPOKE_POOL_PERIPHERY_DEFAULT;
 }
 
 function toBytes(value: string): string {
