@@ -5,17 +5,24 @@ import { deployMulticall3, ethers, expect, getContractFactory } from "./utils";
 
 // Characterises eth_estimateGas against a real Multicall3 tryAggregate(requireSuccess=false) batch, pinning the
 // two properties MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER relies on: the estimate is always a floor rather than a
-// requirement (so the padding is load-bearing — at 1.0x these cases fail), and the shortfall stays within the
-// EIP-150 1/64 reserve (so a fixed multiplier is enough). See src/clients/README.md for why.
+// requirement (so the padding is load-bearing — at 1.0x every case fails), and the shortfall is bounded by the
+// EIP-150 reserve compounded over the batch's call-tree depth. See src/clients/README.md for why.
 describe("Multicall3 tryAggregate gas estimation", function () {
   let multicall3: Contract, burner: Contract, from: string;
 
-  // `rounds` sets each call's gas. One large call is the case that matters — the withheld 1/64 is then the
-  // largest fraction of the batch — plus a heterogeneous batch and a uniform one to show it converging.
-  const shapes: [string, number[]][] = [
-    ["a single large call", [8000]],
-    ["a large call among small ones", [20, 20, 8000, 20]],
-    ["uniformly sized calls", [1000, 1000, 1000, 1000, 1000]],
+  // Frames a real finalization puts between tryAggregate and the gas it spends. A CCTP v2 mint reaches the
+  // token's storage roughly this deep: transmitter proxy, its implementation, the messenger proxy and its
+  // implementation, the minter, then the token's own proxy and implementation.
+  const PROXIED_FINALIZATION_FRAMES = 7;
+
+  // `rounds` sets each call's gas, `depth` how many further frames it spends that gas below. One large call is
+  // the shallow case that matters — the withheld 1/64 is then the largest fraction of the batch — plus a
+  // heterogeneous batch, a uniform one to show it converging, and a nested one standing in for a proxied target.
+  const shapes: [string, number[], number][] = [
+    ["a single large call", [8000], 0],
+    ["a large call among small ones", [20, 20, 8000, 20], 0],
+    ["uniformly sized calls", [1000, 1000, 1000, 1000, 1000], 0],
+    ["a call nested behind proxies", [2000], PROXIED_FINALIZATION_FRAMES - 1],
   ];
 
   before(async function () {
@@ -26,18 +33,21 @@ describe("Multicall3 tryAggregate gas estimation", function () {
     burner = await (await getContractFactory("MockGasBurner", signer)).deploy();
   });
 
-  // Shape-independent, and the reason a fixed multiplier is enough: the only unaccounted-for shortfall is the
-  // reserve the outer frame withholds, so the true requirement never exceeds estimate * 64/63. Pinning the
-  // configured value against that bound covers batch shapes the three cases below don't reach.
-  it("Configures a multiplier that clears the EIP-150 reserve", function () {
-    expect(MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER).to.be.at.least(64 / 63);
+  // Shape-independent, and the reason a fixed multiplier is enough: the shortfall is the reserve withheld at each
+  // frame, so it is bounded once the deepest target is. Pinning the configured value against that bound covers
+  // batch shapes the cases below don't reach — but only up to the depth asserted here.
+  it("Configures a multiplier that clears the EIP-150 reserve at realistic nesting depth", function () {
+    expect(MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER).to.be.at.least(Math.pow(64 / 63, PROXIED_FINALIZATION_FRAMES));
   });
 
-  shapes.forEach(([label, rounds]) => {
+  shapes.forEach(([label, rounds, depth]) => {
     it(`Pads a batch with ${label} past its true requirement`, async function () {
       const calls = rounds.map((r) => ({
         target: burner.address,
-        callData: burner.interface.encodeFunctionData("burn", [r]),
+        callData:
+          depth === 0
+            ? burner.interface.encodeFunctionData("burn", [r])
+            : burner.interface.encodeFunctionData("burnNested", [depth, r]),
       }));
       const data = multicall3.interface.encodeFunctionData("tryAggregate", [false, calls]);
 
@@ -67,8 +77,12 @@ describe("Multicall3 tryAggregate gas estimation", function () {
 
       // `at.most` rather than `below`: the shortfall vanishes into rounding once no single call dominates.
       expect(estimate, `estimate ${estimate} should not exceed requirement ${required}`).to.be.at.most(required);
-      expect(required - estimate, `shortfall should be within 1/64 of ${required}`).to.be.at.most(
-        Math.ceil(required / 64)
+      // The reserve is withheld at every frame the gas passes through, so the bound compounds with depth: the
+      // batch's own frame, plus one per frame the inner call spends its gas below. A flat 1/64 does not hold —
+      // the nested shape above exceeds it.
+      const bound = Math.ceil(estimate * Math.pow(64 / 63, depth + 1));
+      expect(required, `requirement ${required} should be within the compounded reserve of ${estimate}`).to.be.at.most(
+        bound
       );
       const padded = Math.floor(estimate * MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER);
       expect(padded, `padded ${padded} should cover requirement ${required}`).to.be.at.least(required);
