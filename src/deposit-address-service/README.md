@@ -96,7 +96,7 @@ deadline at or past 540s rather than letting it fail silently.
 
 ```bash
 PORT=8081 tsx src/deposit-address-service/index.ts
-RELAYER_TEST=true yarn hardhat test test/DepositAddressService.units.ts test/DepositAddressService.app.ts
+RELAYER_TEST=true yarn hardhat test "test/DepositAddressService*.ts"
 ```
 
 `DepositAddressService.app.ts` exercises the real Express boundary over real HTTP — binding to port 0 and

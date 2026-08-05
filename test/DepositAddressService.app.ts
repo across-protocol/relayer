@@ -257,6 +257,26 @@ describe("DepositAddressService app", function () {
     expect(lastLine().outcome).to.equal("failed_retriable");
   });
 
+  it("still NACKs when the thrown value cannot be serialized", async function () {
+    // stringifyThrownValue throws on a circular non-Error. Unguarded, that throw happens on the catch
+    // path, so the 500 is never sent, Express sees an unhandled rejection, and the process exits —
+    // abandoning every other in-flight delivery.
+    const circular: Record<string, unknown> = { name: "req" };
+    circular.self = circular;
+    handlerStub.callsFake(async () => {
+      throw circular;
+    });
+    await start();
+
+    const response = await post(pushBody(PAYLOAD));
+
+    expect(response.status).to.equal(500);
+    const failure = lastLine().failure as Record<string, unknown>;
+    expect(failure.retriable).to.equal(true);
+    expect(failure.type).to.equal("unserializable");
+    expect(failure.message).to.equal("failed to serialize thrown value");
+  });
+
   it("puts the failure under `failure`, never under the reserved `error` key", async function () {
     // `@risk-labs/logger`'s errorStackTracerFormatter rewrites info.error to
     // `error.stack || error.message || ...`, which silently collapses a structured object to a string.

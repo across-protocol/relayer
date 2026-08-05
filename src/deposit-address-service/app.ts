@@ -221,6 +221,30 @@ function deliveryFields(config: DepositAddressServiceConfig, body: PubSubPushMes
  * The failure block is `failure`, not `error` — a reserved key that `@risk-labs/logger`'s
  * errorStackTracerFormatter collapses to `error.stack || error.message`, losing the structure.
  */
+/**
+ * Never throws — this runs on the catch path, so a throw here would mean the intended 500 is never
+ * sent, Express sees an unhandled rejection, and the fatal handler exits the process, abandoning every
+ * other in-flight delivery. `stringifyThrownValue` guards its `Error` branch but not its non-`Error`
+ * one, where a value with circular references throws.
+ *
+ * `code` and `retriable` are read before the try so the fallback itself cannot fail.
+ */
+function describeFailure(error: unknown): Record<string, unknown> {
+  const code = errorCode(error);
+  const retriable = isRetriable(error);
+  try {
+    return {
+      type: error instanceof Error ? error.name : typeof error,
+      code,
+      message: error instanceof Error ? error.message : String(error),
+      retriable,
+      detail: stringifyThrownValue(error),
+    };
+  } catch {
+    return { type: "unserializable", code, message: "failed to serialize thrown value", retriable };
+  }
+}
+
 function logOutcome(
   logger: winston.Logger,
   args: { fields: Record<string, unknown>; outcome: string; ack: boolean; error?: unknown }
@@ -234,17 +258,7 @@ function logOutcome(
     ...fields,
     outcome,
     ack,
-    ...(isDefined(error)
-      ? {
-          failure: {
-            type: error instanceof Error ? error.name : typeof error,
-            code: errorCode(error),
-            message: error instanceof Error ? error.message : String(error),
-            retriable: isRetriable(error),
-            detail: stringifyThrownValue(error),
-          },
-        }
-      : {}),
+    ...(isDefined(error) ? { failure: describeFailure(error) } : {}),
     ...(alert ? { notificationPath: ALERT_NOTIFICATION_PATH } : {}),
   };
 
