@@ -8,6 +8,7 @@ import {
   constructClients,
   constructSpokePoolClientsWithLookback,
   getContractEntry,
+  EIP7825_TXN_GAS_CAP,
   MULTICALL3_BATCH_GAS_CEILING,
   MULTICALL3_BATCH_GAS_MULTIPLIER,
   MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER,
@@ -35,6 +36,7 @@ import {
   chunk,
   isPromiseFulfilled,
   bnZero,
+  toBNWei,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } from "./types";
 import {
@@ -271,6 +273,13 @@ async function estimateCallGas(multisender: Contract, calls: Multicall2Call[]): 
 }
 
 /**
+ * The gas limit a sized batch reaches the wire with, mirroring how TransactionClient#submit applies the multiplier.
+ */
+function padGasLimit(gasLimit: BigNumber): BigNumber {
+  return gasLimit.mul(toBNWei(MULTICALL3_BATCH_GAS_MULTIPLIER)).div(sdkUtils.fixedPointAdjustment);
+}
+
+/**
  * Splits a finalization batch into transactions that each fit under the per-transaction gas cap.
  *
  * EIP-7825 caps a single transaction at 2^24 = 16,777,216 gas, two orders of magnitude below mainnet's ~60M block gas
@@ -283,11 +292,14 @@ async function estimateCallGas(multisender: Contract, calls: Multicall2Call[]): 
  * withdrawals stuck on 2026-08-05 size at 6.17M against a 15M ceiling. Only a batch that doesn't fit pays for
  * per-call estimates and is split.
  *
- * Packing uses the per-call estimates rather than each candidate chunk's aggregate() estimate: summing over-counts a
- * shared minGas reserve, so chunks come out smaller than strictly necessary, but every chunk is then sized properly
- * by sizeTryAggregateBatch() and a conservative split is the safe direction to err. A single call that alone exceeds
- * the ceiling cannot be split any further; it goes out on its own and is logged, so it fails submission loudly
- * instead of quietly dragging a batch over the cap.
+ * Packing uses the per-call estimates rather than each candidate chunk's aggregate() estimate, which leaves chunks
+ * smaller than strictly necessary: the sum over-counts a shared minGas reserve, and each per-call estimate also
+ * carries its own intrinsic and cold-access gas that aggregate() pays once for the whole batch. Every chunk is then
+ * sized properly by sizeTryAggregateBatch(), and a conservative split is the safe direction to err. The sizes are
+ * rechecked against the ceiling afterwards, because the sum understates in one direction — a call that doesn't
+ * estimate on its own contributes nothing to packing while still consuming gas in its chunk. A single call that alone
+ * exceeds the ceiling cannot be split any further; it goes out on its own and is logged, so it fails submission
+ * loudly instead of quietly dragging a batch over the cap.
  */
 export async function chunkFinalizationBatch(
   logger: winston.Logger,
@@ -332,12 +344,74 @@ export async function chunkFinalizationBatch(
     oversizedCalls: oversized > 0 ? oversized : undefined,
   });
 
-  return Promise.all(
+  const sized = await Promise.all(
     chunks.map(async (chunk) => ({
       calls: chunk,
       gasLimit: await sizeTryAggregateBatch(logger, chainId, multisender, chunk),
     }))
   );
+
+  // @dev Packing counts per-call estimates but a chunk is sized as aggregate(), so the two can disagree. Measured,
+  // the per-call sum runs well over: each call's estimate carries its own 21k intrinsic gas and its own cold-access
+  // costs, ~40k a call that aggregate() pays once, against Multicall3's much smaller per-call loop overhead (50
+  // uniform calls: 3.37M summed vs 1.38M aggregated; 20 larger ones: 11.76M vs 11.03M). But the sum understates
+  // whenever a call doesn't estimate on its own, since it then contributes nothing to packing while still consuming
+  // gas in the chunk — and the pre-flight admits calls on eth_call, which is more permissive than eth_estimateGas.
+  // So verify rather than assume, and say which side of the hard cap we landed on.
+  const overBudget = sized
+    .map(({ gasLimit: chunkGas }) => (isDefined(chunkGas) ? padGasLimit(chunkGas) : undefined))
+    .filter(isDefined)
+    .filter((padded) => padded.gt(MULTICALL3_BATCH_GAS_CEILING));
+  if (overBudget.length > 0) {
+    const overCap = overBudget.filter((padded) => padded.gt(EIP7825_TXN_GAS_CAP));
+    logger[overCap.length > 0 ? "error" : "warn"]({
+      at: "Finalizer#chunkFinalizationBatch",
+      message:
+        overCap.length > 0
+          ? `${overCap.length} ${getNetworkName(chainId)} finalization chunk(s) still exceed the per-transaction gas cap 🚨`
+          : `${overBudget.length} ${getNetworkName(chainId)} finalization chunk(s) sized above the batch ceiling ⚠️`,
+      notificationPath: "across-error",
+      reason: "a chunk sized higher than the per-call estimates it was packed against",
+      ceiling: MULTICALL3_BATCH_GAS_CEILING,
+      cap: EIP7825_TXN_GAS_CAP,
+      paddedLimits: overBudget.map((padded) => padded.toString()),
+    });
+  }
+
+  return sized;
+}
+
+/**
+ * Whether a message's finalization actually went out, and why not when it didn't.
+ *
+ * A chain submits one transaction per batch chunk, and TransactionClient#submit stops at the first failure and
+ * returns the hashes it already collected — so a chain with fewer hashes than transactions finalized only some of its
+ * messages. Which ones is not recoverable: the hashes don't identify the chunks behind them, and a chunk's calls
+ * aren't tracked past enqueueing. So every message on a partially-submitted chain is reported unconfirmed rather than
+ * credited to a transaction that may not have carried it. Over-warning on the messages that did land is the safe
+ * direction; a finalization wrongly logged as complete is one nobody goes looking for.
+ */
+export function submissionStatus(
+  chainId: number,
+  { dropped, submittedTxns, expectedTxns }: { dropped: boolean; submittedTxns: number; expectedTxns: number }
+): { submitted: boolean; reason?: string } {
+  if (dropped) {
+    return { submitted: false, reason: "dropped by pre-flight simulation ⚠️" };
+  }
+
+  if (submittedTxns === 0) {
+    return { submitted: false, reason: "no transaction submitted ⚠️" };
+  }
+
+  if (submittedTxns < expectedTxns) {
+    const network = getNetworkName(chainId);
+    return {
+      submitted: false,
+      reason: `only ${submittedTxns}/${expectedTxns} ${network} transactions submitted; this message may not be in one of them ⚠️`,
+    };
+  }
+
+  return { submitted: true };
 }
 
 /**
@@ -538,6 +612,7 @@ export async function finalize(
     // the TransactionClient.
     const multicallerClient = new MultiCallerClient(logger);
     let txnRefLookup: Record<number, string[]> = {};
+    const enqueuedTxnCount: Record<number, number> = {};
     try {
       const finalizationsByChain = Object.groupBy(
         finalizations,
@@ -579,6 +654,14 @@ export async function finalize(
           }
         }
       }
+
+      // @dev Record the queue depth before executing, which clears it. Every finalizer transaction is nonMulticall,
+      // so MultiCallerClient submits them one-for-one and this is the number of hashes a fully-submitted chain
+      // returns. Needed because TransactionClient#submit stops at the first failure and returns the hashes it
+      // already has, so a short hash list is the only evidence that some finalizations never went out.
+      Object.keys(finalizationsByChain).forEach((chainId) => {
+        enqueuedTxnCount[Number(chainId)] = multicallerClient.getQueuedTransactions(Number(chainId)).length;
+      });
       txnRefLookup = await multicallerClient.executeTxnQueues(!submitFinalizationTransactions);
     } catch (_error) {
       const error = _error as Error;
@@ -604,7 +687,11 @@ export async function finalize(
     const submission = (crossChainMessage: CrossChainMessage) => {
       const { destinationChainId } = crossChainMessage;
       const dropped = droppedMessages.has(crossChainMessage);
-      const submitted = !dropped && txnRefLookup[destinationChainId]?.length > 0;
+      const { submitted, reason } = submissionStatus(destinationChainId, {
+        dropped,
+        submittedTxns: txnRefLookup[destinationChainId]?.length ?? 0,
+        expectedTxns: enqueuedTxnCount[destinationChainId] ?? 0,
+      });
 
       // Nothing is submitted when transaction sending is disabled, so don't warn about it.
       const level = submitted || !submitFinalizationTransactions ? "info" : "warn";
@@ -614,12 +701,7 @@ export async function finalize(
           txnRefList: dropped
             ? undefined
             : txnRefLookup[destinationChainId]?.map((txnRef) => blockExplorerLink(txnRef, destinationChainId)),
-          ...(level === "warn"
-            ? {
-                notificationPath: "across-error",
-                notSubmitted: dropped ? "dropped by pre-flight simulation ⚠️" : "no transaction submitted ⚠️",
-              }
-            : {}),
+          ...(level === "warn" ? { notificationPath: "across-error", notSubmitted: reason } : {}),
         },
       } as const;
     };

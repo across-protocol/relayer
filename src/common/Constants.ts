@@ -241,11 +241,15 @@ export const MULTICALL3_BATCH_GAS_MULTIPLIER = 1.1;
 // See test/MultiCallerClient.TryAggregateGas.test.ts for the measurements.
 export const MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER = 1.5;
 
-// Ceiling on the gas limit of a submitted finalization batch, above which the batch is split. EIP-7825 caps a single
-// transaction at 2^24 = 16,777,216 gas — two orders of magnitude below mainnet's ~60M block gas limit, so the
-// per-transaction cap rather than the block is what bounds a batch as a backlog grows. Held below the cap to leave
-// room for MULTICALL3_BATCH_GAS_MULTIPLIER, for state drift between sizing and inclusion, and for chains whose own
-// cap is lower. Applies to the padded limit that reaches the wire, not to the raw estimate.
+// EIP-7825's cap on the gas a single transaction may declare, two orders of magnitude below mainnet's ~60M block gas
+// limit — so the per-transaction cap rather than the block is what bounds a finalization batch as a backlog grows.
+// A transaction declaring more than this is rejected outright, so it is a hard limit rather than a target.
+export const EIP7825_TXN_GAS_CAP = 2 ** 24; // 16,777,216
+
+// Ceiling on the gas limit of a submitted finalization batch, above which the batch is split. Held below
+// EIP7825_TXN_GAS_CAP to leave room for MULTICALL3_BATCH_GAS_MULTIPLIER, for state drift between sizing and
+// inclusion, and for chains whose own cap is lower. Applies to the padded limit that reaches the wire, not to the
+// raw estimate — so the ~1.8M between it and the cap is the margin absorbing any sizing error.
 export const MULTICALL3_BATCH_GAS_CEILING = 15_000_000;
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals

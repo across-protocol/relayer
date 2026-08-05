@@ -1,9 +1,9 @@
 import { Multicall3__factory } from "@across-protocol/sdk/src/utils/abi/typechain";
-import { Contract } from "ethers";
+import { BigNumber, Contract } from "ethers";
 import { AugmentedTransaction, MultiCallerClient } from "../src/clients";
 import { MULTICALL3_BATCH_GAS_CEILING, MULTICALL3_BATCH_GAS_MULTIPLIER } from "../src/common";
-import { chunkFinalizationBatch, finalizationBatchTxn } from "../src/finalizer";
-import { Multicall2Call } from "../src/utils";
+import { chunkFinalizationBatch, finalizationBatchTxn, submissionStatus } from "../src/finalizer";
+import { bnZero, Multicall2Call } from "../src/utils";
 import { createSpyLogger, deployMulticall3, ethers, expect, getContractFactory } from "./utils";
 
 // Reads the queues MultiCallerClient routes enqueued transactions into, to tell "submitted on its own" apart from
@@ -121,5 +121,85 @@ describe("Finalizer batch chunking", function () {
     expect(() => multicall3.interface.encodeFunctionData(bundled[0].method, bundled[0].args)).to.throw(
       "no matching function"
     );
+  });
+
+  // Greedy packing counts per-call estimates while each chunk is then sized as aggregate(), so the split is only
+  // conservative if the per-call sum runs at or above what the chunk actually estimates at. It does, and by a wide
+  // margin: each per-call estimate carries its own 21k intrinsic gas and its own cold-access costs, which aggregate()
+  // pays once for the whole batch. That dwarfs the Multicall3 loop overhead the sum leaves out. Pinned because
+  // chunkFinalizationBatch()'s ceiling check is the backstop for the day this stops being true.
+  describe("Packing is conservative against the chunk's own estimate", function () {
+    let originalBlockGasLimit: BigNumber;
+
+    before(async function () {
+      // @dev estimateGas probes near the block gas limit, and the default 60M exceeds the cap the in-process EVM
+      // enforces on a single transaction, which surfaces as a provider error rather than an estimate.
+      originalBlockGasLimit = (await ethers.provider.getBlock("latest")).gasLimit;
+      await ethers.provider.send("evm_setBlockGasLimit", ["0xF42400"]); // 16,000,000
+    });
+
+    after(async function () {
+      await ethers.provider.send("evm_setBlockGasLimit", [originalBlockGasLimit.toHexString()]);
+    });
+
+    (
+      [
+        ["many small calls", 50, 100],
+        ["fewer large calls", 20, 2000],
+      ] as [string, number, number][]
+    ).forEach(([label, count, rounds]) => {
+      it(label, async function () {
+        const calls = Array.from({ length: count }, () => ({
+          target: burner.address,
+          callData: burner.interface.encodeFunctionData("burn", [rounds]),
+        }));
+
+        const summed = (
+          await Promise.all(
+            calls.map(({ target, callData }) =>
+              ethers.provider.estimateGas({ from: multicall3.address, to: target, data: callData })
+            )
+          )
+        ).reduce((acc, gas) => acc.add(gas), bnZero);
+        const aggregated = await multicall3.estimateGas.aggregate(calls);
+
+        expect(
+          summed.gte(aggregated),
+          `summed per-call estimate ${summed} should not undercut the aggregate estimate ${aggregated}`
+        ).to.be.true;
+      });
+    });
+  });
+});
+
+describe("Finalizer submission reporting", function () {
+  const chainId = 1;
+
+  it("Reports a fully-submitted chain as submitted", function () {
+    expect(submissionStatus(chainId, { dropped: false, submittedTxns: 3, expectedTxns: 3 })).to.deep.equal({
+      submitted: true,
+    });
+  });
+
+  it("Reports a pre-flight drop as dropped", function () {
+    const { submitted, reason } = submissionStatus(chainId, { dropped: true, submittedTxns: 2, expectedTxns: 2 });
+    expect(submitted).to.be.false;
+    expect(reason).to.contain("pre-flight");
+  });
+
+  it("Reports a chain that submitted nothing", function () {
+    const { submitted, reason } = submissionStatus(chainId, { dropped: false, submittedTxns: 0, expectedTxns: 2 });
+    expect(submitted).to.be.false;
+    expect(reason).to.equal("no transaction submitted ⚠️");
+  });
+
+  // The case the split introduces: TransactionClient#submit stops at the first failure and returns the hashes it
+  // already has, so a chain can come back with some chunks landed and the rest never sent. Crediting every message on
+  // the chain to the surviving hash would report finalizations that never went out as complete.
+  it("Refuses to claim success when only some of a chain's transactions were submitted", function () {
+    const { submitted, reason } = submissionStatus(chainId, { dropped: false, submittedTxns: 1, expectedTxns: 3 });
+    expect(submitted, "a partial submission is not a success").to.be.false;
+    expect(reason).to.contain("1/3");
+    expect(reason).to.contain("may not be in one of them");
   });
 });
