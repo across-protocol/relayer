@@ -10,19 +10,17 @@ const LENS_L2_USDC_BRIDGE = "0x7188b6975eec82ae914b6ec7ac32b3c9a18b2c81";
 describe("ZkSyncFinalizer", function () {
   describe("useLegacyFinalizeWithdrawal", function () {
     // Each row was verified by simulating both entrypoints against mainnet state on 2026-08-05.
-    const cases: { name: string; l2ChainId: number; l2Sender: string; customUsdcBridge: boolean; legacy: boolean }[] = [
+    const cases: { name: string; l2ChainId: number; l2Sender: string; legacy: boolean }[] = [
       {
         name: "zkSync ETH withdrawal (base token)",
         l2ChainId: CHAIN_IDs.ZK_SYNC,
         l2Sender: zksUtils.L2_BASE_TOKEN_ADDRESS,
-        customUsdcBridge: false,
         legacy: false,
       },
       {
         name: "zkSync USDT withdrawal (asset router)",
         l2ChainId: CHAIN_IDs.ZK_SYNC,
         l2Sender: zksUtils.L2_ASSET_ROUTER_ADDRESS,
-        customUsdcBridge: false,
         legacy: false,
       },
       {
@@ -31,37 +29,34 @@ describe("ZkSyncFinalizer", function () {
         name: "Lens WETH withdrawal (asset router)",
         l2ChainId: CHAIN_IDs.LENS,
         l2Sender: zksUtils.L2_ASSET_ROUTER_ADDRESS,
-        customUsdcBridge: false,
         legacy: false,
       },
       {
         name: "Lens GHO withdrawal (base token)",
         l2ChainId: CHAIN_IDs.LENS,
         l2Sender: zksUtils.L2_BASE_TOKEN_ADDRESS,
-        customUsdcBridge: false,
         legacy: true,
       },
       {
-        // The standalone USDC bridge has no finalizeDeposit(), so this must stay on the legacy entrypoint
-        // regardless of the sender.
+        // Withdrawals routed via the standalone USDC bridge are forced onto the legacy entrypoint by
+        // prepareFinalizations(), since that bridge has no finalizeDeposit(). Pinned here too because this
+        // sender must not be mistaken for an asset-router withdrawal.
         name: "Lens USDC withdrawal (standalone USDC bridge)",
         l2ChainId: CHAIN_IDs.LENS,
         l2Sender: LENS_L2_USDC_BRIDGE,
-        customUsdcBridge: true,
         legacy: true,
       },
     ];
 
-    cases.forEach(({ name, l2ChainId, l2Sender, customUsdcBridge, legacy }) => {
+    cases.forEach(({ name, l2ChainId, l2Sender, legacy }) => {
       it(`${name} -> ${legacy ? "finalizeWithdrawal" : "finalizeDeposit"}`, function () {
-        expect(useLegacyFinalizeWithdrawal(l2ChainId, l2Sender, customUsdcBridge)).to.equal(legacy);
+        expect(useLegacyFinalizeWithdrawal(l2ChainId, l2Sender)).to.equal(legacy);
       });
     });
 
     it("Is not case-sensitive on the l2Sender", function () {
       const { L2_ASSET_ROUTER_ADDRESS: assetRouter } = zksUtils;
-      expect(useLegacyFinalizeWithdrawal(CHAIN_IDs.LENS, assetRouter.toUpperCase().replace("0X", "0x"), false)).to.be
-        .false;
+      expect(useLegacyFinalizeWithdrawal(CHAIN_IDs.LENS, assetRouter.toUpperCase().replace("0X", "0x"))).to.be.false;
     });
   });
 });
