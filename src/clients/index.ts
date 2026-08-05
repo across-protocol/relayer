@@ -23,4 +23,5 @@ export * from "./InventoryClient";
 export * from "./AcrossAPIClient";
 export * from "./SvmFillerClient";
 export * from "./BundleDataApproxClient";
+export * from "./AcrossApiBaseClient";
 export * from "./AcrossSwapApiClient";
