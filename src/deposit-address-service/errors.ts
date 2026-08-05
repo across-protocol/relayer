@@ -37,7 +37,7 @@ export class UndecodablePushMessageError extends DepositAddressServiceError {
 }
 
 /**
- * `express.json()` rejected the body before any route ran — bad JSON, or over `JSON_BODY_LIMIT`.
+ * `express.json()` rejected the body before any route ran — bad JSON, or over the size cap.
  * Deterministic, so ACK; Express's own non-2xx would redeliver forever without a DLQ.
  */
 export class MalformedRequestBodyError extends DepositAddressServiceError {

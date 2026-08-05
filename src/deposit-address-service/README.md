@@ -39,7 +39,7 @@ retries for as long as the message is retained, with nothing to eject it. That d
 | Handler threw a `retriable` error | `500` | May clear; let the subscription back off. |
 | Handler threw a terminal error | `204` | Redelivery can't help; a non-2xx would retry forever. |
 | Undecodable or non-string `data` | `204` | Same reasoning. |
-| Unparseable JSON, or body over `JSON_BODY_LIMIT` | `204` | Caught by error middleware, not Express's bare 4xx. |
+| Unparseable JSON, or body over the 1mb cap | `204` | Caught by error middleware, not Express's bare 4xx. |
 | Execution disabled, or no handler configured | `500` | Preserves the message; never discards silently. |
 | Not a Pub/Sub push request | `400` | No subscription behind it, so a 4xx can't loop. |
 | Draining | `503` | Redelivered to a live instance. |
@@ -88,7 +88,6 @@ deadline at or past 540s rather than letting it fail silently.
 | `EXECUTION_ENABLED` | `false` | Master switch for fund-moving work. Must be exactly `"true"`. |
 | `APPLICATION_DEADLINE_MS` | `480000` | See above. Rejected at startup if ≥ 540s. |
 | `SHUTDOWN_DRAIN_TIMEOUT_MS` | `8000` | Rejected if > 10s: Cloud Run SIGKILLs that long after SIGTERM. |
-| `JSON_BODY_LIMIT` | `1mb` | Request body cap. |
 
 ## Development
 

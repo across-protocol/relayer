@@ -10,9 +10,6 @@ const DEFAULT_APPLICATION_DEADLINE_MS = 480_000;
 const DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS = 8_000;
 const DEFAULT_PORT = 8080;
 
-/** Bounded so a malformed or hostile body cannot be buffered indefinitely. Indexer items are small. */
-const DEFAULT_JSON_BODY_LIMIT = "1mb";
-
 function readBoolean(value: string | undefined): boolean {
   return value === "true";
 }
@@ -44,12 +41,10 @@ export class DepositAddressServiceConfig {
   readonly applicationDeadlineMs: number;
 
   readonly shutdownDrainTimeoutMs: number;
-  readonly jsonBodyLimit: string;
 
   constructor(env: ProcessEnv) {
     this.port = readInteger(env.PORT, DEFAULT_PORT);
     this.executionEnabled = readBoolean(env.EXECUTION_ENABLED);
-    this.jsonBodyLimit = env.JSON_BODY_LIMIT?.trim() || DEFAULT_JSON_BODY_LIMIT;
 
     this.applicationDeadlineMs = readInteger(env.APPLICATION_DEADLINE_MS, DEFAULT_APPLICATION_DEADLINE_MS);
     if (this.applicationDeadlineMs >= CLOUD_RUN_REQUEST_TIMEOUT_MS) {

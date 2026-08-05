@@ -22,6 +22,17 @@ const AT = "DepositAddressService#push";
 const ALERT_NOTIFICATION_PATH = "across-bot-error";
 
 /**
+ * Caps the body so a malformed or hostile request cannot be buffered without bound. Indexer items are a
+ * few KB, so this is generous.
+ *
+ * Fixed rather than configurable on purpose: `express.json({ limit })` runs the value through
+ * `bytes.parse`, which fails *silently* — `"foo"` yields `null` and removes the cap altogether, while
+ * `"100mbb"` yields 100 bytes and rejects everything. A typo in an env var would therefore break the
+ * limit in one direction or the other with no startup error.
+ */
+const JSON_BODY_LIMIT = "1mb";
+
+/**
  * Pub/Sub reads one thing from the response: 2xx acknowledges, anything else redelivers. There is no
  * "permanent failure" status for push subscriptions, which is why a malformed *message* gets 204.
  */
@@ -50,7 +61,7 @@ export function createApp(deps: AppDependencies): Express {
   const pushDeps: PushHandlerDeps = { logger, config, handler: deps.handler ?? unconfiguredHandler };
 
   const app = express();
-  app.use(express.json({ limit: config.jsonBodyLimit }));
+  app.use(express.json({ limit: JSON_BODY_LIMIT }));
 
   // Liveness stays true while draining, so an instance is not restarted out from under its requests.
   app.get("/health", (_req: Request, res: Response) => {

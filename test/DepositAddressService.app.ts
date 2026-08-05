@@ -235,12 +235,15 @@ describe("DepositAddressService app", function () {
     expect((line.failure as Record<string, unknown>).code).to.equal("MALFORMED_REQUEST_BODY");
   });
 
-  it("ACKs a body over the configured size limit", async function () {
-    await start({ JSON_BODY_LIMIT: "100b" });
+  it("ACKs a body over the 1mb limit", async function () {
+    // The limit is a fixed constant, not configurable: express.json runs it through bytes.parse, which
+    // fails silently — a typo would either remove the cap or shrink it to a few bytes.
+    await start();
 
-    const response = await post(pushBody("x".repeat(500)));
+    const response = await post(pushBody("x".repeat(1_100_000)));
 
     expect(response.status).to.equal(204);
+    expect(handlerStub.notCalled).to.equal(true);
     expect(lastLine().outcome).to.equal("dropped_malformed_request_body");
   });
 
