@@ -40,6 +40,13 @@ const IGNORED_WITHDRAWALS = [
   "0xe93642e22eec21ead2abb20f23a1dc3033b41274cdfe7439cf3ada3dfa1dff06", // Lens USDC 2025-06-13 @todo remove
 ];
 
+// Lower bound on the age of a zkSync withdrawal before it is worth checking for finalization. This is only a cheap
+// pre-filter to avoid querying status for withdrawals that cannot possibly be ready; sortWithdrawals() and
+// isWithdrawalFinalized() below are the authoritative readiness checks, so setting this too low costs a few extra
+// RPC calls per run, never a bad finalization attempt. Overridable so a change in zkSync's batch cadence doesn't
+// need a redeploy.
+const ZKSYNC_MIN_WITHDRAWAL_AGE = Number(process.env["ZKSYNC_MIN_WITHDRAWAL_AGE"] ?? 2 * 60 * 60);
+
 /**
  * @returns Withdrawal finalization calldata and metadata.
  */
@@ -58,13 +65,15 @@ export async function zkSyncFinalizer(
   assert(isSignerWallet(signer), "Signer is not a Wallet");
   const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
 
-  // Zksync takes ~6 hours to finalize so ignore any events
-  // earlier than that.
+  // A zkSync withdrawal becomes finalizable once the L1 batch containing it is executed on the hub chain. Measured
+  // over 21 withdrawals between 2026-07-16 and 2026-08-04, execution lands 3.4-3.8h after the L2 withdrawal (batch
+  // commit ~0.3h, prove ~1h, execute ~3.6h) -- not the ~6h this filter previously assumed, which held back every
+  // withdrawal for ~2.6h after it was already claimable.
   const redis = await getRedisCache(logger);
   const latestBlockToFinalize = await getBlockForTimestamp(
     logger,
     l2ChainId,
-    getCurrentTime() - 60 * 60 * 6,
+    getCurrentTime() - ZKSYNC_MIN_WITHDRAWAL_AGE,
     undefined,
     redis
   );
