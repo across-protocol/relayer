@@ -1,6 +1,6 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
 import { Contract, Signer } from "ethers";
-import { Provider as zksProvider, Wallet as zkWallet } from "zksync-ethers";
+import { Provider as zksProvider, Wallet as zkWallet, utils as zksUtils } from "zksync-ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, getContractEntry } from "../../common";
 import {
@@ -211,28 +211,48 @@ async function getWithdrawalParams(
 }
 
 /**
+ * Which L1 entrypoint finalizes a given withdrawal on the L1Nullifier.
+ *
+ * The legacy finalizeWithdrawal() does not carry l2Sender, so the L1 contract has to assume it. That
+ * assumption does not hold for withdrawals initiated by the L2 asset router -- every ERC-20, which on a
+ * chain whose base token isn't ETH includes WETH -- and the resulting message hash mismatch reverts
+ * InvalidProof(). finalizeDeposit() passes l2Sender explicitly, so prefer it wherever it exists.
+ *
+ * @dev Verified on mainnet state against Lens WETH 0xa964075c…12cec8 (l2Sender = L2 asset router), where
+ * finalizeWithdrawal() reverts InvalidProof() and finalizeDeposit() succeeds.
+ * @param l2ChainId Chain ID for the L2.
+ * @param l2Sender The L2 contract that initiated the withdrawal.
+ * @returns true if the withdrawal must be finalized via the legacy finalizeWithdrawal() entrypoint.
+ */
+export function useLegacyFinalizeWithdrawal(l2ChainId: number, l2Sender: string): boolean {
+  const isAssetRouterWithdrawal = l2Sender.toLowerCase() === zksUtils.L2_ASSET_ROUTER_ADDRESS.toLowerCase();
+  return [CHAIN_IDs.LENS].includes(l2ChainId) && !isAssetRouterWithdrawal;
+}
+
+/**
  * @param withdrawal Withdrawal proof data for a single withdrawal.
  * @param ethAddr Ethereum address on the L2.
  * @param l1Mailbox zkSync mailbox contract on the L1.
  * @param l1ERC20Bridge zkSync ERC20 bridge contract on the L1.
+ * @param useLegacyEntrypoint Whether to finalize via the legacy finalizeWithdrawal() rather than finalizeDeposit().
  * @returns Calldata for a withdrawal finalization.
  */
 async function prepareFinalization(
   withdrawal: zkSyncWithdrawalData,
   l2ChainId: number,
-  l1SharedBridge: Contract
+  l1SharedBridge: Contract,
+  useLegacyEntrypoint: boolean
 ): Promise<Multicall2Call> {
-  const isLegacyBridge = [CHAIN_IDs.LENS].includes(l2ChainId);
   const args = [
     l2ChainId,
     withdrawal.l1BatchNumber,
     withdrawal.l2MessageIndex,
-    isLegacyBridge ? undefined : withdrawal.sender,
+    useLegacyEntrypoint ? undefined : withdrawal.sender,
     withdrawal.l2TxNumberInBlock,
     withdrawal.message,
     withdrawal.proof,
   ];
-  const calldata = isLegacyBridge
+  const calldata = useLegacyEntrypoint
     ? await l1SharedBridge.populateTransaction.finalizeWithdrawal(...args.filter(isDefined))
     : await l1SharedBridge.populateTransaction.finalizeDeposit(args);
 
@@ -260,12 +280,15 @@ async function prepareFinalizations(
   );
 
   return await sdkUtils.mapAsync(withdrawalParams, async (withdrawal, idx) => {
-    const finalizationContract = getFinalizationContract(
-      l1ChainId,
-      tokensBridged[idx].chainId,
-      tokensBridged[idx].l2TokenAddress
-    );
-    return prepareFinalization(withdrawal, l2ChainId, finalizationContract);
+    const { chainId, l2TokenAddress } = tokensBridged[idx];
+    const finalizationContract = getFinalizationContract(l1ChainId, chainId, l2TokenAddress);
+
+    // The standalone ZkStack USDC bridge only implements finalizeWithdrawal(), so it's the sole entrypoint
+    // available there. Everything else finalizes on the L1Nullifier, where the sender decides.
+    const useLegacyEntrypoint =
+      withdrawalRequiresCustomUsdcBridge(l1ChainId, chainId, l2TokenAddress) ||
+      useLegacyFinalizeWithdrawal(l2ChainId, withdrawal.sender);
+    return prepareFinalization(withdrawal, l2ChainId, finalizationContract, useLegacyEntrypoint);
   });
 }
 
