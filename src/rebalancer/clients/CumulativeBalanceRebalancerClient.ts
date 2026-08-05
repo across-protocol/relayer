@@ -251,17 +251,31 @@ export class CumulativeBalanceRebalancerClient extends BaseRebalancerClient {
             });
             continue;
           }
-          const rebalanceRoutesWithCosts = await mapAsync(rebalanceRoutesToEvaluate, async (route) => {
-            return {
-              route,
-              priorityTier: allDestinationChains[route.destinationChain],
-              cost: await this.adapters[route.adapter].getEstimatedCost(
-                route,
-                amountToTransferCapped,
-                false /* debugLog set to false because the logs would be really noisy, though detailed about how each estimated cost was computed */
-              ),
-            };
-          });
+          const rebalanceRoutesWithCosts = (
+            await mapAsync(rebalanceRoutesToEvaluate, async (route) => {
+              // A route whose cost read fails (e.g. its venue API is down) is dropped from this round rather than
+              // failing the whole rebalance pass; the remaining routes still compete on cost.
+              try {
+                return {
+                  route,
+                  priorityTier: allDestinationChains[route.destinationChain],
+                  cost: await this.adapters[route.adapter].getEstimatedCost(
+                    route,
+                    amountToTransferCapped,
+                    false /* debugLog set to false because the logs would be really noisy, though detailed about how each estimated cost was computed */
+                  ),
+                };
+              } catch (err) {
+                this.logger.warn({
+                  at: "CumulativeBalanceRebalancerClient.rebalanceInventory",
+                  message: `Failed to estimate cost of ${route.adapter} rebalance route; excluding it from this round`,
+                  route,
+                  err: String(err),
+                });
+                return undefined;
+              }
+            })
+          ).filter(isDefined);
           rebalanceRoutesWithCosts.sort((a, b) => {
             const sortedPriorityTier = b.priorityTier - a.priorityTier;
             if (sortedPriorityTier !== 0) {

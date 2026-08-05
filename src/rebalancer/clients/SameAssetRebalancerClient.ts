@@ -71,11 +71,24 @@ export class SameAssetRebalancerClient extends BaseRebalancerClient {
       const amountToTransferCapped =
         isDefined(maxAmountToTransfer) && amount.gt(maxAmountToTransfer) ? maxAmountToTransfer : amount;
       const maxFee = amountToTransferCapped.mul(maxFeePct).div(toBNWei(100));
-      const estimatedCost = await this.adapters[rebalance.adapter].getEstimatedCost(
-        rebalance,
-        amountToTransferCapped,
-        false /* debugLog set to false because the logs would be really noisy, though detailed about how each estimated cost was computed */
-      );
+      let estimatedCost: BigNumber;
+      // A route whose cost read fails (e.g. its venue API is down) is skipped this run rather than failing the
+      // whole rebalance pass.
+      try {
+        estimatedCost = await this.adapters[rebalance.adapter].getEstimatedCost(
+          rebalance,
+          amountToTransferCapped,
+          false /* debugLog set to false because the logs would be really noisy, though detailed about how each estimated cost was computed */
+        );
+      } catch (err) {
+        this.logger.warn({
+          at: "SameAssetRebalancerClient.rebalanceInventory",
+          message: `Failed to estimate cost of ${rebalance.adapter} rebalance route; skipping it this run`,
+          route: rebalance,
+          err: String(err),
+        });
+        continue;
+      }
       if (estimatedCost.gt(maxFee)) {
         this.logger.debug({
           at: "SameAssetRebalancerClient.rebalanceInventory",
