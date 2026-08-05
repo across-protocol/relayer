@@ -1,6 +1,11 @@
 import { ProcessEnv } from "../common";
 
-/** Cloud Run's request timeout. The application must give up before this to decide its own fate. */
+/**
+ * The Cloud Run request timeout this service is **provisioned with**, not a platform default — Cloud Run
+ * defaults to 300s. The application must give up before it to decide its own fate, so the bound below
+ * assumes the deployment raised it; nothing here can verify that. See the README's required platform
+ * configuration.
+ */
 const CLOUD_RUN_REQUEST_TIMEOUT_MS = 540_000;
 
 /** Cloud Run sends SIGKILL this long after SIGTERM. A drain reaching it cannot complete. */

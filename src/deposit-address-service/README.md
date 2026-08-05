@@ -76,21 +76,30 @@ not `src/cctp-finalizer`'s console-only instance where `notificationPath` is ine
 
 `APPLICATION_DEADLINE_MS` (default **480s**) becomes an **absolute** `deadlineAtMs` plus an
 `AbortSignal` on the request context, created once at the boundary. Call `assertBeforeDeadline(context)`
-immediately before broadcasting:
+immediately before broadcasting. The chain the design relies on:
 
 ```
 application deadline 480s  <  Cloud Run timeout 540s  <  Pub/Sub ackDeadlineSeconds 600s = lock TTL 600s
 ```
 
-A Cloud Run 504 at 540s returns to Pub/Sub but **does not stop handler code**, so the guarantee has to
-come from the application — which is what makes an un-renewed 600s lock safe. Config rejects a deadline
-at or past 540s rather than letting it fail silently.
+A Cloud Run 504 does **not** stop handler code, so the guarantee has to come from the application — which
+is what makes an un-renewed 600s lock safe.
 
-**`ackDeadlineSeconds` must be set to 600 on the subscription.** For push it doubles as the endpoint
-request timeout and **defaults to 10s** — below the application deadline, so leaving it unset means
-anything slower than 10s is redelivered while the original still runs. The per-transfer lock stops that
-double-executing (the redelivery loses `SET NX`), but it yields a storm of losing attempts and late
-ACKs. Subscription config, so nothing here can enforce it.
+### Required platform configuration
+
+**Every platform default below breaks that chain.** None of them can be validated from inside the
+process, so they have to be set deliberately when the service is provisioned:
+
+| Setting | Platform default | Required | If left at the default |
+| --- | --- | --- | --- |
+| Cloud Run request timeout | **300s** | `540s` | Handlers running 300–480s get a 504 and a redelivery while the original request keeps running. |
+| Pub/Sub `ackDeadlineSeconds` | **10s** | `600s` | For push this is also the endpoint request timeout, so anything slower than 10s is redelivered mid-flight. |
+| Cloud Run SIGKILL grace | 10s (fixed) | — | Not configurable; `SHUTDOWN_DRAIN_TIMEOUT_MS` is bounded below it instead. |
+
+A mid-flight redelivery does not double-execute — the per-transfer lock means the redelivery loses
+`SET NX` and NACKs — but it produces a storm of losing attempts and late ACKs Pub/Sub may reject. Note
+`APPLICATION_DEADLINE_MS` is validated against 540s, which **assumes** the request timeout was raised;
+the config cannot tell whether it actually was.
 
 ## Env
 
