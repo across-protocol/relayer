@@ -26,6 +26,13 @@ describe("Multicall3 tryAggregate gas estimation", function () {
     burner = await (await getContractFactory("MockGasBurner", signer)).deploy();
   });
 
+  // Shape-independent, and the reason a fixed multiplier is enough: the only unaccounted-for shortfall is the
+  // reserve the outer frame withholds, so the true requirement never exceeds estimate * 64/63. Pinning the
+  // configured value against that bound covers batch shapes the three cases below don't reach.
+  it("Configures a multiplier that clears the EIP-150 reserve", function () {
+    expect(MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER).to.be.at.least(64 / 63);
+  });
+
   shapes.forEach(([label, rounds]) => {
     it(`Pads a batch with ${label} past its true requirement`, async function () {
       const calls = rounds.map((r) => ({
