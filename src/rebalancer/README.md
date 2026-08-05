@@ -339,6 +339,20 @@ EVM withdrawal recipients and the running signer account before applying this sh
 rebalance loading errors surface normally so operators can investigate instead of silently sweeping without the
 deduction.
 
+Binance suspends withdrawals per coin/network pair during chain upgrades and wallet maintenance, reporting `031026` on
+the withdrawal call. A suspended pair stays listed in `accountCoins().networkList` for the whole window, so the
+`withdrawEnable` flag on the network entry — not the pair's presence in the list — is what determines whether the
+withdrawal leg will be accepted. The Binance adapter handles this on both sides of an order. `initializeRebalance`
+checks `withdrawEnable` on the resolved destination network and skips the route before committing funds, because the
+deposit leg into Binance cannot be reversed from this adapter and an order that cannot be withdrawn would otherwise
+strand its tranche on the exchange until `REBALANCER_PENDING_ORDER_TTL` elapses. Account coins are read with the cache
+bypassed on that path, since the flag flips whenever a withdrawal window opens or closes and the cache entry uses a long
+TTL. For orders already holding an exchange balance, `_withdraw` treats `031026` the same way it treats `RW00441` — a
+retryable wait state that leaves the order pending, warns, and lets the existing prune/finalizer handover reclaim the
+deposit if the suspension outlasts the order TTL. Withdrawal availability is deliberately *not* asserted in
+`initialize()`: those assertions run at boot and throw, so gating them on a transient venue suspension would stop the
+bot from starting at all.
+
 ## Venue-specific operational note
 
 Hyperliquid spot metadata is currently configured with `pxDecimals=4` for USDT/USDC and prices are truncated to `pxDecimals` when submitting orders. This is a pragmatic setting to avoid tick-size divisibility rejections observed with more granular precision.
