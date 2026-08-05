@@ -856,11 +856,14 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
   let signWithdrawStub: sinon.SinonStub;
   let warnStub: sinon.SinonStub;
   let debugStub: sinon.SinonStub;
+  let redisSetStub: sinon.SinonStub;
   const chainId = 42161;
 
   type Internals = {
     initiateWithdrawV3: (m: DepositAddressMessageV3) => Promise<void>;
     terminallySkippedWithdrawKeys: Set<string>;
+    emptyBalanceFailuresByKey: Map<string, { firstSeenSec: number; failures: number }>;
+    getDepositAddressBalance: (chainId: number, token: string, depositAddress: string) => Promise<unknown>;
   };
 
   function makeHandler(enableV3Withdrawals: boolean): void {
@@ -876,7 +879,17 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
     (handler as unknown as { observedExecutedWithdraws: Record<number, Set<string>> }).observedExecutedWithdraws = {
       [chainId]: new Set<string>(),
     };
-    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: sinon.stub().resolves() };
+    redisSetStub = sinon.stub().resolves();
+    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: redisSetStub };
+  }
+
+  /** Ethers v5 CALL_EXCEPTION as thrown for a balanceOf revert carrying no return data. */
+  function emptyDataCallException(): Error {
+    return Object.assign(new Error("missing revert data in call exception"), {
+      code: "CALL_EXCEPTION",
+      reason: "missing revert data in call exception",
+      data: "0x",
+    });
   }
 
   afterEach(() => sinon.restore());
@@ -900,6 +913,95 @@ describe("DepositAddressHandler.initiateWithdrawV3 guards", function () {
     await (handler as unknown as Internals).initiateWithdrawV3(
       withdrawMessageV3({ counterfactualMaterials: [{ ...v3WithdrawLeaf, kind: "vanilla-cctp" }] })
     );
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+  });
+
+  it("does not terminally skip empty-data balanceOf reverts before the observation window matures", async function () {
+    makeHandler(true);
+    sinon.stub(handler as unknown as Internals, "getDepositAddressBalance").rejects(emptyDataCallException());
+    const message = withdrawMessageV3();
+    const depositKey = `${DEPOSIT_ADDRESS}:${message.erc20Transfer.transactionHash}`;
+    await (handler as unknown as Internals).initiateWithdrawV3(message);
+    expect((handler as unknown as Internals).terminallySkippedWithdrawKeys.size).to.equal(0);
+    expect(redisSetStub.notCalled).to.equal(true);
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+    expect((handler as unknown as Internals).emptyBalanceFailuresByKey.get(depositKey)?.failures).to.equal(1);
+
+    // Later polls inside the window: still not terminal, and no re-warn (debug only).
+    await (handler as unknown as Internals).initiateWithdrawV3(message);
+    await (handler as unknown as Internals).initiateWithdrawV3(message);
+    expect((handler as unknown as Internals).terminallySkippedWithdrawKeys.size).to.equal(0);
+    expect(redisSetStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+    expect((handler as unknown as Internals).emptyBalanceFailuresByKey.get(depositKey)?.failures).to.equal(3);
+  });
+
+  it("terminally skips once empty-data balanceOf reverts persist past the window: persists the key, never re-reads", async function () {
+    makeHandler(true);
+    const balanceStub = sinon
+      .stub(handler as unknown as Internals, "getDepositAddressBalance")
+      .rejects(emptyDataCallException());
+    const message = withdrawMessageV3();
+    const depositKey = `${DEPOSIT_ADDRESS}:${message.erc20Transfer.transactionHash}`;
+    await (handler as unknown as Internals).initiateWithdrawV3(message);
+    await (handler as unknown as Internals).initiateWithdrawV3(message);
+    // Backdate the streak so the next failure crosses the observation window.
+    expect((handler as unknown as Internals).emptyBalanceFailuresByKey.get(depositKey)?.failures).to.equal(2);
+    (handler as unknown as Internals).emptyBalanceFailuresByKey.set(depositKey, { firstSeenSec: 0, failures: 2 });
+    await (handler as unknown as Internals).initiateWithdrawV3(message);
+    expect((handler as unknown as Internals).terminallySkippedWithdrawKeys.has(depositKey)).to.equal(true);
+    expect((handler as unknown as Internals).emptyBalanceFailuresByKey.has(depositKey)).to.equal(false);
+    expect(redisSetStub.calledOnce).to.equal(true);
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(warnStub.calledTwice).to.equal(true); // streak-open warn + terminal warn
+
+    // A later poll skips via the terminal set without re-reading the balance.
+    await (handler as unknown as Internals).initiateWithdrawV3(message);
+    expect(balanceStub.callCount).to.equal(3);
+  });
+
+  it("resets the empty-data streak on a successful balance read", async function () {
+    makeHandler(true);
+    const balanceStub = sinon
+      .stub(handler as unknown as Internals, "getDepositAddressBalance")
+      .rejects(emptyDataCallException());
+    const message = withdrawMessageV3();
+    const depositKey = `${DEPOSIT_ADDRESS}:${message.erc20Transfer.transactionHash}`;
+    await (handler as unknown as Internals).initiateWithdrawV3(message);
+    expect((handler as unknown as Internals).emptyBalanceFailuresByKey.has(depositKey)).to.equal(true);
+
+    // The read recovers (e.g. RPC backend healed); balance 0 < amount, so the poll still skips,
+    // but the streak must be gone so a later revert restarts the window from scratch.
+    balanceStub.resolves(toBN(0));
+    await (handler as unknown as Internals).initiateWithdrawV3(message);
+    expect((handler as unknown as Internals).emptyBalanceFailuresByKey.has(depositKey)).to.equal(false);
+    expect((handler as unknown as Internals).terminallySkippedWithdrawKeys.size).to.equal(0);
+    expect(signWithdrawStub.notCalled).to.equal(true);
+  });
+
+  it("does not terminally skip a transient balance-fetch failure", async function () {
+    makeHandler(true);
+    sinon.stub(handler as unknown as Internals, "getDepositAddressBalance").rejects(new Error("connection timeout"));
+    await (handler as unknown as Internals).initiateWithdrawV3(withdrawMessageV3());
+    expect((handler as unknown as Internals).terminallySkippedWithdrawKeys.size).to.equal(0);
+    expect(redisSetStub.notCalled).to.equal(true);
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(warnStub.calledOnce).to.equal(true);
+  });
+
+  it("does not terminally skip a CALL_EXCEPTION that carries revert data", async function () {
+    makeHandler(true);
+    const err = Object.assign(new Error("execution reverted"), {
+      code: "CALL_EXCEPTION",
+      reason: "execution reverted",
+      data: "0x08c379a0", // Error(string) selector — a real revert, potentially state-dependent.
+    });
+    sinon.stub(handler as unknown as Internals, "getDepositAddressBalance").rejects(err);
+    await (handler as unknown as Internals).initiateWithdrawV3(withdrawMessageV3());
+    expect((handler as unknown as Internals).terminallySkippedWithdrawKeys.size).to.equal(0);
+    expect(redisSetStub.notCalled).to.equal(true);
     expect(signWithdrawStub.notCalled).to.equal(true);
     expect(warnStub.calledOnce).to.equal(true);
   });
