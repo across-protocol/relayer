@@ -23,24 +23,36 @@ Routes are assembled by the rebalancer construction layer and passed at client i
 
 The cumulative-mode production route set is generated in `src/rebalancer/buildRebalanceRoutes.ts`. It covers:
 
-- stablecoin swap routes between `USDC` and `USDT` on Binance and Hyperliquid, excluding Tron from Hyperliquid,
+- stablecoin swap routes between `USDC` and `USDT` on Binance, plus Hyperliquid routes when both token endpoints can bridge to or from HyperEVM,
 - same-asset routes for `USDC` via CCTP and on direct Binance-supported USDC networks via Binance, and for `USDT` via OFT and on direct Binance-supported USDT networks via Binance,
 - Binance-only `WETH <-> USDC` and `WETH <-> USDT` routes sourced or settled through mainnet. `WETH <-> WETH` route handling exists in the adapter, but no cross-chain `WETH <-> WETH` routes are generated while WETH Binance support is limited to mainnet.
 
-Route construction keeps two token-keyed chain maps:
+Route construction keeps three token-keyed chain maps:
 
 - `BINANCE_NETWORKS_BY_SYMBOL`: direct Binance deposit/withdraw networks known for each token.
-- `REBALANCE_CHAINS_BY_SYMBOL`: the narrower set of chains this repo currently enables for rebalancing that token.
+- `REBALANCE_CHAINS_BY_SYMBOL`: every chain this repo currently enables as a rebalancing endpoint for that token, whether the route uses Binance directly or an intermediate bridge.
+- `BRIDGE_CHAINS_BY_SYMBOL`: the subset with validated CCTP or OFT connectivity. Same-asset bridge routes require both endpoints in this map, and Hyperliquid requires each token endpoint to be bridgeable through HyperEVM.
+
+The current stablecoin endpoint catalogs are:
+
+- `USDT`: Unichain, Tron, Polygon, Plasma, Optimism, Monad, MegaETH, Mainnet, Ink, HyperEVM, BSC, Avalanche, and Arbitrum.
+- `USDC`: World Chain, Unichain, Polygon, Optimism, Monad, Mainnet, Linea, Ink, HyperEVM, BSC, Base, Avalanche, and Arbitrum.
+
+Only chains configured under `cumulativeTargetBalances[token].chains` are selected from these catalogs for that token.
+Adapter initialization separately adds the CCTP/OFT support routes required by the selected operational routes:
+Arbitrum legs for non-direct Binance endpoints and HyperEVM legs for Hyperliquid endpoints outside HyperEVM. These
+internal routes do not make an entrypoint a balance target, and direct-only routes do not initialize unused bridge
+entrypoints.
 
 Operational note:
 
 - Same-asset `USDC <-> USDC` and `USDT <-> USDT` Binance routes are included deliberately so they can compete on estimated cost against CCTP/OFT paths, but they are only generated when both chains are direct Binance networks for that asset.
 - USDT on Tron is treated as a direct Binance `TRX` network for both deposits and withdrawals. Tron USDT Binance routes deposit to and withdraw from Binance directly, rather than bridging through an OFT entrypoint network first.
-- Updating Binance venue support for a token does not automatically widen rebalancer support. New chains should usually be added to both maps intentionally after inventory/config/runtime review.
+- Updating Binance venue support for a token does not automatically widen rebalancer support. Add a chain to `REBALANCE_CHAINS_BY_SYMBOL` only after inventory/config/runtime review, and add it to `BRIDGE_CHAINS_BY_SYMBOL` only when the token has validated CCTP or OFT connectivity.
 - Current route construction limits Binance `WETH` support to mainnet because the rebalancer's native-ETH deposit path relies on the mainnet Atomic Depositor and transfer proxy wiring.
 - If additional direct Binance ETH networks are enabled later, same-coin `WETH <-> WETH` routes skip the spot swap leg and treat on-chain `WETH` as Binance `ETH`.
 - Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; current `WETH` routes therefore source or settle through mainnet rather than bridging WETH into another Binance ETH network.
-- Hyperliquid routes intentionally exclude Tron even when Tron USDT is configured, and same-asset USDT routes involving Tron use Binance rather than OFT.
+- Hyperliquid routes intentionally exclude Avalanche, BSC, and Tron USDT endpoints and BSC USDC endpoints because those token/chain combinations cannot bridge through HyperEVM. Same-asset routes involving those endpoints do not use OFT or CCTP.
 
 The dedicated SameAsset mode has a separate route source in `src/rebalancer/buildSameAssetRebalanceRoutes.ts`. Its read-only `SAME_ASSET_REBALANCE_ROUTE_SUPPORT` catalog is the source of truth for token, destination-chain, and adapter combinations that this mode can execute. `buildSameAssetRebalanceRoutes(rebalancerConfig)` returns only the intersection of that catalog and `sameAssetBalances`; adding configuration alone does not enable an unsupported route. Both `SameAssetRebalancerClient` and Jussi topology preparation consume this builder so runtime support and graph edges stay aligned.
 

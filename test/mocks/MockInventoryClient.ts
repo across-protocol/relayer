@@ -23,7 +23,8 @@ export class MockInventoryClient extends InventoryClient {
     adapterManager: AdapterManager | null = null,
     crossChainTransferClient: CrossChainTransferClient | null = null,
     rebalancerClient: RebalancerClient | null = null,
-    simMode = false
+    simMode = false,
+    l1TokensOverride: string[] = []
   ) {
     super(
       relayer, // relayer
@@ -35,7 +36,8 @@ export class MockInventoryClient extends InventoryClient {
       adapterManager, // adapter manager
       crossChainTransferClient,
       rebalancerClient, // rebalancer client
-      simMode // sim mode
+      simMode, // sim mode
+      l1TokensOverride
     );
   }
 

@@ -1,6 +1,6 @@
 import { MonitorConfig } from "./MonitorConfig";
 import { Signer, winston, toAddressType } from "../utils";
-import { BundleDataClient, HubPoolClient } from "../clients";
+import { HubPoolClient } from "../clients";
 import {
   Clients,
   updateClients,
@@ -14,7 +14,6 @@ import { constructReadOnlyRebalancerClient } from "../rebalancer/RebalancerClien
 import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
 export interface MonitorClients extends Clients {
-  bundleDataClient: BundleDataClient;
   crossChainTransferClient: CrossChainTransferClient;
   hubPoolClient: HubPoolClient;
   rebalancerClient?: RebalancerClient;
@@ -48,14 +47,6 @@ export async function constructMonitorClients(
     baseSigner,
     config.maxRelayerLookBack
   );
-  const bundleDataClient = new BundleDataClient(
-    logger,
-    commonClients,
-    spokePoolClients,
-    configStoreClient.getChainIdIndicesForBlock(),
-    config.blockRangeEndBlockBuffer
-  );
-
   // Deduplicate spoke pool addresses that are reused across chains. spokePoolAddress is already a
   // correctly-typed Address object (EvmAddress/SvmAddress), so use a Map keyed by native string
   // to deduplicate by value while preserving the original Address instances and their chain types.
@@ -90,7 +81,6 @@ export async function constructMonitorClients(
 
   return {
     ...commonClients,
-    bundleDataClient,
     crossChainTransferClient,
     rebalancerClient,
     spokePoolClients,

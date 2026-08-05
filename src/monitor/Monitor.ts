@@ -41,7 +41,6 @@ import {
   isSVMSpokePoolClient,
   toAddressType,
   Address,
-  EvmAddress,
   chainIsTvm,
   SvmAddress,
   assert,
@@ -51,7 +50,6 @@ import {
   getRelayDataFromFill,
   sortEventsAscending,
   chainHasNativeToken,
-  getLatestRunningBalances,
   ALT_DEACTIVATION_COOLDOWN,
   simulateSolanaTransaction,
   sendAndConfirmSolanaTransaction,
@@ -90,7 +88,6 @@ export class Monitor {
   private spokePoolsBlocks: Record<number, { startingBlock: number | undefined; endingBlock: number | undefined }> = {};
   private balanceCache: { [chainId: number]: { [token: string]: { [account: string]: BigNumber } } } = {};
   private decimals: { [chainId: number]: { [token: string]: number } } = {};
-  private additionalL1Tokens: L1Token[] = [];
   // Chains for each spoke pool client.
   public monitorChains: number[];
   // Chains that we care about inventory manager activity on, so doesn't include Ethereum which doesn't
@@ -115,20 +112,12 @@ export class Monitor {
       monitorChains: this.monitorChains,
       crossChainAdapterSupportedChains: this.crossChainAdapterSupportedChains,
     });
-    this.additionalL1Tokens = monitorConfig.additionalL1NonLpTokens.map((l1Token) => {
-      const l1TokenInfo = this.getTokenInfo(EvmAddress.from(l1Token), this.clients.hubPoolClient.chainId);
-      assert(l1TokenInfo.address.isEVM());
-      return {
-        ...l1TokenInfo,
-        address: l1TokenInfo.address,
-      };
-    });
     this.l1Tokens = this.clients.hubPoolClient.getL1Tokens();
     this.bundleDataApproxClient = new BundleDataApproxClient(
       this.clients.spokePoolClients,
       this.clients.hubPoolClient,
       this.monitorChains,
-      [...this.l1Tokens, ...this.additionalL1Tokens].map(({ address }) => address),
+      this.l1Tokens.map(({ address }) => address),
       this.logger
     );
   }
@@ -407,7 +396,7 @@ export class Monitor {
   async reportRelayerBalances(): Promise<void> {
     const hubChainId = this.clients.hubPoolClient.chainId;
     const relayers = this.monitorConfig.monitoredRelayers;
-    const allL1Tokens = [...this.l1Tokens, ...this.additionalL1Tokens];
+    const allL1Tokens = this.l1Tokens;
 
     // Fetch pending rebalances once for all relayers.
 
@@ -696,61 +685,6 @@ export class Monitor {
       datadog: true,
       wdQuota,
     });
-  }
-
-  async reportSpokePoolRunningBalances(): Promise<void> {
-    const chainIds =
-      this.monitorConfig.monitoredSpokePoolChains.length !== 0
-        ? this.monitorChains.filter((chain) => this.monitorConfig.monitoredSpokePoolChains.includes(chain))
-        : this.monitorChains;
-
-    for (const l1Token of this.l1Tokens.filter((l1Token) =>
-      this.monitorConfig.monitoredTokenSymbols.includes(l1Token.symbol)
-    )) {
-      const formatWei = createFormatFunction(1, 4, false, l1Token.decimals);
-      const results = await getLatestRunningBalances(
-        l1Token.address,
-        chainIds,
-        this.clients.hubPoolClient,
-        this.bundleDataApproxClient
-      );
-
-      type Row = { chain: string; validated: string; deposits: string; refunds: string; total: string };
-      const rows: Row[] = [];
-      for (const chainId of chainIds) {
-        const r = results[chainId];
-        if (!r) {
-          continue;
-        }
-        rows.push({
-          chain: getNetworkName(chainId),
-          validated: formatWei(r.lastValidatedRunningBalance.toString()),
-          deposits: `-${formatWei(r.upcomingDeposits.toString())}`,
-          refunds: `+${formatWei(r.upcomingRefunds.toString())}`,
-          total: formatWei(r.absLatestRunningBalance.toString()),
-        });
-      }
-
-      // Build stacked key-value format for mobile readability.
-      const valueWidth = Math.max(
-        ...rows.flatMap((r) => [r.validated, r.deposits, r.refunds, r.total].map((v) => v.length))
-      );
-      let tokenMrkdwn = "```\n";
-      for (const row of rows) {
-        tokenMrkdwn += `${row.chain} — ${l1Token.symbol}\n`;
-        tokenMrkdwn += `  Last Validated: ${row.validated.padStart(valueWidth)}\n`;
-        tokenMrkdwn += `  Deposits:       ${row.deposits.padStart(valueWidth)}\n`;
-        tokenMrkdwn += `  Refunds:        ${row.refunds.padStart(valueWidth)}\n`;
-        tokenMrkdwn += `  Total:          ${row.total.padStart(valueWidth)}\n\n`;
-      }
-      tokenMrkdwn += "```";
-
-      this.logger.info({
-        at: "Monitor#reportSpokePoolRunningBalances",
-        message: `Spoke pool running balances [${l1Token.symbol}]`,
-        mrkdwn: tokenMrkdwn,
-      });
-    }
   }
 
   // We approximate stuck rebalances by checking if there are still any pending cross chain transfers to any SpokePools

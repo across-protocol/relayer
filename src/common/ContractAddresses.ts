@@ -15,8 +15,6 @@ import OP_USDC_BRIDGE_ABI from "./abi/OpStackUSDCBridge.json";
 import SPONSORED_CCTP_DST_PERIPHERY_ABI from "./abi/SponsoredCCTPDstPeriphery.json";
 import OVM_L1_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL1.json";
 import OVM_L2_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL2.json";
-import SNX_OPTIMISM_BRIDGE_L1_ABI from "./abi/SnxOptimismBridgeL1.json";
-import SNX_OPTIMISM_BRIDGE_L2_ABI from "./abi/SnxOptimismBridgeL2.json";
 import DAI_OPTIMISM_BRIDGE_L1_ABI from "./abi/DaiOptimismBridgeL1.json";
 import DAI_OPTIMISM_BRIDGE_L2_ABI from "./abi/DaiOptimismBridgeL2.json";
 import POLYGON_BRIDGE_ABI from "./abi/PolygonBridge.json";
@@ -89,10 +87,6 @@ export const CONTRACT_ADDRESSES: {
     daiOptimismBridge: {
       address: "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f",
       abi: DAI_OPTIMISM_BRIDGE_L1_ABI,
-    },
-    snxOptimismBridge: {
-      address: "0x39Ea01a0298C315d149a490E34B59Dbf2EC7e48F",
-      abi: SNX_OPTIMISM_BRIDGE_L1_ABI,
     },
     // OVM, ZkSync, Linea, and Polygon can't deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
@@ -279,15 +273,18 @@ export const CONTRACT_ADDRESSES: {
       address: "0x647aFB7d935Ff0aaE4F0DdEfE0499d13AdE69178",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.OPTIMISM]: {
     daiOptimismBridge: {
       address: "0x467194771dae2967aef3ecbedd3bf9a310c76c65",
       abi: DAI_OPTIMISM_BRIDGE_L2_ABI,
-    },
-    snxOptimismBridge: {
-      address: "0x136b1EC699c62b0606854056f02dC7Bb80482d63",
-      abi: SNX_OPTIMISM_BRIDGE_L2_ABI,
     },
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
@@ -430,6 +427,13 @@ export const CONTRACT_ADDRESSES: {
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.SOLANA]: {
     cctpTokenMessenger: {
@@ -558,6 +562,22 @@ export const CONTRACT_ADDRESSES: {
     nativeToken: {
       address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
     },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
+  },
+  [CHAIN_IDs.PLASMA]: {
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
+    },
   },
   [CHAIN_IDs.INK]: {
     ovmStandardBridge: {
@@ -578,6 +598,13 @@ export const CONTRACT_ADDRESSES: {
     sponsoredCCTPDstPeriphery: {
       address: "0x087B70E43BF01359678E7b927bbAC76D175F3293",
       abi: SPONSORED_CCTP_DST_PERIPHERY_ABI,
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.BLAST]: {
@@ -724,6 +751,13 @@ export const CONTRACT_ADDRESSES: {
     },
     nativeToken: {
       address: "0x0000000000000000000000000000000000000000",
+    },
+    spokePoolPeriphery: {
+      abi: SPOKE_POOL_PERIPHERY_ABI,
+    },
+    permit2: {
+      address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
+      abi: PERMIT2_ABI,
     },
   },
   [CHAIN_IDs.TRON]: {
