@@ -2,7 +2,7 @@ import { expect } from "./utils";
 import { decodePushDelivery, isPushRequest } from "../src/messaging/gcp";
 import { isBodyParserError } from "../src/deposit-address-service/app";
 import { RequestLifecycle } from "../src/deposit-address-service/lifecycle";
-import { errorCode, isRetriable, shouldAlert } from "../src/deposit-address-service/errors";
+import { errorCode, isRetriable, safeStringifyThrownValue, shouldAlert } from "../src/deposit-address-service/errors";
 
 describe("isPushRequest", function () {
   it("distinguishes a Pub/Sub envelope from anything else", function () {
@@ -126,6 +126,32 @@ describe("RequestLifecycle", function () {
     lifecycle.begin();
 
     expect(await lifecycle.beginDraining(20)).to.equal(false);
+  });
+});
+
+describe("safeStringifyThrownValue", function () {
+  it("serializes normally when it can", function () {
+    expect(safeStringifyThrownValue(new Error("boom"))).to.contain("boom");
+    expect(safeStringifyThrownValue("plain string")).to.contain("plain string");
+  });
+
+  it("falls back instead of throwing on a circular non-Error", function () {
+    // Unguarded this throws. On the route path that means the intended 500 is never sent; in the fatal
+    // handlers it means the page describes the serializer and the real cause is lost.
+    const circular: Record<string, unknown> = { name: "req" };
+    circular.self = circular;
+
+    expect(() => safeStringifyThrownValue(circular)).to.not.throw();
+    expect(safeStringifyThrownValue(circular)).to.equal("<unserializable object>");
+  });
+
+  it("survives a value whose toString throws", function () {
+    const hostile = {
+      toString() {
+        throw new Error("nope");
+      },
+    };
+    expect(() => safeStringifyThrownValue(hostile)).to.not.throw();
   });
 });
 

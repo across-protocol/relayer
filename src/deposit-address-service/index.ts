@@ -1,6 +1,6 @@
 import { Server } from "http";
 import { config, Logger, waitForLogger } from "../utils";
-import { stringifyThrownValue } from "../utils/LogUtils";
+import { safeStringifyThrownValue } from "./errors";
 import { createApp } from "./app";
 import { DepositAddressServiceConfig } from "./config";
 import { RequestLifecycle } from "./lifecycle";
@@ -42,14 +42,15 @@ function main(): void {
 
 function installFatalHandlers(logger: typeof Logger): void {
   // The only lines here above `debug`, at `error` so they page: the process is exiting, so whatever was
-  // in flight is abandoned. Stringified because `error` is a reserved key the logger rewrites.
+  // in flight is abandoned. Serialization must not throw — an unguarded serializer would turn the page
+  // into a report about itself and lose the real cause, and `exitAfterFlush` would never run.
   process.on("uncaughtException", (error) => {
-    logger.error({ at: AT, message: "Uncaught exception", err: stringifyThrownValue(error) });
+    logger.error({ at: AT, message: "Uncaught exception", err: safeStringifyThrownValue(error) });
     void exitAfterFlush(logger, 1);
   });
 
   process.on("unhandledRejection", (reason) => {
-    logger.error({ at: AT, message: "Unhandled rejection", err: stringifyThrownValue(reason) });
+    logger.error({ at: AT, message: "Unhandled rejection", err: safeStringifyThrownValue(reason) });
     void exitAfterFlush(logger, 1);
   });
 }

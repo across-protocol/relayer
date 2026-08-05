@@ -10,11 +10,11 @@ import {
   UndecodablePushMessageError,
   errorCode,
   isRetriable,
+  safeStringifyThrownValue,
   shouldAlert,
 } from "./errors";
 import { PubSubPushMessage, PushDelivery, decodePushDelivery, isPushRequest } from "../messaging/gcp";
 import { isDefined } from "../utils/TypeGuards";
-import { stringifyThrownValue } from "../utils/LogUtils";
 
 const AT = "DepositAddressService#push";
 
@@ -256,12 +256,10 @@ function bestEffortFields(config: DepositAddressServiceConfig, body: unknown): R
 }
 
 /**
- * Never throws — this runs on the catch path, so a throw here would mean the intended 500 is never
- * sent, Express sees an unhandled rejection, and the fatal handler exits the process, abandoning every
- * other in-flight delivery. `stringifyThrownValue` guards its `Error` branch but not its non-`Error`
- * one, where a value with circular references throws.
- *
- * `code` and `retriable` are read before the try so the fallback itself cannot fail.
+ * Never throws: this runs on the catch path, so a throw would mean the intended 500 is never sent,
+ * Express sees an unhandled rejection, and the process exits. `safeStringifyThrownValue` covers the
+ * serializer; the try/catch additionally covers `String(error)`, which a throwing `toString` can break.
+ * `code` and `retriable` are read first so the fallback itself cannot fail.
  */
 function describeFailure(error: unknown): Record<string, unknown> {
   const code = errorCode(error);
@@ -272,7 +270,7 @@ function describeFailure(error: unknown): Record<string, unknown> {
       code,
       message: error instanceof Error ? error.message : String(error),
       retriable,
-      detail: stringifyThrownValue(error),
+      detail: safeStringifyThrownValue(error),
     };
   } catch {
     return { type: "unserializable", code, message: "failed to serialize thrown value", retriable };

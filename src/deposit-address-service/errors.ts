@@ -1,3 +1,5 @@
+import { stringifyThrownValue } from "../utils/LogUtils";
+
 /**
  * Typed errors carrying the retry decision, mirroring `src/cctp-finalizer/errors.ts`.
  *
@@ -88,6 +90,21 @@ export class TransientDependencyError extends DepositAddressServiceError {
     readonly cause?: unknown
   ) {
     super(message);
+  }
+}
+
+/**
+ * `stringifyThrownValue` throws on a non-`Error` carrying circular references — it guards its `Error`
+ * branch and not its non-`Error` one. Every diagnostic path here runs while handling a failure, so a
+ * throw would replace the real cause with a serialization `TypeError`: on the route path the intended
+ * 500 is never sent, and in the fatal handlers the page describes the serializer instead of what
+ * actually went wrong. Shared so the two call sites cannot drift apart again.
+ */
+export function safeStringifyThrownValue(value: unknown): string {
+  try {
+    return stringifyThrownValue(value);
+  } catch {
+    return `<unserializable ${typeof value}>`;
   }
 }
 
