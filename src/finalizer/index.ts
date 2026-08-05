@@ -1,8 +1,8 @@
 import { CCTP_NO_DOMAIN, ChainFamily, PRODUCTION_NETWORKS } from "@across-protocol/constants";
-import { utils as sdkUtils } from "@across-protocol/sdk";
+import { utils as sdkUtils, typeguards } from "@across-protocol/sdk";
 import assert from "assert";
 import { Contract } from "ethers";
-import { AugmentedTransaction, HubPoolClient, MultiCallerClient } from "../clients";
+import { AugmentedTransaction, HubPoolClient, knownRevertReasons, MultiCallerClient } from "../clients";
 import {
   Clients,
   constructClients,
@@ -50,6 +50,7 @@ import {
 import { FinalizerConfig } from "./config";
 
 const { isDefined } = sdkUtils;
+const { isError, isEthersError } = typeguards;
 
 dotenvConfig();
 let logger: winston.Logger;
@@ -131,27 +132,27 @@ function generateChainConfig(): void {
 }
 
 /**
- * Simulate each finalization on its own before batching it.
- *
- * Multicall3's aggregate() is all-or-nothing, and it discards the inner revert reason -- a failing
- * call surfaces only as "Multicall3: call failed". That means one bad finalization silently blocks
- * every other finalization bound for the same chain, indefinitely, with nothing in the logs to say
- * which one is at fault. Simulating individually lets us name the culprit and drop just that call.
- * @returns The subset of calls that simulated successfully.
+ * Simulate each finalization individually before batching. aggregate() is all-or-nothing and hides the
+ * inner revert reason, so one bad call would otherwise silently block every other finalization.
+ * @returns The calls that simulated successfully, and the messages dropped for reverting.
  */
 async function preflightFinalizations(
   logger: winston.Logger,
   chainId: number,
   multisender: Contract,
-  from: string,
   finalizations: { txn: Multicall2Call; crossChainMessage: CrossChainMessage }[]
-): Promise<Multicall2Call[]> {
+): Promise<{ callsToSubmit: Multicall2Call[]; dropped: CrossChainMessage[] }> {
+  // @dev Simulate as the multisender, not as the signer: each call executes from Multicall3, and the
+  // legacy OptimismPortal keys withdrawal proofs off msg.sender.
+  const from = multisender.address;
   const results = await Promise.allSettled(
     finalizations.map(({ txn }) => multisender.provider.call({ from, to: txn.target, data: txn.callData }))
   );
 
   const callsToSubmit: Multicall2Call[] = [];
+  const dropped: CrossChainMessage[] = [];
   const reverted: unknown[] = [];
+  const races: unknown[] = [];
   results.forEach((result, idx) => {
     const { txn, crossChainMessage } = finalizations[idx];
     if (isPromiseFulfilled(result)) {
@@ -159,23 +160,35 @@ async function preflightFinalizations(
       return;
     }
 
-    // ethers hides the revert selector in a few different places depending on the provider.
-    const error = result.reason as Error & { reason?: string; data?: string; error?: { data?: string } };
+    const error = result.reason;
+    const reason = isEthersError(error) ? error.reason : isError(error) ? error.message : "unknown error";
     const { originationChainId, destinationChainId, type } = crossChainMessage;
-    reverted.push({
+    const detail = {
       originationChain: getNetworkName(originationChainId),
       destinationChain: getNetworkName(destinationChainId),
       type,
       amount: "amount" in crossChainMessage ? crossChainMessage.amount : undefined,
       l1TokenSymbol: "l1TokenSymbol" in crossChainMessage ? crossChainMessage.l1TokenSymbol : undefined,
       target: txn.target,
-      revertData: error?.data ?? error?.error?.data,
-      reason: error?.reason ?? error?.message,
-    });
+      reason,
+    };
+
+    dropped.push(crossChainMessage);
+    // A concurrent finalizer may have claimed this message already; that's a race, not a fault.
+    const isRace = [...knownRevertReasons].some((known) => reason.toLowerCase().includes(known.toLowerCase()));
+    (isRace ? races : reverted).push(detail);
   });
 
+  if (races.length > 0) {
+    logger.debug({
+      at: "Finalizer#preflightFinalizations",
+      message: `Dropped ${races.length} already-finalized ${getNetworkName(chainId)} message(s).`,
+      races,
+    });
+  }
+
   if (reverted.length > 0) {
-    logger.error({
+    logger.warn({
       at: "Finalizer#preflightFinalizations",
       message: `Excluded ${reverted.length} reverting finalization(s) from the ${getNetworkName(chainId)} batch 🚨`,
       notificationPath: "across-error",
@@ -183,7 +196,7 @@ async function preflightFinalizations(
     });
   }
 
-  return callsToSubmit;
+  return { callsToSubmit, dropped };
 }
 
 export async function finalize(
@@ -206,6 +219,9 @@ export async function finalize(
   // Note: Could move this into a client in the future to manage # of calls and chunk calls based on
   // input byte length.
   const finalizations: { txn: Multicall2Call | AugmentedTransaction; crossChainMessage: CrossChainMessage }[] = [];
+
+  // Messages dropped by pre-flight, so their log lines below don't claim they were finalized.
+  const droppedMessages = new Set<CrossChainMessage>();
 
   // For each chain, delegate to a handler to look up any TokensBridged events and attempt finalization.
   for (const chainIdBatch of chunk(configuredChainIds, config.chunkSize)) {
@@ -355,7 +371,6 @@ export async function finalize(
       );
 
       // @dev Here, we enqueueTransaction individual transactions right away, and we batch all multicalls into `multicallTxns` to enqueue as a single tx right after
-      const hubSignerAddress = await hubSigner.getAddress();
       for (const [chainId, finalizations] of Object.entries(finalizationsByChain)) {
         const multicallFinalizations: { txn: Multicall2Call; crossChainMessage: CrossChainMessage }[] = [];
 
@@ -372,20 +387,19 @@ export async function finalize(
 
         if (multicallFinalizations.length > 0) {
           const multisender = multicall2Lookup[Number(chainId)];
-          const multicallTxns = await preflightFinalizations(
+          const { callsToSubmit: multicallTxns, dropped } = await preflightFinalizations(
             logger,
             Number(chainId),
             multisender,
-            hubSignerAddress,
             multicallFinalizations
           );
+          dropped.forEach((crossChainMessage) => droppedMessages.add(crossChainMessage));
           if (multicallTxns.length > 0) {
             const txnToSubmit: AugmentedTransaction = {
               contract: multisender,
               chainId: Number(chainId),
-              // @dev tryAggregate(requireSuccess=false) rather than aggregate(): a call that starts
-              // reverting between the pre-flight above and inclusion must not take the whole batch --
-              // and with it every other pending finalization -- down with it.
+              // @dev tryAggregate over aggregate: a call that starts reverting after the pre-flight
+              // must not take the rest of the batch with it.
               method: "tryAggregate",
               args: [false, multicallTxns],
               unpermissioned: true,
@@ -416,16 +430,30 @@ export async function finalize(
       }
     );
 
-    // @dev These log lines are derived from crossChainMessages, not from what actually landed on chain, so
-    // they will happily report "Finalized ..." for a batch that was never submitted. Escalate to a warning
-    // when no txn materialised for the destination chain, otherwise a stalled finalizer reads as a healthy
-    // one. Suppressed when not submitting transactions, where an empty txnRefList is expected.
-    const submissionLevel = (destinationChainId: number): "info" | "warn" =>
-      !submitFinalizationTransactions || txnRefLookup[destinationChainId]?.length > 0 ? "info" : "warn";
-    const unsubmitted = (destinationChainId: number) =>
-      submissionLevel(destinationChainId) === "warn"
-        ? { notificationPath: "across-error", unsubmitted: "no transaction was submitted for this message ⚠️" }
-        : {};
+    // @dev These lines come from crossChainMessages, not from what landed, so a message that was dropped
+    // or never submitted still reads as success. Report per message rather than per chain.
+    const submission = (crossChainMessage: CrossChainMessage) => {
+      const { destinationChainId } = crossChainMessage;
+      const dropped = droppedMessages.has(crossChainMessage);
+      const submitted = !dropped && txnRefLookup[destinationChainId]?.length > 0;
+
+      // Nothing is submitted when transaction sending is disabled, so don't warn about it.
+      const level = submitted || !submitFinalizationTransactions ? "info" : "warn";
+      return {
+        level,
+        fields: {
+          txnRefList: dropped
+            ? undefined
+            : txnRefLookup[destinationChainId]?.map((txnRef) => blockExplorerLink(txnRef, destinationChainId)),
+          ...(level === "warn"
+            ? {
+                notificationPath: "across-error",
+                notSubmitted: dropped ? "dropped by pre-flight simulation ⚠️" : "no transaction submitted ⚠️",
+              }
+            : {}),
+        },
+      } as const;
+    };
 
     misc.forEach(({ crossChainMessage }) => {
       const { originationChainId, destinationChainId, amount, l1TokenSymbol: symbol, type } = crossChainMessage;
@@ -438,26 +466,25 @@ export async function finalize(
       const destinationNetwork = getNetworkName(destinationChainId);
       const infoLogMessage =
         amount && symbol ? `to support a ${originationNetwork} withdrawal of ${amount} ${symbol} 🔜` : "";
-      logger[submissionLevel(destinationChainId)]({
+      const { level, fields } = submission(crossChainMessage);
+      logger[level]({
         at: "Finalizer",
         message: `Submitted ${miscReason} on ${destinationNetwork}`,
         infoLogMessage,
-        txnRefList: txnRefLookup[destinationChainId]?.map((txnRef) => blockExplorerLink(txnRef, destinationChainId)),
-        ...unsubmitted(destinationChainId),
+        ...fields,
       });
     });
-    transfers.forEach(
-      ({ crossChainMessage: { originationChainId, destinationChainId, type, amount, l1TokenSymbol: symbol } }) => {
-        const originationNetwork = getNetworkName(originationChainId);
-        const destinationNetwork = getNetworkName(destinationChainId);
-        logger[submissionLevel(destinationChainId)]({
-          at: "Finalizer",
-          message: `Finalized ${originationNetwork} ${type} on ${destinationNetwork} for ${amount} ${symbol} 🪃`,
-          txnRefList: txnRefLookup[destinationChainId]?.map((txnRef) => blockExplorerLink(txnRef, destinationChainId)),
-          ...unsubmitted(destinationChainId),
-        });
-      }
-    );
+    transfers.forEach(({ crossChainMessage }) => {
+      const { originationChainId, destinationChainId, type, amount, l1TokenSymbol: symbol } = crossChainMessage;
+      const originationNetwork = getNetworkName(originationChainId);
+      const destinationNetwork = getNetworkName(destinationChainId);
+      const { level, fields } = submission(crossChainMessage);
+      logger[level]({
+        at: "Finalizer",
+        message: `Finalized ${originationNetwork} ${type} on ${destinationNetwork} for ${amount} ${symbol} 🪃`,
+        ...fields,
+      });
+    });
   }
 }
 
