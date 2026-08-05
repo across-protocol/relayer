@@ -325,6 +325,43 @@ describe("MultiCallerClient", function () {
     expect(Object.values(results).flat().length).to.equal(nTxns);
   });
 
+  it("Logs unattributable batch simulation failures at error level", async function () {
+    // A failing multicall bundle surfaces only a generic revert, because Multicall3 discards the inner
+    // revert reason. Suppressing that to debug hides the fact that every batched txn on the chain was
+    // dropped, so only reasons we specifically recognise as benign may be quiet here.
+    const batchFailure = (reason: string) =>
+      ({
+        chainId: chainIds[0],
+        contract: { address },
+        method: "aggregate",
+        nonMulticall: true, // Simulated as-is, rather than being wrapped into a bundle first.
+        args: [{ result: reason }],
+        message: `Batch simulation failure: ${reason}.`,
+      }) as unknown as AugmentedTransaction;
+
+    const simulateBatchFailure = async (reason: string): Promise<string | undefined> => {
+      const { spy, spyLogger } = createSpyLogger();
+      const _multiCaller = new DummyMultiCallerClient(spyLogger);
+      _multiCaller.enqueueTransaction(batchFailure(reason));
+      await _multiCaller.executeTxnQueues();
+
+      return spy
+        .getCalls()
+        .map(({ lastArg }) => lastArg)
+        .find(({ message }) => (message as string)?.includes("Failed to simulate"))?.level;
+    };
+
+    // Generic reverts are unattributable: the batch died and we cannot say why, so shout about it.
+    for (const reason of unknownRevertReasons) {
+      expect(await simulateBatchFailure(reason)).to.equal("error");
+    }
+
+    // Reasons we recognise as benign races with another bot stay at debug.
+    for (const reason of knownRevertReasons) {
+      expect(await simulateBatchFailure(reason)).to.equal("debug");
+    }
+  });
+
   it("Correctly filters loggable vs. ignorable simulation failures", async function () {
     const txn = {
       chainId: chainIds[0],

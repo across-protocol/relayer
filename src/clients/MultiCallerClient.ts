@@ -212,9 +212,12 @@ export class MultiCallerClient {
     const batchSimResults = await this.txnClient.simulate(batchTxns);
     const batchesAllSucceeded = batchSimResults.every(({ succeed, transaction, reason }, idx) => {
       // If txn succeeded or the revert reason is known to be benign, then log at debug level.
-      this.logger[
-        succeed || simulate || this.canIgnoreRevertReason({ succeed, transaction, reason }) ? "debug" : "error"
-      ]({
+      // @dev Deliberately narrower than canIgnoreRevertReason(): that also forgives a *generic* revert
+      // ("execution reverted", no data) on aggregate/multicall methods, which is exactly what a failing
+      // multicall bundle looks like -- Multicall3 discards the inner revert reason. Forgiving it here
+      // silently drops the entire batch every run, with nothing above debug level to show for it.
+      // Known reasons (races with another bot) stay quiet; unattributable batch failures do not.
+      this.logger[succeed || simulate || this.hasKnownRevertReason(reason) ? "debug" : "error"]({
         at: "MultiCallerClient#executeChainTxnQueue",
         message: `${succeed ? "Successfully simulated" : "Failed to simulate"} ${networkName} transaction batch!`,
         batchTxn: { ...transaction, contract: transaction.contract.address },
@@ -480,14 +483,18 @@ export class MultiCallerClient {
   protected canIgnoreRevertReason(txn: TransactionSimulationResult): boolean {
     const { transaction: _txn, reason } = txn;
     const lowerCaseReason = (reason ?? "unknown").toLowerCase();
-    const knownReason = [...knownRevertReasons].some((knownReason) =>
-      lowerCaseReason.includes(knownReason.toLowerCase())
-    );
     return (
-      knownReason ||
+      this.hasKnownRevertReason(reason) ||
       (unknownRevertReasonMethodsToIgnore.has(_txn.method) &&
         unknownRevertReasons.some((_reason) => lowerCaseReason.includes(_reason.toLowerCase())))
     );
+  }
+
+  // A revert reason we specifically recognise as benign, independent of the method called. Unlike
+  // canIgnoreRevertReason() this does not forgive generic/unattributable reverts.
+  protected hasKnownRevertReason(reason?: string): boolean {
+    const lowerCaseReason = (reason ?? "unknown").toLowerCase();
+    return [...knownRevertReasons].some((knownReason) => lowerCaseReason.includes(knownReason.toLowerCase()));
   }
 
   // Filter out transactions that revert for non-critical, expected reasons. For example, the "relay filled" error may
