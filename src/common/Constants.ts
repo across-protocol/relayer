@@ -230,9 +230,10 @@ export const DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER = "1.0"; // Multiplier on pr
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 50;
 
 // Padding for a Multicall3 tryAggregate() batch: a batch whose inner calls all ran out of gas still "succeeds", so
-// eth_estimateGas returns a floor rather than a requirement (see src/clients/README.md). The shortfall is bounded by
-// the EIP-150 reserve (<= 1/64 of the batch); not higher, since unchunked batches must clear block gas limits.
-export const MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER = 1.5;
+// eth_estimateGas returns a floor rather than a requirement (see src/clients/README.md). Only the outer frame's
+// EIP-150 reserve goes unaccounted for, so estimate * 64/63 (~1.016) always covers it. 1.1 keeps ~6x headroom over
+// that bound while staying clear of chain block gas limits, which a batch this code does not chunk must fit inside.
+export const MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER = 1.1;
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
 // with useless bundle block eval numbers and other data that isn't helpful for the dataworker to know. This does not
