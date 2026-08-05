@@ -4,8 +4,8 @@ Standalone Express service that receives across-indexer transfer items as **GCP 
 messages and executes them. Replaces the polling bot in [`../deposit-address`](../deposit-address/),
 which is left untouched until cutover.
 
-Why a service rather than a poller: [#3663](https://github.com/across-protocol/relayer/issues/3663).
-One message, one stateless request removes the duplicate-sweep class the poller cannot close.
+Why a service rather than a poller: [#3663](https://github.com/across-protocol/relayer/issues/3663) —
+one message, one stateless request removes the duplicate-sweep class the poller cannot close.
 
 > **Shell only.** Validation, routing, the Redis lock and durable state, and the execution paths land
 > in later PRs. A build with no handler configured, or with `EXECUTION_ENABLED` unset, **NACKs every
@@ -18,8 +18,13 @@ One message, one stateless request removes the duplicate-sweep class the poller 
 executes `$COMMAND`, so no Dockerfile change:
 
 ```
-COMMAND="node ./dist/src/deposit-address-service/index.js"
+COMMAND="exec node ./dist/src/deposit-address-service/index.js"
 ```
+
+**The `exec` is required, not cosmetic.** `runCommand.sh` runs `$COMMAND` without it, leaving the shell
+as PID 1 with Node as its child — and Cloud Run signals PID 1 only. Without `exec`, **Node never
+receives `SIGTERM` and the drain below silently does not happen**; the container serves until SIGKILL at
++10s, abandoning in-flight requests. `exec` replaces the shell with Node.
 
 | Route | Purpose |
 | --- | --- |
@@ -53,19 +58,17 @@ rejection and exits the process, losing everything else in flight.
 ## Logging
 
 **One line per message**, carrying every field worth querying — `logOutcome` in [`app.ts`](./app.ts) is
-the only place a message outcome is logged. Level follows the error's `alert` flag: `alert` ⇒ `error`, everything else ⇒ `debug`. **`error` pages** —
-the shared logger registers PagerDuty at that level — while `debug` stays in GCP Logging. Retriable
-failures are `debug` on purpose, since Pub/Sub's backoff handles them; the only other lines above it are
-`uncaughtException` / `unhandledRejection`. **No typed error sets `alert` today**, so the one remaining
-path to a page is an unrecognised throw — giving it a typed error turns that off.
+the only place a message outcome is logged. Level follows the error's `alert` flag: `alert` ⇒ `error`,
+which **pages** (the shared logger registers PagerDuty at that level), everything else ⇒ `debug`, which
+stays in GCP Logging. Retriable failures are `debug` on purpose, since Pub/Sub's backoff handles them;
+the only other lines above it are `uncaughtException` / `unhandledRejection`. **No typed error sets
+`alert` today**, so the one remaining path to a page is an unrecognised throw.
 
 Two non-obvious constraints, both with regression tests. **The failure block is `failure`, never
 `error`** — `error` is reserved in `@risk-labs/logger`, whose `errorStackTracerFormatter` collapses it to
 a string. And **`deliveryAttempt` is absent**, since Pub/Sub only populates it with a dead-letter policy,
-which is why `messageId` is on every outcome.
-
-Uses the shared `Logger` from `../utils` — not `src/cctp-finalizer`'s local winston instance, which is
-console-only, so `notificationPath` is inert and `debug` is dropped.
+which is why `messageId` is on every outcome. Uses the shared `Logger` from `../utils`, not
+`src/cctp-finalizer`'s console-only instance, where `notificationPath` is inert and `debug` is dropped.
 
 ## The application deadline
 
@@ -96,8 +99,8 @@ PORT=8081 tsx src/deposit-address-service/index.ts
 RELAYER_TEST=true yarn hardhat test test/DepositAddressService.units.ts test/DepositAddressService.app.ts
 ```
 
-`DepositAddressService.app.ts` exercises the real Express boundary over real HTTP — binding to port 0
-and using global `fetch`, so no `supertest` dependency. Collaborators go in via
-`createApp({ logger, config, lifecycle, handler })`, not by poking private fields.
+`DepositAddressService.app.ts` exercises the real Express boundary over real HTTP — binding to port 0 and
+using global `fetch`, so no `supertest` dependency. Collaborators go in via `createApp(...)`, not by
+poking private fields.
 
 Related: [`../cctp-finalizer`](../cctp-finalizer/) (push-service precedent), [`../messaging/gcp`](../messaging/gcp/).

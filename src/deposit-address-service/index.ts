@@ -13,7 +13,11 @@ const AT = "DepositAddressService#bootstrap";
  * Run directly, not through the repo's `index.ts` bot dispatcher — `scripts/runCommand.sh` executes
  * `$COMMAND`, so no Dockerfile change is needed:
  *
- *   COMMAND="node ./dist/src/deposit-address-service/index.js"
+ *   COMMAND="exec node ./dist/src/deposit-address-service/index.js"
+ *
+ * The `exec` is **required**. `runCommand.sh` runs `$COMMAND` without it, so the shell stays PID 1 and
+ * Node is a child; Cloud Run signals PID 1 only, so the SIGTERM handler below would never fire and the
+ * drain would silently not happen. `exec` replaces the shell with Node.
  *
  * Uses the shared `Logger`, not a local winston instance, so `notificationPath` routing works and
  * `botIdentifier` / `runIdentifier` are injected.
