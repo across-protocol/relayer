@@ -8,6 +8,7 @@ import {
   constructClients,
   constructSpokePoolClientsWithLookback,
   getContractEntry,
+  MULTICALL3_BATCH_GAS_CEILING,
   MULTICALL3_BATCH_GAS_MULTIPLIER,
   MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER,
   updateSpokePoolClients,
@@ -227,8 +228,7 @@ async function preflightFinalizations(
  * The sum over-provisions when several calls carry a large minGas — the reserve is a floor each call must be *given*,
  * not gas it spends, so successive calls reuse it rather than accumulating (2 x 5.83M sums to 11.65M where the batch
  * needs 6.13M). That buys safety on a rare path at the cost of a loose limit, not a loose spend; the gas is not
- * consumed. A batch large enough for the sum to exceed the block gas limit fails submission loudly rather than
- * mining a no-op, which is the right way round.
+ * consumed.
  *
  * Returns undefined only if no call estimates at all, leaving the caller with the padded tryAggregate() estimate.
  */
@@ -241,14 +241,7 @@ async function sizeTryAggregateBatch(
   try {
     return await multisender.estimateGas.aggregate(calls);
   } catch (error) {
-    // @dev Estimate as the multisender, matching both the pre-flight and the calls' real sender: each executes from
-    // Multicall3, and the legacy OptimismPortal keys withdrawal proofs off msg.sender.
-    const results = await Promise.allSettled(
-      calls.map(({ target, callData }) =>
-        multisender.provider.estimateGas({ from: multisender.address, to: target, data: callData })
-      )
-    );
-    const estimates = results.filter(isPromiseFulfilled).map(({ value }) => value);
+    const estimates = (await estimateCallGas(multisender, calls)).filter(isDefined);
     logger.warn({
       at: "Finalizer#sizeTryAggregateBatch",
       message: `Sized the ${getNetworkName(chainId)} finalization batch per-call: it does not estimate as aggregate() 🚨`,
@@ -260,6 +253,91 @@ async function sizeTryAggregateBatch(
 
     return estimates.length > 0 ? estimates.reduce((sum, gas) => sum.add(gas), bnZero) : undefined;
   }
+}
+
+/**
+ * Each call's gas requirement, estimated independently of the others. undefined where a call doesn't estimate, which
+ * means it reverts — tryAggregate() will isolate it, so it doesn't need funding.
+ */
+async function estimateCallGas(multisender: Contract, calls: Multicall2Call[]): Promise<(BigNumber | undefined)[]> {
+  // @dev Estimate as the multisender, matching both the pre-flight and the calls' real sender: each executes from
+  // Multicall3, and the legacy OptimismPortal keys withdrawal proofs off msg.sender.
+  const results = await Promise.allSettled(
+    calls.map(({ target, callData }) =>
+      multisender.provider.estimateGas({ from: multisender.address, to: target, data: callData })
+    )
+  );
+  return results.map((result) => (isPromiseFulfilled(result) ? result.value : undefined));
+}
+
+/**
+ * Splits a finalization batch into transactions that each fit under the per-transaction gas cap.
+ *
+ * EIP-7825 caps a single transaction at 2^24 = 16,777,216 gas, two orders of magnitude below mainnet's ~60M block gas
+ * limit — so the cap on the transaction, not the block, is what bounds a batch. The finalizer enqueues one
+ * tryAggregate() per chain and MultiCallerClient passes a single-element multisender chunk through untouched, so
+ * nothing else divides it: a backlog large enough to need more than MULTICALL3_BATCH_GAS_CEILING has, until now, gone
+ * to the wire whole and been rejected in full.
+ *
+ * The whole batch is sized first, so the common case costs no extra RPC and submits exactly as before — the two
+ * withdrawals stuck on 2026-08-05 size at 6.17M against a 15M ceiling. Only a batch that doesn't fit pays for
+ * per-call estimates and is split.
+ *
+ * Packing uses the per-call estimates rather than each candidate chunk's aggregate() estimate: summing over-counts a
+ * shared minGas reserve, so chunks come out smaller than strictly necessary, but every chunk is then sized properly
+ * by sizeTryAggregateBatch() and a conservative split is the safe direction to err. A single call that alone exceeds
+ * the ceiling cannot be split any further; it goes out on its own and is logged, so it fails submission loudly
+ * instead of quietly dragging a batch over the cap.
+ */
+export async function chunkFinalizationBatch(
+  logger: winston.Logger,
+  chainId: number,
+  multisender: Contract,
+  calls: Multicall2Call[]
+): Promise<{ calls: Multicall2Call[]; gasLimit?: BigNumber }[]> {
+  // @dev The ceiling applies to the padded limit that reaches the wire, so the budget for a sized batch is lower.
+  const budget = BigNumber.from(Math.floor(MULTICALL3_BATCH_GAS_CEILING / MULTICALL3_BATCH_GAS_MULTIPLIER));
+
+  const gasLimit = await sizeTryAggregateBatch(logger, chainId, multisender, calls);
+  // @dev An unsizeable batch has nothing to pack against; leave it whole for the padded tryAggregate() estimate.
+  if (!isDefined(gasLimit) || gasLimit.lte(budget)) {
+    return [{ calls, gasLimit }];
+  }
+
+  const perCall = await estimateCallGas(multisender, calls);
+  const chunks: Multicall2Call[][] = [];
+  let current: Multicall2Call[] = [];
+  let chunkGas = bnZero;
+  let oversized = 0;
+  calls.forEach((call, idx) => {
+    const gas = perCall[idx] ?? bnZero;
+    oversized += gas.gt(budget) ? 1 : 0;
+    if (current.length > 0 && chunkGas.add(gas).gt(budget)) {
+      chunks.push(current);
+      current = [];
+      chunkGas = bnZero;
+    }
+    current.push(call);
+    chunkGas = chunkGas.add(gas);
+  });
+  chunks.push(current);
+
+  logger.warn({
+    at: "Finalizer#chunkFinalizationBatch",
+    message: `Split the ${getNetworkName(chainId)} finalization batch across ${chunks.length} transactions 🪓`,
+    notificationPath: "across-error",
+    reason: `sized at ${gasLimit.toString()}, over the ${budget.toString()} budget`,
+    calls: calls.length,
+    chunkSizes: chunks.map(({ length }) => length),
+    oversizedCalls: oversized > 0 ? oversized : undefined,
+  });
+
+  return Promise.all(
+    chunks.map(async (chunk) => ({
+      calls: chunk,
+      gasLimit: await sizeTryAggregateBatch(logger, chainId, multisender, chunk),
+    }))
+  );
 }
 
 export async function finalize(
@@ -459,26 +537,29 @@ export async function finalize(
           dropped.forEach((crossChainMessage) => droppedMessages.add(crossChainMessage));
           if (multicallTxns.length > 0) {
             // @dev A tryAggregate() estimate describes the cost of failing, not the cost of succeeding; size the
-            // batch as aggregate() instead. See sizeTryAggregateBatch().
-            const gasLimit = await sizeTryAggregateBatch(logger, Number(chainId), multisender, multicallTxns);
-            const txnToSubmit: AugmentedTransaction = {
-              contract: multisender,
-              chainId: Number(chainId),
-              // @dev tryAggregate over aggregate: a call that starts reverting after the pre-flight
-              // must not take the rest of the batch with it.
-              method: "tryAggregate",
-              args: [false, multicallTxns],
-              // @dev A sized limit is a real requirement and needs only a state-drift margin. Only an unsizeable
-              // batch falls through to the tryAggregate() estimate, which is a floor and must also absorb the
-              // EIP-150 reserve.
-              ...(isDefined(gasLimit)
-                ? { gasLimit, gasLimitMultiplier: MULTICALL3_BATCH_GAS_MULTIPLIER }
-                : { gasLimitMultiplier: MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER }),
-              unpermissioned: true,
-              message: `Batch finalized ${multicallTxns.length} txns`,
-              mrkdwn: `Batch finalized ${multicallTxns.length} txns`,
-            };
-            multicallerClient.enqueueTransaction(txnToSubmit);
+            // batch as aggregate() instead, and split it if it won't fit in one transaction. See
+            // sizeTryAggregateBatch() and chunkFinalizationBatch().
+            const batches = await chunkFinalizationBatch(logger, Number(chainId), multisender, multicallTxns);
+            batches.forEach(({ calls, gasLimit }) => {
+              const txnToSubmit: AugmentedTransaction = {
+                contract: multisender,
+                chainId: Number(chainId),
+                // @dev tryAggregate over aggregate: a call that starts reverting after the pre-flight
+                // must not take the rest of the batch with it.
+                method: "tryAggregate",
+                args: [false, calls],
+                // @dev A sized limit is a real requirement and needs only a state-drift margin. Only an unsizeable
+                // batch falls through to the tryAggregate() estimate, which is a floor and must also absorb the
+                // EIP-150 reserve.
+                ...(isDefined(gasLimit)
+                  ? { gasLimit, gasLimitMultiplier: MULTICALL3_BATCH_GAS_MULTIPLIER }
+                  : { gasLimitMultiplier: MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER }),
+                unpermissioned: true,
+                message: `Batch finalized ${calls.length} txns`,
+                mrkdwn: `Batch finalized ${calls.length} txns`,
+              };
+              multicallerClient.enqueueTransaction(txnToSubmit);
+            });
           }
         }
       }

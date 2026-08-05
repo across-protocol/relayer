@@ -238,9 +238,15 @@ export const MULTICALL3_BATCH_GAS_MULTIPLIER = 1.1;
 // available. That estimate is a floor rather than a requirement, and EIP-150 withholds 1/64 of the remaining gas at
 // every frame boundary, so a batch whose gas sits d frames below tryAggregate() must be given estimate * (64/63)^d.
 // 1.5 covers d <= 25; a CCTP mint through proxied transmitter/messenger/token contracts already reaches d ~= 7.
-// Not higher: the finalizer doesn't chunk inner calls, so large batches must fit under block gas limits.
 // See test/MultiCallerClient.TryAggregateGas.test.ts for the measurements.
 export const MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER = 1.5;
+
+// Ceiling on the gas limit of a submitted finalization batch, above which the batch is split. EIP-7825 caps a single
+// transaction at 2^24 = 16,777,216 gas — two orders of magnitude below mainnet's ~60M block gas limit, so the
+// per-transaction cap rather than the block is what bounds a batch as a backlog grows. Held below the cap to leave
+// room for MULTICALL3_BATCH_GAS_MULTIPLIER, for state drift between sizing and inclusion, and for chains whose own
+// cap is lower. Applies to the padded limit that reaches the wire, not to the raw estimate.
+export const MULTICALL3_BATCH_GAS_CEILING = 15_000_000;
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
 // with useless bundle block eval numbers and other data that isn't helpful for the dataworker to know. This does not
