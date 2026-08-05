@@ -8,6 +8,7 @@ import {
   constructClients,
   constructSpokePoolClientsWithLookback,
   getContractEntry,
+  MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER,
   updateSpokePoolClients,
   UNIVERSAL_CHAINS,
 } from "../common";
@@ -402,6 +403,8 @@ export async function finalize(
               // must not take the rest of the batch with it.
               method: "tryAggregate",
               args: [false, multicallTxns],
+              // @dev A tryAggregate() estimate is a floor, not a requirement; it must be padded.
+              gasLimitMultiplier: MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER,
               unpermissioned: true,
               message: `Batch finalized ${multicallTxns.length} txns`,
               mrkdwn: `Batch finalized ${multicallTxns.length} txns`,
