@@ -519,7 +519,7 @@ async function _runTransactionTvm(
 
   // A raw transaction carrying no calldata is a native TRX transfer, which cannot go through
   // `triggerSmartContract` because the recipient is an EOA rather than a deployed contract.
-  const calldata = sendRawTxn ? (args as Array<string | undefined>)[0] : undefined;
+  const calldata = (args as Array<string | undefined>)[0];
   const nativeTransfer = sendRawTxn && (!isDefined(calldata) || calldata === "0x");
   assert(!nativeTransfer || value.gt(bnZero), `${at}: native transfer requires a non-zero value`);
 
