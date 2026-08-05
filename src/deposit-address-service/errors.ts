@@ -69,6 +69,15 @@ export class ExecutionDisabledError extends DepositAddressServiceError {
   readonly code = "EXECUTION_DISABLED";
 }
 
+/**
+ * The application deadline passed before a fund-moving step could start. NACK: a redelivery gets a fresh
+ * budget, and refusing late is what keeps the un-renewed lock safe.
+ */
+export class DeadlineExceededError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "APPLICATION_DEADLINE_EXCEEDED";
+}
+
 /** RPC error, quote-api timeout or 5xx, Redis unavailable — may clear on its own, so NACK. */
 export class TransientDependencyError extends DepositAddressServiceError {
   readonly retriable = true;

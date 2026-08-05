@@ -1,29 +1,91 @@
 import { expect } from "./utils";
-import { decodePubSubData } from "../src/messaging/gcp";
+import { decodePushDelivery, isPushRequest } from "../src/messaging/gcp";
+import { isBodyParserError } from "../src/deposit-address-service/app";
 import { RequestLifecycle } from "../src/deposit-address-service/lifecycle";
 import { errorCode, isRetriable, shouldAlert } from "../src/deposit-address-service/errors";
 
-describe("decodePubSubData", function () {
-  function encode(payload: string): string {
-    return Buffer.from(payload, "utf8").toString("base64");
-  }
+describe("isPushRequest", function () {
+  it("distinguishes a Pub/Sub envelope from anything else", function () {
+    expect(isPushRequest({ message: {} })).to.equal(true);
+    for (const body of [undefined, null, "str", 7, [], {}, { subscription: "s" }, { message: "no" }]) {
+      expect(isPushRequest(body), JSON.stringify(body)).to.equal(false);
+    }
+  });
+});
 
-  it("decodes and trims a base64 payload", function () {
-    // Trimmed, matching how the cctp-finalizer treats push payloads.
-    expect(decodePubSubData(encode(' {"a":1} '))).to.equal('{"a":1}');
+describe("decodePushDelivery", function () {
+  const encode = (payload: string) => Buffer.from(payload, "utf8").toString("base64");
+  const valid = (over: Record<string, unknown> = {}) => ({
+    message: { data: encode(' {"a":1} '), messageId: "m1", ...over },
+    subscription: "projects/p/subscriptions/s",
+    deliveryAttempt: 3,
   });
 
-  it("returns undefined when there is nothing usable to decode", function () {
+  it("returns a trusted delivery, trimming the payload", function () {
+    const d = decodePushDelivery(valid({ publishTime: "t", orderingKey: "k", attributes: { x: "1" } }));
+    expect(d).to.not.equal(undefined);
+    // Trimmed, matching how the cctp-finalizer treats push payloads.
+    expect(d?.payload).to.equal('{"a":1}');
+    expect(d?.messageId).to.equal("m1");
+    expect(d?.publishTime).to.equal("t");
+    expect(d?.orderingKey).to.equal("k");
+    expect(d?.subscription).to.equal("projects/p/subscriptions/s");
+    expect(d?.deliveryAttempt).to.equal(3);
+    expect(d?.attributes).to.deep.equal({ x: "1" });
+  });
+
+  it("always supplies attributes, so callers never optional-chain them", function () {
+    expect(decodePushDelivery(valid())?.attributes).to.deep.equal({});
+  });
+
+  it("rejects a delivery with no usable payload", function () {
     for (const data of [undefined, "", encode(""), encode("   ")]) {
-      expect(decodePubSubData(data), String(data)).to.equal(undefined);
+      expect(decodePushDelivery(valid({ data })), String(data)).to.equal(undefined);
     }
   });
 
   it("rejects non-string data rather than throwing or decoding junk", function () {
-    // Buffer.from(number) throws; Buffer.from(array) silently reads the array as bytes. Neither may
-    // reach the caller, since a throw here escapes the ACK/NACK policy.
+    // Buffer.from(number) throws; Buffer.from(array) silently reads the array as bytes. A throw here
+    // would escape the caller's ACK/NACK policy.
     for (const data of [12345, { a: 1 }, [104, 105], null, true]) {
-      expect(decodePubSubData(data), JSON.stringify(data)).to.equal(undefined);
+      expect(decodePushDelivery(valid({ data })), JSON.stringify(data)).to.equal(undefined);
+    }
+  });
+
+  it("requires messageId, the only redelivery-correlation key without deliveryAttempt", function () {
+    for (const messageId of [undefined, "", 42]) {
+      expect(decodePushDelivery(valid({ messageId })), String(messageId)).to.equal(undefined);
+    }
+  });
+
+  it("drops wrongly-typed optional metadata instead of rejecting the delivery", function () {
+    // Discarding a diagnostic field beats discarding funds work over one.
+    const d = decodePushDelivery(valid({ publishTime: 99, orderingKey: {}, attributes: { ok: "y", bad: 1 } }));
+    expect(d?.payload).to.equal('{"a":1}');
+    expect(d?.publishTime).to.equal(undefined);
+    expect(d?.orderingKey).to.equal(undefined);
+    expect(d?.attributes).to.deep.equal({ ok: "y" });
+  });
+});
+
+describe("isBodyParserError", function () {
+  it("recognises the errors body-parser rejects with", function () {
+    for (const type of ["entity.parse.failed", "entity.too.large", "encoding.unsupported", "request.aborted"]) {
+      expect(isBodyParserError(Object.assign(new Error("x"), { type })), type).to.equal(true);
+    }
+  });
+
+  it("does not claim errors from anywhere else", function () {
+    // Those may be transient, so they must NACK rather than be acknowledged away — a blanket ACK on
+    // every middleware error would silently discard the message.
+    for (const err of [
+      new Error("boom"),
+      Object.assign(new Error("x"), { type: "something.else" }),
+      null,
+      undefined,
+      "str",
+    ]) {
+      expect(isBodyParserError(err), String(err)).to.equal(false);
     }
   });
 });

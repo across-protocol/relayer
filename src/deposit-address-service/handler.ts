@@ -1,36 +1,48 @@
-import winston from "winston";
-import { PubSubPushMessage } from "../messaging/gcp";
-import { DepositAddressServiceConfig } from "./config";
-import { ExecutionDisabledError } from "./errors";
+import { PushDelivery } from "../messaging/gcp";
+import { DeadlineExceededError, ExecutionDisabledError } from "./errors";
+
+/**
+ * Everything one delivery needs, and nothing process-scoped.
+ *
+ * `logger`, config and the shared clients are deliberately absent: a handler closes over them at
+ * construction, so a Cloud Run instance builds one `TransactionClient` rather than one per request.
+ * That is not tidiness — the nonce cache lives on the client, so a per-request client would turn the
+ * accepted nonce race into a guaranteed one.
+ *
+ * The deadline is absolute and created once at the HTTP boundary, so every layer reads the same instant
+ * instead of recomputing "when did we start" from a duration.
+ */
+export interface RequestContext {
+  readonly delivery: PushDelivery;
+  readonly startedAtMs: number;
+  readonly deadlineAtMs: number;
+  readonly signal: AbortSignal;
+}
 
 /**
  * `outcome` is a short, stable label to group a dashboard by (`deposit_executed`, `already_executed`).
- * `fields` is anything else worth putting on the log line. Failure is signalled by throwing a typed
- * error, so the retry decision comes from the error rather than a flag a caller could set wrongly.
+ * `fields` is anything else worth putting on the log line — delivery identity is added by the app and
+ * wins on conflict, so a handler cannot rewrite it. Failure is signalled by throwing a typed error, so
+ * the retry decision comes from the error rather than a flag a caller could set wrongly.
  */
 export interface HandlerResult {
   readonly outcome: string;
   readonly fields?: Record<string, unknown>;
 }
 
+/** Processes one delivery. Constructed once with its dependencies; called once per request. */
+export type MessageHandler = (request: RequestContext) => Promise<HandlerResult>;
+
 /**
- * Processes one decoded indexer message. Injected so the HTTP layer is testable without execution
- * logic, and so later PRs can replace it without touching routing.
- *
- * @param payload The decoded message body — the item `GET /deposit-address-transfers` serves.
- * @param config **The handler must bound its own work by `applicationDeadlineMs`** and not broadcast
- *   past it. That rule, not the Cloud Run timeout, is what makes the un-renewed Redis lock safe.
- * @param message The whole push body, so a handler can reach delivery metadata without the app
- *   anticipating which parts it needs.
- * @param logger For constructing the shared clients, which all take one. Prefer enriching `fields`
- *   over logging here — the app already writes one line per message.
+ * Throw-if-late guard for the point of no return. Call immediately before broadcasting: the deadline,
+ * not the Cloud Run request timeout, is what makes the un-renewed Redis lock safe, because a Cloud Run
+ * 504 does not stop handler code. Retriable, so a redelivery gets a fresh budget.
  */
-export type MessageHandler = (
-  payload: string,
-  config: DepositAddressServiceConfig,
-  message: PubSubPushMessage,
-  logger: winston.Logger
-) => Promise<HandlerResult>;
+export function assertBeforeDeadline(context: RequestContext): void {
+  if (context.signal.aborted || Date.now() >= context.deadlineAtMs) {
+    throw new DeadlineExceededError("application deadline passed; refusing to proceed");
+  }
+}
 
 /**
  * Default for builds with no execution logic. **Refuses rather than acknowledging**: a shell that ACKed

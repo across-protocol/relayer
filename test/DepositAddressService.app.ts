@@ -57,7 +57,7 @@ describe("DepositAddressService app", function () {
   }
 
   async function start(env: Record<string, string> = {}, overrides: { handler?: MessageHandler } = {}): Promise<void> {
-    const config = new DepositAddressServiceConfig({ PORT: "0", EXECUTION_ENABLED: "true", ...env });
+    const config = new DepositAddressServiceConfig({ EXECUTION_ENABLED: "true", ...env });
     const app = createApp({
       logger: recordingLogger(),
       config,
@@ -89,7 +89,7 @@ describe("DepositAddressService app", function () {
 
     expect(response.status).to.equal(204);
     expect(handlerStub.calledOnce).to.equal(true);
-    expect(handlerStub.firstCall.args[0]).to.equal(PAYLOAD);
+    expect(handlerStub.firstCall.args[0].delivery.payload).to.equal(PAYLOAD);
 
     // Exactly one log line for the whole request.
     expect(logs.length).to.equal(1);
@@ -103,20 +103,53 @@ describe("DepositAddressService app", function () {
     expect(line.subscription).to.equal("projects/p/subscriptions/s");
   });
 
-  it("passes the payload, config, whole push body and logger to the handler", async function () {
+  it("hands the handler one request context, with no process-scoped dependencies", async function () {
     await start({ APPLICATION_DEADLINE_MS: "480000" });
+    const before = Date.now();
     await post(pushBody(PAYLOAD));
 
-    const [payload, config, body, logger] = handlerStub.firstCall.args;
-    expect(payload).to.equal(PAYLOAD);
-    // The handler bounds its own work by this, and must not broadcast once it has elapsed.
-    expect(config.applicationDeadlineMs).to.equal(480_000);
-    // The whole body, so a handler can reach delivery metadata without the app anticipating which.
-    expect(body.message.messageId).to.equal("msg-9931");
-    expect(body.message.publishTime).to.equal("2026-08-05T10:00:00.000Z");
-    expect(body.subscription).to.equal("projects/p/subscriptions/s");
-    // Needed to construct the shared clients, which all take a logger.
-    expect(logger.debug).to.be.a("function");
+    // Exactly one argument: config, logger and the shared clients are closed over at construction, so a
+    // handler cannot build a per-request TransactionClient and split the nonce cache.
+    expect(handlerStub.firstCall.args.length).to.equal(1);
+    const ctx = handlerStub.firstCall.args[0];
+
+    expect(ctx.delivery.payload).to.equal(PAYLOAD);
+    expect(ctx.delivery.messageId).to.equal("msg-9931");
+    expect(ctx.delivery.publishTime).to.equal("2026-08-05T10:00:00.000Z");
+    expect(ctx.delivery.subscription).to.equal("projects/p/subscriptions/s");
+    expect(ctx.delivery.attributes).to.deep.equal({});
+
+    // Absolute, created once at the boundary, so every layer reads the same instant.
+    expect(ctx.deadlineAtMs).to.equal(ctx.startedAtMs + 480_000);
+    expect(ctx.startedAtMs).to.be.at.least(before);
+    expect(ctx.signal.aborted).to.equal(false);
+  });
+
+  it("does not overwrite delivery identity with handler fields", async function () {
+    // Transport metadata is ground truth: a handler must not be able to relabel which message this was.
+    handlerStub.resolves({ outcome: "deposit_executed", fields: { messageId: "spoofed", ack: false } });
+    await start();
+
+    await post(pushBody(PAYLOAD));
+
+    const line = lastLine();
+    expect(line.messageId).to.equal("msg-9931");
+    expect(line.ack).to.equal(true);
+  });
+
+  it("does not let handler fields overwrite the canonical log keys", async function () {
+    handlerStub.resolves({
+      outcome: "deposit_executed",
+      fields: { at: "spoofed", message: "spoofed", outcome: "spoofed" },
+    });
+    await start();
+
+    await post(pushBody(PAYLOAD));
+
+    const line = lastLine();
+    expect(line.at).to.equal("DepositAddressService#push");
+    expect(line.outcome).to.equal("deposit_executed");
+    expect(line.message).to.contain("acknowledged");
   });
 
   it("NACKs with 500 when the handler throws a retriable error", async function () {
@@ -158,7 +191,7 @@ describe("DepositAddressService app", function () {
   });
 
   async function startWithoutHandler(env: Record<string, string> = {}): Promise<void> {
-    const config = new DepositAddressServiceConfig({ PORT: "0", ...env });
+    const config = new DepositAddressServiceConfig({ ...env });
     const app = createApp({ logger: recordingLogger(), config, lifecycle });
     await new Promise<void>((resolve) => {
       server = app.listen(0, "127.0.0.1", resolve);
