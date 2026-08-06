@@ -229,12 +229,21 @@ export const DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER = "1.0"; // Multiplier on pr
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 50;
 
-// Padding for a Multicall3 tryAggregate() batch, which must not be submitted on a bare eth_estimateGas: a batch
-// whose inner calls all ran out of gas still "succeeds", so the estimate is a floor, not a requirement. The
-// shortfall is the EIP-150 reserve withheld from the largest call, hence <= 1/64 of the batch; this is ~30x that.
-// Not higher: the finalizer doesn't chunk inner calls, so large batches must stay under block gas limits.
-// See src/clients/README.md, and test/MultiCallerClient.TryAggregateGas.test.ts for the measurements.
+// Padding on a finalization batch sized from its calls' own estimates. Multicall3 forwards 63/64 of its remaining
+// gas to each call, and for a batch of one that loss exceeds the intrinsic gas a standalone estimate carries: a
+// measured OP-stack withdrawal estimates at 5,830,076 but needs 5,866,277 inside a batch. 1.1 covers the 64/63 with
+// a drift margin. See buildFinalizationBatches() in src/finalizer/index.ts.
+export const MULTICALL3_BATCH_GAS_MULTIPLIER = 1.1;
+
+// Padding for a batch that couldn't be sized, leaving only the tryAggregate() estimate. That estimate is a floor —
+// a batch whose inner calls all ran out of gas still "succeeds" — and EIP-150 withholds 1/64 of the remaining gas at
+// every frame boundary, so gas sitting d frames down needs estimate * (64/63)^d. 1.5 covers d <= 25; a CCTP mint
+// through proxied transmitter/messenger/token contracts reaches d ~= 7.
 export const MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER = 1.5;
+
+// Ceiling on a submitted finalization batch's gas limit, above which it is split. Under EIP-7825's 2^24 = 16,777,216
+// per-transaction cap, with ~1.8M spare for the padding above, for state drift, and for chains capped lower.
+export const MULTICALL3_BATCH_GAS_CEILING = 15_000_000;
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
 // with useless bundle block eval numbers and other data that isn't helpful for the dataworker to know. This does not

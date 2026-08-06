@@ -59,7 +59,11 @@ const config: HardhatUserConfig = {
     },
   },
   networks: {
-    hardhat: { accounts: { accountsBalance: "1000000000000000000000000" } },
+    // @dev blockGasLimit is held under EIP-7825's 2^24 = 16,777,216 per-transaction cap, which the in-process EVM
+    // enforces. eth_estimateGas bisects up towards the block gas limit whenever its optimistic guess fails — which
+    // it does for any call gated on gasleft() rather than consumption — and a probe above the cap surfaces as a
+    // provider error instead of an estimate. See test/Finalizer.BatchBuilding.test.ts.
+    hardhat: { accounts: { accountsBalance: "1000000000000000000000000" }, blockGasLimit: 16_000_000 },
     mainnet: {
       chainId: CHAIN_IDs.MAINNET,
       url: getNodeUrl(CHAIN_IDs.MAINNET),

@@ -3,10 +3,12 @@ import { Contract } from "ethers";
 import { MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER } from "../src/common";
 import { deployMulticall3, ethers, expect, getContractFactory } from "./utils";
 
-// Characterises eth_estimateGas against a real Multicall3 tryAggregate(requireSuccess=false) batch, pinning the
-// two properties MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER relies on: the estimate is always a floor rather than a
-// requirement (so the padding is load-bearing — at 1.0x these cases fail), and the shortfall stays within the
-// EIP-150 1/64 reserve (so a fixed multiplier is enough). See src/clients/README.md for why.
+// Characterises eth_estimateGas against a real Multicall3 tryAggregate(requireSuccess=false) batch. The estimate is
+// always a floor rather than a requirement, so MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER stays load-bearing on the one
+// path that still uses it: a batch whose calls have all stopped estimating. For the shapes below the shortfall is
+// the EIP-150 reserve, but that bound holds only while a call's requirement follows what it consumes — it does not
+// for OP-stack callWithMinGas, which is why finalization batches are sized from their calls rather than from an
+// estimate of the batch. See src/clients/README.md, and test/Finalizer.BatchBuilding.test.ts for the sized path.
 describe("Multicall3 tryAggregate gas estimation", function () {
   let multicall3: Contract, burner: Contract, from: string;
 
