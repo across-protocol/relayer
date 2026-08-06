@@ -43,7 +43,7 @@ import {
   isUnmeteredFastRebalance,
 } from "../utils";
 import { getAcrossHost } from "./AcrossAPIClient";
-import { BinanceClient } from "./BinanceClient";
+import { BinanceClient, BinanceRoute } from "./BinanceClient";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
 import { HubPoolClient, TokenClient, TransactionClient } from ".";
 import { Deposit, TokenInfo } from "../interfaces";
@@ -1689,9 +1689,18 @@ export class InventoryClient {
     }
 
     if (isDefined(this.binanceClient)) {
-      await this.binanceClient.refresh();
+      await this.binanceClient.refresh(this.getBinanceRoutes());
       await this.updateTokenPrices();
     }
+  }
+
+  // The (chain, token) pairs we rely on Binance to service.
+  private getBinanceRoutes(): BinanceRoute[] {
+    return this.getL1Tokens().flatMap((l1Token) =>
+      this.getEnabledChains()
+        .filter((chainId) => hasBinanceRoute(chainId, l1Token))
+        .map((chainId) => ({ chainId, l1Token }))
+    );
   }
 
   // Strict-fail: any error clears the cache.
@@ -1776,7 +1785,11 @@ export class InventoryClient {
     const { chainId: hubChainId } = this.hubPoolClient;
     try {
       const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
-      return hasBinanceRoute(repaymentChainId, l1Token);
+      // A configured route isn't necessarily an open one; without a client we can't know, so assume open.
+      return (
+        hasBinanceRoute(repaymentChainId, l1Token) &&
+        (this.binanceClient?.canDrainToHubChain(repaymentChainId, l1Token) ?? true)
+      );
     } catch {
       return false;
     }

@@ -63,12 +63,17 @@ describe("InventoryClient: Refund chain selection", function () {
 
   // Minimal in-memory stub of the BinanceClient methods InventoryClient consults during
   // refund-chain selection. TODO: replace the cast with a cleaner test-fake pattern.
-  const makeFakeBinanceClient = (opts: { isOperational?: boolean; canWithdraw?: boolean } = {}): BinanceClient =>
-    ({
+  const makeFakeBinanceClient = (
+    opts: { isOperational?: boolean; canWithdraw?: boolean; canDrainToHubChain?: boolean } = {}
+  ): BinanceClient => {
+    const canDrain = opts.canDrainToHubChain ?? true; // Defaults open, as the real client does.
+    return {
       isOperational: () => opts.isOperational ?? true,
-      canWithdraw: () => opts.canWithdraw ?? true,
+      canWithdraw: () => canDrain && (opts.canWithdraw ?? true), // The real canWithdraw() also gates on this.
+      canDrainToHubChain: () => canDrain,
       refresh: async () => undefined,
-    }) as unknown as BinanceClient;
+    } as unknown as BinanceClient;
+  };
 
   let hubPoolClient: MockHubPoolClient, adapterManager: MockAdapterManager, tokenClient: MockTokenClient;
   let mockRebalancerClient: MockRebalancerClient;
@@ -654,6 +659,23 @@ describe("InventoryClient: Refund chain selection", function () {
         tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
         const refundChains = await inventoryClient.determineRefundChainId(sampleDepositData);
         expect(refundChains).to.deep.equal([ARBITRUM]);
+      } finally {
+        delete process.env.BINANCE_API_KEY;
+        delete process.env.BINANCE_HMAC_KEY;
+        (inventoryClient as MockInventoryClient).setBinanceClient(undefined);
+      }
+    });
+    it("does not treat an overallocated origin as quick-rebalance when Binance has suspended the route", async function () {
+      // As above, but Binance has closed a leg: a configured route we can't currently use isn't a fast drain.
+      process.env.BINANCE_API_KEY = "test-key";
+      process.env.BINANCE_HMAC_KEY = "test-secret";
+      (inventoryClient as MockInventoryClient).setBinanceClient(makeFakeBinanceClient({ canDrainToHubChain: false }));
+      (inventoryClient as MockInventoryClient).seedL1TokenPriceUsd(mainnetWeth, toWei(2000));
+      try {
+        sampleDepositData.originChainId = ARBITRUM;
+        sampleDepositData.inputToken = toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM);
+        tokenClient.setTokenData(ARBITRUM, toAddressType(l2TokensForWeth[ARBITRUM], ARBITRUM), toWei(100));
+        expect((await inventoryClient.determineRefundChainId(sampleDepositData)).length).to.equal(0);
       } finally {
         delete process.env.BINANCE_API_KEY;
         delete process.env.BINANCE_HMAC_KEY;

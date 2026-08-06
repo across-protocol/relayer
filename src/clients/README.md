@@ -61,6 +61,8 @@ For OFT excess withdrawals to the hub chain (`OFTL2Bridge`, which also serves al
 
 Some tokens only have an L2 -> L1 bridge configured (e.g. Avalanche USDT, which exits via Binance). If the inventory config sets a target allocation for such a token on that chain, the L1 -> L2 rebalance is skipped with a warning rather than attempted, since no bridge route exists for that direction. The skip only applies when the InventoryClient executes the send itself: when called with `returnRebalancesOnly = true` (as the SameAssetRebalancerClient does), these rebalances are still returned so the caller can execute them through alternate routes such as Binance.
 
+Binance routes carry a second constraint: Binance enables and disables deposits and withdrawals per coin and network, and keeps suspended pairs listed, so `hasBinanceRoute()` cannot see it. Each update snapshots `accountCoins` via `BinanceClient.refresh()` and warns while a configured route is suspended. `canDrainToHubChain()` gates on that snapshot — both legs of a drain, since Binance toggles them independently — and `isQuicklyRebalanced()` and `canWithdraw()` consult it. Only an explicit `false` closes a route, so a failed snapshot degrades to not checking rather than stranding every route.
+
 ### Plan for Deprecation of Token Transfer Logic
 
 Note that the InventoryClient is an older module and its token transfer functions are slated to be migrated over to rebalancer clients eventually. For now, the separation of concerns between the two is that the InventoryClient is in charge of sending **same** tokens across chains while rebalancer clients swap different tokens across chains.
