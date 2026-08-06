@@ -101,6 +101,17 @@ describe("RebalancerConfig", () => {
     expect(config.maxAmountsToTransfer.DAI[10]).to.equal(toBNWei("2", 18));
   });
 
+  it("sets the hub-chain transfer cap without cumulative targets", () => {
+    const env = makeEnv({
+      REBALANCER_CONFIG: JSON.stringify({ maxAmountsToTransfer: { USDT: "1000" } }),
+    });
+
+    const config = new RebalancerConfig(env);
+
+    expect(config.maxAmountsToTransfer.USDT[1]).to.equal(toBNWei("1000", 6));
+    expect(config.chainIds).to.be.empty;
+  });
+
   it("sets maxPendingOrders from config", () => {
     const env = makeEnv({
       REBALANCER_CONFIG: JSON.stringify({

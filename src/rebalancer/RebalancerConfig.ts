@@ -136,7 +136,7 @@ export class RebalancerConfig extends CommonConfig {
     if (isDefined(rebalancerConfig.maxAmountsToTransfer)) {
       for (const [token, amount] of Object.entries(rebalancerConfig.maxAmountsToTransfer as Record<string, string>)) {
         this.maxAmountsToTransfer[token] ??= {};
-        for (const chainId of chainIdSet) {
+        for (const chainId of new Set([...chainIdSet, this.hubPoolChainId])) {
           try {
             const { decimals } = getTokenInfoFromSymbol(token, chainId);
             this.maxAmountsToTransfer[token][chainId] = toBNWei(amount, decimals);
