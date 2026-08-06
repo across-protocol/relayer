@@ -206,37 +206,10 @@ async function preflightFinalizations(
 }
 
 /**
- * Groups finalizations into transactions, each sized and each fitting under the per-transaction gas cap.
- *
- * A tryAggregate() batch can't be sized by estimating itself. tryAggregate() catches inner reverts, so a batch whose
- * every call ran out of gas still succeeds, and eth_estimateGas — which returns the lowest limit at which the *outer*
- * transaction succeeds — describes the cost of failing. Nor does padding that estimate help: OP-stack
- * SafeCall.callWithMinGas gates on `gasleft() >= minGas * 64/63`, where minGas was declared by the withdrawal on L2
- * (~5.4M for Across finalizations) and is unrelated to the ~150k the reverting path spends. The gate is invisible to
- * the estimator at any multiplier.
- *
- * So size from the calls themselves: estimate each one alone, and give the batch their sum. Each call needs some
- * amount free when it is invoked and consumes no more than its own estimate, so the sum covers the batch's
- * requirement with room to spare — 12,328,372 against a measured 6,323,632 for the batch that prompted this. That
- * looseness is a limit, not a spend; the gas is not consumed. Estimating per call also reports which call reverts,
- * which an aggregate() estimate cannot: it fails as a whole and names nothing.
- *
- * The sum is not sufficient on its own: it prices the calls, not the tryAggregate() around them, which pays its own
- * intrinsic gas and calldata, dispatches each call and loses 63/64 of what's left forwarding to it. A batch of
- * several calls absorbs that from the 21,000 intrinsic gas every standalone estimate carries and the batch pays
- * once, but a batch of one has no such slack and a proportional multiplier cannot supply it — a lone call estimating
- * at 48,773 needs 54,870 and would be handed 53,650. MULTICALL3_BATCH_GAS_OVERHEAD covers the wrapper as a fixed
- * allowance; MULTICALL3_BATCH_GAS_MULTIPLIER remains for drift against a state that moved since the estimate.
- *
- * A call that doesn't estimate is dropped from the run rather than batched, because there is no limit that could
- * honestly carry it. It cannot share a sized batch: tryAggregate() contains a revert but not gas exhaustion, so a
- * call that spends before it fails spends out of a limit summed from its neighbours and takes them down with it —
- * measured, 636k consumed inside a batch sized at 753k for its other calls starved the call after it, and a heavier
- * one reverted the whole transaction. Nor is a batch of its own worth submitting: alone, it has no neighbours to
- * protect, its only sizing would be the tryAggregate() estimate of it failing, and tryAggregate() would then mine
- * that failure as a successful transaction — which submissionStatus(), counting hashes rather than inner success
- * flags, would report as a finalization that landed. Dropping costs a run of latency, since finalizations are
- * rediscovered from chain state on the next one, and reports the message honestly meanwhile.
+ * Splits finalizations into batches, each sized from its calls' own estimates. tryAggregate() catches inner reverts,
+ * so estimating the batch prices the failure; and padding that never reaches OP-stack callWithMinGas, which gates on
+ * gasleft() rather than on what the call spends. A call that no longer estimates has no size, so it is dropped
+ * rather than charged against a limit summed from its neighbours.
  */
 export async function buildFinalizationBatches(
   logger: winston.Logger,
@@ -301,85 +274,11 @@ export async function buildFinalizationBatches(
     });
   }
 
-  // A single call estimating above the budget can't be split any further, and will fail submission rather than
-  // mine a no-op. Say so here, or the only evidence is an opaque rejection.
-  const oversized = batches.filter(({ gas }) => gas.gt(budget));
-  if (oversized.length > 0) {
-    logger.warn({
-      at: "Finalizer#buildFinalizationBatches",
-      message: `${oversized.length} ${getNetworkName(chainId)} finalization(s) exceed the per-transaction gas budget 🚨`,
-      notificationPath: "across-error",
-      budget: budget.toString(),
-      oversized: oversized.map(({ calls, gas }) => ({ target: calls[0].target, gas: gas.toString() })),
-    });
-  }
-
   // @dev The summed estimates cover the calls; MULTICALL3_BATCH_GAS_OVERHEAD covers the tryAggregate() around them.
   return {
     batches: batches.map(({ calls, gas }) => ({ calls, gasLimit: gas.add(MULTICALL3_BATCH_GAS_OVERHEAD) })),
     dropped,
   };
-}
-
-/** The transaction submitting one batch of finalizations. */
-export function finalizationBatchTxn(
-  chainId: number,
-  multisender: Contract,
-  { calls, gasLimit }: { calls: Multicall2Call[]; gasLimit: BigNumber }
-): AugmentedTransaction {
-  return {
-    contract: multisender,
-    chainId,
-    // @dev tryAggregate over aggregate: a call that starts reverting after the pre-flight
-    // must not take the rest of the batch with it.
-    method: "tryAggregate",
-    args: [false, calls],
-    // @dev Every batch is sized, its calls having each estimated: a limit that is a real requirement rather than the
-    // floor a tryAggregate() estimate would give, needing only a margin for drift since the estimate.
-    gasLimit,
-    gasLimitMultiplier: MULTICALL3_BATCH_GAS_MULTIPLIER,
-    unpermissioned: true,
-    // @dev Batches share a target contract, so without this MultiCallerClient bundles them back into the one
-    // transaction that didn't fit — or, with no signer to reach a multisender, into a multicall(bytes[]) that
-    // Multicall3 doesn't expose, throwing on encode and abandoning the chain's whole batch.
-    nonMulticall: true,
-    message: `Batch finalized ${calls.length} txns`,
-    mrkdwn: `Batch finalized ${calls.length} txns`,
-  };
-}
-
-/**
- * Whether a message's finalization actually went out, and why not when it didn't.
- *
- * A chain submits one transaction per batch, and TransactionClient#submit stops at the first failure and returns the
- * hashes it already collected — so a chain with fewer hashes than transactions finalized only some of its messages.
- * Which ones is not recoverable: the hashes don't identify the batches behind them. So every message on a
- * partially-submitted chain is reported unconfirmed rather than credited to a transaction that may not have carried
- * it. Over-warning is the safe direction; a finalization wrongly logged as complete is one nobody goes looking for.
- */
-export function submissionStatus(
-  chainId: number,
-  { dropped, submittedTxns, expectedTxns }: { dropped: boolean; submittedTxns: number; expectedTxns: number }
-): { submitted: boolean; reason?: string } {
-  // @dev Either the pre-flight simulation reverted or the call stopped estimating; both warn with the target and
-  // reason as they drop it, so this only has to say the message didn't go out.
-  if (dropped) {
-    return { submitted: false, reason: "dropped before submission ⚠️" };
-  }
-
-  if (submittedTxns === 0) {
-    return { submitted: false, reason: "no transaction submitted ⚠️" };
-  }
-
-  if (submittedTxns < expectedTxns) {
-    const network = getNetworkName(chainId);
-    return {
-      submitted: false,
-      reason: `only ${submittedTxns}/${expectedTxns} ${network} transactions submitted; this message may not be in one of them ⚠️`,
-    };
-  }
-
-  return { submitted: true };
 }
 
 export async function finalize(
@@ -547,7 +446,6 @@ export async function finalize(
     // the TransactionClient.
     const multicallerClient = new MultiCallerClient(logger);
     let txnRefLookup: Record<number, string[]> = {};
-    const enqueuedTxnCount: Record<number, number> = {};
     try {
       const finalizationsByChain = Object.groupBy(
         finalizations,
@@ -586,20 +484,28 @@ export async function finalize(
               multicallTxns
             );
             unestimated.forEach((crossChainMessage) => droppedMessages.add(crossChainMessage));
-            batches.forEach((batch) =>
-              multicallerClient.enqueueTransaction(finalizationBatchTxn(Number(chainId), multisender, batch))
+            batches.forEach(({ calls, gasLimit }) =>
+              multicallerClient.enqueueTransaction({
+                contract: multisender,
+                chainId: Number(chainId),
+                // @dev tryAggregate over aggregate: a call that starts reverting after the pre-flight
+                // must not take the rest of the batch with it.
+                method: "tryAggregate",
+                args: [false, calls],
+                // @dev A sized limit is a real requirement, not the floor a tryAggregate() estimate gives.
+                gasLimit,
+                gasLimitMultiplier: MULTICALL3_BATCH_GAS_MULTIPLIER,
+                unpermissioned: true,
+                // @dev Batches share a target; without this MultiCallerClient bundles them back together.
+                nonMulticall: true,
+                message: `Batch finalized ${calls.length} txns`,
+                mrkdwn: `Batch finalized ${calls.length} txns`,
+              })
             );
           }
         }
       }
 
-      // @dev Record the queue depth before executing, which clears it. Every finalizer transaction is nonMulticall,
-      // so MultiCallerClient submits them one-for-one and this is the number of hashes a fully-submitted chain
-      // returns. Needed because TransactionClient#submit stops at the first failure and returns the hashes it
-      // already has, so a short hash list is the only evidence that some finalizations never went out.
-      Object.keys(finalizationsByChain).forEach((chainId) => {
-        enqueuedTxnCount[Number(chainId)] = multicallerClient.getQueuedTransactions(Number(chainId)).length;
-      });
       txnRefLookup = await multicallerClient.executeTxnQueues(!submitFinalizationTransactions);
     } catch (_error) {
       const error = _error as Error;
@@ -625,11 +531,7 @@ export async function finalize(
     const submission = (crossChainMessage: CrossChainMessage) => {
       const { destinationChainId } = crossChainMessage;
       const dropped = droppedMessages.has(crossChainMessage);
-      const { submitted, reason } = submissionStatus(destinationChainId, {
-        dropped,
-        submittedTxns: txnRefLookup[destinationChainId]?.length ?? 0,
-        expectedTxns: enqueuedTxnCount[destinationChainId] ?? 0,
-      });
+      const submitted = !dropped && txnRefLookup[destinationChainId]?.length > 0;
 
       // Nothing is submitted when transaction sending is disabled, so don't warn about it.
       const level = submitted || !submitFinalizationTransactions ? "info" : "warn";
@@ -639,7 +541,12 @@ export async function finalize(
           txnRefList: dropped
             ? undefined
             : txnRefLookup[destinationChainId]?.map((txnRef) => blockExplorerLink(txnRef, destinationChainId)),
-          ...(level === "warn" ? { notificationPath: "across-error", notSubmitted: reason } : {}),
+          ...(level === "warn"
+            ? {
+                notificationPath: "across-error",
+                notSubmitted: dropped ? "dropped before submission ⚠️" : "no transaction submitted ⚠️",
+              }
+            : {}),
         },
       } as const;
     };

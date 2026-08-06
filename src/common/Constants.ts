@@ -229,22 +229,15 @@ export const DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER = "1.0"; // Multiplier on pr
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 50;
 
-// Padding on a finalization batch sized from its calls' own estimates. Multicall3 forwards 63/64 of its remaining
-// gas to each call, and for a batch of one that loss exceeds the intrinsic gas a standalone estimate carries: a
-// measured OP-stack withdrawal estimates at 5,830,076 but needs 5,866,277 inside a batch. 1.1 covers the 64/63 with
-// a drift margin. See buildFinalizationBatches() in src/finalizer/index.ts.
+// Drift margin on a finalization batch's summed estimates.
 export const MULTICALL3_BATCH_GAS_MULTIPLIER = 1.1;
 
-// Fixed allowance added to a batch's summed estimates for the Multicall3 wrapper itself: the transaction's own
-// intrinsic gas and calldata, plus dispatch and the 63/64 forwarding loss at each call. The multiplier above cannot
-// cover this, being proportional to a sum that does not contain it — a lone call estimating at 48,773 is supplied
-// 53,650 at x1.1 and needs 54,870, so the batch reverts and finalizes nothing. Batches of two or more calls only
-// escape this incidentally, via the 21,000 intrinsic gas every standalone estimate carries and the batch pays once.
-// A limit is not a spend; the unused remainder is refunded.
+// Allowance for the Multicall3 wrapper, which the summed estimates don't price: the transaction's own intrinsic gas
+// and calldata, plus dispatch and the 1/64 withheld from each call. The multiplier can't cover it, being
+// proportional to a sum that excludes it — a lone call estimating at 48,773 gets 53,650 and needs 54,870.
 export const MULTICALL3_BATCH_GAS_OVERHEAD = 100_000;
 
-// Ceiling on a submitted finalization batch's gas limit, above which it is split. Under EIP-7825's 2^24 = 16,777,216
-// per-transaction cap, with ~1.8M spare for the padding above, for state drift, and for chains capped lower.
+// Split a finalization batch above this. Under EIP-7825's 2^24 per-transaction cap, less room for the above.
 export const MULTICALL3_BATCH_GAS_CEILING = 15_000_000;
 
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
