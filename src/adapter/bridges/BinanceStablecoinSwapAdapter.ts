@@ -49,7 +49,10 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
       return bnZero;
     }
     const maxFee = cappedAmount.mul(toBNWei(process.env.MAX_FEE_PCT ?? "2.5")).div(toBNWei(100));
-    return (await adapter.getEstimatedCost(route, cappedAmount, false)).lte(maxFee) ? cappedAmount : bnZero;
+    if ((await adapter.getEstimatedCost(route, cappedAmount, false)).gt(maxFee)) {
+      return bnZero;
+    }
+    return adapter.getValidatedRebalanceAmount(route, cappedAmount);
   }
 
   async sendL1ToL2Transfer(

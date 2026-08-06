@@ -318,7 +318,7 @@ describe("Binance adapter helpers", function () {
       {} as OftAdapter
     );
     const internals = adapter as unknown as {
-      initializeRebalance(route: unknown, amountToTransfer: BigNumber): Promise<BigNumber>;
+      getValidatedRebalanceAmount(route: unknown, amountToTransfer: BigNumber): Promise<BigNumber>;
       _assertInitialized(): void;
       _assertRouteIsSupported(route: unknown): void;
       _routeRequiresSwap(sourceToken: string, destinationToken: string): boolean;
@@ -347,7 +347,7 @@ describe("Binance adapter helpers", function () {
     });
     const bridgingFees = sinon.stub(internals, "_getBridgingFees").resolves(bnZero);
 
-    const result = await internals.initializeRebalance(
+    const result = await internals.getValidatedRebalanceAmount(
       {
         sourceChain: CHAIN_IDs.MAINNET,
         sourceToken: "USDT",

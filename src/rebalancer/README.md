@@ -248,7 +248,13 @@ Design tradeoff:
 
 - Destination-chain selection evaluates all eligible routes and favors configured destination priority before expected cost. This sends replenishment to preferred inventory locations while still falling back to lower-priority routes when higher-priority routes exceed `maxFeePct`.
 
-### SameAsset mode: `SameAssetRebalancerClient.rebalanceInventory()`
+### AdapterManager bridge-owned same-asset initiation
+
+Same-token routes registered in `CANONICAL_BRIDGE` or `CUSTOM_BRIDGE` are initiated by the primary relayer's InventoryClient through AdapterManager. The initiating relayer must use the same signer, Redis namespace, `REBALANCER_EXTERNAL_CONFIG`, Binance API key, and Binance secret-key CLI argument as the swap rebalancer. The bridge adapter applies the configured transfer cap, pending-order limit, fee limit, and live Binance withdrawal limits before InventoryClient reserves the accepted amount.
+
+AdapterManager only initiates these Redis-backed orders. The regularly scheduled `swapRebalancer` owns lifecycle progression; its Binance adapter includes bridge-derived routes for status updates without adding those routes to cumulative rebalance selection. Disable the dedicated `sameAssetRebalancer` schedule before enabling an AdapterManager route so only one process owns initiation.
+
+### Deprecated SameAsset mode: `SameAssetRebalancerClient.rebalanceInventory()`
 
 This mode handles configured same-token hub-to-destination transfers that InventoryClient cannot reliably execute through its own bridge adapters. It reuses InventoryClient's inventory targets but delegates execution and lifecycle tracking to the swap-rebalancer adapters.
 
@@ -259,7 +265,7 @@ High-level flow:
 3. Cap the amount using `maxAmountsToTransfer`, reject estimates above `MAX_FEE_PCT`, and initialize the route through its configured adapter when transaction sending is enabled.
 4. Track intermediate venue and bridge state in the adapter's Redis lifecycle, preserving the destination-chain context that the InventoryClient bridge-adapter path cannot represent.
 
-The runtime entrypoint is `runSameAssetRebalancer`, exposed as the `sameAssetRebalancer` bot. It is independent of cumulative mode: operators enable destination token/chain pairs under `sameAssetBalances`, while the support catalog controls which of those pairs can become routes.
+The deprecated runtime entrypoint is `runSameAssetRebalancer`, exposed as the `sameAssetRebalancer` bot. It is retained only as a rollback path while deployments migrate to AdapterManager; do not schedule it alongside bridge-owned initiation. Operators enable its destination token/chain pairs under `sameAssetBalances`, while the support catalog controls which of those pairs can become routes.
 
 Cross-mode pending orders: the `swapRebalancer` and `sameAssetRebalancer` bots typically share a base signer and the Redis order store, so each bot's `updateRebalanceStatuses()` pass can encounter pending orders created by the other mode. Adapters only progress orders whose routes are in their own configured `availableRoutes` (`BaseAdapter._canProgressOrder`); unsupported orders are skipped with a debug log and left pending for the properly-configured bot to progress. If no configured instance supports an order's route (e.g. after config drift), the order is eventually TTL-pruned with a warning by `_redisCleanupPendingOrders`.
 

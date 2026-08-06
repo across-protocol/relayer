@@ -12,7 +12,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     adapter: "binance",
   };
 
-  async function makeBridge(options: { pending?: number; cost?: string; maxAmount?: string } = {}) {
+  async function makeBridge(options: { pending?: number; cost?: string; maxAmount?: string; valid?: boolean } = {}) {
     const [signer, other] = await ethers.getSigners();
     const { spyLogger } = createSpyLogger();
     const baseSignerAddress = EvmAddress.from(signer.address);
@@ -25,6 +25,8 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       supportsRoute: () => true,
       getPendingOrders: async () => Array.from({ length: options.pending ?? 0 }, (_, i) => String(i)),
       getEstimatedCost: async () => toBNWei(options.cost ?? "0", 6),
+      getValidatedRebalanceAmount: async (_route: RebalanceRoute, amount: ReturnType<typeof toBNWei>) =>
+        options.valid === false ? toBNWei("0", 6) : amount,
       initializeRebalanceWithTransaction: async (_route: RebalanceRoute, amount: ReturnType<typeof toBNWei>) => ({
         amount,
         transactionHash: "0xdeposit",
@@ -71,6 +73,11 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     const full = await makeBridge({ pending: 2 });
     expect(
       await full.bridge.prepareL1ToL2Transfer(full.signer, full.l1Token, full.l2Token, toBNWei("100", 6))
+    ).to.equal(0);
+
+    const invalid = await makeBridge({ valid: false });
+    expect(
+      await invalid.bridge.prepareL1ToL2Transfer(invalid.signer, invalid.l1Token, invalid.l2Token, toBNWei("100", 6))
     ).to.equal(0);
   });
 

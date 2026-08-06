@@ -156,6 +156,7 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
       supportsRoute: () => true,
       getPendingOrders: async () => [],
       getEstimatedCost: async () => bnZero,
+      getValidatedRebalanceAmount: async (_route: RebalanceRoute, amount: BigNumber) => amount,
       initializeRebalanceWithTransaction: async (createdRoute: RebalanceRoute, amount: BigNumber) => {
         order = { ...createdRoute, amountToTransfer: amount };
         return { amount, transactionHash: "0xdeposit" };

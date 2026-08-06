@@ -755,111 +755,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return (await this.initializeRebalanceWithTransaction(rebalanceRoute, amountToTransfer)).amount;
   }
 
+  async getValidatedRebalanceAmount(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
+    return (await this._getRebalancePreflight(rebalanceRoute, amountToTransfer)) ? amountToTransfer : bnZero;
+  }
+
   async initializeRebalanceWithTransaction(
     rebalanceRoute: RebalanceRoute,
     amountToTransfer: BigNumber
   ): Promise<{ amount: BigNumber; transactionHash?: string }> {
     this._assertInitialized();
     this._assertRouteIsSupported(rebalanceRoute);
-    const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
-    const routeRequiresSwap = this._routeRequiresSwap(sourceToken, destinationToken);
-
-    // Read account coins fresh here: `withdrawEnable` flips whenever Binance opens or closes a withdrawal window, and
-    // a stale cache entry would either keep committing funds to a suspended route or keep skipping one that has
-    // already reopened.
-    const destinationCoin = await this._getAccountCoins(destinationToken, true);
-    const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
-    const destinationBinanceNetwork = destinationCoin.networkList.find(
-      (network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork]
-    );
-    assert(
-      isDefined(destinationBinanceNetwork),
-      `No Binance network entry for ${destinationToken} on chain ${destinationEntrypointNetwork}`
-    );
-    // Binance keeps a suspended coin/network pair listed in `networkList`, so this flag is the only pre-trade signal
-    // that the withdrawal leg will be rejected. Bail out before any funds are committed: the deposit into Binance is
-    // not reversible from this adapter, so initiating an order we cannot withdraw would strand the tranche on the
-    // exchange until its TTL elapses and the finalizer reclaims it.
-    if (!isBinanceNetworkWithdrawEnabled(destinationBinanceNetwork)) {
-      this.logger.warn({
-        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `🚧 Skipping rebalance: Binance has suspended ${resolveBinanceCoinSymbol(
-          destinationToken
-        )} withdrawals on network ${BINANCE_NETWORKS[destinationEntrypointNetwork]}`,
-        rebalanceRoute,
-        destinationNetwork: BINANCE_NETWORKS[destinationEntrypointNetwork],
-      });
+    const { sourceChain, sourceToken, destinationChain } = rebalanceRoute;
+    const preflight = await this._getRebalancePreflight(rebalanceRoute, amountToTransfer);
+    if (!preflight) {
       return { amount: bnZero };
     }
-    const { withdrawMin, withdrawMax } = destinationBinanceNetwork;
-
-    // Make sure that the amount to transfer will be larger than the minimum withdrawal size after expected fees.
+    const { destinationTokenInfo, expectedAmountToWithdrawInDestinationUnits } = preflight;
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
-    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
     const sourceFormatter = createFormatFunction(2, 4, false, sourceTokenInfo.decimals);
     const destinationFormatter = createFormatFunction(2, 4, false, destinationTokenInfo.decimals);
-    const bridgeToBinanceFee = await this._getBridgingFees(rebalanceRoute, amountToTransfer);
-    const expectedSourceAmountToDepositForSwap = amountToTransfer.sub(bridgeToBinanceFee);
-    const expectedAmountToWithdrawInDestinationUnits = await this._convertSourceToDestination(
-      sourceToken,
-      sourceChain,
-      destinationToken,
-      destinationEntrypointNetwork,
-      expectedSourceAmountToDepositForSwap
-    );
-    // add 1% buffer to minimum withdrawal size to account for any precision loss due to the conversion from
-    // source to destination token precision.
-    const withdrawMinWithBuffer = Number(withdrawMin) * 1.01;
-    const withdrawMinWei = toBNWei(
-      truncate(withdrawMinWithBuffer, destinationTokenInfo.decimals),
-      destinationTokenInfo.decimals
-    );
-    if (expectedAmountToWithdrawInDestinationUnits.lt(withdrawMinWei)) {
-      this.logger.debug({
-        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `Expected amount to withdraw ${expectedAmountToWithdrawInDestinationUnits.toString()} is less than minimum withdrawal size ${withdrawMinWei.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
-      });
-      return { amount: bnZero };
-    }
-    const withdrawMaxWei = toBNWei(
-      truncate(Number(withdrawMax), destinationTokenInfo.decimals),
-      destinationTokenInfo.decimals
-    );
-    if (expectedAmountToWithdrawInDestinationUnits.gt(withdrawMaxWei)) {
-      this.logger.debug({
-        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `Expected amount to withdraw ${expectedAmountToWithdrawInDestinationUnits.toString()} is greater than maximum withdrawal size ${withdrawMaxWei.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
-      });
-      return { amount: bnZero };
-    }
-
-    // TODO: The amount transferred here might produce dust due to the rounding required to meet the minimum order
-    // tick size. We try not to precompute the size required to place an order here because the price might change
-    // and the amount transferred in might be insufficient to place the order later on, producing more dust or an
-    // error.
-    if (routeRequiresSwap) {
-      const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
-      const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
-      const minimumOrderSize = spotMarketMeta.isBuy
-        ? await this._convertDestinationToSource(
-            destinationToken,
-            destinationChain,
-            sourceToken,
-            sourceChain,
-            toBNWei(
-              truncate(spotMarketMeta.minimumOrderSize, destinationTokenInfo.decimals),
-              destinationTokenInfo.decimals
-            )
-          )
-        : toBNWei(truncate(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals), sourceTokenInfo.decimals);
-      if (amountToTransfer.lt(minimumOrderSize)) {
-        this.logger.debug({
-          at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-          message: `Amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${minimumOrderSize.toString()}`,
-        });
-        return { amount: bnZero };
-      }
-    }
 
     const cloid = await this._redisGetNextCloid();
 
@@ -931,6 +845,87 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       );
       return { amount: amountToTransfer, transactionHash };
     }
+  }
+
+  private async _getRebalancePreflight(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber) {
+    this._assertInitialized();
+    this._assertRouteIsSupported(rebalanceRoute);
+    const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
+    // Refresh this read because Binance can suspend or reopen a withdrawal network at any time.
+    const destinationCoin = await this._getAccountCoins(destinationToken, true);
+    const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
+    const destinationBinanceNetwork = destinationCoin.networkList.find(
+      (network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork]
+    );
+    assert(
+      isDefined(destinationBinanceNetwork),
+      `No Binance network entry for ${destinationToken} on chain ${destinationEntrypointNetwork}`
+    );
+    if (!isBinanceNetworkWithdrawEnabled(destinationBinanceNetwork)) {
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `🚧 Skipping rebalance: Binance has suspended ${resolveBinanceCoinSymbol(
+          destinationToken
+        )} withdrawals on network ${BINANCE_NETWORKS[destinationEntrypointNetwork]}`,
+        rebalanceRoute,
+        destinationNetwork: BINANCE_NETWORKS[destinationEntrypointNetwork],
+      });
+      return;
+    }
+
+    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
+    const destinationTokenInfo = this._getTokenInfo(destinationToken, destinationEntrypointNetwork);
+    const bridgeFee = await this._getBridgingFees(rebalanceRoute, amountToTransfer);
+    const expectedAmountToWithdrawInDestinationUnits = await this._convertSourceToDestination(
+      sourceToken,
+      sourceChain,
+      destinationToken,
+      destinationEntrypointNetwork,
+      amountToTransfer.sub(bridgeFee)
+    );
+    const withdrawMinWei = toBNWei(
+      truncate(Number(destinationBinanceNetwork.withdrawMin) * 1.01, destinationTokenInfo.decimals),
+      destinationTokenInfo.decimals
+    );
+    const withdrawMaxWei = toBNWei(
+      truncate(Number(destinationBinanceNetwork.withdrawMax), destinationTokenInfo.decimals),
+      destinationTokenInfo.decimals
+    );
+    if (
+      expectedAmountToWithdrawInDestinationUnits.lt(withdrawMinWei) ||
+      expectedAmountToWithdrawInDestinationUnits.gt(withdrawMaxWei)
+    ) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Expected amount to withdraw ${expectedAmountToWithdrawInDestinationUnits.toString()} is outside Binance withdrawal limits ${withdrawMinWei.toString()}-${withdrawMaxWei.toString()} on destination chain ${destinationEntrypointNetwork}`,
+      });
+      return;
+    }
+
+    if (this._routeRequiresSwap(sourceToken, destinationToken)) {
+      const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
+      const finalDestinationTokenInfo = this._getTokenInfo(destinationToken, destinationChain);
+      const minimumOrderSize = spotMarketMeta.isBuy
+        ? await this._convertDestinationToSource(
+            destinationToken,
+            destinationChain,
+            sourceToken,
+            sourceChain,
+            toBNWei(
+              truncate(spotMarketMeta.minimumOrderSize, finalDestinationTokenInfo.decimals),
+              finalDestinationTokenInfo.decimals
+            )
+          )
+        : toBNWei(truncate(spotMarketMeta.minimumOrderSize, sourceTokenInfo.decimals), sourceTokenInfo.decimals);
+      if (amountToTransfer.lt(minimumOrderSize)) {
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+          message: `Amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${minimumOrderSize.toString()}`,
+        });
+        return;
+      }
+    }
+    return { destinationTokenInfo, expectedAmountToWithdrawInDestinationUnits };
   }
 
   async getEstimatedCost(
