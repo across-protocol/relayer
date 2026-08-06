@@ -191,8 +191,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
     const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
 
-    // Create a new order in Redis. We use a TTL of 1 hour so that all orders that are finalized in 1 hour are
-    // deleted from Redis and a RebalancerClient can sweep any excess balances that are left over on exchanges.
+    // The default TTL is 1 hour so a RebalancerClient can sweep excess exchange balances after finalized orders.
+    // Safety-critical lifecycle stages can override both that default and the process-wide configured TTL.
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     this.logger.debug({
       at: "BaseAdapter._redisCreateOrder",
@@ -218,9 +218,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
           destinationChain,
           amountToTransfer: amountToTransfer.toString(),
         }),
-        process.env.REBALANCER_PENDING_ORDER_TTL
-          ? Number(process.env.REBALANCER_PENDING_ORDER_TTL)
-          : (ttlOverride ?? 60 * 60) // default to 1 hour
+        ttlOverride ??
+          (process.env.REBALANCER_PENDING_ORDER_TTL ? Number(process.env.REBALANCER_PENDING_ORDER_TTL) : 60 * 60)
       ),
     ]);
     this.logger.debug({
