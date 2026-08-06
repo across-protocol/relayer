@@ -84,6 +84,7 @@ export enum STATUS {
   PENDING_DEPOSIT,
   PENDING_SWAP,
   PENDING_WITHDRAWAL,
+  PENDING_DEPOSIT_SUBMISSION,
 }
 
 export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS, account: string): string {
@@ -100,6 +101,9 @@ export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS
       break;
     case STATUS.PENDING_BRIDGE_PRE_DEPOSIT:
       orderStatusKey = redisPrefix + "pending-bridge-pre-deposit";
+      break;
+    case STATUS.PENDING_DEPOSIT_SUBMISSION:
+      orderStatusKey = redisPrefix + "pending-deposit-submission";
       break;
     default:
       throw new Error(`Invalid status: ${status}`);

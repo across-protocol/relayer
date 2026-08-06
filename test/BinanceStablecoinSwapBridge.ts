@@ -138,6 +138,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     const values = new Map<string, string>();
     const sets = new Map<string, Set<string>>();
     let locked = false;
+    let failUnlock = false;
     const redis = {
       acquireLock: async () => {
         if (locked) {
@@ -147,6 +148,10 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       },
       releaseLock: async () => {
         locked = false;
+        if (failUnlock) {
+          failUnlock = false;
+          throw new Error("redis unavailable");
+        }
         return true;
       },
       get: async (key: string) => values.get(key),
@@ -165,8 +170,9 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       },
       sRem: async (key: string, value: string) => Number(sets.get(key)?.delete(value) ?? false),
     };
+    const { spyLogger } = createSpyLogger();
     const makeAdapter = () => {
-      const adapter = new RebalancerBinanceAdapter({} as never, {} as never, signer, {} as never, {} as never);
+      const adapter = new RebalancerBinanceAdapter(spyLogger, {} as never, signer, {} as never, {} as never);
       Object.assign(adapter, { _baseSignerAddress: account, _redisCache: redis });
       sinon.stub(adapter, "getPendingOrders").resolves([]);
       return adapter;
@@ -177,7 +183,11 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
 
     expect(reservations.filter(Boolean)).to.have.length(1);
     await first.releasePendingOrderSlot(reservations.find(Boolean) as string);
-    expect(await second.reservePendingOrderSlot(1)).to.be.a("string");
+    const nextReservation = await second.reservePendingOrderSlot(1);
+    expect(nextReservation).to.be.a("string");
+    await second.releasePendingOrderSlot(nextReservation as string);
+    failUnlock = true;
+    expect(await first.reservePendingOrderSlot(1)).to.be.a("string");
   });
 
   it("rejects a withdrawal recipient other than the signer", async function () {
@@ -274,8 +284,8 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
 
     const failedSubmission = {
       simulate: async () => [{ transaction, succeed: true }],
-      submit: async (_chainId: number, [transaction]: { onSubmission?: () => void }[]) => {
-        transaction.onSubmission?.();
+      submit: async (_chainId: number, [transaction]: { onSubmission?: () => void | Promise<void> }[]) => {
+        await transaction.onSubmission?.();
         return [];
       },
     } as never;
