@@ -17,6 +17,8 @@ import {
   toBN,
   winston,
   Address,
+  EvmAddress,
+  toAddressType,
 } from "./";
 
 export function getMainnetUsdgAddress(): string {
@@ -128,14 +130,18 @@ export function isPaxosTransitOrderOutstanding(order: PaxosTransitOrder): boolea
   return PAXOS_TRANSIT_OUTSTANDING_ORDER_STATUSES.has(order.status);
 }
 
-export function getPaxosTransitOfferAssetsForWantAsset(dstChainId: number, wantAsset: string): string[] {
+/**
+ * Resolve the mainnet offer assets that Paxos Transit will bridge into `wantAsset` on `dstChainId`.
+ * Offer assets are always keyed on mainnet, hence the EvmAddress return type.
+ */
+export function getPaxosTransitOfferAssetsForWantAsset(dstChainId: number, wantAsset: Address): EvmAddress[] {
   const destinations = PAXOS_TRANSIT_DESTINATION_TOKENS[dstChainId];
   if (!isDefined(destinations)) {
     return [];
   }
   return Object.entries(destinations)
-    .filter(([, destinationWantAsset]) => destinationWantAsset.toLowerCase() === wantAsset.toLowerCase())
-    .map(([offerAsset]) => offerAsset);
+    .filter(([, destinationWantAsset]) => toAddressType(destinationWantAsset, dstChainId).eq(wantAsset))
+    .map(([offerAsset]) => EvmAddress.from(offerAsset));
 }
 
 export function paxosTransitOrderMatchesRoute(
@@ -220,8 +226,9 @@ export function getPaxosTransitBoringVaultAddress(chainId: number): string {
   return getContractAddress(chainId, "paxosTransitBoringVault");
 }
 
-export function getPaxosTransitDestinationToken(dstChainId: number, l1Token: Address): string | undefined {
-  return PAXOS_TRANSIT_DESTINATION_TOKENS[dstChainId]?.[l1Token.toNative()];
+export function getPaxosTransitDestinationToken(dstChainId: number, l1Token: Address): Address | undefined {
+  const destinationToken = PAXOS_TRANSIT_DESTINATION_TOKENS[dstChainId]?.[l1Token.toNative()];
+  return isDefined(destinationToken) ? toAddressType(destinationToken, dstChainId) : undefined;
 }
 
 export class PaxosTransitClient {

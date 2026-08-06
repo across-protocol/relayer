@@ -19,6 +19,7 @@ import {
   getPaxosTransitOfferAssetsForWantAsset,
   isPaxosTransitOrderOutstanding,
   paxosTransitOrderMatchesRoute,
+  toAddressType,
 } from "../../src/utils";
 import * as contractUtils from "../../src/utils/ContractUtils";
 import * as eventUtils from "../../src/utils/EventUtils";
@@ -409,9 +410,19 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
 
     it("routes mainnet USDG-MAINNET to Robinhood USDG", function () {
       const mainnetUsdgAddress = getMainnetUsdgAddress();
-      expect(getPaxosTransitDestinationToken(l2ChainId, toAddress(mainnetUsdgAddress))).to.equal(l2UsdgAddress);
-      expect(getPaxosTransitOfferAssetsForWantAsset(l2ChainId, l2UsdgAddress).sort()).to.deep.equal(
-        [l1UsdcAddress, mainnetUsdgAddress].sort()
+      expect(getPaxosTransitDestinationToken(l2ChainId, toAddress(mainnetUsdgAddress))?.toNative()).to.equal(
+        l2UsdgAddress
+      );
+      expect(
+        getPaxosTransitOfferAssetsForWantAsset(l2ChainId, toAddressType(l2UsdgAddress, l2ChainId))
+          .map((offerAsset) => offerAsset.toNative())
+          .sort()
+      ).to.deep.equal([l1UsdcAddress, mainnetUsdgAddress].sort());
+    });
+
+    it("does not match a token without a Paxos Transit route", function () {
+      expect(getPaxosTransitOfferAssetsForWantAsset(l2ChainId, toAddressType(l1UsdcAddress, l2ChainId))).to.deep.equal(
+        []
       );
     });
   });
