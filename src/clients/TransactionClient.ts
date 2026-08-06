@@ -78,7 +78,7 @@ export interface AugmentedTransaction {
   unpermissioned?: boolean; // If false, the transaction must be sent from the enqueuer of the method.
   // If true, then can be sent from the MakerDAO multisender contract.
   canFailInSimulation?: boolean;
-  onSubmission?: () => void;
+  onSubmission?: () => void | Promise<void>;
   // Optional batch ID to use to group transactions
   groupId?: string;
   // If true, the transaction is being sent to a non Multicall contract so we can't batch it together
@@ -366,7 +366,7 @@ async function _runTransaction(
   nonce: number | null = null,
   retries?: number,
   retryScaler = 1.0,
-  onSubmission?: () => void
+  onSubmission?: () => void | Promise<void>
 ): Promise<TransactionResponse> {
   const at = "TxUtil#_runTransaction";
   const { provider, signer } = contract;
@@ -412,7 +412,7 @@ async function _runTransaction(
   );
 
   try {
-    onSubmission?.();
+    await onSubmission?.();
     return sendRawTxn
       ? await signer.sendTransaction({ to, data: (args as ethers.utils.BytesLike[])[0], ...txConfig })
       : await contract[method](...args, txConfig);

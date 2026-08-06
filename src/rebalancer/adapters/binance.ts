@@ -554,9 +554,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // rebalancing logic.
   }
 
-  // Only PENDING_DEPOSIT prunes have unconsumed Binance deposits to release.
+  // Only deposit-stage prunes can have unconsumed Binance deposits to release.
   protected override async _onExpiredOrderPruned(status: STATUS, cloid: string, account: EvmAddress): Promise<void> {
-    if (status !== STATUS.PENDING_DEPOSIT) {
+    if (status !== STATUS.PENDING_DEPOSIT && status !== STATUS.PENDING_DEPOSIT_SUBMISSION) {
       return;
     }
     const depositTxnKey = getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account.toNative());
@@ -785,7 +785,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       return reservation;
     } finally {
-      await this.redisCache.releaseLock(lockKey, lockToken);
+      await this.redisCache.releaseLock(lockKey, lockToken).catch((error) =>
+        this.logger.warn({
+          at: "BinanceStablecoinSwapAdapter.reservePendingOrderSlot",
+          message: "Failed to release Binance initiation lock; waiting for its TTL",
+          error,
+        })
+      );
     }
   }
 
@@ -806,7 +812,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   async initializeRebalanceWithTransaction(
     rebalanceRoute: RebalanceRoute,
     amountToTransfer: BigNumber,
-    onSubmission?: () => void
+    onSubmission?: () => void | Promise<void>
   ): Promise<{ amount: BigNumber; transactionHash?: string }> {
     this._assertInitialized();
     this._assertRouteIsSupported(rebalanceRoute);
@@ -882,7 +888,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
       await this._redisCreateOrder(
         cloid,
-        STATUS.PENDING_DEPOSIT,
+        STATUS.PENDING_DEPOSIT_SUBMISSION,
         rebalanceRoute,
         amountToTransfer,
         this.baseSignerAddress
@@ -890,13 +896,22 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       let submissionStarted = false;
       let transactionHash: string;
       try {
-        transactionHash = await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer, () => {
+        transactionHash = await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer, async () => {
+          await this._redisUpdateOrderStatus(
+            cloid,
+            STATUS.PENDING_DEPOSIT_SUBMISSION,
+            STATUS.PENDING_DEPOSIT,
+            this.baseSignerAddress
+          );
           submissionStarted = true;
-          onSubmission?.();
+          await onSubmission?.();
         });
       } catch (error) {
         if (!submissionStarted) {
-          await this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT, this.baseSignerAddress).catch((cleanupError) =>
+          await Promise.all([
+            this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT_SUBMISSION, this.baseSignerAddress),
+            this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT, this.baseSignerAddress),
+          ]).catch((cleanupError) =>
             this.logger.warn({
               at: "BinanceStablecoinSwapAdapter.initializeRebalance",
               message: `Failed to remove pre-submission order ${cloid}; waiting for its TTL`,
@@ -1227,7 +1242,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     sourceToken: string,
     sourceChain: number,
     amountToDeposit: BigNumber,
-    onSubmission?: () => void
+    onSubmission?: () => void | Promise<void>
   ): Promise<string> {
     assert(isDefined(BINANCE_NETWORKS[sourceChain]), "Source chain should be a Binance network");
     assert(
@@ -1310,7 +1325,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     sourceChain: number,
     depositAddress: string,
     amountToDeposit: BigNumber,
-    onSubmission?: () => void
+    onSubmission?: () => void | Promise<void>
   ): Promise<string> {
     const sourceProvider = await getProvider(sourceChain);
     const connectedSigner = this.baseSigner.connect(sourceProvider);

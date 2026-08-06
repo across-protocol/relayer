@@ -4,6 +4,7 @@ import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
+import { STATUS } from "../src/rebalancer/utils/utils";
 import {
   BINANCE_NETWORKS,
   BINANCE_READ_RECV_WINDOW_MS,
@@ -447,12 +448,13 @@ describe("Binance adapter helpers", function () {
       _redisGetNextCloid(): Promise<string>;
       _getEntrypointNetwork(): Promise<number>;
       _redisCreateOrder(): Promise<void>;
+      _redisUpdateOrderStatus(): Promise<void>;
       _depositToBinance(
         cloid: string,
         token: string,
         chainId: number,
         amount: BigNumber,
-        onSubmission: () => void
+        onSubmission: () => void | Promise<void>
       ): Promise<string>;
       _redisDeleteOrder(): Promise<boolean>;
     };
@@ -466,12 +468,19 @@ describe("Binance adapter helpers", function () {
     sinon.stub(internals, "_getTokenInfo").returns({ symbol: "USDT", decimals: 6 });
     sinon.stub(internals, "_redisGetNextCloid").resolves("cloid");
     sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.MAINNET);
-    sinon.stub(internals, "_redisCreateOrder").callsFake(async () => {
+    sinon.stub(internals, "_redisCreateOrder").callsFake(async (_cloid, status) => {
+      expect(status).to.equal(STATUS.PENDING_DEPOSIT_SUBMISSION);
       calls.push("order");
     });
+    sinon.stub(internals, "_redisUpdateOrderStatus").callsFake(async (_cloid, oldStatus, newStatus) => {
+      expect(oldStatus).to.equal(STATUS.PENDING_DEPOSIT_SUBMISSION);
+      expect(newStatus).to.equal(STATUS.PENDING_DEPOSIT);
+      calls.push("promote");
+    });
     sinon.stub(internals, "_depositToBinance").callsFake(async (_cloid, _token, _chain, _amount, onSubmission) => {
-      calls.push("deposit");
-      onSubmission();
+      calls.push("submission");
+      await onSubmission();
+      calls.push("broadcast");
       throw new Error("post-broadcast redis failure");
     });
     const deleteOrder = sinon.stub(internals, "_redisDeleteOrder").resolves(true);
@@ -479,7 +488,7 @@ describe("Binance adapter helpers", function () {
     await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
       "post-broadcast redis failure"
     );
-    expect(calls).to.deep.equal(["order", "deposit"]);
+    expect(calls).to.deep.equal(["order", "submission", "promote", "broadcast"]);
     expect(deleteOrder.called).to.equal(false);
   });
 

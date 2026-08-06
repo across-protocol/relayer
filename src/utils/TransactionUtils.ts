@@ -270,7 +270,7 @@ export function getTarget(targetAddress: string):
 export async function submitTransaction(
   transaction: AugmentedTransaction,
   transactionClient: TransactionClient,
-  onSubmission?: () => void
+  onSubmission?: () => void | Promise<void>
 ): Promise<TransactionResponse> {
   const { reason, succeed, transaction: txnRequest } = (await transactionClient.simulate([transaction]))[0];
   const { contract: targetContract, method, ...txnRequestData } = txnRequest;
