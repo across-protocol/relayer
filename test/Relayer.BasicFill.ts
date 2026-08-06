@@ -90,6 +90,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
 
   let chainIds: number[];
 
+  // Set by any test that pins an SDK helper for its own duration; unwound after that test.
+  let archStub: sinon.SinonStub | undefined;
+
   const updateAllClients = async (): Promise<void> => {
     await configStoreClient.update();
     await hubPoolClient.update();
@@ -246,6 +249,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
     // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
     // "reasonable" block number based off the block time when looking at quote timestamps.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+  });
+
+  afterEach(function () {
+    archStub?.restore();
+    archStub = undefined;
   });
 
   describe("Relayer: Check for Unfilled v3 Deposits and Fill", function () {
@@ -607,7 +615,23 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
     });
 
     it("Correctly defers destination chain fills", async function () {
-      const { average: avgBlockTime } = await arch.evm.averageBlockTime(spokePool_2.provider);
+      // Pin the average block time both this test and the relayer read, rather than sampling the hardhat
+      // chain, which cannot produce a usable figure. The SDK averages over a fixed 120-block window
+      // (`latest - 10` back to `latest - 130`) and memoises the result per chainId for 15 minutes, and
+      // every spoke pool here shares hardhat's chainId — so the value is whatever the first test in this
+      // mocha process measured. Below 130 blocks that window's lower bound is negative, ethers resolves
+      // it relative to the head and clamps at genesis, and the sample collapses while the divisor stays
+      // 120: the average comes back as low as 1/120 s/block, and zero or negative at heights 120-129.
+      // minFillTime is a duration derived from the average whereas the relayer ages deposits in blocks,
+      // so too small an average desynchronises the two and the fill asserted below never happens. How
+      // long the chain is at first measurement depends on which files precede this one, which the CI
+      // test split varies — hence the sporadic failure.
+      const avgBlockTime = 1;
+      archStub = sinon.stub(arch, "evm").value({
+        ...arch.evm,
+        averageBlockTime: async () => ({ average: avgBlockTime, blockRange: 120 }),
+      });
+
       const minDepositAgeBlocks = 4; // Fill after deposit has aged this # of blocks.
       const minFillTime = Math.ceil(minDepositAgeBlocks * avgBlockTime);
 
@@ -644,8 +668,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
       }
       expect(lastSpyLogIncludes(spy, "due to insufficient fill time for")).to.be.true;
 
-      // Mine enough blocks such that the deposit has aged sufficiently.
-      for (let i = 0; i < minFillTime * minDepositAgeBlocks * 10; i++) {
+      // Mine enough blocks such that the deposit has aged sufficiently. The relayer ages the deposit as
+      // floor(avgBlockTime * blocksElapsed), so invert that to size the loop; scaling minFillTime by a
+      // fixed factor instead undershoots whenever avgBlockTime is below 1.
+      const blocksToMine = Math.ceil((minFillTime + 1) / avgBlockTime);
+      for (let i = 0; i < blocksToMine; i++) {
         await hre.network.provider.send("evm_mine");
       }
       await updateAllClients();
@@ -927,6 +954,18 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
     });
 
     it("Ignores deposits with quote times in future", async function () {
+      // Pin the average block time rather than sampling the hardhat chain. The relayer derives its
+      // quoteTimestamp tolerance from it (HUB_SPOKE_BLOCK_LAG * average), and the SDK memoises the
+      // sample per chainId for 15 minutes — so the tolerance this test sees is whatever the first
+      // file in the mocha process measured. Any preceding file that warps block.timestamp forward
+      // (setSpokePoolTime et al) leaves an average large enough to push the tolerance past the 100s
+      // offset used below, and the deposit gets filled instead of skipped. Which files precede this
+      // one is decided by the CI test split, so the failure moves around as test files are added.
+      archStub = sinon.stub(arch, "evm").value({
+        ...arch.evm,
+        averageBlockTime: async () => ({ average: 1, blockRange: 120 }),
+      });
+
       const { quoteTimestamp } = await depositV3(
         spokePool_1,
         destinationChainId,

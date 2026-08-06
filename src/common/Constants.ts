@@ -229,6 +229,17 @@ export const DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER = "1.0"; // Multiplier on pr
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 50;
 
+// Drift margin on a finalization batch's summed estimates.
+export const MULTICALL3_BATCH_GAS_MULTIPLIER = 1.1;
+
+// Allowance for the Multicall3 wrapper, which the summed estimates don't price: the transaction's own intrinsic gas
+// and calldata, plus dispatch and the 1/64 withheld from each call. The multiplier can't cover it, being
+// proportional to a sum that excludes it — a lone call estimating at 48,773 gets 53,650 and needs 54,870.
+export const MULTICALL3_BATCH_GAS_OVERHEAD = 100_000;
+
+// Split a finalization batch above this. Under EIP-7825's 2^24 per-transaction cap, less room for the above.
+export const MULTICALL3_BATCH_GAS_CEILING = 15_000_000;
+
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
 // with useless bundle block eval numbers and other data that isn't helpful for the dataworker to know. This does not
 // include any invalid bundles that got through, such as at blocks 15001113 or 15049343 which are missing
@@ -353,7 +364,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.INK]: ["ETH", "WETH", "USDT", "USDC"],
   [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
-  [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "LSK", "WBTC"],
+  [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.MEGAETH]: ["WETH", "USDT"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.MONAD]: ["USDC", "USDT"], // @TODO: Add WBTC after its added to the chain token list

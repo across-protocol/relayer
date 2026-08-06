@@ -107,12 +107,19 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public getDepositKey(token: string, originChainId: number, depositId: string): string {
     return this._getDepositKey(token, originChainId, depositId);
   }
-  protected override getPeripheryContract(originChainId: number): Contract {
-    return this.getPeripheryContractFn(originChainId);
+  protected override getPeripheryContract(originChainId: number, targetAddress?: string): Contract {
+    return this.getPeripheryContractFn(originChainId, targetAddress);
+  }
+  public setPeripheryTargets(targets: { [chainId: number]: { [address: string]: Contract } }): void {
+    this.peripheryTargets = targets;
+  }
+  public runResolvePeriphery(chainId: number, targetAddress?: string): Contract | undefined {
+    return this.resolvePeriphery(chainId, targetAddress);
   }
 
   // Configurable function properties -- tests assign return values; overrides track call counts.
-  public getPeripheryContractFn: (chainId: number) => Contract = (chainId) => this.spokePoolPeripheries[chainId];
+  public getPeripheryContractFn: (chainId: number, targetAddress?: string) => Contract = (chainId) =>
+    this.spokePoolPeripheries[chainId];
   public queryGaslessApiFn: () => Promise<AnyGaslessDepositMessage[]> = async () => [];
   public initiateDepositFn: (msg: AnyGaslessDepositMessage) => Promise<TransactionReceipt | null> = async () => null;
   public initiateFillFn: (deposit: GaslessDeposit) => Promise<GaslessFillSubmissionResult | null> = async () => null;
@@ -895,6 +902,73 @@ describe("GaslessRelayer", function () {
       expect(relayer.initiateDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(0);
       expectCctpTransitions(relayer.stateTransitions[nonce]);
+    });
+  });
+
+  describe("Periphery target resolution (multi-generation)", function () {
+    let defaultPeriphery: Contract;
+    let legacyPeriphery: Contract;
+
+    beforeEach(async function () {
+      const [signer] = await ethers.getSigners();
+      const legacySmock = await smock.fake(SPOKE_POOL_PERIPHERY_ABI);
+      defaultPeriphery = new Contract(fakePeripherySmock.address, SPOKE_POOL_PERIPHERY_ABI, signer.provider);
+      legacyPeriphery = new Contract(legacySmock.address, SPOKE_POOL_PERIPHERY_ABI, signer.provider);
+      relayer.setPeripheryTargets({
+        [ORIGIN_CHAIN_ID]: {
+          [defaultPeriphery.address.toLowerCase()]: defaultPeriphery,
+          [legacyPeriphery.address.toLowerCase()]: legacyPeriphery,
+        },
+      });
+    });
+
+    it("resolves the default periphery when the message names no target", function () {
+      const resolved = relayer.runResolvePeriphery(ORIGIN_CHAIN_ID, undefined);
+      expect(resolved?.address).to.equal(defaultPeriphery.address);
+    });
+
+    it("resolves an allowlisted legacy target case-insensitively", function () {
+      for (const form of [
+        legacyPeriphery.address,
+        legacyPeriphery.address.toLowerCase(),
+        legacyPeriphery.address.toUpperCase().replace("0X", "0x"),
+      ]) {
+        const resolved = relayer.runResolvePeriphery(ORIGIN_CHAIN_ID, form);
+        expect(resolved?.address).to.equal(legacyPeriphery.address);
+      }
+    });
+
+    it("returns undefined for a target outside the allowlist", function () {
+      expect(relayer.runResolvePeriphery(ORIGIN_CHAIN_ID, "0x" + "99".repeat(20))).to.be.undefined;
+    });
+
+    it("drops messages naming an unknown periphery generation before the state machine", async function () {
+      const msg = { ...makeTestDepositMessage(), targetAddress: "0x" + "99".repeat(20) };
+      relayer.queryGaslessApiFn = async () => [msg];
+      relayer.initiateDepositFn = async () => makeReceipt();
+
+      await relayer.runEvaluateApiSignatures();
+
+      expect(relayer.initiateDepositCalls).to.equal(0);
+      expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.be.undefined;
+    });
+
+    it("processes messages naming an allowlisted legacy generation", async function () {
+      const msg = {
+        ...makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" }),
+        targetAddress: legacyPeriphery.address,
+      };
+      const receipt = makeReceipt();
+      relayer.queryGaslessApiFn = async () => [msg];
+      relayer.initiateDepositFn = async () => receipt;
+      relayer.extractDepositFromReceiptFn = () =>
+        makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+      relayer.initiateFillFn = async () => receipt;
+
+      await relayer.runEvaluateApiSignatures();
+
+      expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+      expect(relayer.initiateDepositCalls).to.equal(1);
     });
   });
 

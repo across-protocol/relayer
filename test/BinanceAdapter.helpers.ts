@@ -10,6 +10,7 @@ import {
   BINANCE_WITHDRAW_RECV_WINDOW_MS,
   BINANCE_WITHDRAWAL_STATUS,
   BigNumber,
+  bnZero,
   CHAIN_IDs,
   EvmAddress,
   getEthersCompatibleAddress,
@@ -269,6 +270,161 @@ describe("Binance adapter helpers", function () {
     expect(debug.calledOnce).to.equal(true);
     expect(debug.getCall(0).args[0].error).to.include("[RW00441]");
     expect(debug.getCall(0).args[0].error).to.include("required unlock confirmations for withdrawal");
+  });
+
+  it("treats Binance 031026 withdrawal suspensions as a retryable wait state", async function () {
+    const [signer] = await ethers.getSigners();
+    const warn = sinon.stub();
+    const adapter = new BinanceStablecoinSwapAdapter(
+      { ...TEST_LOGGER, warn } as unknown as winston.Logger,
+      {} as RebalancerConfig,
+      signer,
+      {} as CctpAdapter,
+      {} as OftAdapter
+    );
+    const internals = adapter as unknown as {
+      baseSignerAddress: EvmAddress;
+      binanceApiClient: { withdraw: sinon.SinonStub };
+      _withdraw(cloid: string, quantity: number, destinationToken: string, destinationChain: number): Promise<boolean>;
+      _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
+      _getTokenInfo(token: string, chainId: number): { decimals: number };
+    };
+    internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    internals.binanceApiClient = {
+      withdraw: sinon.stub().rejects(new Error("[031026] Withdrawal is not available for this currency.")),
+    };
+    sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.AVALANCHE);
+    sinon.stub(internals, "_getTokenInfo").returns({ decimals: 6 });
+
+    // A suspended withdrawal window must not escape as an exception: an unhandled rejection here crashes the whole
+    // rebalancer run, which is what turned a routine Binance maintenance window into a paging loop.
+    const result = await internals._withdraw("cloid", 100, "USDT", CHAIN_IDs.AVALANCHE);
+
+    expect(result).to.equal(false);
+    expect(internals.binanceApiClient.withdraw.calledOnce).to.equal(true);
+    expect(warn.calledOnce).to.equal(true);
+    expect(warn.getCall(0).args[0].error).to.include("[031026]");
+    expect(warn.getCall(0).args[0].destinationNetwork).to.equal(BINANCE_NETWORKS[CHAIN_IDs.AVALANCHE]);
+  });
+
+  it("skips initializing a rebalance whose destination withdrawal network is suspended", async function () {
+    const [signer] = await ethers.getSigners();
+    const warn = sinon.stub();
+    const adapter = new BinanceStablecoinSwapAdapter(
+      { ...TEST_LOGGER, warn } as unknown as winston.Logger,
+      {} as RebalancerConfig,
+      signer,
+      {} as CctpAdapter,
+      {} as OftAdapter
+    );
+    const internals = adapter as unknown as {
+      initializeRebalance(route: unknown, amountToTransfer: BigNumber): Promise<BigNumber>;
+      _assertInitialized(): void;
+      _assertRouteIsSupported(route: unknown): void;
+      _routeRequiresSwap(sourceToken: string, destinationToken: string): boolean;
+      _getAccountCoins(symbol: string, skipCache?: boolean): Promise<unknown>;
+      _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
+      _getBridgingFees(route: unknown, amountToTransfer: BigNumber): Promise<BigNumber>;
+    };
+    sinon.stub(internals, "_assertInitialized");
+    sinon.stub(internals, "_assertRouteIsSupported");
+    sinon.stub(internals, "_routeRequiresSwap").returns(false);
+    sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.AVALANCHE);
+    const accountCoins = sinon.stub(internals, "_getAccountCoins").resolves({
+      symbol: "USDT",
+      balance: "0",
+      networkList: [
+        {
+          name: BINANCE_NETWORKS[CHAIN_IDs.AVALANCHE],
+          coin: "USDT",
+          withdrawMin: "1",
+          withdrawMax: "1000000",
+          withdrawFee: "0",
+          contractAddress: TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.AVALANCHE],
+          withdrawEnable: false,
+        },
+      ],
+    });
+    const bridgingFees = sinon.stub(internals, "_getBridgingFees").resolves(bnZero);
+
+    const result = await internals.initializeRebalance(
+      {
+        sourceChain: CHAIN_IDs.MAINNET,
+        sourceToken: "USDT",
+        destinationChain: CHAIN_IDs.AVALANCHE,
+        destinationToken: "USDT",
+        adapter: "binance",
+      },
+      toBNWei("6000", 6)
+    );
+
+    expect(result.eq(bnZero)).to.equal(true);
+    // The deposit leg into Binance is not reversible from this adapter, so the gate has to run before any pricing or
+    // bridging work commits funds to a route we cannot withdraw from.
+    expect(bridgingFees.called).to.equal(false);
+    expect(warn.calledOnce).to.equal(true);
+    expect(warn.getCall(0).args[0].destinationNetwork).to.equal(BINANCE_NETWORKS[CHAIN_IDs.AVALANCHE]);
+    // Withdrawal availability has to be read fresh — the account-coins cache uses a long TTL, so a cached entry would
+    // keep the route dead after Binance reopens withdrawals.
+    expect(accountCoins.getCall(0).args[1]).to.equal(true);
+  });
+
+  it("treats an absent withdrawEnable flag as withdrawable", async function () {
+    const [signer] = await ethers.getSigners();
+    const warn = sinon.stub();
+    const adapter = new BinanceStablecoinSwapAdapter(
+      { ...TEST_LOGGER, warn } as unknown as winston.Logger,
+      {} as RebalancerConfig,
+      signer,
+      {} as CctpAdapter,
+      {} as OftAdapter
+    );
+    const internals = adapter as unknown as {
+      initializeRebalance(route: unknown, amountToTransfer: BigNumber): Promise<BigNumber>;
+      _assertInitialized(): void;
+      _assertRouteIsSupported(route: unknown): void;
+      _routeRequiresSwap(sourceToken: string, destinationToken: string): boolean;
+      _getAccountCoins(symbol: string, skipCache?: boolean): Promise<unknown>;
+      _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
+      _getBridgingFees(route: unknown, amountToTransfer: BigNumber): Promise<BigNumber>;
+    };
+    sinon.stub(internals, "_assertInitialized");
+    sinon.stub(internals, "_assertRouteIsSupported");
+    sinon.stub(internals, "_routeRequiresSwap").returns(false);
+    sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.AVALANCHE);
+    sinon.stub(internals, "_getAccountCoins").resolves({
+      symbol: "USDT",
+      balance: "0",
+      // No withdrawEnable key at all, which is how Binance renders some accountCoins entries.
+      networkList: [
+        {
+          name: BINANCE_NETWORKS[CHAIN_IDs.AVALANCHE],
+          coin: "USDT",
+          withdrawMin: "1",
+          withdrawMax: "1000000",
+          withdrawFee: "0",
+          contractAddress: TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.AVALANCHE],
+        },
+      ],
+    });
+    // Proves the gate let the route through: execution reached the next external call rather than returning early.
+    const bridgingFees = sinon.stub(internals, "_getBridgingFees").rejects(new Error("reached bridging fees"));
+
+    await expect(
+      internals.initializeRebalance(
+        {
+          sourceChain: CHAIN_IDs.MAINNET,
+          sourceToken: "USDT",
+          destinationChain: CHAIN_IDs.AVALANCHE,
+          destinationToken: "USDT",
+          adapter: "binance",
+        },
+        toBNWei("6000", 6)
+      )
+    ).to.be.rejectedWith("reached bridging fees");
+
+    expect(bridgingFees.calledOnce).to.equal(true);
+    expect(warn.called).to.equal(false);
   });
 
   it("builds Tron direct deposit transfers with ethers-compatible addresses", async function () {

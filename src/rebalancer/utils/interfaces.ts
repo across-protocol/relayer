@@ -28,6 +28,10 @@ export interface RebalanceRoute {
 export interface RebalancerClient {
   adapters: Record<string, RebalancerAdapter>;
   getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }>;
+  // Names of adapters whose most recent getPendingRebalances() read threw and was treated as empty. Writers must
+  // not initiate new rebalances while this is non-empty: the failed adapter's in-flight rebalances are invisible
+  // to virtual balances, so an apparent deficit may already be covered.
+  getAdaptersWithFailedPendingReads(): string[];
 }
 
 export interface OrderDetails {

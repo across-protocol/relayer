@@ -5,10 +5,11 @@ import {
   normalizeIntegratorId,
   restructureGaslessDeposits,
   buildGaslessDepositTx,
+  getLegacySpokePoolPeripheryAddresses,
   isErc2612PermitNonceConsumed,
   resolveTokenInfoForLog,
 } from "../src/utils/GaslessUtils";
-import { toAddressType, getTokenInfo } from "../src/utils";
+import { CHAIN_IDs, toAddressType, getTokenInfo } from "../src/utils";
 import { APIGaslessDepositResponse } from "../src/interfaces";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
 
@@ -173,6 +174,12 @@ describe("GaslessUtils", function () {
       expect(result.integratorId).to.be.undefined;
     });
 
+    it("carries the periphery target (swapTx.to) through to the flattened message", function () {
+      const apiResponse = makeApiResponse();
+      const [result] = restructureGaslessDeposits([apiResponse], TEST_LOGGER);
+      expect(result.targetAddress).to.equal(DUMMY_ADDRESS);
+    });
+
     it("maps swapAndBridge permit payloads with permitApproval fields", function () {
       const apiResponse = {
         swapTx: {
@@ -262,6 +269,7 @@ describe("GaslessUtils", function () {
       }
       expect(result.permitApprovalSignature).to.equal(DUMMY_SIGNATURE);
       expect(result.permitApprovalDeadline).to.equal(123456);
+      expect(result.targetAddress).to.equal(DUMMY_ADDRESS);
     });
 
     it("skips deposits with unsupported permit type and logs warning", function () {
@@ -278,6 +286,29 @@ describe("GaslessUtils", function () {
         message: "Skipping gasless deposit with unsupported permit type.",
         permitType: "BridgeWitness",
       });
+    });
+  });
+
+  describe("getLegacySpokePoolPeripheryAddresses", function () {
+    it("returns the shared previous-generation deploy for standard EVM chains", function () {
+      for (const chainId of [CHAIN_IDs.MAINNET, CHAIN_IDs.BASE, CHAIN_IDs.ARBITRUM, CHAIN_IDs.POLYGON]) {
+        expect(getLegacySpokePoolPeripheryAddresses(chainId)).to.deep.equal([
+          "0x10D8b8DaA26d307489803e10477De69C0492B610",
+        ]);
+      }
+    });
+
+    it("returns the per-cohort deploys for exception chains", function () {
+      for (const chainId of [CHAIN_IDs.AVALANCHE, CHAIN_IDs.ROBINHOOD]) {
+        expect(getLegacySpokePoolPeripheryAddresses(chainId)).to.deep.equal([
+          "0xe05E3798Ce2ae9afCb637fb53BF5a51253BBe2af",
+        ]);
+      }
+      for (const chainId of [CHAIN_IDs.LENS, CHAIN_IDs.ZK_SYNC]) {
+        expect(getLegacySpokePoolPeripheryAddresses(chainId)).to.deep.equal([
+          "0x5a148a9260c1f670429361c34d40b477280f01a9",
+        ]);
+      }
     });
   });
 

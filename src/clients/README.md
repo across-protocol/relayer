@@ -78,7 +78,7 @@ The Profit Client supports a registry of named "policies" that can short-circuit
 A policy named `<NAME>` (uppercased in env var keys) matches when:
 
 1. The destination chain ID is in `RELAYER_POLICY_<NAME>_DESTINATIONS_<srcSymbol>_<dstSymbol>` (comma-separated chain IDs).
-2. Either `RELAYER_POLICY_<NAME>_ORIGINS_<srcSymbol>_<dstSymbol>` is set and the origin chain ID is in that comma-separated list, **or** that env var is unset and the origin chain supports unmetered fast rebalance for the input token (hub chain, CCTP-eligible USDC, or OFT-eligible routes — see `isUnmeteredFastRebalance` in `src/utils/FillUtils.ts`). An explicit origin allowlist overrides the fast-rebalance default.
+2. Either `RELAYER_POLICY_<NAME>_ORIGINS_<srcSymbol>_<dstSymbol>` is set and the origin chain ID is in that comma-separated list, **or** that env var is unset and the origin chain supports unmetered fast rebalance for the input token (hub chain, CCTP-eligible USDC, OFT-eligible USDT, or Paxos Transit routes — see `isUnmeteredFastRebalance` in `src/utils/FillUtils.ts`). An explicit origin allowlist overrides the fast-rebalance default.
 
 `srcSymbol` and `dstSymbol` are the raw token symbols of the deposit's input and output tokens — they bypass the pegged-token symbol remap used by other profitability env vars.
 
@@ -101,6 +101,14 @@ RELAYER_POLICY_EXAMPLE_GAS_MULTIPLIER=0
 This client is responsible for submitting transactions on-chain and therefore for setting the transaction's gas price values, nonce, and implements important retry and error decoding logic. It is designed to be shared across all code modules that submit on-chain transactions.
 
 For transactions submitted with `ensureConfirmation: true`, confirmation is awaited with a bounded wait (6 s, or 24 s on mainnet) that retains ethers' replacement detection. The wait bound is only a sampling cadence — replacement decisions are block-driven: a transaction is resubmitted at the same nonce with freshly-priced gas once the chain has produced at least 2 blocks without including it. An externally-replaced transaction (`TRANSACTION_REPLACED`) is resubmitted immediately, except when the mined replacement carries identical calldata ("repriced" — i.e. the original won the race against its own replacement), which is adopted as-is. Reverted transactions propagate as submission failures; exhausted resubmissions emit an error-level log (paging the on-call) and return the unconfirmed response.
+
+`willSucceed()` sizes a transaction with `eth_estimateGas` and the gas limit is used as-is unless the transaction declares a `gasLimitMultiplier`; a transaction that already carries a `gasLimit` is taken to have been simulated in advance and passes straight through.
+
+`Multicall3.tryAggregate(requireSuccess=false, ...)` must not be sized by estimating itself: it catches inner reverts, so a batch whose calls all ran out of gas still succeeds and the estimate prices the failure. Submitted raw it mines a batch that did nothing, with `status: 1` and no events (this discarded a 76,064.59 USDC CCTP v2 mint on 2026-08-05, and stalled two OP-stack withdrawals the same day). Padding doesn't fix it either, since OP-stack `SafeCall.callWithMinGas` gates on `gasleft()` rather than on consumption. `buildFinalizationBatches()` sizes each batch from its calls' own estimates instead, plus `MULTICALL3_BATCH_GAS_OVERHEAD` for the wrapper those estimates don't price. A call that no longer estimates has no size, so it is dropped rather than charged against a limit summed from its neighbours — `tryAggregate` contains a revert, but not gas exhaustion.
+
+Every batch is therefore sized, and none is submitted unsized. Batches also set `ensureConfirmation: true`, so a batch that reverts outright surfaces as a submission failure rather than a hash — `submit()` stops there and returns the hashes it already has, and the chain's messages report unconfirmed instead of being credited to a transaction that carried nothing. It also keeps a chain's batches sequential, so a stuck early nonce is repriced rather than leaving the later ones queued behind it.
+
+`test/Finalizer.BatchBuilding.test.ts` and `test/MultiCallerClient.TryAggregateGas.test.ts` pin these properties against real Multicall3 bytecode.
 
 ## Across API Client
 

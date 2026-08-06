@@ -13,7 +13,7 @@ import {
   winston,
 } from "../src/utils";
 import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
-import { DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } from "../src/clients";
+import { AcrossApiHttpError, DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } from "../src/clients";
 import { DepositAddressHandler } from "../src/deposit-address/DepositAddressHandler";
 import { DepositAddressHandlerConfig } from "../src/deposit-address/DepositAddressHandlerConfig";
 import { ERC20_TRANSFER_TOPIC } from "../src/deposit-address/withdrawPayload";
@@ -398,6 +398,16 @@ describe("DepositAddressHandler.processExecution v3 routing", function () {
     expect(withdrawStub.notCalled).to.equal(true);
   });
 
+  it("routes a v3 correct_transfer marked refund-only to the v3 withdraw path", async function () {
+    const message = depositMessageV3();
+    (handler as unknown as { refundOnlyDepositKeys: Set<string> }).refundOnlyDepositKeys.add(
+      `${message.depositAddress}:${message.erc20Transfer.transactionHash}`
+    );
+    await (handler as unknown as Internals).processExecution(message);
+    expect(withdrawV3Stub.calledOnceWithExactly(message)).to.equal(true);
+    expect(v3Stub.notCalled).to.equal(true);
+  });
+
   it("drops v3 intent_refund (not yet supported)", async function () {
     const message = depositMessageV3();
     message.erc20Transfer.transferClassification = "intent_refund";
@@ -531,6 +541,133 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
       transactionHash: TRON_TX_HASH,
       logIndex: 55,
     });
+  });
+});
+
+describe("DepositAddressHandler._getExecuteTx below-minimum handling", function () {
+  let handler: DepositAddressHandler;
+  let executeStub: sinon.SinonStub;
+  let redisSetStub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
+  const depositKey = `${DEPOSIT_ADDRESS}:${"0x" + "3".repeat(64)}`;
+
+  type Internals = {
+    _getExecuteTx: (m: DepositAddressMessageV3) => Promise<DepositAddressExecuteResponse | undefined>;
+    refundOnlyDepositKeys: Set<string>;
+  };
+
+  function internals(): Internals {
+    return handler as unknown as Internals;
+  }
+
+  beforeEach(function () {
+    const config = {} as unknown as DepositAddressHandlerConfig;
+    warnStub = sinon.stub();
+    const logger = { warn: warnStub, debug: sinon.stub() } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    (handler as unknown as { _signerAddress: EvmAddress })._signerAddress = EvmAddress.from(SIGNER);
+    executeStub = sinon.stub();
+    (handler as unknown as { api: { executeDepositAddress: sinon.SinonStub } }).api = {
+      executeDepositAddress: executeStub,
+    };
+    redisSetStub = sinon.stub().resolves();
+    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: redisSetStub };
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("treats AMOUNT_BELOW_MINIMUM as terminal: no retry, persists the refund-only key", async function () {
+    executeStub.rejects(new AcrossApiHttpError(422, "amount must be >= 5000000", "AMOUNT_BELOW_MINIMUM", "amount"));
+    const result = await internals()._getExecuteTx(depositMessageV3());
+    expect(result).to.equal(undefined);
+    expect(executeStub.callCount).to.equal(1); // no retries on a terminal rejection
+    expect(internals().refundOnlyDepositKeys.has(depositKey)).to.equal(true);
+    expect(redisSetStub.calledOnce).to.equal(true);
+    expect(redisSetStub.firstCall.args[1]).to.equal(JSON.stringify([depositKey]));
+  });
+
+  it("keys on the error code, not the status, so a status change does not silently re-enable retries", async function () {
+    executeStub.rejects(new AcrossApiHttpError(400, "amount must be >= 5000000", "AMOUNT_BELOW_MINIMUM", "amount"));
+    await internals()._getExecuteTx(depositMessageV3());
+    expect(executeStub.callCount).to.equal(1);
+    expect(internals().refundOnlyDepositKeys.has(depositKey)).to.equal(true);
+  });
+
+  it("retries other terminal-looking 422s and persists no refund-only key", async function () {
+    executeStub.rejects(new AcrossApiHttpError(422, "cannot price token", "UNPRICEABLE_TOKEN"));
+    const result = await internals()._getExecuteTx(depositMessageV3());
+    expect(result).to.equal(undefined);
+    expect(executeStub.callCount).to.equal(4); // initial attempt + 3 retries
+    expect(internals().refundOnlyDepositKeys.size).to.equal(0);
+    expect(redisSetStub.notCalled).to.equal(true);
+  });
+
+  it("retries a plain HttpError carrying no code", async function () {
+    executeStub.rejects(new HttpError(500, "HTTP 500: Internal Server Error"));
+    await internals()._getExecuteTx(depositMessageV3());
+    expect(executeStub.callCount).to.equal(4);
+    expect(internals().refundOnlyDepositKeys.size).to.equal(0);
+  });
+});
+
+describe("DepositAddressHandler.initiateDepositV3 below-minimum refund fallback", function () {
+  let handler: DepositAddressHandler;
+  let executeStub: sinon.SinonStub;
+  let withdrawV3Stub: sinon.SinonStub;
+  let warnStub: sinon.SinonStub;
+  const originChainId = 42161;
+  const depositKey = `${DEPOSIT_ADDRESS}:${"0x" + "3".repeat(64)}`;
+
+  type Internals = {
+    initiateDepositV3: (m: DepositAddressMessageV3) => Promise<void>;
+    refundOnlyDepositKeys: Set<string>;
+    observedExecutedDeposits: Record<number, Set<string>>;
+  };
+
+  function internals(): Internals {
+    return handler as unknown as Internals;
+  }
+
+  beforeEach(function () {
+    const config = { relayerOriginChains: [originChainId] } as unknown as DepositAddressHandlerConfig;
+    warnStub = sinon.stub();
+    const logger = { warn: warnStub, debug: sinon.stub() } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    (handler as unknown as { _signerAddress: EvmAddress })._signerAddress = EvmAddress.from(SIGNER);
+    executeStub = sinon.stub();
+    (handler as unknown as { api: { executeDepositAddress: sinon.SinonStub } }).api = {
+      executeDepositAddress: executeStub,
+    };
+    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: sinon.stub().resolves() };
+    (handler as unknown as { observedExecutedDeposits: Record<number, Set<string>> }).observedExecutedDeposits = {
+      [originChainId]: new Set<string>(),
+    };
+    (handler as unknown as { getDepositAddressBalance: sinon.SinonStub }).getDepositAddressBalance = sinon
+      .stub()
+      .resolves(toBN("5000"));
+    withdrawV3Stub = sinon.stub().resolves();
+    Object.assign(handler, { initiateWithdrawV3: withdrawV3Stub });
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("refunds in the same tick when the execute is rejected as below minimum", async function () {
+    executeStub.rejects(new AcrossApiHttpError(422, "amount must be >= 5000000", "AMOUNT_BELOW_MINIMUM", "amount"));
+    const message = depositMessageV3();
+    await internals().initiateDepositV3(message);
+    expect(executeStub.callCount).to.equal(1);
+    expect(withdrawV3Stub.calledOnceWithExactly(message)).to.equal(true);
+    // No execute happened, so the deposit in-flight lock must be released for the next poll.
+    expect(internals().observedExecutedDeposits[originChainId].has(depositKey)).to.equal(false);
+    expect(internals().refundOnlyDepositKeys.has(depositKey)).to.equal(true);
+  });
+
+  it("warns and does not refund when the execute failed for any other reason", async function () {
+    executeStub.rejects(new AcrossApiHttpError(500, "boom", "UNEXPECTED_ERROR"));
+    await internals().initiateDepositV3(depositMessageV3());
+    expect(withdrawV3Stub.notCalled).to.equal(true);
+    expect(warnStub.called).to.equal(true);
+    expect(internals().refundOnlyDepositKeys.size).to.equal(0);
   });
 });
 
@@ -1055,5 +1192,59 @@ describe("DepositAddressHandler._publishDepositExecuted", function () {
       true;
     await (handler as unknown as Internals)._publishDepositExecuted(receipt, depositMessageV3());
     expect(publishStub.called).to.equal(false);
+  });
+});
+
+describe("DepositAddressHandler refund-only key persistence", function () {
+  let handler: DepositAddressHandler;
+  let redisGetStub: sinon.SinonStub;
+  const depositKey = `${DEPOSIT_ADDRESS}:${"0x" + "3".repeat(64)}`;
+
+  type Internals = {
+    _loadRefundOnlyKeysFromRedis: () => Promise<void>;
+    evaluateDepositAddresses: () => Promise<void>;
+    refundOnlyDepositKeys: Set<string>;
+  };
+
+  function internals(): Internals {
+    return handler as unknown as Internals;
+  }
+
+  beforeEach(function () {
+    const config = { botIdentifier: "test-bot" } as unknown as DepositAddressHandlerConfig;
+    handler = new DepositAddressHandler(
+      { debug: sinon.stub(), warn: sinon.stub(), error: sinon.stub() } as unknown as winston.Logger,
+      config,
+      {} as unknown as Signer,
+      []
+    );
+    redisGetStub = sinon.stub().resolves(undefined);
+    (handler as unknown as { redisCache: { get: sinon.SinonStub; set: sinon.SinonStub } }).redisCache = {
+      get: redisGetStub,
+      set: sinon.stub().resolves(),
+    };
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("loads persisted keys under a dedicated Redis key", async function () {
+    redisGetStub.resolves(JSON.stringify([depositKey]));
+    await internals()._loadRefundOnlyKeysFromRedis();
+    expect(redisGetStub.firstCall.args[0]).to.equal("deposit-address:refund-only-deposit-keys:test-bot");
+    expect(internals().refundOnlyDepositKeys.has(depositKey)).to.equal(true);
+  });
+
+  it("keeps a key the indexer still returns and prunes one it no longer does", async function () {
+    const message = depositMessageV3();
+    Object.assign(handler, {
+      _queryIndexerApi: sinon.stub().resolves([message]),
+      processExecution: sinon.stub().resolves(),
+    });
+    internals().refundOnlyDepositKeys.add(depositKey);
+    internals().refundOnlyDepositKeys.add(`${DEPOSIT_ADDRESS}:${"0x" + "9".repeat(64)}`);
+
+    await internals().evaluateDepositAddresses();
+
+    expect([...internals().refundOnlyDepositKeys]).to.deep.equal([depositKey]);
   });
 });

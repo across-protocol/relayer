@@ -89,23 +89,34 @@ async function updateAdapters(
   for (const adapterName of adapterNamesToUpdate) {
     const adapter = rebalancerClient.adapters[adapterName];
     timerStart = performance.now();
-    // @todo Decide when to sweep, for now do it before updating rebalance statuses. In theory, it shouldn't really
-    // matter when we sweep.
-    if (sweepableAdapters.includes(adapterName)) {
-      await adapter.sweepIntermediateBalances();
+    // Isolate per-adapter failures so one venue's API outage doesn't block sweeping and status updates for the
+    // remaining adapters (or abort the whole run). The failed adapter's in-flight orders simply don't progress
+    // until its next healthy run.
+    try {
+      // @todo Decide when to sweep, for now do it before updating rebalance statuses. In theory, it shouldn't really
+      // matter when we sweep.
+      if (sweepableAdapters.includes(adapterName)) {
+        await adapter.sweepIntermediateBalances();
+        logger.debug({
+          at: `index.ts:${logLabel}`,
+          message: `Completed sweeping intermediate balances for adapter ${adapter.constructor.name}`,
+          duration: performance.now() - timerStart,
+        });
+        timerStart = performance.now();
+      }
+      await adapter.updateRebalanceStatuses();
       logger.debug({
         at: `index.ts:${logLabel}`,
-        message: `Completed sweeping intermediate balances for adapter ${adapter.constructor.name}`,
+        message: `Completed updating rebalance statuses for adapter ${adapter.constructor.name}`,
         duration: performance.now() - timerStart,
       });
-      timerStart = performance.now();
+    } catch (err) {
+      logger.warn({
+        at: `index.ts:${logLabel}`,
+        message: `Failed to sweep/update rebalance statuses for ${adapterName} adapter; continuing with remaining adapters`,
+        err: String(err),
+      });
     }
-    await adapter.updateRebalanceStatuses();
-    logger.debug({
-      at: `index.ts:${logLabel}`,
-      message: `Completed updating rebalance statuses for adapter ${adapter.constructor.name}`,
-      duration: performance.now() - timerStart,
-    });
   }
 
   // Refresh on-chain balances before `loadCumulativeModeBalances` reads them. The initial
@@ -144,6 +155,25 @@ async function initializeRebalancerRun(
     inventoryClient,
     rebalancerClient,
   };
+}
+
+/**
+ * @notice Returns true when it is unsafe to initiate new rebalances because the InventoryClient's most recent
+ * pending-rebalance read silently dropped one or more adapters (e.g. their venue API was down). In that state
+ * virtual balances undercount in-flight rebalances, so an apparent deficit may already be covered and initiating
+ * against it would duplicate the in-flight rebalance. Skipping initiation for one run is cheap; runs are frequent.
+ */
+function shouldSkipNewRebalances(inventoryClient: InventoryClient, logLabel: string): boolean {
+  const failedAdapters = inventoryClient.rebalancerClient.getAdaptersWithFailedPendingReads();
+  if (failedAdapters.length === 0) {
+    return false;
+  }
+  logger.warn({
+    at: `index.ts:${logLabel}`,
+    message: "Skipping initiation of new rebalances because pending-rebalance state is incomplete",
+    failedAdapters,
+  });
+  return true;
 }
 
 export function loadCumulativeModeBalances(
@@ -188,7 +218,7 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
   let timerStart = performance.now();
   // Finally, send out new rebalances:
   try {
-    if (process.env.SEND_REBALANCES === "true") {
+    if (process.env.SEND_REBALANCES === "true" && !shouldSkipNewRebalances(inventoryClient, logLabel)) {
       timerStart = performance.now();
       const maxFeePct = toBNWei(process.env.MAX_FEE_PCT ?? "2.5", 18);
       await (rebalancerClient as CumulativeBalanceRebalancerClient).rebalanceInventory(
@@ -226,7 +256,7 @@ export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner
 
   let timerStart = performance.now();
   try {
-    if (process.env.SEND_REBALANCES === "true") {
+    if (process.env.SEND_REBALANCES === "true" && !shouldSkipNewRebalances(inventoryClient, logLabel)) {
       timerStart = performance.now();
       const maxFeePct = toBNWei(process.env.MAX_FEE_PCT ?? "2.5", 18);
       await (rebalancerClient as SameAssetRebalancerClient).rebalanceInventory(inventoryClient, maxFeePct);

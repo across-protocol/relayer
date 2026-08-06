@@ -293,12 +293,21 @@ Lifecycle note:
   upstream exchange API is down), the client logs a warning and aggregates the remaining adapters instead of throwing.
   Consumers such as the relayer's `InventoryClient` keep running with that adapter's in-flight rebalances temporarily
   uncounted in virtual balances.
+- `getAdaptersWithFailedPendingReads()` reports which adapters were dropped from the most recent
+  `getPendingRebalances()` aggregation. Read-only consumers can ignore it, but the write-mode runtimes must check it
+  before initiating new rebalances: while any adapter's pending state is invisible, an apparent deficit may already be
+  covered by an in-flight rebalance, so initiating against it would duplicate that rebalance.
 
 Runtime entrypoints in `src/rebalancer/`:
 
 - `runCumulativeBalanceRebalancer` (supported operational path).
 - `runSameAssetRebalancer` (directional SameAsset operational path).
 - The runtime updates adapter status/sweeps first, then refreshes `TokenClient` balances before applying adapter-reported pending rebalance adjustments and evaluating new rebalances. The refresh is required because the sweeps and `updateRebalanceStatuses` calls submit OFT/CCTP/Hypercore transactions that leave the initial `TokenClient.update()` snapshot stale; without it, `rebalanceInventory` can size a new bridge against a pre-burn balance and crash on the underlying simulation revert.
+- Venue-outage degradation: the status/sweep update loop isolates per-adapter failures (a venue whose API is down is
+  logged with a warning and skipped for the run while the remaining adapters progress), both run entrypoints skip
+  initiating new rebalances for the run whenever `getAdaptersWithFailedPendingReads()` is non-empty (see the
+  duplicate-rebalance rationale above), and a route whose `getEstimatedCost` read fails is excluded from that
+  round's route competition instead of aborting the pass.
 
 ## Interactions with Other Bots and Clients
 
@@ -338,6 +347,20 @@ signer account and finalizer withdrawal recipients can be configured separately,
 EVM withdrawal recipients and the running signer account before applying this shared Binance-account deduction. Pending
 rebalance loading errors surface normally so operators can investigate instead of silently sweeping without the
 deduction.
+
+Binance suspends withdrawals per coin/network pair during chain upgrades and wallet maintenance, reporting `031026` on
+the withdrawal call. A suspended pair stays listed in `accountCoins().networkList` for the whole window, so the
+`withdrawEnable` flag on the network entry — not the pair's presence in the list — is what determines whether the
+withdrawal leg will be accepted. The Binance adapter handles this on both sides of an order. `initializeRebalance`
+checks `withdrawEnable` on the resolved destination network and skips the route before committing funds, because the
+deposit leg into Binance cannot be reversed from this adapter and an order that cannot be withdrawn would otherwise
+strand its tranche on the exchange until `REBALANCER_PENDING_ORDER_TTL` elapses. Account coins are read with the cache
+bypassed on that path, since the flag flips whenever a withdrawal window opens or closes and the cache entry uses a long
+TTL. For orders already holding an exchange balance, `_withdraw` treats `031026` the same way it treats `RW00441` — a
+retryable wait state that leaves the order pending, warns, and lets the existing prune/finalizer handover reclaim the
+deposit if the suspension outlasts the order TTL. Withdrawal availability is deliberately *not* asserted in
+`initialize()`: those assertions run at boot and throw, so gating them on a transient venue suspension would stop the
+bot from starting at all.
 
 ## Venue-specific operational note
 
