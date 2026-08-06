@@ -157,6 +157,12 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     // Fetch the deposit address from the binance API.
     const _withdrawalHistory = await getBinanceWithdrawals(binanceApiClient, this.tokenSymbol, fromTimestamp);
     // Filter withdrawals to this bridge's own destination network, and drop those associated with a swap rebalance.
+    // @dev Keyed off `this.l2chainId` rather than a hardcoded BSC so the reconciliation follows the instance. This is
+    // a no-op today (this bridge is only registered at CANONICAL_L2_BRIDGE[BSC] and its native subclass at
+    // CUSTOM_L2_BRIDGE[BSC][WETH]) and is not on its own sufficient to support another destination: a Binance deposit
+    // carries no destination tag, so `queryL1BridgeInitiationEvents` cannot attribute one deposit to a specific
+    // destination, and `binanceFinalizer` only withdraws to ETH or BSC. Non-BSC Binance rebalances belong on
+    // SameAssetRebalancerClient, which tracks the destination in Redis. See src/rebalancer/README.md.
     const withdrawalHistory = await filterAsync(_withdrawalHistory, async (withdrawal) => {
       const withdrawalType = await getBinanceWithdrawalType(withdrawal);
       return (
