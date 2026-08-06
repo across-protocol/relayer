@@ -20,6 +20,7 @@ import { BaseBridgeAdapter, BridgeEvents, BridgeTransactionDetails } from "./Bas
 export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
   private adapter?: RebalancerBinanceStablecoinSwapAdapter;
   private route?: RebalanceRoute;
+  private readonly preparedAmounts: string[] = [];
 
   constructor(
     l2chainId: number,
@@ -45,14 +46,18 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     const maxAmount = adapter.config.maxAmountsToTransfer[route.sourceToken]?.[this.hubChainId];
     const cappedAmount = isDefined(maxAmount) && amount.gt(maxAmount) ? maxAmount : amount;
     const maxPendingOrders = adapter.config.maxPendingOrders.binance ?? 2;
-    if ((await adapter.getPendingOrders()).length >= maxPendingOrders) {
+    if ((await adapter.getPendingOrders()).length + this.preparedAmounts.length >= maxPendingOrders) {
       return bnZero;
     }
     const maxFee = cappedAmount.mul(toBNWei(process.env.MAX_FEE_PCT ?? "2.5")).div(toBNWei(100));
     if ((await adapter.getEstimatedCost(route, cappedAmount, false)).gt(maxFee)) {
       return bnZero;
     }
-    return adapter.getValidatedRebalanceAmount(route, cappedAmount);
+    const preparedAmount = await adapter.getValidatedRebalanceAmount(route, cappedAmount);
+    if (preparedAmount.gt(bnZero)) {
+      this.preparedAmounts.push(preparedAmount.toString());
+    }
+    return preparedAmount;
   }
 
   async sendL1ToL2Transfer(
@@ -62,13 +67,18 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     amount: BigNumber,
     simMode: boolean
   ): Promise<TransactionResponse> {
-    const preparedAmount = await this.prepareL1ToL2Transfer(toAddress, l1Token, l2Token, amount);
+    const adapter = await this.getAdapter(l1Token, l2Token);
+    this.assertRecipient(toAddress, adapter.baseSignerAddress);
+    let preparedAmount = amount;
+    if (!this.consumePreparedAmount(preparedAmount)) {
+      preparedAmount = await this.prepareL1ToL2Transfer(toAddress, l1Token, l2Token, amount);
+      this.consumePreparedAmount(preparedAmount);
+    }
     assert(preparedAmount.gt(bnZero), "Binance stablecoin swap adapter declined transfer");
     if (simMode) {
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
-    assert(isDefined(this.adapter));
-    const result = await this.adapter.initializeRebalanceWithTransaction(this.getRoute(), preparedAmount);
+    const result = await adapter.initializeRebalanceWithTransaction(this.getRoute(), preparedAmount);
     assert(result.amount.gt(bnZero), "Binance stablecoin swap adapter declined transfer during initialization");
     assert(isDefined(result.transactionHash), "Binance stablecoin swap adapter did not submit a direct deposit");
     return { hash: result.transactionHash } as TransactionResponse;
@@ -125,5 +135,14 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
   private getRoute(): RebalanceRoute {
     assert(isDefined(this.route));
     return this.route;
+  }
+
+  private consumePreparedAmount(amount: BigNumber): boolean {
+    const index = this.preparedAmounts.indexOf(amount.toString());
+    if (index === -1) {
+      return false;
+    }
+    this.preparedAmounts.splice(index, 1);
+    return true;
   }
 }
