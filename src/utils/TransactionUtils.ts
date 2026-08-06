@@ -269,7 +269,8 @@ export function getTarget(targetAddress: string):
 
 export async function submitTransaction(
   transaction: AugmentedTransaction,
-  transactionClient: TransactionClient
+  transactionClient: TransactionClient,
+  onSubmission?: () => void
 ): Promise<TransactionResponse> {
   const { reason, succeed, transaction: txnRequest } = (await transactionClient.simulate([transaction]))[0];
   const { contract: targetContract, method, ...txnRequestData } = txnRequest;
@@ -280,6 +281,7 @@ export async function submitTransaction(
     throw new Error(`${message} (${reason})`);
   }
 
+  onSubmission?.();
   const response = await transactionClient.submit(transaction.chainId, [transaction]);
   if (response.length === 0) {
     throw new Error(

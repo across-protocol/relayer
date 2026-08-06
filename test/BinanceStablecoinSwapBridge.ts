@@ -1,6 +1,6 @@
 import { BinanceStablecoinSwapAdapter, BridgeTransferDeclinedError } from "../src/adapter/bridges";
 import { RebalanceRoute } from "../src/rebalancer/utils/interfaces";
-import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, ZERO_BYTES } from "../src/utils";
+import { CHAIN_IDs, EvmAddress, submitTransaction, TOKEN_SYMBOLS_MAP, ZERO_BYTES } from "../src/utils";
 import { createSpyLogger, ethers, expect, toBNWei } from "./utils";
 
 describe("BinanceStablecoinSwapAdapter bridge", function () {
@@ -156,6 +156,33 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
         false
       )
     ).to.be.rejectedWith("confirmation unavailable");
+  });
+
+  it("marks submission after transaction simulation", async function () {
+    const transaction = { contract: { address: ZERO_BYTES }, method: "transfer", args: [], chainId: 1 } as never;
+    let submissionStarted = false;
+    const failedSimulation = {
+      simulate: async () => [{ transaction, succeed: false, reason: "reverted" }],
+      submit: async () => [],
+    } as never;
+
+    await expect(
+      submitTransaction(transaction, failedSimulation, () => {
+        submissionStarted = true;
+      })
+    ).to.be.rejectedWith("Failed to simulate");
+    expect(submissionStarted).to.be.false;
+
+    const failedSubmission = {
+      simulate: async () => [{ transaction, succeed: true }],
+      submit: async () => [],
+    } as never;
+    await expect(
+      submitTransaction(transaction, failedSubmission, () => {
+        submissionStarted = true;
+      })
+    ).to.be.rejectedWith("failed to submit onchain");
+    expect(submissionStarted).to.be.true;
   });
 
   it("leaves bridge-event accounting to Redis-backed pending rebalances", async function () {

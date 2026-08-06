@@ -810,7 +810,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         )} from ${getNetworkName(sourceChain)} before depositing into Binance in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
         expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
-      onSubmission?.();
       const amountReceivedFromBridge = await this._bridgeToChain(
         sourceToken,
         sourceChain,
@@ -1206,8 +1205,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         amountToDeposit,
         amountReadable
       );
-      onSubmission?.();
-      txnHash = await this._submitTransaction(txn);
+      txnHash = await this._submitTransaction(txn, onSubmission);
     }
     // TTL must outlive the finalizer lookback so completed swaps are not re-counted as finalizable.
     // The cloid -> deposit txn mapping lets the prune path find abandoned deposit tags.
@@ -1288,8 +1286,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         sourceChain
       )}`,
     };
-    onSubmission?.();
-    return this._submitTransaction(transaction);
+    return this._submitTransaction(transaction, onSubmission);
   }
 
   private async _getBinanceBalance(token: string): Promise<number> {
