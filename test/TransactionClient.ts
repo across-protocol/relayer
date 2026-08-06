@@ -90,7 +90,13 @@ describe("TransactionClient", function () {
     }
 
     const chainId = chainIds[0];
-    const transaction = { chainId, contract: { address, signer }, method, args: [] } as AugmentedTransaction;
+    const transaction = {
+      chainId,
+      contract: { address, signer },
+      method,
+      args: [],
+      onSubmission: () => undefined,
+    } as AugmentedTransaction;
     await expect(new RejectingClient(spyLogger).submit(chainId, [transaction])).to.be.rejectedWith(
       TransactionBroadcastRejectedError
     );
@@ -221,9 +227,12 @@ describe("TransactionClient", function () {
         return Promise.reject(makeEthersError(ethers.errors.CALL_EXCEPTION));
       };
 
-      await expect(txnClient.submit(chainId, [makeConfirmationTxn(chainId)])).to.be.rejectedWith(
-        TransactionRevertedError
-      );
+      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      expect(txnResponses.length).to.equal(0);
+
+      const callbackTransaction = makeConfirmationTxn(chainId);
+      callbackTransaction.onSubmission = () => undefined;
+      await expect(txnClient.submit(chainId, [callbackTransaction])).to.be.rejectedWith(TransactionRevertedError);
     });
 
     it("Resubmits on TRANSACTION_REPLACED", async function () {

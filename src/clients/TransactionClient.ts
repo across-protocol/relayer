@@ -351,7 +351,7 @@ export class TransactionClient {
           error: stringifyThrownValue(error),
           notificationPath: "across-error",
         });
-        if (error instanceof DefinitiveTransactionFailure) {
+        if (error instanceof DefinitiveTransactionFailure && (txn.onSubmission || txn.onBroadcast)) {
           throw error;
         }
         return txnResponses;
