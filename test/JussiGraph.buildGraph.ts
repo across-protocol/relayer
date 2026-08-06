@@ -33,7 +33,7 @@ import {
   stableJsonStringify,
 } from "../src/jussi/buildGraph";
 import { JussiApiClient } from "../src/jussi/JussiApiClient";
-import { parseBuildJussiGraphFlags } from "../scripts/buildJussiGraph";
+import { getEvmTopologyChainIds, parseBuildJussiGraphFlags } from "../scripts/buildJussiGraph";
 import { estimateEdgeEconomics, estimateQuotedBridgeBreakdown } from "../src/jussi/economics/edgeCosts";
 import { serializeEdgeClassDefinition } from "../src/jussi/economics/rates";
 import * as jussiQuotes from "../src/jussi/economics/quotes";
@@ -1345,6 +1345,24 @@ describe("Jussi graph builder helpers", function () {
       [...artifact.edge_candidates.map((edge) => edge.edge_id)].sort((left, right) => left.localeCompare(right))
     );
     expect(stableJsonStringify(artifact)).to.equal(stableJsonStringify(rebuiltArtifact));
+  });
+
+  it("derives client chains from inventory-managed topology nodes", async function () {
+    const prepared = await prepareGraphTopology({
+      relayerConfig: new RelayerConfig({
+        HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+        RELAYER_INVENTORY_CONFIG: JSON.stringify({
+          tokenConfig: { USDT: { [CHAIN_IDs.AVALANCHE]: { targetPct: 5, thresholdPct: 2 } } },
+        }),
+      }),
+      rebalancerConfig: new RebalancerConfig({
+        HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+        REBALANCER_CONFIG: JSON.stringify({ maxAmountsToTransfer: { USDT: "1000" } }),
+      }),
+    });
+
+    expect(getEvmTopologyChainIds(prepared)).to.include(CHAIN_IDs.AVALANCHE);
+    expect(prepared.rebalancerConfig.chainIds).to.not.include(CHAIN_IDs.AVALANCHE);
   });
 
   it("excludes legacy mesh OFT routes from Jussi topology while keeping direct Binance Tron routes", async function () {
