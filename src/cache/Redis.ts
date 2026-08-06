@@ -76,20 +76,18 @@ export class RedisCache implements RedisCacheInterface {
     });
   }
 
-  async moveSetMemberAndExpire(
-    oldSet: string,
-    newSet: string,
-    member: string,
+  async setAndExtend(
     key: string,
+    value: string,
+    existingKey: string,
     ttl: number
   ): Promise<unknown> {
     const results = await this.client
       .multi()
-      .sRem(this.getNamespacedKey(oldSet), member)
-      .sAdd(this.getNamespacedKey(newSet), member)
-      .expire(this.getNamespacedKey(key), ttl)
+      .set(this.getNamespacedKey(key), value, { expiration: { type: "EX", value: ttl } })
+      .expire(this.getNamespacedKey(existingKey), ttl)
       .exec();
-    assert(results[2], `Cannot extend missing Redis key ${key}`);
+    assert(results[1], `Cannot extend missing Redis key ${existingKey}`);
     return results;
   }
 

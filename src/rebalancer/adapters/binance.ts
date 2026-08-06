@@ -55,7 +55,12 @@ import {
   blockExplorerLink,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
-import { getPendingBridgeDepositRecoveryKey, getPendingBridgeDepositTxnKey, STATUS } from "../utils/utils";
+import {
+  getPendingBridgeDepositRecoveryKey,
+  getPendingBridgeDepositTxnKey,
+  getPendingBridgeOrderKey,
+  STATUS,
+} from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
 import { AugmentedTransaction, DefinitiveTransactionFailure, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
@@ -917,8 +922,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
             cloid,
             STATUS.PENDING_DEPOSIT_SUBMISSION,
             STATUS.PENDING_DEPOSIT,
-            this.baseSignerAddress,
-            2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+            this.baseSignerAddress
           );
           submissionStarted = true;
           await onSubmission?.();
@@ -1320,9 +1324,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const key = getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative());
     for (let attempt = 0; ; attempt++) {
       try {
-        const result = await this.redisCache.set(
+        const result = await this.redisCache.setAndExtend(
           key,
           JSON.stringify({ chainId, transactionHash }),
+          getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative()),
           2 * FINALIZER_TOKENBRIDGE_LOOKBACK
         );
         assert(isDefined(result), "Failed to persist Binance deposit transaction recovery data");
