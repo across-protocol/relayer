@@ -24,6 +24,8 @@ import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
 import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
 import ZKSTACK_SHARED_BRIDGE_ABI from "./abi/ZkStackSharedBridge.json";
 import ZKSTACK_USDC_BRIDGE_ABI from "./abi/ZkStackUSDCBridge.json";
+import ZKSTACK_L2_ASSET_ROUTER_ABI from "./abi/ZkStackL2AssetRouter.json";
+import ZKSTACK_L2_BASE_TOKEN_ABI from "./abi/ZkStackL2BaseToken.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI from "./abi/ArbitrumErc20GatewayRouterL2.json";
 import ARBITRUM_ERC20_GATEWAY_L1_ABI from "./abi/ArbitrumErc20GatewayL1.json";
@@ -394,9 +396,19 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0000000000000000000000000000000000010004",
       abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
     },
+    assetRouter: {
+      address: "0x0000000000000000000000000000000000010003",
+      abi: ZKSTACK_L2_ASSET_ROUTER_ABI,
+    },
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
+    },
+    // Same address as `nativeToken`, but with the ABI needed to initiate and track base token withdrawals.
+    // `nativeToken` is deliberately left alone because the L1->L2 bridges rely on its Weth-shaped ABI.
+    l2BaseToken: {
+      address: "0x000000000000000000000000000000000000800A",
+      abi: ZKSTACK_L2_BASE_TOKEN_ABI,
     },
     weth: {
       address: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91",
@@ -707,10 +719,19 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0000000000000000000000000000000000010004",
       abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
     },
+    assetRouter: {
+      address: "0x0000000000000000000000000000000000010003",
+      abi: ZKSTACK_L2_ASSET_ROUTER_ABI,
+    },
     // The native token for Lens is GHO, not ETH.
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
+    },
+    // Same address as `nativeToken`, but with the ABI needed to initiate and track base token withdrawals.
+    l2BaseToken: {
+      address: "0x000000000000000000000000000000000000800A",
+      abi: ZKSTACK_L2_BASE_TOKEN_ABI,
     },
     // This is Lens wrapped GHO, NOT WETH.
     wrappedNativeToken: {
@@ -953,9 +974,18 @@ export const CONTRACT_ADDRESSES: {
       address: "0x0000000000000000000000000000000000010004",
       abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
     },
+    assetRouter: {
+      address: "0x0000000000000000000000000000000000010003",
+      abi: ZKSTACK_L2_ASSET_ROUTER_ABI,
+    },
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
+    },
+    // Same address as `nativeToken`, but with the ABI needed to initiate and track base token withdrawals.
+    l2BaseToken: {
+      address: "0x000000000000000000000000000000000000800A",
+      abi: ZKSTACK_L2_BASE_TOKEN_ABI,
     },
     wrappedNativeToken: {
       address: "0xeee5a340Cdc9c179Db25dea45AcfD5FE8d4d3eB8",

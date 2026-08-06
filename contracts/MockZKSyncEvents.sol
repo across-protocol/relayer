@@ -134,3 +134,56 @@ contract zkSync_L2Bridge {
         return keccak256(abi.encodePacked(token));
     }
 }
+
+// Mocks the ZK Stack NativeTokenVault. The same contract is deployed on both L1 and L2: it emits BridgeBurn on
+// whichever side initiates a transfer and BridgeMint on the side that receives it. Used to unit test the
+// L2 -> L1 withdrawal adapters in src/adapter/l2Bridges/.
+contract zkStack_NativeTokenVault {
+    event BridgeBurn(
+        uint256 indexed chainId,
+        bytes32 indexed assetId,
+        address indexed sender,
+        address receiver,
+        uint256 amount
+    );
+
+    event BridgeMint(uint256 indexed chainId, bytes32 indexed assetId, address receiver, uint256 amount);
+
+    address public WETH_TOKEN;
+    mapping(address => bytes32) public assetId;
+    mapping(bytes32 => address) public tokenAddress;
+
+    function registerToken(address token) external {
+        bytes32 id = keccak256(abi.encodePacked(token));
+        assetId[token] = id;
+        tokenAddress[id] = token;
+    }
+
+    function setWethToken(address token) external {
+        WETH_TOKEN = token;
+    }
+
+    function emitBridgeBurn(
+        uint256 chainId,
+        address token,
+        address sender,
+        address receiver,
+        uint256 amount
+    ) external {
+        emit BridgeBurn(chainId, assetId[token], sender, receiver, amount);
+    }
+
+    function emitBridgeMint(uint256 chainId, address token, address receiver, uint256 amount) external {
+        emit BridgeMint(chainId, assetId[token], receiver, amount);
+    }
+}
+
+// Mocks the ZK Stack L2BaseToken system contract, which emits Withdrawal when the chain's base token is
+// withdrawn to L1.
+contract zkStack_L2BaseToken {
+    event Withdrawal(address indexed _l2Sender, address indexed _l1Receiver, uint256 _amount);
+
+    function emitWithdrawal(address l2Sender, address l1Receiver, uint256 amount) external {
+        emit Withdrawal(l2Sender, l1Receiver, amount);
+    }
+}

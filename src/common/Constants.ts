@@ -61,6 +61,8 @@ import {
   BridgeApi as L2BridgeApi,
   TokenSplitterBridge as L2TokenSplitterBridge,
   PaxosTransitL2Bridge,
+  ZKStackBridge as L2ZKStackBridge,
+  ZKStackNativeBridge as L2ZKStackNativeBridge,
 } from "../adapter/l2Bridges";
 import { getContractAddress } from "./ContractAddresses";
 import { OFTL2Bridge } from "../adapter/l2Bridges/OFTL2Bridge";
@@ -467,7 +469,9 @@ export const CANONICAL_BRIDGE = resolveCanonicalBridges();
 
 export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2BridgeAdapter>> = {
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
+  [CHAIN_IDs.LENS]: L2ZKStackBridge,
   [CHAIN_IDs.LISK]: L2OpStackBridge,
+  [CHAIN_IDs.ZK_SYNC]: L2ZKStackBridge,
   [CHAIN_IDs.ZORA]: L2OpStackBridge,
 };
 
@@ -722,6 +726,10 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   },
   [CHAIN_IDs.ZK_SYNC]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
+    // WETH is zkSync's wrapped base token, which the native token vault refuses to burn, so it cannot take the
+    // canonical asset router route that the other ZK_SYNC tokens use. It is unwrapped and withdrawn as ETH
+    // instead, which the relayer then re-wraps on the hub chain.
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2ZKStackNativeBridge,
   },
 };
 

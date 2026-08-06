@@ -1,4 +1,5 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
+import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 import { Contract, Signer } from "ethers";
 import { Provider as zksProvider, Wallet as zkWallet, utils as zksUtils } from "zksync-ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
@@ -10,6 +11,7 @@ import {
   getTokenInfo,
   getUniqueLogIndex,
   Multicall2Call,
+  paginatedEventQuery,
   winston,
   zkSync as zkSyncUtils,
   assert,
@@ -23,7 +25,7 @@ import {
   CHAIN_IDs,
 } from "../../utils";
 import { getRedisCache } from "../../cache/Redis";
-import { FinalizerPromise, CrossChainMessage } from "../types";
+import { AddressesToFinalize, FinalizerPromise, CrossChainMessage } from "../types";
 
 type TokensBridged = interfaces.TokensBridged;
 
@@ -41,13 +43,128 @@ const IGNORED_WITHDRAWALS = [
 ];
 
 /**
+ * Discovers withdrawals initiated by monitored EOAs rather than by the SpokePool. The rebalancer withdraws excess
+ * inventory directly from the relayer's own address, and those withdrawals do not emit TokensBridged, so without
+ * this they would initiate on L2 and never be finalized on L1.
+ *
+ * ERC20 withdrawals are burned by the L2 native token vault; base token (ETH on zkSync Era, GHO on Lens)
+ * withdrawals go through the L2BaseToken system contract. Everything downstream is keyed on the L2 transaction
+ * hash, so the events only need coercing into the TokensBridged shape.
+ *
+ * @returns Synthetic TokensBridged events for EOA-initiated withdrawals.
+ */
+async function getEOAWithdrawals(
+  logger: winston.Logger,
+  spokePoolClient: SpokePoolClient,
+  hubPoolClient: HubPoolClient,
+  senderAddresses: AddressesToFinalize,
+  latestBlockToFinalize: number
+): Promise<TokensBridged[]> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
+  const { chainId: l2ChainId } = spokePoolClient;
+  const { chainId: l1ChainId } = hubPoolClient;
+
+  // Withdrawals sent by the SpokePool are already covered by getTokensBridged().
+  const senders = Array.from(senderAddresses.keys())
+    .filter((address) => address.isEVM())
+    .map((address) => address.toEvmAddress())
+    .filter((sender) => sender !== spokePoolClient.spokePool.address);
+  if (senders.length === 0) {
+    return [];
+  }
+
+  // A ZK Stack chain that has not had its system contracts registered yet should simply not have EOA withdrawals
+  // discovered, rather than taking down finalization for the SpokePool's withdrawals too.
+  const vaultEntry = CONTRACT_ADDRESSES[l2ChainId]?.["nativeTokenVault"];
+  const baseTokenEntry = CONTRACT_ADDRESSES[l2ChainId]?.["l2BaseToken"];
+  if (!isDefined(vaultEntry?.address) || !isDefined(baseTokenEntry?.address)) {
+    logger.debug({
+      at: "Finalizer#ZkSyncFinalizer",
+      message: `Skipping EOA withdrawal discovery on chain ${l2ChainId}: system contracts are not registered.`,
+    });
+    return [];
+  }
+
+  const provider = spokePoolClient.spokePool.provider;
+  const searchConfig = { ...spokePoolClient.eventSearchConfig, to: latestBlockToFinalize };
+
+  const { address: vaultAddress, abi: vaultAbi } = getContractEntry(l2ChainId, "nativeTokenVault");
+  const nativeTokenVault = new Contract(vaultAddress, vaultAbi, provider);
+  const { address: baseTokenAddress, abi: baseTokenAbi } = getContractEntry(l2ChainId, "l2BaseToken");
+  const l2BaseToken = new Contract(baseTokenAddress, baseTokenAbi, provider);
+
+  const [burnEvents, baseTokenWithdrawalEvents] = await Promise.all([
+    // The burn is emitted against the counterparty chain, which for a withdrawal is the hub chain.
+    paginatedEventQuery(nativeTokenVault, nativeTokenVault.filters.BridgeBurn(l1ChainId, null, senders), searchConfig),
+    paginatedEventQuery(l2BaseToken, l2BaseToken.filters.Withdrawal(senders), searchConfig),
+  ]);
+
+  // A base token withdrawal is attributed to the chain's wrapped native token, since that is the token the
+  // inventory book is keyed on and the only one getTokenInfo() can resolve. The base token itself is a system
+  // contract, not an Across token.
+  const wrappedNativeTokenEntry = PUBLIC_NETWORKS[l2ChainId].nativeToken === "ETH" ? "weth" : "wrappedNativeToken";
+  const wrappedNativeToken = CONTRACT_ADDRESSES[l2ChainId]?.[wrappedNativeTokenEntry]?.address;
+
+  // Cache the promise rather than the resolved value so that concurrent lookups of the same assetId share one call.
+  const l2TokenByAssetId: { [assetId: string]: Promise<string> } = {};
+  const resolveBurnedToken = (assetId: string): Promise<string> =>
+    (l2TokenByAssetId[assetId] ??= nativeTokenVault.tokenAddress(assetId));
+
+  const candidates = [
+    ...(await sdkUtils.mapAsync(burnEvents, async (event) => ({
+      event,
+      amountToReturn: event.args.amount,
+      l2TokenAddress: await resolveBurnedToken(event.args.assetId),
+    }))),
+    ...baseTokenWithdrawalEvents.map((event) => ({
+      event,
+      amountToReturn: event.args._amount,
+      l2TokenAddress: wrappedNativeToken,
+    })),
+  ];
+
+  return candidates.flatMap(({ event, amountToReturn, l2TokenAddress }) => {
+    // Skip anything Across does not recognise rather than throwing: a single unknown token would otherwise abort
+    // finalization for every withdrawal on this chain.
+    if (!isDefined(l2TokenAddress)) {
+      return [];
+    }
+    try {
+      getTokenInfo(EvmAddress.from(l2TokenAddress), l2ChainId);
+    } catch {
+      logger.debug({
+        at: "Finalizer#ZkSyncFinalizer",
+        message: `Skipping EOA withdrawal of unrecognised token ${l2TokenAddress}.`,
+        txnRef: event.transactionHash,
+      });
+      return [];
+    }
+
+    const { transactionHash, transactionIndex, ...rest } = event;
+    return [
+      {
+        ...rest,
+        amountToReturn,
+        chainId: l2ChainId,
+        leafId: 0,
+        l2TokenAddress: EvmAddress.from(l2TokenAddress),
+        txnRef: transactionHash,
+        txnIndex: transactionIndex,
+      } as TokensBridged,
+    ];
+  });
+}
+
+/**
  * @returns Withdrawal finalization calldata and metadata.
  */
 export async function zkSyncFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  _l1SpokePoolClient: SpokePoolClient,
+  senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId: l1ChainId } = hubPoolClient;
@@ -74,8 +191,16 @@ export async function zkSyncFinalizer(
     message: "ZkSync TokensBridged event filter",
     toBlock: latestBlockToFinalize,
   });
+  const eoaWithdrawals = await getEOAWithdrawals(
+    logger,
+    spokePoolClient,
+    hubPoolClient,
+    senderAddresses,
+    latestBlockToFinalize
+  );
   const withdrawalsToQuery = spokePoolClient
     .getTokensBridged()
+    .concat(eoaWithdrawals)
     .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize)
     .filter(({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef));
   const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
