@@ -121,6 +121,10 @@ export function getPendingBridgeDepositTxnKey(redisPrefix: string, cloid: string
   return `${redisPrefix}deposit-txn:${cloid}:${account.toLowerCase()}`;
 }
 
+export function getPendingBridgeDepositRecoveryKey(redisPrefix: string, cloid: string, account: string): string {
+  return `${redisPrefix}deposit-recovery:${cloid}:${account.toLowerCase()}`;
+}
+
 export async function redisGetOrderDetailsForAdapter(
   redisCache: RedisCache,
   adapterRedisPrefix: string,
