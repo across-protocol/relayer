@@ -25,7 +25,7 @@ import {
 export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
   private adapter?: RebalancerBinanceStablecoinSwapAdapter;
   private route?: RebalanceRoute;
-  private readonly preparedAmounts: string[] = [];
+  private readonly preparedTransfers: { amount: string; reservation: string }[] = [];
 
   constructor(
     l2chainId: number,
@@ -51,16 +51,17 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     const maxAmount = adapter.config.maxAmountsToTransfer[route.sourceToken]?.[this.hubChainId];
     const cappedAmount = isDefined(maxAmount) && amount.gt(maxAmount) ? maxAmount : amount;
     const maxPendingOrders = adapter.config.maxPendingOrders.binance ?? 2;
-    if ((await adapter.getPendingOrders()).length + this.preparedAmounts.length >= maxPendingOrders) {
-      return bnZero;
-    }
     const maxFee = cappedAmount.mul(toBNWei(process.env.MAX_FEE_PCT ?? "2.5")).div(toBNWei(100));
     if ((await adapter.getEstimatedCost(route, cappedAmount, false)).gt(maxFee)) {
       return bnZero;
     }
     const preparedAmount = await adapter.getValidatedRebalanceAmount(route, cappedAmount);
     if (preparedAmount.gt(bnZero)) {
-      this.preparedAmounts.push(preparedAmount.toString());
+      const reservation = await adapter.reservePendingOrderSlot(maxPendingOrders);
+      if (!isDefined(reservation)) {
+        return bnZero;
+      }
+      this.preparedTransfers.push({ amount: preparedAmount.toString(), reservation });
     }
     return preparedAmount;
   }
@@ -75,12 +76,15 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     const adapter = await this.getAdapter(l1Token, l2Token);
     this.assertRecipient(toAddress, adapter.baseSignerAddress);
     let preparedAmount = amount;
-    if (!this.consumePreparedAmount(preparedAmount)) {
+    let reservation = this.consumePreparedTransfer(preparedAmount);
+    if (!isDefined(reservation)) {
       preparedAmount = await this.prepareL1ToL2Transfer(toAddress, l1Token, l2Token, amount);
-      this.consumePreparedAmount(preparedAmount);
+      reservation = this.consumePreparedTransfer(preparedAmount);
     }
     assert(preparedAmount.gt(bnZero), "Binance stablecoin swap adapter declined transfer");
+    assert(isDefined(reservation), "Binance stablecoin swap adapter did not reserve an order slot");
     if (simMode) {
+      await adapter.releasePendingOrderSlot(reservation);
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
     let submissionStarted = false;
@@ -88,12 +92,14 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
       .initializeRebalanceWithTransaction(this.getRoute(), preparedAmount, () => {
         submissionStarted = true;
       })
-      .catch((error) => {
+      .catch(async (error) => {
         if (!submissionStarted) {
+          await adapter.releasePendingOrderSlot(reservation);
           throw new BridgeTransferDeclinedError("Binance stablecoin swap failed before submission", { cause: error });
         }
         throw error;
       });
+    await adapter.releasePendingOrderSlot(reservation);
     if (result.amount.eq(bnZero)) {
       throw new BridgeTransferDeclinedError("Binance stablecoin swap adapter declined transfer during initialization");
     }
@@ -105,8 +111,12 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     throw new Error("BinanceStablecoinSwapAdapter submits through sendL1ToL2Transfer");
   }
 
-  releaseL1ToL2Transfer(amount: BigNumber): void {
-    this.consumePreparedAmount(amount);
+  async releaseL1ToL2Transfer(amount: BigNumber): Promise<void> {
+    const reservation = this.consumePreparedTransfer(amount);
+    if (isDefined(reservation)) {
+      assert(isDefined(this.adapter));
+      await this.adapter.releasePendingOrderSlot(reservation);
+    }
   }
 
   /**
@@ -158,12 +168,11 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     return this.route;
   }
 
-  private consumePreparedAmount(amount: BigNumber): boolean {
-    const index = this.preparedAmounts.indexOf(amount.toString());
+  private consumePreparedTransfer(amount: BigNumber): string | undefined {
+    const index = this.preparedTransfers.findIndex((transfer) => transfer.amount === amount.toString());
     if (index === -1) {
-      return false;
+      return;
     }
-    this.preparedAmounts.splice(index, 1);
-    return true;
+    return this.preparedTransfers.splice(index, 1)[0].reservation;
   }
 }

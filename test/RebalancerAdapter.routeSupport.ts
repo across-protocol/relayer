@@ -153,6 +153,8 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
       config: { maxAmountsToTransfer: {}, maxPendingOrders: {} },
       supportsRoute: () => true,
       getPendingOrders: async () => [],
+      reservePendingOrderSlot: async () => "reservation",
+      releasePendingOrderSlot: async () => undefined,
       getEstimatedCost: async () => bnZero,
       getValidatedRebalanceAmount: async (_route: RebalanceRoute, amount: BigNumber) => amount,
       initializeRebalanceWithTransaction: async (createdRoute: RebalanceRoute, amount: BigNumber) => {

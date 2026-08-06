@@ -1060,7 +1060,7 @@ export class InventoryClient {
         unexecutedRebalances.push(preparedRebalance);
       }
       if (!selected) {
-        this.adapterManager.releaseTokenCrossChain(chainId, l1Token, amount);
+        await this.adapterManager.releaseTokenCrossChain(chainId, l1Token, amount);
       }
     }
 
@@ -1071,8 +1071,10 @@ export class InventoryClient {
     });
 
     if (returnRebalancesOnly) {
-      possibleRebalances.forEach(({ chainId, l1Token, amount }) =>
-        this.adapterManager.releaseTokenCrossChain(chainId, l1Token, amount)
+      await Promise.all(
+        possibleRebalances.map(({ chainId, l1Token, amount }) =>
+          this.adapterManager.releaseTokenCrossChain(chainId, l1Token, amount)
+        )
       );
       return possibleRebalances;
     }
