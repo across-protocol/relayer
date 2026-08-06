@@ -235,12 +235,6 @@ export const DEFAULT_MULTICALL_CHUNK_SIZE = 50;
 // a drift margin. See buildFinalizationBatches() in src/finalizer/index.ts.
 export const MULTICALL3_BATCH_GAS_MULTIPLIER = 1.1;
 
-// Padding for a batch that couldn't be sized, leaving only the tryAggregate() estimate. That estimate is a floor —
-// a batch whose inner calls all ran out of gas still "succeeds" — and EIP-150 withholds 1/64 of the remaining gas at
-// every frame boundary, so gas sitting d frames down needs estimate * (64/63)^d. 1.5 covers d <= 25; a CCTP mint
-// through proxied transmitter/messenger/token contracts reaches d ~= 7.
-export const MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER = 1.5;
-
 // Fixed allowance added to a batch's summed estimates for the Multicall3 wrapper itself: the transaction's own
 // intrinsic gas and calldata, plus dispatch and the 63/64 forwarding loss at each call. The multiplier above cannot
 // cover this, being proportional to a sum that does not contain it — a lone call estimating at 48,773 is supplied

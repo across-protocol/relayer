@@ -11,7 +11,6 @@ import {
   MULTICALL3_BATCH_GAS_CEILING,
   MULTICALL3_BATCH_GAS_MULTIPLIER,
   MULTICALL3_BATCH_GAS_OVERHEAD,
-  MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER,
   updateSpokePoolClients,
   UNIVERSAL_CHAINS,
 } from "../common";
@@ -35,7 +34,6 @@ import {
   getProvider,
   chunk,
   isPromiseFulfilled,
-  bnZero,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } from "./types";
 import {
@@ -146,7 +144,10 @@ async function preflightFinalizations(
   chainId: number,
   multisender: Contract,
   finalizations: { txn: Multicall2Call; crossChainMessage: CrossChainMessage }[]
-): Promise<{ callsToSubmit: Multicall2Call[]; dropped: CrossChainMessage[] }> {
+): Promise<{
+  callsToSubmit: { txn: Multicall2Call; crossChainMessage: CrossChainMessage }[];
+  dropped: CrossChainMessage[];
+}> {
   // @dev Simulate as the multisender, not as the signer: each call executes from Multicall3, and the
   // legacy OptimismPortal keys withdrawal proofs off msg.sender.
   const from = multisender.address;
@@ -154,14 +155,14 @@ async function preflightFinalizations(
     finalizations.map(({ txn }) => multisender.provider.call({ from, to: txn.target, data: txn.callData }))
   );
 
-  const callsToSubmit: Multicall2Call[] = [];
+  const callsToSubmit: { txn: Multicall2Call; crossChainMessage: CrossChainMessage }[] = [];
   const dropped: CrossChainMessage[] = [];
   const reverted: unknown[] = [];
   const races: unknown[] = [];
   results.forEach((result, idx) => {
     const { txn, crossChainMessage } = finalizations[idx];
     if (isPromiseFulfilled(result)) {
-      callsToSubmit.push(txn);
+      callsToSubmit.push({ txn, crossChainMessage });
       return;
     }
 
@@ -227,20 +228,22 @@ async function preflightFinalizations(
  * at 48,773 needs 54,870 and would be handed 53,650. MULTICALL3_BATCH_GAS_OVERHEAD covers the wrapper as a fixed
  * allowance; MULTICALL3_BATCH_GAS_MULTIPLIER remains for drift against a state that moved since the estimate.
  *
- * A call that doesn't estimate has no size, so it goes in a batch of its own rather than into one whose limit is a
- * sum that excludes it. tryAggregate() contains a revert, but it cannot contain gas exhaustion: an inner call that
- * runs the batch out of gas reverts the outer transaction too, so an unknown cost sharing a sized batch puts every
- * call in it at risk. Measured, a call consuming 636k inside a batch sized at 753k for its other calls starved the
- * call after it; at 12.3M the whole transaction reverted, finalizing nothing and burning the limit. The isolated
- * batch has no sized limit and falls back to the tryAggregate() estimate, which is the honest thing to do with a
- * cost nobody could measure.
+ * A call that doesn't estimate is dropped from the run rather than batched, because there is no limit that could
+ * honestly carry it. It cannot share a sized batch: tryAggregate() contains a revert but not gas exhaustion, so a
+ * call that spends before it fails spends out of a limit summed from its neighbours and takes them down with it —
+ * measured, 636k consumed inside a batch sized at 753k for its other calls starved the call after it, and a heavier
+ * one reverted the whole transaction. Nor is a batch of its own worth submitting: alone, it has no neighbours to
+ * protect, its only sizing would be the tryAggregate() estimate of it failing, and tryAggregate() would then mine
+ * that failure as a successful transaction — which submissionStatus(), counting hashes rather than inner success
+ * flags, would report as a finalization that landed. Dropping costs a run of latency, since finalizations are
+ * rediscovered from chain state on the next one, and reports the message honestly meanwhile.
  */
 export async function buildFinalizationBatches(
   logger: winston.Logger,
   chainId: number,
   multisender: Contract,
-  calls: Multicall2Call[]
-): Promise<{ calls: Multicall2Call[]; gasLimit?: BigNumber }[]> {
+  finalizations: { txn: Multicall2Call; crossChainMessage: CrossChainMessage }[]
+): Promise<{ batches: { calls: Multicall2Call[]; gasLimit: BigNumber }[]; dropped: CrossChainMessage[] }> {
   // Budget under the ceiling for the padding applied at submission, and for the wrapper allowance added below.
   const budget = BigNumber.from(
     Math.floor(MULTICALL3_BATCH_GAS_CEILING / MULTICALL3_BATCH_GAS_MULTIPLIER) - MULTICALL3_BATCH_GAS_OVERHEAD
@@ -249,52 +252,45 @@ export async function buildFinalizationBatches(
   // @dev Estimate as the multisender, matching both the pre-flight and the calls' real sender: each executes from
   // Multicall3, and the legacy OptimismPortal keys withdrawal proofs off msg.sender.
   const results = await Promise.allSettled(
-    calls.map(({ target, callData }) =>
+    finalizations.map(({ txn: { target, callData } }) =>
       multisender.provider.estimateGas({ from: multisender.address, to: target, data: callData })
     )
   );
 
   // The pre-flight already dropped the calls that revert on their own, so anything failing here moved since.
-  const unestimated = results
-    .map((result, idx) => ({ result, target: calls[idx].target }))
-    .filter(({ result }) => !isPromiseFulfilled(result))
-    .map(({ result, target }) => {
-      const error = (result as PromiseRejectedResult).reason;
-      return { target, reason: isEthersError(error) ? error.reason : isError(error) ? error.message : "unknown error" };
-    });
-  if (unestimated.length > 0) {
-    logger.warn({
-      at: "Finalizer#buildFinalizationBatches",
-      message: `${unestimated.length} ${getNetworkName(chainId)} finalization(s) no longer estimate 🚨`,
-      notificationPath: "across-error",
-      unestimated,
-    });
-  }
-
-  // @dev `sized` keeps the two kinds of batch apart: a call of known cost never joins a batch of unknown ones, and
-  // no unknown cost is ever charged against a limit summed from other calls. Consecutive unestimated calls do share
-  // a batch — they're already unknown to each other, and the alternative is one wasted transaction each.
-  const batches: { calls: Multicall2Call[]; gas: BigNumber; sized: boolean }[] = [];
-  calls.forEach((call, idx) => {
+  const dropped: CrossChainMessage[] = [];
+  const unestimated: unknown[] = [];
+  const batches: { calls: Multicall2Call[]; gas: BigNumber }[] = [];
+  finalizations.forEach(({ txn, crossChainMessage }, idx) => {
     const result = results[idx];
-    const batch = batches.at(-1);
     if (!isPromiseFulfilled(result)) {
-      if (isDefined(batch) && !batch.sized) {
-        batch.calls.push(call);
-      } else {
-        batches.push({ calls: [call], gas: bnZero, sized: false });
-      }
+      const error = result.reason;
+      dropped.push(crossChainMessage);
+      unestimated.push({
+        target: txn.target,
+        reason: isEthersError(error) ? error.reason : isError(error) ? error.message : "unknown error",
+      });
       return;
     }
 
     const gas = result.value;
-    if (isDefined(batch) && batch.sized && batch.gas.add(gas).lte(budget)) {
-      batch.calls.push(call);
+    const batch = batches.at(-1);
+    if (isDefined(batch) && batch.gas.add(gas).lte(budget)) {
+      batch.calls.push(txn);
       batch.gas = batch.gas.add(gas);
     } else {
-      batches.push({ calls: [call], gas, sized: true });
+      batches.push({ calls: [txn], gas });
     }
   });
+
+  if (unestimated.length > 0) {
+    logger.warn({
+      at: "Finalizer#buildFinalizationBatches",
+      message: `Dropped ${unestimated.length} ${getNetworkName(chainId)} finalization(s) that no longer estimate 🚨`,
+      notificationPath: "across-error",
+      unestimated,
+    });
+  }
 
   if (batches.length > 1) {
     logger.warn({
@@ -319,17 +315,17 @@ export async function buildFinalizationBatches(
   }
 
   // @dev The summed estimates cover the calls; MULTICALL3_BATCH_GAS_OVERHEAD covers the tryAggregate() around them.
-  return batches.map(({ calls, gas, sized }) => ({
-    calls,
-    gasLimit: sized ? gas.add(MULTICALL3_BATCH_GAS_OVERHEAD) : undefined,
-  }));
+  return {
+    batches: batches.map(({ calls, gas }) => ({ calls, gasLimit: gas.add(MULTICALL3_BATCH_GAS_OVERHEAD) })),
+    dropped,
+  };
 }
 
 /** The transaction submitting one batch of finalizations. */
 export function finalizationBatchTxn(
   chainId: number,
   multisender: Contract,
-  { calls, gasLimit }: { calls: Multicall2Call[]; gasLimit?: BigNumber }
+  { calls, gasLimit }: { calls: Multicall2Call[]; gasLimit: BigNumber }
 ): AugmentedTransaction {
   return {
     contract: multisender,
@@ -338,12 +334,10 @@ export function finalizationBatchTxn(
     // must not take the rest of the batch with it.
     method: "tryAggregate",
     args: [false, calls],
-    // @dev A sized limit is a real requirement and needs only Multicall3's 1/64 reserve plus a drift margin. A batch
-    // whose calls all stopped estimating has no sized limit, and falls back to the tryAggregate() estimate — a floor,
-    // which needs the larger pad.
-    ...(isDefined(gasLimit)
-      ? { gasLimit, gasLimitMultiplier: MULTICALL3_BATCH_GAS_MULTIPLIER }
-      : { gasLimitMultiplier: MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER }),
+    // @dev Every batch is sized, its calls having each estimated: a limit that is a real requirement rather than the
+    // floor a tryAggregate() estimate would give, needing only a margin for drift since the estimate.
+    gasLimit,
+    gasLimitMultiplier: MULTICALL3_BATCH_GAS_MULTIPLIER,
     unpermissioned: true,
     // @dev Batches share a target contract, so without this MultiCallerClient bundles them back into the one
     // transaction that didn't fit — or, with no signer to reach a multisender, into a multicall(bytes[]) that
@@ -367,8 +361,10 @@ export function submissionStatus(
   chainId: number,
   { dropped, submittedTxns, expectedTxns }: { dropped: boolean; submittedTxns: number; expectedTxns: number }
 ): { submitted: boolean; reason?: string } {
+  // @dev Either the pre-flight simulation reverted or the call stopped estimating; both warn with the target and
+  // reason as they drop it, so this only has to say the message didn't go out.
   if (dropped) {
-    return { submitted: false, reason: "dropped by pre-flight simulation ⚠️" };
+    return { submitted: false, reason: "dropped before submission ⚠️" };
   }
 
   if (submittedTxns === 0) {
@@ -583,7 +579,13 @@ export async function finalize(
           );
           dropped.forEach((crossChainMessage) => droppedMessages.add(crossChainMessage));
           if (multicallTxns.length > 0) {
-            const batches = await buildFinalizationBatches(logger, Number(chainId), multisender, multicallTxns);
+            const { batches, dropped: unestimated } = await buildFinalizationBatches(
+              logger,
+              Number(chainId),
+              multisender,
+              multicallTxns
+            );
+            unestimated.forEach((crossChainMessage) => droppedMessages.add(crossChainMessage));
             batches.forEach((batch) =>
               multicallerClient.enqueueTransaction(finalizationBatchTxn(Number(chainId), multisender, batch))
             );

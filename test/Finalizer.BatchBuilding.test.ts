@@ -1,12 +1,8 @@
 import { Multicall3__factory } from "@across-protocol/sdk/src/utils/abi/typechain";
 import { BigNumber, Contract } from "ethers";
-import {
-  MULTICALL3_BATCH_GAS_CEILING,
-  MULTICALL3_BATCH_GAS_MULTIPLIER,
-  MULTICALL3_BATCH_GAS_OVERHEAD,
-  MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER,
-} from "../src/common";
+import { MULTICALL3_BATCH_GAS_CEILING, MULTICALL3_BATCH_GAS_MULTIPLIER } from "../src/common";
 import { buildFinalizationBatches, finalizationBatchTxn, submissionStatus } from "../src/finalizer";
+import { CrossChainMessage } from "../src/finalizer/types";
 import { Multicall2Call } from "../src/utils";
 import { createSpyLogger, deployMulticall3, ethers, expect, getContractFactory } from "./utils";
 
@@ -15,7 +11,7 @@ import { createSpyLogger, deployMulticall3, ethers, expect, getContractFactory }
 // of gas still succeeds. These pin the properties that sizing relies on — the summed estimate plus a fixed wrapper
 // allowance covers the batch (including the case no multiplier on a tryAggregate() estimate reaches: a call gated on
 // gasleft() rather than on consumption), a batch over the ceiling is split rather than submitted whole, and a call
-// that no longer estimates is batched away from the calls whose limit doesn't account for it.
+// that no longer estimates leaves the run rather than riding in a batch whose limit doesn't account for it.
 describe("Finalizer batch building", function () {
   const { spyLogger: logger } = createSpyLogger();
   const chainId = 1;
@@ -56,6 +52,19 @@ describe("Finalizer batch building", function () {
     return estimates.reduce((acc, gas) => acc.add(gas), BigNumber.from(0));
   };
 
+  // buildFinalizationBatches() takes finalizations rather than bare calls, so that a call it can't size is reported
+  // as the message behind it. The message content is irrelevant here beyond being distinguishable.
+  let nonce = 0;
+  const finalization = (txn: Multicall2Call): { txn: Multicall2Call; crossChainMessage: CrossChainMessage } => ({
+    txn,
+    crossChainMessage: {
+      originationChainId: chainId,
+      destinationChainId: chainId,
+      type: "misc",
+      miscReason: `test-${nonce++}`,
+    },
+  });
+
   const rejects = async (promise: Promise<unknown>): Promise<boolean> => {
     try {
       await promise;
@@ -89,7 +98,7 @@ describe("Finalizer batch building", function () {
 
   it("Returns a batch that fits as one transaction, sized", async function () {
     const calls = [burnCall(20), burnCall(2000), burnCall(20)];
-    const batches = await buildFinalizationBatches(logger, chainId, multicall3, calls);
+    const { batches } = await buildFinalizationBatches(logger, chainId, multicall3, calls.map(finalization));
 
     expect(batches.length).to.equal(1);
     expect(batches[0].calls).to.deep.equal(calls);
@@ -99,7 +108,9 @@ describe("Finalizer batch building", function () {
 
   it("Sizes a batch high enough for every call to land", async function () {
     const calls = [burnCall(20), burnCall(2000), burnCall(500)];
-    const [{ gasLimit }] = await buildFinalizationBatches(logger, chainId, multicall3, calls);
+    const {
+      batches: [{ gasLimit }],
+    } = await buildFinalizationBatches(logger, chainId, multicall3, calls.map(finalization));
 
     expect(await successFlags(calls, padded(gasLimit))).to.deep.equal([true, true, true]);
   });
@@ -119,7 +130,9 @@ describe("Finalizer batch building", function () {
     // The estimate of the batch is a floor: padding it does not reach the gates.
     expect(await successFlags(calls, estimate.mul(3).div(2))).to.deep.equal([false, true, false]);
 
-    const [{ gasLimit }] = await buildFinalizationBatches(logger, chainId, multicall3, calls);
+    const {
+      batches: [{ gasLimit }],
+    } = await buildFinalizationBatches(logger, chainId, multicall3, calls.map(finalization));
     expect(gasLimit.gt(estimate.mul(3).div(2))).to.be.true;
     expect(await successFlags(calls, padded(gasLimit))).to.deep.equal([true, true, true]);
   });
@@ -128,7 +141,9 @@ describe("Finalizer batch building", function () {
   // by more than the intrinsic gas it carries.
   it("Sizes a single large call, whose bare sum is short", async function () {
     const calls = [gatedCall(3_000_000)];
-    const [{ gasLimit }] = await buildFinalizationBatches(logger, chainId, multicall3, calls);
+    const {
+      batches: [{ gasLimit }],
+    } = await buildFinalizationBatches(logger, chainId, multicall3, calls.map(finalization));
 
     expect(await successFlags(calls, await sum(calls))).to.deep.equal([false]);
     expect(await successFlags(calls, padded(gasLimit))).to.deep.equal([true]);
@@ -140,7 +155,9 @@ describe("Finalizer batch building", function () {
   // requirement of 54,870 and reverted the whole transaction. The fixed overhead, not the multiplier, covers this.
   it("Sizes a single small call, which no proportional multiplier would cover", async function () {
     const calls = [burnCall(20)];
-    const [{ gasLimit }] = await buildFinalizationBatches(logger, chainId, multicall3, calls);
+    const {
+      batches: [{ gasLimit }],
+    } = await buildFinalizationBatches(logger, chainId, multicall3, calls.map(finalization));
 
     const bare = await sum(calls);
     expect(
@@ -155,7 +172,7 @@ describe("Finalizer batch building", function () {
   it("Splits a batch over the ceiling, keeping every transaction submittable", async function () {
     const minGas = 6_000_000;
     const calls = [gatedCall(minGas), gatedCall(minGas), gatedCall(minGas)];
-    const batches = await buildFinalizationBatches(logger, chainId, multicall3, calls);
+    const { batches } = await buildFinalizationBatches(logger, chainId, multicall3, calls.map(finalization));
 
     expect(batches.length).to.be.greaterThan(1);
     // Batches partition the calls, in order.
@@ -166,37 +183,33 @@ describe("Finalizer batch building", function () {
     }
   });
 
-  // A call that doesn't estimate has no size, so it can't be charged against a limit summed from other calls: it is
-  // still submitted, but in a batch of its own, sized by the tryAggregate() fallback.
-  it("Isolates a call that no longer estimates, leaving the sized batches sound", async function () {
+  // A call that no longer estimates has no limit that could honestly carry it, so it leaves the run and is reported
+  // as dropped. The calls around it keep the sizes their own estimates gave them.
+  it("Drops a call that no longer estimates, leaving the rest sized and batched", async function () {
     const healthy = [burnCall(20), burnCall(2000)];
-    const [sized] = await buildFinalizationBatches(logger, chainId, multicall3, healthy);
+    const { batches: sized } = await buildFinalizationBatches(logger, chainId, multicall3, healthy.map(finalization));
 
     const withFailure = [healthy[0], failingCall(), healthy[1]];
-    const batches = await buildFinalizationBatches(logger, chainId, multicall3, withFailure);
+    const { batches, dropped } = await buildFinalizationBatches(
+      logger,
+      chainId,
+      multicall3,
+      withFailure.map(finalization)
+    );
 
-    // Every call is still submitted, in order, and nothing is dropped.
-    expect(batches.flatMap(({ calls }) => calls)).to.deep.equal(withFailure);
-    expect(batches.map(({ calls }) => calls.length)).to.deep.equal([1, 1, 1]);
-    // The unestimated call carries no limit, so it falls back to the tryAggregate() multiplier.
-    expect(batches[1].gasLimit).to.be.undefined;
-    expect(finalizationBatchTxn(chainId, multicall3, batches[1]).gasLimitMultiplier).to.equal(
-      MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER
-    );
-    // Each healthy call is still sized from its own estimate and still lands; splitting them across transactions
-    // costs one extra wrapper allowance, and nothing else.
-    for (const batch of [batches[0], batches[2]]) {
-      expect(await successFlags(batch.calls, padded(batch.gasLimit))).to.not.include(false);
-    }
-    expect(batches[0].gasLimit.add(batches[2].gasLimit).sub(sized.gasLimit).toNumber()).to.equal(
-      MULTICALL3_BATCH_GAS_OVERHEAD
-    );
+    // The failing call is gone from the batches and surfaces as a dropped message instead.
+    expect(batches.flatMap(({ calls }) => calls)).to.deep.equal(healthy);
+    expect(dropped.length).to.equal(1);
+    // The survivors are sized exactly as they were before the failing call appeared, and still land.
+    expect(batches.length).to.equal(1);
+    expect(batches[0].gasLimit.toString()).to.equal(sized[0].gasLimit.toString());
+    expect(await successFlags(batches[0].calls, padded(batches[0].gasLimit))).to.not.include(false);
   });
 
-  // The regression the isolation exists for. tryAggregate() contains a revert, but not gas exhaustion: a call that
-  // spends gas before reverting spends it out of the batch's limit, and a limit summed from the *other* calls doesn't
-  // cover it. Sharing a batch, it starves the call after it and — given enough to burn — reverts the whole
-  // transaction, which is the "mines and finalizes nothing" outcome this whole approach exists to avoid.
+  // The regression the drop exists for. tryAggregate() contains a revert, but not gas exhaustion: a call that spends
+  // gas before reverting spends it out of the batch's limit, and a limit summed from the *other* calls doesn't cover
+  // it. Left in the batch it reverts the whole transaction — the "mines and finalizes nothing" outcome this whole
+  // approach exists to avoid.
   it("Keeps an unestimated call that burns gas from taking a sized batch down with it", async function () {
     const healthy = [burnCall(20), burnCall(2000)];
     const heavy = burnThenFailCall(20_000);
@@ -209,41 +222,36 @@ describe("Finalizer batch building", function () {
       )
     ).to.be.true;
 
-    // Shared with the healthy calls under a limit summed from them alone, it reverts the outer transaction.
-    const [shared] = await buildFinalizationBatches(logger, chainId, multicall3, healthy);
-    expect(await rejects(multicall3.callStatic.tryAggregate(false, calls, { gasLimit: padded(shared.gasLimit) }))).to.be
-      .true;
+    // Left among the healthy calls under a limit summed from them alone, it reverts the outer transaction.
+    const { batches: shared } = await buildFinalizationBatches(logger, chainId, multicall3, healthy.map(finalization));
+    expect(await rejects(multicall3.callStatic.tryAggregate(false, calls, { gasLimit: padded(shared[0].gasLimit) }))).to
+      .be.true;
 
-    // Isolated, the healthy calls are untouched and the heavy call is confined to its own transaction.
-    const batches = await buildFinalizationBatches(logger, chainId, multicall3, calls);
-    expect(batches.flatMap(({ calls }) => calls)).to.deep.equal(calls);
-    expect(batches[1].calls).to.deep.equal([heavy]);
-    expect(batches[1].gasLimit).to.be.undefined;
-    for (const batch of [batches[0], batches[2]]) {
+    // Dropped, the healthy calls are untouched and every submitted batch lands.
+    const { batches, dropped } = await buildFinalizationBatches(logger, chainId, multicall3, calls.map(finalization));
+    expect(batches.flatMap(({ calls }) => calls)).to.deep.equal(healthy);
+    expect(dropped.length).to.equal(1);
+    for (const batch of batches) {
       expect(await successFlags(batch.calls, padded(batch.gasLimit))).to.not.include(false);
     }
   });
 
-  it("Groups consecutive unestimated calls rather than spending a transaction on each", async function () {
-    const calls = [burnCall(20), failingCall(), failingCall(), burnCall(2000)];
-    const batches = await buildFinalizationBatches(logger, chainId, multicall3, calls);
+  // Nothing is submitted on this chain, rather than a transaction that could only mine as a no-op — and one
+  // tryAggregate() reports as a success, which submissionStatus() would then read as a finalization that landed.
+  it("Submits nothing when no call estimates, reporting every message dropped", async function () {
+    const calls = [failingCall(), failingCall()];
+    const { batches, dropped } = await buildFinalizationBatches(logger, chainId, multicall3, calls.map(finalization));
 
-    expect(batches.flatMap(({ calls }) => calls)).to.deep.equal(calls);
-    expect(batches.map(({ calls }) => calls.length)).to.deep.equal([1, 2, 1]);
-    expect(batches[1].gasLimit).to.be.undefined;
-    expect(batches[0].gasLimit).to.exist;
-    expect(batches[2].gasLimit).to.exist;
+    expect(batches).to.deep.equal([]);
+    expect(dropped.length).to.equal(2);
   });
 
-  it("Falls back to the tryAggregate() multiplier when no call in the batch estimates", async function () {
-    const calls = [failingCall(), failingCall()];
-    const batches = await buildFinalizationBatches(logger, chainId, multicall3, calls);
+  it("Reports the dropped messages themselves, so they can be marked unsubmitted", async function () {
+    const calls = [burnCall(20), failingCall()];
+    const finalizations = calls.map(finalization);
+    const { dropped } = await buildFinalizationBatches(logger, chainId, multicall3, finalizations);
 
-    expect(batches.length).to.equal(1);
-    expect(batches[0].gasLimit).to.be.undefined;
-    expect(finalizationBatchTxn(chainId, multicall3, batches[0]).gasLimitMultiplier).to.equal(
-      MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER
-    );
+    expect(dropped).to.deep.equal([finalizations[1].crossChainMessage]);
   });
 
   it("Marks each batch nonMulticall so the bundler cannot merge them back", function () {
@@ -259,7 +267,7 @@ describe("Finalizer batch building", function () {
     it("Reports a dropped message as unsubmitted", function () {
       const { submitted, reason } = submissionStatus(chainId, { dropped: true, submittedTxns: 1, expectedTxns: 1 });
       expect(submitted).to.be.false;
-      expect(reason).to.contain("pre-flight");
+      expect(reason).to.contain("dropped before submission");
     });
 
     it("Reports a chain that submitted nothing", function () {
