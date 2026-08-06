@@ -361,8 +361,18 @@ describe("InventoryClient: Rebalancing inventory", function () {
     await inventoryClient.update();
     mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).reverts("rpc unavailable");
 
-    await expect(inventoryClient.rebalanceInventoryIfNeeded(true)).to.be.rejectedWith("rpc unavailable");
+    expect(await inventoryClient.rebalanceInventoryIfNeeded(true)).to.be.empty;
     expect(adapterManager.releasedAmounts).to.have.lengthOf(1);
+  });
+
+  it("keeps earlier candidates when a later balance read fails", async function () {
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(1000));
+    tokenClient.decrementLocalBalance(OPTIMISM, toAddressType(l2TokensForUsdc[OPTIMISM], OPTIMISM), toMegaWei(1000));
+    await inventoryClient.update();
+    mainnetUsdcContract.balanceOf.revertsAtCall(1, "rpc unavailable");
+
+    expect(await inventoryClient.rebalanceInventoryIfNeeded(true)).to.have.lengthOf(1);
+    expect(adapterManager.releasedAmounts).to.have.lengthOf(2);
   });
 
   it("skips initiation when pending-rebalance state is incomplete", async function () {

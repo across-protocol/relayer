@@ -880,13 +880,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
         expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
-      const transactionHash = await this._depositToBinance(
-        cloid,
-        sourceToken,
-        sourceChain,
-        amountToTransfer,
-        onSubmission
-      );
       await this._redisCreateOrder(
         cloid,
         STATUS.PENDING_DEPOSIT,
@@ -894,6 +887,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         amountToTransfer,
         this.baseSignerAddress
       );
+      let submissionStarted = false;
+      let transactionHash: string;
+      try {
+        transactionHash = await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer, () => {
+          submissionStarted = true;
+          onSubmission?.();
+        });
+      } catch (error) {
+        if (!submissionStarted) {
+          await this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT, this.baseSignerAddress).catch((cleanupError) =>
+            this.logger.warn({
+              at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+              message: `Failed to remove pre-submission order ${cloid}; waiting for its TTL`,
+              cleanupError,
+            })
+          );
+        }
+        throw error;
+      }
       return { amount: amountToTransfer, transactionHash };
     }
   }
