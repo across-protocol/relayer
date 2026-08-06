@@ -230,6 +230,7 @@ describe("TransactionClient", function () {
     it("Adopts a repriced replacement instead of resubmitting", async function () {
       const chainId = chainIds[0];
       const replacement = { hash: ethers.utils.id("repriced"), nonce: 1 } as TransactionResponse;
+      const broadcasts: string[] = [];
       txnClient.waitOverride = () => {
         return Promise.reject(
           makeEthersError(ethers.errors.TRANSACTION_REPLACED, {
@@ -241,9 +242,12 @@ describe("TransactionClient", function () {
       };
 
       // A mined transaction with identical calldata (i.e. our own raced resubmission) is adopted.
-      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      const transaction = makeConfirmationTxn(chainId);
+      transaction.onBroadcast = (transactionHash) => broadcasts.push(transactionHash);
+      const txnResponses = await txnClient.submit(chainId, [transaction]);
       expect(txnResponses.length).to.equal(1);
       expect(txnResponses[0].hash).to.equal(replacement.hash);
+      expect(broadcasts).to.deep.equal([replacement.hash]);
     });
 
     it("Resubmits on confirmation timeout", async function () {

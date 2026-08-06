@@ -79,6 +79,7 @@ export interface AugmentedTransaction {
   // If true, then can be sent from the MakerDAO multisender contract.
   canFailInSimulation?: boolean;
   onSubmission?: () => void | Promise<void>;
+  onBroadcast?: (transactionHash: string) => void | Promise<void>;
   // Optional batch ID to use to group transactions
   groupId?: string;
   // If true, the transaction is being sent to a non Multicall contract so we can't batch it together
@@ -90,6 +91,8 @@ export interface AugmentedTransaction {
   // this chain (if configured), enabling parallel multi-RPC dispatch for faster submission.
   spray?: boolean;
 }
+
+type TransactionCallbacks = Pick<AugmentedTransaction, "onSubmission" | "onBroadcast">;
 
 export function isAugmentedTransaction(txn: unknown): txn is AugmentedTransaction {
   if (txn === null || typeof txn !== "object") {
@@ -143,10 +146,11 @@ export class TransactionClient {
   }
 
   protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
-    const { contract, method, args, value, gasLimit, chainId, onSubmission } = txn;
+    const { contract, method, args, value, gasLimit, chainId, onSubmission, onBroadcast } = txn;
+    const callbacks = { onSubmission, onBroadcast };
     return chainIsTvm(chainId)
-      ? _runTransactionTvm(this.logger, contract, method, args, value, gasLimit, nonce)
-      : _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce, undefined, 1, onSubmission);
+      ? _runTransactionTvm(this.logger, contract, method, args, value, gasLimit, nonce, undefined, callbacks)
+      : _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce, undefined, 1, callbacks);
   }
 
   protected async _submit(
@@ -204,6 +208,7 @@ export class TransactionClient {
                   this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
                   throw error;
                 }
+                await txn.onBroadcast?.(error.replacement.hash);
                 return error.replacement;
               }
               this.logger.warn({
@@ -366,7 +371,7 @@ async function _runTransaction(
   nonce: number | null = null,
   retries?: number,
   retryScaler = 1.0,
-  onSubmission?: () => void | Promise<void>
+  callbacks: TransactionCallbacks = {}
 ): Promise<TransactionResponse> {
   const at = "TxUtil#_runTransaction";
   const { provider, signer } = contract;
@@ -379,7 +384,7 @@ async function _runTransaction(
 
   let gas: Partial<FeeData>;
   const retry = (nextNonce: number | null, nextRetries: number, nextScaler = retryScaler) =>
-    _runTransaction(logger, contract, method, args, value, gasLimit, nextNonce, nextRetries, nextScaler, onSubmission);
+    _runTransaction(logger, contract, method, args, value, gasLimit, nextNonce, nextRetries, nextScaler, callbacks);
   try {
     nonce ??= await provider.getTransactionCount(await signer.getAddress());
     const preGas = await getGasPrice(
@@ -411,9 +416,10 @@ async function _runTransaction(
     {}
   );
 
+  let response: TransactionResponse;
   try {
-    await onSubmission?.();
-    return sendRawTxn
+    await callbacks.onSubmission?.();
+    response = sendRawTxn
       ? await signer.sendTransaction({ to, data: (args as ethers.utils.BytesLike[])[0], ...txConfig })
       : await contract[method](...args, txConfig);
   } catch (error) {
@@ -503,6 +509,8 @@ async function _runTransaction(
 
     return await retry(nonce, retries, retryScaler);
   }
+  await callbacks.onBroadcast?.(response.hash);
+  return response;
 }
 
 async function _runTransactionTvm(
@@ -513,7 +521,8 @@ async function _runTransactionTvm(
   value = bnZero,
   gasLimit: BigNumber | null = null,
   _nonce: number | null = null,
-  retries?: number
+  retries?: number,
+  callbacks: TransactionCallbacks = {}
 ): Promise<TransactionResponse> {
   const at = "TransactionClient#_runTransactionTvm";
   const { provider } = contract;
@@ -544,6 +553,7 @@ async function _runTransactionTvm(
   logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit });
   let result;
   try {
+    await callbacks.onSubmission?.();
     result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
   } catch (error) {
     if (--retries < 0) {
@@ -555,7 +565,7 @@ async function _runTransactionTvm(
       method,
       error: stringifyThrownValue(error),
     });
-    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries);
+    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries, callbacks);
   }
 
   if (!result.result) {
@@ -569,9 +579,10 @@ async function _runTransactionTvm(
       method,
       txid: result.txid,
     });
-    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries);
+    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries, callbacks);
   }
 
+  await callbacks.onBroadcast?.(result.txid);
   logger.debug({ at, message: "TVM transaction submitted.", chain, method, txid: result.txid });
 
   // Adapt TronTransactionResult to an ethers-compatible TransactionResponse. TVM doesn't use
