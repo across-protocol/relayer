@@ -1,6 +1,9 @@
 import { BinanceStablecoinSwapAdapter, BridgeTransferDeclinedError } from "../src/adapter/bridges";
 import { TransactionBroadcastRejectedError, TransactionClient } from "../src/clients";
-import { BinanceStablecoinSwapAdapter as RebalancerBinanceAdapter } from "../src/rebalancer/adapters/binance";
+import {
+  BinanceStablecoinSwapAdapter as RebalancerBinanceAdapter,
+  getBinanceRebalanceCandidate,
+} from "../src/rebalancer/adapters/binance";
 import { RebalanceRoute } from "../src/rebalancer/utils/interfaces";
 import { CHAIN_IDs, EvmAddress, submitTransaction, TOKEN_SYMBOLS_MAP, ZERO_BYTES } from "../src/utils";
 import { createSpyLogger, ethers, expect, sinon, toBNWei } from "./utils";
@@ -193,6 +196,11 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     const duplicate = await first.reservePendingOrderSlot(2, "same-route-and-amount");
     expect(await second.reservePendingOrderSlot(2, "same-route-and-amount")).to.equal(undefined);
     await first.releasePendingOrderSlot(duplicate as string);
+    const amount = toBNWei("100", 6);
+    const pendingCandidate = getBinanceRebalanceCandidate(route, amount);
+    (second.getPendingOrders as sinon.SinonStub).resolves(["pending"]);
+    sinon.stub(second as never, "_redisGetOrderDetails").resolves({ ...route, amountToTransfer: amount });
+    expect(await second.reservePendingOrderSlot(2, pendingCandidate)).to.equal(undefined);
     failUnlock = true;
     expect(await first.reservePendingOrderSlot(1, "unlock-failure")).to.be.a("string");
   });

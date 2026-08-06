@@ -13,7 +13,10 @@ import {
   winston,
   ZERO_BYTES,
 } from "../../utils";
-import type { BinanceStablecoinSwapAdapter as RebalancerBinanceStablecoinSwapAdapter } from "../../rebalancer/adapters/binance";
+import {
+  getBinanceRebalanceCandidate,
+  type BinanceStablecoinSwapAdapter as RebalancerBinanceStablecoinSwapAdapter,
+} from "../../rebalancer/adapters/binance";
 import type { RebalanceRoute } from "../../rebalancer/utils/interfaces";
 import { DefinitiveTransactionFailure } from "../../clients";
 import {
@@ -58,13 +61,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     }
     const preparedAmount = await adapter.getValidatedRebalanceAmount(route, cappedAmount);
     if (preparedAmount.gt(bnZero)) {
-      const candidate = JSON.stringify([
-        route.sourceChain,
-        route.sourceToken,
-        route.destinationChain,
-        route.destinationToken,
-        preparedAmount.toString(),
-      ]);
+      const candidate = getBinanceRebalanceCandidate(route, preparedAmount);
       const reservation = await adapter.reservePendingOrderSlot(maxPendingOrders, candidate);
       if (!isDefined(reservation)) {
         return bnZero;
