@@ -427,6 +427,62 @@ describe("Binance adapter helpers", function () {
     expect(warn.called).to.equal(false);
   });
 
+  it("persists a recoverable order before broadcasting a direct deposit", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const route = {
+      sourceChain: CHAIN_IDs.MAINNET,
+      sourceToken: "USDT",
+      destinationChain: CHAIN_IDs.AVALANCHE,
+      destinationToken: "USDT",
+      adapter: "binance",
+    };
+    const calls: string[] = [];
+    const internals = adapter as unknown as {
+      initialized: boolean;
+      availableRoutes: (typeof route)[];
+      baseSignerAddress: EvmAddress;
+      _getRebalancePreflight(): Promise<unknown>;
+      _getTokenInfo(): { symbol: string; decimals: number };
+      _redisGetNextCloid(): Promise<string>;
+      _getEntrypointNetwork(): Promise<number>;
+      _redisCreateOrder(): Promise<void>;
+      _depositToBinance(
+        cloid: string,
+        token: string,
+        chainId: number,
+        amount: BigNumber,
+        onSubmission: () => void
+      ): Promise<string>;
+      _redisDeleteOrder(): Promise<boolean>;
+    };
+    internals.initialized = true;
+    internals.availableRoutes = [route];
+    internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    sinon.stub(internals, "_getRebalancePreflight").resolves({
+      destinationTokenInfo: { symbol: "USDT", decimals: 6 },
+      expectedAmountToWithdrawInDestinationUnits: toBNWei("100", 6),
+    });
+    sinon.stub(internals, "_getTokenInfo").returns({ symbol: "USDT", decimals: 6 });
+    sinon.stub(internals, "_redisGetNextCloid").resolves("cloid");
+    sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.MAINNET);
+    sinon.stub(internals, "_redisCreateOrder").callsFake(async () => {
+      calls.push("order");
+    });
+    sinon.stub(internals, "_depositToBinance").callsFake(async (_cloid, _token, _chain, _amount, onSubmission) => {
+      calls.push("deposit");
+      onSubmission();
+      throw new Error("post-broadcast redis failure");
+    });
+    const deleteOrder = sinon.stub(internals, "_redisDeleteOrder").resolves(true);
+
+    await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
+      "post-broadcast redis failure"
+    );
+    expect(calls).to.deep.equal(["order", "deposit"]);
+    expect(deleteOrder.called).to.equal(false);
+  });
+
   it("builds Tron direct deposit transfers with ethers-compatible addresses", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();

@@ -1021,7 +1021,8 @@ export class InventoryClient {
       }
       const preparedRebalance = { ...rebalance, amount };
       const { balance } = preparedRebalance;
-      let selected = false;
+      let locallyFunded = false;
+      let executable = false;
       try {
         // This is the balance left after any assumed rebalances from earlier loop iterations.
         const unallocatedBalance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
@@ -1029,7 +1030,8 @@ export class InventoryClient {
         // If the amount required in the rebalance is less than the total amount of this token on L1 then we can execute
         // the rebalance to this particular chain. Note that if the sum of all rebalances required exceeds the l1
         // balance then this logic ensures that we only fill the first n number of chains where we can.
-        if (toBN(amount).lte(unallocatedBalance)) {
+        locallyFunded = toBN(amount).lte(unallocatedBalance);
+        if (locallyFunded) {
           // As a precautionary step before proceeding, re-read the on-chain L1 balance and confirm we still hold enough
           // to actually fund this transfer. The inventory snapshot may be stale (slow RPCs, or concurrent/overlapping
           // bot instances that already moved funds), but a benign change - e.g. an incoming repayment that increased the
@@ -1056,20 +1058,24 @@ export class InventoryClient {
             currentBalance,
           });
 
-          if (!insufficientBalance) {
-            possibleRebalances.push(preparedRebalance);
-            // Decrement token balance in client for this chain and increment cross chain counter.
-            this.trackCrossChainTransfer(l1Token, l2Token, amount, chainId);
-            selected = true;
-          }
-        } else {
-          // Extract unexecutable rebalances for logging.
+          executable = !insufficientBalance;
+        }
+      } catch (error) {
+        this.log(
+          "Failed to validate prepared inventory rebalance; skipping candidate",
+          { ...preparedRebalance, error },
+          "warn"
+        );
+      }
+      if (executable) {
+        possibleRebalances.push(preparedRebalance);
+        // Decrement token balance in client for this chain and increment cross chain counter.
+        this.trackCrossChainTransfer(l1Token, l2Token, amount, chainId);
+      } else {
+        if (!locallyFunded) {
           unexecutedRebalances.push(preparedRebalance);
         }
-      } finally {
-        if (!selected) {
-          await releaseRebalance(preparedRebalance);
-        }
+        await releaseRebalance(preparedRebalance);
       }
     }
 
