@@ -156,12 +156,12 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
     const binanceApiClient = await this.getBinanceClient();
     // Fetch the deposit address from the binance API.
     const _withdrawalHistory = await getBinanceWithdrawals(binanceApiClient, this.tokenSymbol, fromTimestamp);
-    // Filter withdrawals based on whether their destination network was BSC and those associated with a swap rebalance.
+    // Filter withdrawals to this bridge's own destination network, and drop those associated with a swap rebalance.
     const withdrawalHistory = await filterAsync(_withdrawalHistory, async (withdrawal) => {
       const withdrawalType = await getBinanceWithdrawalType(withdrawal);
       return (
         isCompletedBinanceWithdrawal(withdrawal.status) &&
-        withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.BSC] &&
+        withdrawal.network === BINANCE_NETWORKS[this.l2chainId] &&
         compareAddressesSimple(withdrawal.recipient, toAddress.toNative()) &&
         withdrawalType !== BinanceTransactionType.SWAP
       );
