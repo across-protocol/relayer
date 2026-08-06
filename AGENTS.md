@@ -30,7 +30,7 @@ Keep all relevant `AGENTS.md` and `README.md` files updated in the same change w
 - Gasless relayer (API polling, deposits-only mode, integrator filters): `src/gasless/README.md`
 - Shared runtime clients: `src/clients/README.md`
 - Cross-bot messaging transports (Redis pub/sub + GCP Pub/Sub publisher): `src/messaging/`
-- Finalization-specific workflows: `src/finalizer/*` and `src/cctp-finalizer/*`
+- Finalization-specific workflows: `src/finalizer/README.md` and `src/cctp-finalizer/README.md`
 - UMA and smart-contract context: `docs/uma.md` and `docs/smart-contracts.md`
 - Relayer fill and repayment deep dives: `docs/relayer-fill-decision-flow.md` and `docs/repayment-selection.md`
 - Inventory deep dives: `docs/repayment-eligibility.md` and `docs/inventory-virtual-balance-model.md`
