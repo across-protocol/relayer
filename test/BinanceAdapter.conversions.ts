@@ -224,6 +224,10 @@ async function makeInitializedAdapter(
   internals.initialized = true;
   internals.availableRoutes = [route];
   internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+  (adapter as unknown as { _redisCache: object })._redisCache = {
+    set: sinon.stub().resolves("OK"),
+    del: sinon.stub().resolves(1),
+  };
   return adapter;
 }
 
