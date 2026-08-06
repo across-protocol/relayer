@@ -908,6 +908,12 @@ export class Dataworker {
     // a range that a previous bundle already settled.
     const { proposalBlockNumber } = rootBundle;
     assert(isDefined(proposalBlockNumber), "validateRootBundle: rootBundle.proposalBlockNumber is required");
+    // @dev The disabled chain list is resolved at the bundle's mainnet *start* block to stay in step with the
+    // proposer, which derives its block ranges from `getEnabledChains(mainnetBundleStartBlock)` -- see
+    // `_getWidestPossibleBlockRangeForNextBundle`. UMIP-157 words the rule against the mainnet *end* block instead,
+    // so a chain that enters DISABLED_CHAINS partway through a bundle is skipped here for that one transition
+    // bundle. Tightening this side alone to the end block would dispute the proposals our own proposer builds, so
+    // the proposer and the validator have to move together; that is a separate change.
     const enabledChains = this.clients.configStoreClient.getEnabledChains(mainnetBundleStartBlock);
     // @dev Skip this check if the HubPoolClient's lookback is too short to see the preceding bundle, otherwise
     // `getLatestBundleEndBlockForChain` returns 0 for every chain and we would dispute a valid proposal. The block

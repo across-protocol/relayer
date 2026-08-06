@@ -112,6 +112,8 @@ The bundle block range for each chain is therefore `[A, B]`, where disabled chai
 
 Note that a disabled chain's zero length range is not self-certifying. [UMIP-157](https://github.com/UMAprotocol/UMIPs/blob/master/UMIPs/umip-157.md#determining-block-range-for-root-bundle-proposal) requires that a chain in `DISABLED_CHAINS` re-uses its end block from the latest executed bundle, so `A` is a fixed historical value rather than whatever the proposal published. Deriving `A` from `B` — as `getImpliedBundleBlockRanges` does — produces a zero length range for any `B` the proposer chose, which rebuilds identical roots even when the proposal silently moved the chain's end block. `Dataworker.validateRootBundle` therefore compares a disabled chain's end block against the latest executed bundle directly.
 
+That comparison resolves `DISABLED_CHAINS` at the bundle's mainnet **start** block, matching the proposer (`getWidestPossibleExpectedBlockRange` is called with `getEnabledChains(mainnetBundleStartBlock)`). UMIP-157 words the rule against the mainnet **end** block, so the two disagree for the single bundle in which a chain is disabled partway through: the proposer still advances that chain's end block, and the validator still accepts it. Realigning both sides onto the end block is a protocol-level change to the proposer and the validator together, not to the validator alone.
+
 ## Finding bridge events in block ranges
 
 Now that we have `R = [A, B]`, we need to agree on all deposits and fills that occurred in the block range. We'll use these events to construct the resultant running balance for the bundle.
