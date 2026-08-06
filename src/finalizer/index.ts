@@ -10,6 +10,7 @@ import {
   getContractEntry,
   MULTICALL3_BATCH_GAS_CEILING,
   MULTICALL3_BATCH_GAS_MULTIPLIER,
+  MULTICALL3_BATCH_GAS_OVERHEAD,
   MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER,
   updateSpokePoolClients,
   UNIVERSAL_CHAINS,
@@ -219,12 +220,20 @@ async function preflightFinalizations(
  * looseness is a limit, not a spend; the gas is not consumed. Estimating per call also reports which call reverts,
  * which an aggregate() estimate cannot: it fails as a whole and names nothing.
  *
- * The sum is not sufficient on its own. Multicall3 forwards 63/64 of its remaining gas to each call, and for a batch
- * of one that loss exceeds the intrinsic gas the standalone estimate carries: the batch that prompted this needs
- * 5,866,277 where its call estimates at 5,830,076. MULTICALL3_BATCH_GAS_MULTIPLIER covers the difference.
+ * The sum is not sufficient on its own: it prices the calls, not the tryAggregate() around them, which pays its own
+ * intrinsic gas and calldata, dispatches each call and loses 63/64 of what's left forwarding to it. A batch of
+ * several calls absorbs that from the 21,000 intrinsic gas every standalone estimate carries and the batch pays
+ * once, but a batch of one has no such slack and a proportional multiplier cannot supply it — a lone call estimating
+ * at 48,773 needs 54,870 and would be handed 53,650. MULTICALL3_BATCH_GAS_OVERHEAD covers the wrapper as a fixed
+ * allowance; MULTICALL3_BATCH_GAS_MULTIPLIER remains for drift against a state that moved since the estimate.
  *
- * A call that doesn't estimate contributes nothing to its batch's size. It reverts, so it spends almost nothing, and
- * tryAggregate() keeps it from taking the rest of the batch with it.
+ * A call that doesn't estimate has no size, so it goes in a batch of its own rather than into one whose limit is a
+ * sum that excludes it. tryAggregate() contains a revert, but it cannot contain gas exhaustion: an inner call that
+ * runs the batch out of gas reverts the outer transaction too, so an unknown cost sharing a sized batch puts every
+ * call in it at risk. Measured, a call consuming 636k inside a batch sized at 753k for its other calls starved the
+ * call after it; at 12.3M the whole transaction reverted, finalizing nothing and burning the limit. The isolated
+ * batch has no sized limit and falls back to the tryAggregate() estimate, which is the honest thing to do with a
+ * cost nobody could measure.
  */
 export async function buildFinalizationBatches(
   logger: winston.Logger,
@@ -232,8 +241,10 @@ export async function buildFinalizationBatches(
   multisender: Contract,
   calls: Multicall2Call[]
 ): Promise<{ calls: Multicall2Call[]; gasLimit?: BigNumber }[]> {
-  // Budget under the ceiling for the padding applied at submission.
-  const budget = BigNumber.from(Math.floor(MULTICALL3_BATCH_GAS_CEILING / MULTICALL3_BATCH_GAS_MULTIPLIER));
+  // Budget under the ceiling for the padding applied at submission, and for the wrapper allowance added below.
+  const budget = BigNumber.from(
+    Math.floor(MULTICALL3_BATCH_GAS_CEILING / MULTICALL3_BATCH_GAS_MULTIPLIER) - MULTICALL3_BATCH_GAS_OVERHEAD
+  );
 
   // @dev Estimate as the multisender, matching both the pre-flight and the calls' real sender: each executes from
   // Multicall3, and the legacy OptimismPortal keys withdrawal proofs off msg.sender.
@@ -260,16 +271,28 @@ export async function buildFinalizationBatches(
     });
   }
 
-  const batches: { calls: Multicall2Call[]; gas: BigNumber }[] = [];
+  // @dev `sized` keeps the two kinds of batch apart: a call of known cost never joins a batch of unknown ones, and
+  // no unknown cost is ever charged against a limit summed from other calls. Consecutive unestimated calls do share
+  // a batch — they're already unknown to each other, and the alternative is one wasted transaction each.
+  const batches: { calls: Multicall2Call[]; gas: BigNumber; sized: boolean }[] = [];
   calls.forEach((call, idx) => {
     const result = results[idx];
-    const gas = isPromiseFulfilled(result) ? result.value : bnZero;
     const batch = batches.at(-1);
-    if (isDefined(batch) && batch.gas.add(gas).lte(budget)) {
+    if (!isPromiseFulfilled(result)) {
+      if (isDefined(batch) && !batch.sized) {
+        batch.calls.push(call);
+      } else {
+        batches.push({ calls: [call], gas: bnZero, sized: false });
+      }
+      return;
+    }
+
+    const gas = result.value;
+    if (isDefined(batch) && batch.sized && batch.gas.add(gas).lte(budget)) {
       batch.calls.push(call);
       batch.gas = batch.gas.add(gas);
     } else {
-      batches.push({ calls: [call], gas });
+      batches.push({ calls: [call], gas, sized: true });
     }
   });
 
@@ -295,7 +318,11 @@ export async function buildFinalizationBatches(
     });
   }
 
-  return batches.map(({ calls, gas }) => ({ calls, gasLimit: gas.gt(bnZero) ? gas : undefined }));
+  // @dev The summed estimates cover the calls; MULTICALL3_BATCH_GAS_OVERHEAD covers the tryAggregate() around them.
+  return batches.map(({ calls, gas, sized }) => ({
+    calls,
+    gasLimit: sized ? gas.add(MULTICALL3_BATCH_GAS_OVERHEAD) : undefined,
+  }));
 }
 
 /** The transaction submitting one batch of finalizations. */

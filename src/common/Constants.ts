@@ -241,6 +241,14 @@ export const MULTICALL3_BATCH_GAS_MULTIPLIER = 1.1;
 // through proxied transmitter/messenger/token contracts reaches d ~= 7.
 export const MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER = 1.5;
 
+// Fixed allowance added to a batch's summed estimates for the Multicall3 wrapper itself: the transaction's own
+// intrinsic gas and calldata, plus dispatch and the 63/64 forwarding loss at each call. The multiplier above cannot
+// cover this, being proportional to a sum that does not contain it — a lone call estimating at 48,773 is supplied
+// 53,650 at x1.1 and needs 54,870, so the batch reverts and finalizes nothing. Batches of two or more calls only
+// escape this incidentally, via the 21,000 intrinsic gas every standalone estimate carries and the batch pays once.
+// A limit is not a spend; the unused remainder is refunded.
+export const MULTICALL3_BATCH_GAS_OVERHEAD = 100_000;
+
 // Ceiling on a submitted finalization batch's gas limit, above which it is split. Under EIP-7825's 2^24 = 16,777,216
 // per-transaction cap, with ~1.8M spare for the padding above, for state drift, and for chains capped lower.
 export const MULTICALL3_BATCH_GAS_CEILING = 15_000_000;

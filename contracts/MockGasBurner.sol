@@ -24,4 +24,16 @@ contract MockGasBurner {
     function fail() external pure {
         revert("MockGasBurner: failed");
     }
+
+    // Consumes `rounds` worth of gas and only then reverts, so the gas is spent rather than returned to the caller.
+    // Models the case that makes an unestimated call unsafe to put in a sized batch: eth_estimateGas can't size it,
+    // but it still takes real gas out of whatever budget the batch was given.
+    function burnThenFail(uint256 rounds) external {
+        bytes32 h = sink;
+        for (uint256 i = 0; i < rounds; i++) {
+            h = keccak256(abi.encodePacked(h, i));
+        }
+        sink = h;
+        revert("MockGasBurner: burned then failed");
+    }
 }
