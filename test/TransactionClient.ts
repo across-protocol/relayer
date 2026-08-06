@@ -1,4 +1,4 @@
-import { AugmentedTransaction } from "../src/clients";
+import { AugmentedTransaction, TransactionBroadcastRejectedError } from "../src/clients";
 import {
   BigNumber,
   ethers,
@@ -80,6 +80,20 @@ describe("TransactionClient", function () {
     // The bad txns in the middle should exclusively fail.
     txnResponses = await txnClient.submit(chainId, txns.slice(nTxns, nTxns + nTxns));
     expect(txnResponses.length).to.equal(0);
+  });
+
+  it("Propagates definite pre-broadcast rejections", async function () {
+    class RejectingClient extends MockedTransactionClient {
+      protected override _getTransactionPromise(): Promise<TransactionResponse> {
+        return Promise.reject(new TransactionBroadcastRejectedError(new Error("insufficient funds")));
+      }
+    }
+
+    const chainId = chainIds[0];
+    const transaction = { chainId, contract: { address, signer }, method, args: [] } as AugmentedTransaction;
+    await expect(new RejectingClient(spyLogger).submit(chainId, [transaction])).to.be.rejectedWith(
+      TransactionBroadcastRejectedError
+    );
   });
 
   it("Validates that successive transactions increment their nonce", async function () {

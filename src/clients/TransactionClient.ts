@@ -94,6 +94,12 @@ export interface AugmentedTransaction {
 
 type TransactionCallbacks = Pick<AugmentedTransaction, "onSubmission" | "onBroadcast">;
 
+export class TransactionBroadcastRejectedError extends Error {
+  constructor(readonly cause: Error) {
+    super(`Transaction rejected before broadcast: ${cause.message}`);
+  }
+}
+
 export function isAugmentedTransaction(txn: unknown): txn is AugmentedTransaction {
   if (txn === null || typeof txn !== "object") {
     return false;
@@ -330,6 +336,9 @@ export class TransactionClient {
           error: stringifyThrownValue(error),
           notificationPath: "across-error",
         });
+        if (error instanceof TransactionBroadcastRejectedError) {
+          throw error;
+        }
         return txnResponses;
       }
 
@@ -476,7 +485,7 @@ async function _runTransaction(
       case errors.INSUFFICIENT_FUNDS: {
         message = "Cannot execute transaction due to insufficient native token balance.";
         logger.warn({ at, message, code, reason, ...commonFields });
-        throw error;
+        throw new TransactionBroadcastRejectedError(error);
       }
 
       // Bad errors - likely something wrong in the codebase.
@@ -485,7 +494,7 @@ async function _runTransaction(
       case errors.UNEXPECTED_ARGUMENT: {
         message = `Attempted invalid ${chain} transaction (${cause}).`;
         logger.warn({ at, message, code, reason, ...commonFields });
-        throw error;
+        throw new TransactionBroadcastRejectedError(error);
       }
 
       default:

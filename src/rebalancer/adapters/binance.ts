@@ -57,7 +57,7 @@ import {
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
 import { getPendingBridgeDepositRecoveryKey, getPendingBridgeDepositTxnKey, STATUS } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
-import { AugmentedTransaction, MultiCallerClient } from "../../clients";
+import { AugmentedTransaction, MultiCallerClient, TransactionBroadcastRejectedError } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { FINALIZER_TOKENBRIDGE_LOOKBACK, getContractEntry } from "../../common";
 import { CctpAdapter } from "./cctpAdapter";
@@ -890,12 +890,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
         expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
+      // Keep a broadcast order reserved for the full recovery horizon even if its transaction mapping cannot be saved.
       await this._redisCreateOrder(
         cloid,
         STATUS.PENDING_DEPOSIT_SUBMISSION,
         rebalanceRoute,
         amountToTransfer,
-        this.baseSignerAddress
+        this.baseSignerAddress,
+        2 * FINALIZER_TOKENBRIDGE_LOOKBACK
       );
       const depositRecoveryKey = getPendingBridgeDepositRecoveryKey(
         this.REDIS_PREFIX,
@@ -923,7 +925,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           await onSubmission?.();
         });
       } catch (error) {
-        if (!submissionStarted) {
+        if (!submissionStarted || error instanceof TransactionBroadcastRejectedError) {
           await Promise.all([
             this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT_SUBMISSION, this.baseSignerAddress),
             this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT, this.baseSignerAddress),
@@ -1274,18 +1276,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const amountReadable = fromWei(amountToDeposit, sourceTokenInfo.decimals);
     const connectedSigner = this.baseSigner.connect(sourceProvider);
-    const onBroadcast = async (transactionHash: string) => {
-      assert(
-        isDefined(
-          await this.redisCache.set(
-            getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative()),
-            JSON.stringify({ chainId: sourceChain, transactionHash }),
-            2 * FINALIZER_TOKENBRIDGE_LOOKBACK
-          )
-        ),
-        "Failed to persist Binance deposit transaction recovery data"
-      );
-    };
+    const onBroadcast = (transactionHash: string) =>
+      this._persistDepositTransaction(cloid, sourceChain, transactionHash);
 
     let txnHash: string;
     if (usesBinanceAtomicDepositorTransfer(sourceToken, sourceChain)) {
@@ -1320,6 +1312,32 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       redisDepositTypeKey: getBinanceTransactionTypeKey(sourceChain, txnHash),
     });
     return txnHash;
+  }
+
+  private async _persistDepositTransaction(cloid: string, chainId: number, transactionHash: string): Promise<void> {
+    const key = getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative());
+    for (let attempt = 0; ; attempt++) {
+      try {
+        const result = await this.redisCache.set(
+          key,
+          JSON.stringify({ chainId, transactionHash }),
+          2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+        );
+        assert(isDefined(result), "Failed to persist Binance deposit transaction recovery data");
+        return;
+      } catch (error) {
+        if (attempt === 4) {
+          throw error;
+        }
+        this.logger.warn({
+          at: "BinanceStablecoinSwapAdapter._persistDepositTransaction",
+          message: "Retrying Binance deposit transaction recovery write",
+          attempt: attempt + 1,
+          error,
+        });
+        await this._wait(2 ** attempt);
+      }
+    }
   }
 
   private async _reconcileDepositRecovery(cloid: string): Promise<boolean> {
