@@ -69,6 +69,19 @@ import { CctpAdapter } from "./cctpAdapter";
 import { OftAdapter, getOftPreDepositOrderTtlOverride } from "./oftAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
 
+export function getBinanceRebalanceCandidate(
+  route: Pick<RebalanceRoute, "sourceChain" | "sourceToken" | "destinationChain" | "destinationToken">,
+  amount: BigNumber
+): string {
+  return JSON.stringify([
+    route.sourceChain,
+    route.sourceToken,
+    route.destinationChain,
+    route.destinationToken,
+    amount.toString(),
+  ]);
+}
+
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private _binanceApiClient?: Binance;
   private exchangeInfoPromise?: ReturnType<Binance["exchangeInfo"]>;
@@ -774,15 +787,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const reservations = await this.redisCache.sMembers(reservationSetKey);
       const reservationDetails = await Promise.all(reservations.map((token) => this.redisCache.get(token)));
       const liveReservations = reservations.filter((_token, index) => isDefined(reservationDetails[index]));
+      const pendingOrders = await this.getPendingOrders();
+      const pendingOrderDetails = await Promise.all(
+        pendingOrders.map((cloid) => this._redisGetOrderDetails(cloid, this.baseSignerAddress))
+      );
       await Promise.all(
         reservations
           .filter((_token, index) => !isDefined(reservationDetails[index]))
           .map((token) => this.redisCache.sRem(reservationSetKey, token))
       );
-      if ((await this.getPendingOrders()).length + liveReservations.length >= maxPendingOrders) {
+      if (pendingOrders.length + liveReservations.length >= maxPendingOrders) {
         return;
       }
-      if (reservationDetails.some((details) => details === candidate)) {
+      if (
+        reservationDetails.some((details) => details === candidate) ||
+        pendingOrderDetails.some(
+          (details) =>
+            isDefined(details) && getBinanceRebalanceCandidate(details, details.amountToTransfer) === candidate
+        )
+      ) {
         return;
       }
       const reservation = `${this.REDIS_PREFIX}initiation-reservation:${account}:${randomUUID()}`;
