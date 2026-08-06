@@ -245,6 +245,7 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
   }
 }
 
+/** @deprecated AdapterManager bridge adapters now own same-asset initiation. Retained as a rollback path. */
 export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const logLabel = "runSameAssetRebalancer";
   const { rebalancerClient, inventoryClient } = await initializeRebalancerRun(

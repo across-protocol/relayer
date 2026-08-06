@@ -1,11 +1,14 @@
 import { expect, ethers, sinon } from "./utils";
 import winston from "winston";
 import { HyperliquidStablecoinSwapAdapter } from "../src/rebalancer/adapters/hyperliquid";
+import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance";
+import { BinanceStablecoinSwapAdapter as BinanceStablecoinSwapBridge } from "../src/adapter/bridges";
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
+import { buildAdapterManagerBinanceRoutes } from "../src/rebalancer/RebalancerClientHelper";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { RebalanceRoute, OrderDetails } from "../src/rebalancer/utils/interfaces";
-import { BigNumber, bnZero, CHAIN_IDs, EvmAddress, toBNWei } from "../src/utils";
+import { BigNumber, bnZero, CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, toBNWei } from "../src/utils";
 
 const TEST_LOGGER = {
   debug: () => undefined,
@@ -45,6 +48,20 @@ type AdapterInternals = {
   _createHlOrder(orderDetails: OrderDetails, cloid: string): Promise<unknown>;
   _getMatchingFillForCloid(account: EvmAddress, cloid: string): Promise<unknown>;
   _bridgeToChain(token: string, originChain: number, destinationChain: number, amount: BigNumber): Promise<BigNumber>;
+};
+
+type BinanceAdapterInternals = {
+  initialized: boolean;
+  availableRoutes: RebalanceRoute[];
+  _redisGetPendingBridgesPreDeposit(account: EvmAddress): Promise<string[]>;
+  _redisGetPendingDeposits(account: EvmAddress): Promise<string[]>;
+  _redisGetPendingSwaps(account: EvmAddress): Promise<string[]>;
+  _redisGetPendingWithdrawals(account: EvmAddress): Promise<string[]>;
+  _redisGetOrderDetailsRequired(cloid: string, account: EvmAddress): Promise<OrderDetails>;
+  _getBinanceBalance(token: string): Promise<number>;
+  _withdraw(cloid: string, amount: number, token: string, chainId: number): Promise<boolean>;
+  _redisUpdateOrderStatus(cloid: string, oldStatus: number, status: number, account: EvmAddress): Promise<void>;
+  _wait(seconds: number): Promise<void>;
 };
 
 async function makeHyperliquidAdapter(): Promise<{
@@ -124,5 +141,61 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
     expect(adapter.supportsRoute(SWAP_ORDER_DETAILS)).to.equal(false);
     internals.availableRoutes = [SWAP_ORDER_ROUTE];
     expect(adapter.supportsRoute(SWAP_ORDER_DETAILS)).to.equal(true);
+  });
+
+  it("progresses AdapterManager Binance orders using bridge-derived lifecycle routes", async function () {
+    const wallet = ethers.Wallet.createRandom();
+    const signer = EvmAddress.from(await wallet.getAddress());
+    const route = buildAdapterManagerBinanceRoutes()[0];
+    const l1Token = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]);
+    const l2Token = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.AVALANCHE]);
+    let order!: OrderDetails;
+    const initiatingAdapter = {
+      baseSignerAddress: signer,
+      config: { maxAmountsToTransfer: {}, maxPendingOrders: {} },
+      supportsRoute: () => true,
+      getPendingOrders: async () => [],
+      getEstimatedCost: async () => bnZero,
+      initializeRebalanceWithTransaction: async (createdRoute: RebalanceRoute, amount: BigNumber) => {
+        order = { ...createdRoute, amountToTransfer: amount };
+        return { amount, transactionHash: "0xdeposit" };
+      },
+    };
+    const bridge = new BinanceStablecoinSwapBridge(
+      CHAIN_IDs.AVALANCHE,
+      CHAIN_IDs.MAINNET,
+      wallet,
+      wallet,
+      l1Token,
+      TEST_LOGGER
+    );
+    Object.assign(bridge, { adapter: initiatingAdapter, route });
+    await bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, toBNWei("100", 6), false);
+
+    const adapter = new BinanceStablecoinSwapAdapter(
+      TEST_LOGGER,
+      {} as RebalancerConfig,
+      wallet,
+      {} as CctpAdapter,
+      {} as OftAdapter
+    );
+    const internals = adapter as unknown as BinanceAdapterInternals;
+    internals.initialized = true;
+    internals.availableRoutes = [route];
+    adapter.baseSignerAddress = signer;
+
+    sinon.stub(internals, "_redisGetPendingBridgesPreDeposit").resolves([]);
+    sinon.stub(internals, "_redisGetPendingDeposits").resolves(["adapter-manager-order"]);
+    sinon.stub(internals, "_redisGetPendingSwaps").resolves([]);
+    sinon.stub(internals, "_redisGetPendingWithdrawals").resolves([]);
+    sinon.stub(internals, "_redisGetOrderDetailsRequired").resolves(order);
+    sinon.stub(internals, "_getBinanceBalance").resolves(100);
+    sinon.stub(internals, "_withdraw").resolves(true);
+    const updateStatus = sinon.stub(internals, "_redisUpdateOrderStatus").resolves();
+    sinon.stub(internals, "_wait").resolves();
+
+    await adapter.updateRebalanceStatuses();
+
+    expect(updateStatus.calledOnce).to.equal(true);
   });
 });

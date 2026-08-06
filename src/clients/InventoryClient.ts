@@ -971,7 +971,20 @@ export class InventoryClient {
 
     // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
     for (const rebalance of rebalancesRequired) {
-      const { balance, amount, l1Token, l2Token, chainId } = rebalance;
+      const { l1Token, l2Token, chainId } = rebalance;
+      const amount = await this.adapterManager.prepareTokenCrossChain(
+        this.relayer,
+        chainId,
+        l1Token,
+        rebalance.amount,
+        l2Token
+      );
+      if (amount.eq(bnZero)) {
+        this.log("Cross-chain adapter declined inventory rebalance", { ...rebalance, amount: rebalance.amount });
+        continue;
+      }
+      const preparedRebalance = { ...rebalance, amount };
+      const { balance } = preparedRebalance;
 
       // This is the balance left after any assumed rebalances from earlier loop iterations.
       const unallocatedBalance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
@@ -1007,13 +1020,13 @@ export class InventoryClient {
         });
 
         if (!insufficientBalance) {
-          possibleRebalances.push(rebalance);
+          possibleRebalances.push(preparedRebalance);
           // Decrement token balance in client for this chain and increment cross chain counter.
           this.trackCrossChainTransfer(l1Token, l2Token, amount, chainId);
         }
       } else {
         // Extract unexecutable rebalances for logging.
-        unexecutedRebalances.push(rebalance);
+        unexecutedRebalances.push(preparedRebalance);
       }
     }
 

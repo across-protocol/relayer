@@ -20,6 +20,7 @@ type RebalanceWithAmount = RebalanceRoute & { amount: BigNumber };
  * InventoryClient can't already support it. For example, from L1 to L2 via Binance for any other chains besides BSC
  * is impossible in the InventoryClient because once a deposit lands in Binance we don't know where its final
  * destination chain is unless we track it via Redis like we do with this client (and not in the InventoryClient).
+ * @deprecated AdapterManager bridge adapters now own same-asset initiation. Retained as a rollback path.
  */
 export class SameAssetRebalancerClient extends BaseRebalancerClient {
   override async rebalanceInventory(inventoryClient: InventoryClient, maxFeePct: BigNumber): Promise<void> {

@@ -10,6 +10,7 @@ import {
   Address,
   getHubPoolAddress,
   getSpokePoolAddress,
+  TransactionResponse,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
 import { CctpOftReadOnlyClient, PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
@@ -67,6 +68,21 @@ export abstract class BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents>;
+
+  prepareL1ToL2Transfer?(
+    toAddress: Address,
+    l1Token: EvmAddress,
+    l2Token: Address,
+    amount: BigNumber
+  ): Promise<BigNumber>;
+
+  sendL1ToL2Transfer?(
+    toAddress: Address,
+    l1Token: EvmAddress,
+    l2Token: Address,
+    amount: BigNumber,
+    simMode: boolean
+  ): Promise<TransactionResponse>;
 
   setPendingBridgeRedisReader(pendingBridgeRedisReader?: CctpOftReadOnlyClient): void {
     this.pendingBridgeRedisReader = pendingBridgeRedisReader;

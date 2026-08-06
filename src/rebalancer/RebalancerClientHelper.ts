@@ -1,4 +1,6 @@
-import { assert, CHAIN_IDs, Signer, winston } from "../utils";
+import { assert, CHAIN_IDs, EvmAddress, getTokenInfo, Signer, winston } from "../utils";
+import { CANONICAL_BRIDGE, CUSTOM_BRIDGE, SUPPORTED_TOKENS } from "../common";
+import { BinanceStablecoinSwapAdapter as BinanceStablecoinSwapBridge } from "../adapter/bridges";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
@@ -22,6 +24,27 @@ type RebalancerClientConstructor<T extends BaseRebalancerClient> = new (
   baseSigner: Signer,
   isReadonly: boolean
 ) => T;
+
+export function buildAdapterManagerBinanceRoutes(hubChainId = CHAIN_IDs.MAINNET): RebalanceRoute[] {
+  const route = (destinationChain: number, sourceToken: string): RebalanceRoute => ({
+    sourceChain: hubChainId,
+    sourceToken,
+    destinationChain,
+    destinationToken: sourceToken,
+    adapter: "binance",
+  });
+  const customRoutes = Object.entries(CUSTOM_BRIDGE).flatMap(([chainId, bridges]) =>
+    Object.entries(bridges)
+      .filter(([, Bridge]) => Bridge === BinanceStablecoinSwapBridge)
+      .map(([l1Token]) => route(Number(chainId), getTokenInfo(EvmAddress.from(l1Token), hubChainId).symbol))
+  );
+  const canonicalRoutes = Object.entries(CANONICAL_BRIDGE).flatMap(([chainId, Bridge]) =>
+    Bridge === BinanceStablecoinSwapBridge
+      ? (SUPPORTED_TOKENS[Number(chainId)] ?? []).map((symbol) => route(Number(chainId), symbol))
+      : []
+  );
+  return [...customRoutes, ...canonicalRoutes];
+}
 
 function constructRebalancerDependencies(
   logger: winston.Logger,
@@ -65,7 +88,8 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
   getRebalanceRoutes: (rebalancerConfig: RebalancerConfig) => RebalanceRoute[],
   isReadonly: boolean,
   logLabel: string,
-  message: string
+  message: string,
+  getAdapterRoutes: (rebalanceRoutes: RebalanceRoute[]) => RebalanceRoute[] = (routes) => routes
 ): Promise<T> {
   const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
   const rebalanceRoutes = getRebalanceRoutes(rebalancerConfig);
@@ -77,6 +101,7 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
       adapters[adapterName] ? [adapters[adapterName].initialize(bridgeSupportRoutes)] : []
     )
   );
+  await adapters.binance?.initialize(getAdapterRoutes(rebalanceRoutes));
   await rebalancerClient.initialize(rebalanceRoutes);
   logger.debug({
     at: `RebalancerClientHelper.${logLabel}`,
@@ -99,7 +124,8 @@ export async function constructCumulativeBalanceRebalancerClient(
     (rebalancerConfig) => rebalanceRoutesOverride ?? buildRebalanceRoutes(rebalancerConfig),
     false,
     "constructCumulativeBalanceRebalancerClient",
-    "CumulativeBalanceRebalancerClient initialized"
+    "CumulativeBalanceRebalancerClient initialized",
+    (routes) => [...routes, ...buildAdapterManagerBinanceRoutes()]
   );
 }
 

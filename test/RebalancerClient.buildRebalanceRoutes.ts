@@ -1,8 +1,11 @@
 import { expect } from "./utils";
-import { CHAIN_IDs } from "../src/utils";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "../src/utils";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { buildBridgeSupportRoutes, buildRebalanceRoutes } from "../src/rebalancer/buildRebalanceRoutes";
 import type { RebalanceRoute } from "../src/rebalancer/utils/interfaces";
+import { buildAdapterManagerBinanceRoutes } from "../src/rebalancer/RebalancerClientHelper";
+import { CUSTOM_BRIDGE } from "../src/common";
+import { BinanceStablecoinSwapAdapter, UsdcCCTPBridge } from "../src/adapter/bridges";
 import {
   buildSameAssetRebalanceRoutes,
   SAME_ASSET_REBALANCE_ROUTE_SUPPORT,
@@ -524,5 +527,31 @@ describe("buildSameAssetRebalanceRoutes", function () {
         expectedEnabledRoutes
       );
     });
+  });
+});
+
+describe("AdapterManager Binance routes", function () {
+  it("derives the Avalanche USDT lifecycle route from the custom bridge map", function () {
+    const routes = buildAdapterManagerBinanceRoutes();
+    const executionRoutes = buildRebalanceRoutes(
+      buildSyntheticSameAssetRebalancerConfig(SAME_ASSET_REBALANCE_ROUTE_SUPPORT)
+    );
+
+    expect(routes).to.deep.equal([
+      {
+        sourceChain: CHAIN_IDs.MAINNET,
+        sourceToken: "USDT",
+        destinationChain: CHAIN_IDs.AVALANCHE,
+        destinationToken: "USDT",
+        adapter: "binance",
+      },
+    ]);
+    expect(CUSTOM_BRIDGE[CHAIN_IDs.AVALANCHE][TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]).to.equal(
+      BinanceStablecoinSwapAdapter
+    );
+    expect(CUSTOM_BRIDGE[CHAIN_IDs.AVALANCHE][TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]).to.equal(
+      UsdcCCTPBridge
+    );
+    expect(executionRoutes).to.be.empty;
   });
 });

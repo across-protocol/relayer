@@ -301,6 +301,29 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
   });
 
+  it("Uses the amount accepted by the cross-chain adapter", async function () {
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+    adapterManager.preparedAmount = toMegaWei(100);
+
+    await inventoryClient.update();
+    const rebalances = await inventoryClient.rebalanceInventoryIfNeeded(true);
+
+    expect(rebalances).to.have.lengthOf(1);
+    expect(rebalances[0].amount).to.equal(toMegaWei(100));
+  });
+
+  it("Does not reserve a rebalance declined by the cross-chain adapter", async function () {
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+    const initialMainnetBalance = tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc));
+    adapterManager.preparedAmount = bnZero;
+
+    await inventoryClient.update();
+    const rebalances = await inventoryClient.rebalanceInventoryIfNeeded(true);
+
+    expect(rebalances).to.be.empty;
+    expect(tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc))).to.equal(initialMainnetBalance);
+  });
+
   // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
   // alongside that logic.
   it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {
