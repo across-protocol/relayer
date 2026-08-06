@@ -1,12 +1,12 @@
 import { Multicall3__factory } from "@across-protocol/sdk/src/utils/abi/typechain";
 import { Contract } from "ethers";
-import { MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER } from "../src/common";
 import { deployMulticall3, ethers, expect, getContractFactory } from "./utils";
 
-// Characterises eth_estimateGas against a real Multicall3 tryAggregate(requireSuccess=false) batch, pinning the
-// two properties MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER relies on: the estimate is always a floor rather than a
-// requirement (so the padding is load-bearing — at 1.0x these cases fail), and the shortfall stays within the
-// EIP-150 1/64 reserve (so a fixed multiplier is enough). See src/clients/README.md for why.
+// Characterises eth_estimateGas against a real Multicall3 tryAggregate(requireSuccess=false) batch: the estimate is
+// always a floor rather than a requirement, which is why a finalization batch is never sized by estimating itself.
+// For the shapes below the shortfall is the EIP-150 reserve, so a multiplier would cover it — but that bound holds
+// only while a call's requirement follows what it consumes, and it does not for OP-stack callWithMinGas. Hence
+// sizing from the calls instead. See src/clients/README.md, and test/Finalizer.BatchBuilding.test.ts for that path.
 describe("Multicall3 tryAggregate gas estimation", function () {
   let multicall3: Contract, burner: Contract, from: string;
 
@@ -27,7 +27,7 @@ describe("Multicall3 tryAggregate gas estimation", function () {
   });
 
   shapes.forEach(([label, rounds]) => {
-    it(`Pads a batch with ${label} past its true requirement`, async function () {
+    it(`Estimates a batch with ${label} below its true requirement`, async function () {
       const calls = rounds.map((r) => ({
         target: burner.address,
         callData: burner.interface.encodeFunctionData("burn", [r]),
@@ -63,8 +63,6 @@ describe("Multicall3 tryAggregate gas estimation", function () {
       expect(required - estimate, `shortfall should be within 1/64 of ${required}`).to.be.at.most(
         Math.ceil(required / 64)
       );
-      const padded = Math.floor(estimate * MULTICALL3_TRY_AGGREGATE_GAS_MULTIPLIER);
-      expect(padded, `padded ${padded} should cover requirement ${required}`).to.be.at.least(required);
     });
   });
 });
