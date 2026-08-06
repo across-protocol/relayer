@@ -78,6 +78,7 @@ export interface AugmentedTransaction {
   unpermissioned?: boolean; // If false, the transaction must be sent from the enqueuer of the method.
   // If true, then can be sent from the MakerDAO multisender contract.
   canFailInSimulation?: boolean;
+  onSubmission?: () => void;
   // Optional batch ID to use to group transactions
   groupId?: string;
   // If true, the transaction is being sent to a non Multicall contract so we can't batch it together
@@ -142,9 +143,10 @@ export class TransactionClient {
   }
 
   protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
-    const { contract, method, args, value, gasLimit, chainId } = txn;
-    const transactionHandler = chainIsTvm(chainId) ? _runTransactionTvm : _runTransaction;
-    return transactionHandler(this.logger, contract, method, args, value, gasLimit, nonce);
+    const { contract, method, args, value, gasLimit, chainId, onSubmission } = txn;
+    return chainIsTvm(chainId)
+      ? _runTransactionTvm(this.logger, contract, method, args, value, gasLimit, nonce)
+      : _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce, undefined, 1, onSubmission);
   }
 
   protected async _submit(
@@ -363,7 +365,8 @@ async function _runTransaction(
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
   retries?: number,
-  retryScaler = 1.0
+  retryScaler = 1.0,
+  onSubmission?: () => void
 ): Promise<TransactionResponse> {
   const at = "TxUtil#_runTransaction";
   const { provider, signer } = contract;
@@ -375,6 +378,8 @@ async function _runTransaction(
   retries ??= _retries;
 
   let gas: Partial<FeeData>;
+  const retry = (nextNonce: number | null, nextRetries: number, nextScaler = retryScaler) =>
+    _runTransaction(logger, contract, method, args, value, gasLimit, nextNonce, nextRetries, nextScaler, onSubmission);
   try {
     nonce ??= await provider.getTransactionCount(await signer.getAddress());
     const preGas = await getGasPrice(
@@ -390,7 +395,7 @@ async function _runTransaction(
     if ((chainId === CHAIN_IDs.LINEA && method === "fillRelay") || --retries < 0) {
       throw error;
     }
-    return await _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries);
+    return await retry(nonce, retries);
   }
 
   const to = contract.address;
@@ -407,6 +412,7 @@ async function _runTransaction(
   );
 
   try {
+    onSubmission?.();
     return sendRawTxn
       ? await signer.sendTransaction({ to, data: (args as ethers.utils.BytesLike[])[0], ...txConfig })
       : await contract[method](...args, txConfig);
@@ -495,7 +501,7 @@ async function _runTransaction(
       retryScaler = Math.min(retryScaler, maxGasScaler);
     }
 
-    return await _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, retryScaler);
+    return await retry(nonce, retries, retryScaler);
   }
 }
 

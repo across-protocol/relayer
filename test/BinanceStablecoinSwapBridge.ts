@@ -1,4 +1,5 @@
 import { BinanceStablecoinSwapAdapter, BridgeTransferDeclinedError } from "../src/adapter/bridges";
+import { TransactionClient } from "../src/clients";
 import { RebalanceRoute } from "../src/rebalancer/utils/interfaces";
 import { CHAIN_IDs, EvmAddress, submitTransaction, TOKEN_SYMBOLS_MAP, ZERO_BYTES } from "../src/utils";
 import { createSpyLogger, ethers, expect, toBNWei } from "./utils";
@@ -158,7 +159,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     ).to.be.rejectedWith("confirmation unavailable");
   });
 
-  it("marks submission after transaction simulation", async function () {
+  it("marks submission at the broadcast boundary", async function () {
     const transaction = { contract: { address: ZERO_BYTES }, method: "transfer", args: [], chainId: 1 } as never;
     let submissionStarted = false;
     const failedSimulation = {
@@ -173,9 +174,25 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     ).to.be.rejectedWith("Failed to simulate");
     expect(submissionStarted).to.be.false;
 
+    const { spyLogger } = createSpyLogger();
+    const preBroadcastFailure = {
+      ...transaction,
+      contract: { signer: { getAddress: async () => Promise.reject(new Error("signer unavailable")) } },
+      onSubmission: () => {
+        submissionStarted = true;
+      },
+    } as never;
+    await expect(new TransactionClient(spyLogger).submit(1, [preBroadcastFailure])).to.be.rejectedWith(
+      "signer unavailable"
+    );
+    expect(submissionStarted).to.be.false;
+
     const failedSubmission = {
       simulate: async () => [{ transaction, succeed: true }],
-      submit: async () => [],
+      submit: async (_chainId: number, [transaction]: { onSubmission?: () => void }[]) => {
+        transaction.onSubmission?.();
+        return [];
+      },
     } as never;
     await expect(
       submitTransaction(transaction, failedSubmission, () => {

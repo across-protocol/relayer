@@ -281,8 +281,7 @@ export async function submitTransaction(
     throw new Error(`${message} (${reason})`);
   }
 
-  onSubmission?.();
-  const response = await transactionClient.submit(transaction.chainId, [transaction]);
+  const response = await transactionClient.submit(transaction.chainId, [{ ...transaction, onSubmission }]);
   if (response.length === 0) {
     throw new Error(
       `Transaction succeeded simulation but failed to submit onchain to ${
