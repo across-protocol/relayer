@@ -1,45 +1,5 @@
-import { fetchWithTimeout, postWithTimeout, HttpError } from "../utils/SDKUtils";
+import { fetchWithTimeout, postWithTimeout } from "../utils/SDKUtils";
 import winston from "winston";
-
-/**
- * Non-2xx response from an Across API, carrying the structured error body the API returns:
- * `{ type, code, status, message, param, id }`. Extends the SDK's `HttpError` so callers that only
- * classify on the status (`isHttpError(err) && err.status === 422`) keep working unchanged; `code`
- * is the API's stable machine-readable discriminator (e.g. `AMOUNT_BELOW_MINIMUM`,
- * `GAS_EXCEEDS_REFUND`), which several statuses share.
- */
-export class AcrossApiHttpError extends HttpError {
-  constructor(
-    status: number,
-    message: string,
-    readonly code?: string,
-    readonly param?: string
-  ) {
-    super(status, message);
-    this.name = "AcrossApiHttpError";
-  }
-}
-
-/**
- * Builds an {@link AcrossApiHttpError} from a failed response body. Across APIs put the human
- * message on `message` and the discriminator on `code`; `error` is accepted as a fallback since
- * that is the key the SDK's fetch helpers look for. A non-JSON body degrades to the status line.
- */
-function toAcrossApiHttpError(status: number, statusText: string, body: string): AcrossApiHttpError {
-  let parsed: { code?: unknown; param?: unknown; message?: unknown; error?: unknown } | undefined;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    // Non-JSON error body (e.g. an upstream proxy's HTML); fall back to the status line below.
-  }
-  const asString = (value: unknown) => (typeof value === "string" && value.length > 0 ? value : undefined);
-  return new AcrossApiHttpError(
-    status,
-    asString(parsed?.message) ?? asString(parsed?.error) ?? `HTTP ${status}: ${statusText}`,
-    asString(parsed?.code),
-    asString(parsed?.param)
-  );
-}
 
 /**
  * Base client for Across HTTP APIs. Provides shared GET logic with timeout and error handling.
@@ -157,54 +117,6 @@ export abstract class BaseAcrossApiClient {
         message: `Failed to post to ${this.urlBase}`,
         endpoint,
         error: (err as Error).message,
-      });
-      throw err;
-    }
-  }
-
-  /**
-   * Like `_postOrThrow`, but preserves the API's error `code` by throwing an
-   * {@link AcrossApiHttpError}. Callers that must distinguish *which* terminal condition a status
-   * represents (e.g. `AMOUNT_BELOW_MINIMUM` vs any other 422) use this.
-   *
-   * Does its own `fetch` rather than delegating to `postWithTimeout`: that helper reads the error
-   * body only for an `error` key, which Across API error responses never set (they serialize
-   * `{ type, code, status, message, param, id }`), so it discards the code and collapses every 422
-   * to "HTTP 422: Unprocessable Entity".
-   */
-  protected async _postOrThrowWithErrorCode<T>(endpoint: string, body: unknown): Promise<T> {
-    const headers: Record<string, string> = { "Content-Type": "application/json", Accept: "application/json" };
-    if (this.apiKey) {
-      headers.Authorization = `Bearer ${this.apiKey}`;
-    }
-    const url = `${this.urlBase}/${endpoint}`;
-    try {
-      const response = await fetch(url, {
-        method: "POST",
-        body: JSON.stringify(body),
-        headers,
-        ...(this.apiResponseTimeout > 0 && { signal: AbortSignal.timeout(this.apiResponseTimeout) }),
-      });
-      const text = await response.text();
-      if (!response.ok) {
-        throw toAcrossApiHttpError(response.status, response.statusText, text);
-      }
-      try {
-        return JSON.parse(text) as T;
-      } catch {
-        throw new Error(
-          `Expected JSON response from ${url} but received content-type: ${
-            response.headers.get("content-type") ?? "unknown"
-          } (body: ${text.slice(0, 256)})`
-        );
-      }
-    } catch (err) {
-      this.logger.warn({
-        at: this.logContext,
-        message: `Failed to post to ${this.urlBase}`,
-        endpoint,
-        error: (err as Error).message,
-        ...(err instanceof AcrossApiHttpError && { status: err.status, code: err.code, param: err.param }),
       });
       throw err;
     }
