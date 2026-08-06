@@ -910,6 +910,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           "Failed to persist Binance deposit recovery marker"
         );
         transactionHash = await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer, async () => {
+          if (submissionStarted) {
+            return;
+          }
           await this._redisUpdateOrderStatus(
             cloid,
             STATUS.PENDING_DEPOSIT_SUBMISSION,
@@ -1271,6 +1274,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const amountReadable = fromWei(amountToDeposit, sourceTokenInfo.decimals);
     const connectedSigner = this.baseSigner.connect(sourceProvider);
+    const onBroadcast = async (transactionHash: string) => {
+      assert(
+        isDefined(
+          await this.redisCache.set(
+            getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative()),
+            JSON.stringify({ chainId: sourceChain, transactionHash }),
+            2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+          )
+        ),
+        "Failed to persist Binance deposit transaction recovery data"
+      );
+    };
 
     let txnHash: string;
     if (usesBinanceAtomicDepositorTransfer(sourceToken, sourceChain)) {
@@ -1278,7 +1293,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         sourceChain,
         depositAddress.address,
         amountToDeposit,
-        onSubmission
+        onSubmission,
+        onBroadcast
       );
     } else {
       const txn = this._buildDirectBinanceTokenDepositTransaction(
@@ -1290,20 +1306,10 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         amountToDeposit,
         amountReadable
       );
-      txnHash = await this._submitTransaction(txn, onSubmission);
+      txnHash = await this._submitTransaction({ ...txn, onBroadcast }, onSubmission);
     }
     // TTL must outlive the finalizer lookback so completed swaps are not re-counted as finalizable.
     // The cloid -> deposit txn mapping lets the prune path find abandoned deposit tags.
-    assert(
-      isDefined(
-        await this.redisCache.set(
-          getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative()),
-          JSON.stringify({ chainId: sourceChain, transactionHash: txnHash }),
-          2 * FINALIZER_TOKENBRIDGE_LOOKBACK
-        )
-      ),
-      "Failed to persist Binance deposit transaction recovery data"
-    );
     await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, 2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
     await this.redisCache.del(
       getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative())
@@ -1374,7 +1380,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     sourceChain: number,
     depositAddress: string,
     amountToDeposit: BigNumber,
-    onSubmission?: () => void | Promise<void>
+    onSubmission?: () => void | Promise<void>,
+    onBroadcast?: (transactionHash: string) => void | Promise<void>
   ): Promise<string> {
     const sourceProvider = await getProvider(sourceChain);
     const connectedSigner = this.baseSigner.connect(sourceProvider);
@@ -1406,7 +1413,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         sourceChain
       )}`,
     };
-    return this._submitTransaction(transaction, onSubmission);
+    return this._submitTransaction({ ...transaction, onBroadcast }, onSubmission);
   }
 
   private async _getBinanceBalance(token: string): Promise<number> {

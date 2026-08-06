@@ -493,6 +493,7 @@ describe("Binance adapter helpers", function () {
     sinon.stub(internals, "_depositToBinance").callsFake(async (_cloid, _token, _chain, _amount, onSubmission) => {
       calls.push("submission");
       await onSubmission();
+      await onSubmission();
       calls.push("broadcast");
       throw new Error("post-broadcast redis failure");
     });
@@ -503,6 +504,58 @@ describe("Binance adapter helpers", function () {
     );
     expect(calls).to.deep.equal(["order", "recovery", "submission", "promote", "broadcast"]);
     expect(deleteOrder.called).to.equal(false);
+  });
+
+  it("persists the direct deposit hash at the broadcast boundary", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const set = sinon.stub().resolves("OK");
+    const internals = adapter as unknown as {
+      baseSignerAddress: EvmAddress;
+      binanceApiClient: { depositAddress: sinon.SinonStub };
+      _getTokenInfo(): { symbol: string; decimals: number; address: EvmAddress };
+      _submitTransaction(
+        transaction: { onBroadcast?: (transactionHash: string) => void | Promise<void> },
+        onSubmission?: () => void | Promise<void>
+      ): Promise<string>;
+      _depositToBinance(
+        cloid: string,
+        token: string,
+        chainId: number,
+        amount: BigNumber,
+        onSubmission?: () => void | Promise<void>
+      ): Promise<string>;
+    };
+    internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    internals.binanceApiClient = { depositAddress: sinon.stub().resolves({ address: await signer.getAddress() }) };
+    Object.assign(adapter, { _redisCache: { set } });
+    sinon.stub(adapter.baseSigner, "connect").returns(signer);
+    sinon.stub(internals, "_getTokenInfo").returns({
+      symbol: "USDT",
+      decimals: 6,
+      address: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]),
+    });
+    sinon.stub(internals, "_submitTransaction").callsFake(async (transaction) => {
+      await transaction.onBroadcast?.("0xdeposit");
+      throw new Error("stopped after broadcast");
+    });
+    const rpcProviders = process.env.RPC_PROVIDERS_1;
+    const rpcProvider = process.env.RPC_PROVIDER_test_1;
+    process.env.RPC_PROVIDERS_1 = "test";
+    process.env.RPC_PROVIDER_test_1 = "http://localhost:8545";
+
+    try {
+      await expect(
+        internals._depositToBinance("cloid", "USDT", CHAIN_IDs.MAINNET, toBNWei("100", 6))
+      ).to.be.rejectedWith("stopped after broadcast");
+    } finally {
+      rpcProviders ? (process.env.RPC_PROVIDERS_1 = rpcProviders) : delete process.env.RPC_PROVIDERS_1;
+      rpcProvider ? (process.env.RPC_PROVIDER_test_1 = rpcProvider) : delete process.env.RPC_PROVIDER_test_1;
+    }
+    expect(JSON.parse(set.firstCall.args[1])).to.deep.equal({
+      chainId: CHAIN_IDs.MAINNET,
+      transactionHash: "0xdeposit",
+    });
   });
 
   it("reconciles a recoverable deposit transaction before lifecycle progression", async function () {

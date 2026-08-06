@@ -186,6 +186,7 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
     internals.initialized = true;
     internals.availableRoutes = [route];
     adapter.baseSignerAddress = signer;
+    Object.assign(adapter, { _redisCache: { get: async () => undefined } });
 
     sinon.stub(internals, "_redisGetPendingBridgesPreDeposit").resolves([]);
     sinon.stub(internals, "_redisGetPendingDeposits").resolves(["adapter-manager-order"]);
