@@ -29,6 +29,8 @@ export type BridgeEvent = SortableEvent & {
 
 export type BridgeEvents = { [l2Token: string]: BridgeEvent[] };
 
+export class BridgeTransferDeclinedError extends Error {}
+
 export abstract class BaseBridgeAdapter {
   protected l1Bridge?: Contract;
   protected l2Bridge?: Contract;

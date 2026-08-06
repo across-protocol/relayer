@@ -51,6 +51,7 @@ import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interface
 import { hasBinanceRoute } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
 import { TransferTokenParams } from "../adapter/utils";
+import { BridgeTransferDeclinedError } from "../adapter/bridges/BaseBridgeAdapter";
 import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
 type TokenDistribution = { [l2Token: string]: BigNumber };
@@ -488,6 +489,11 @@ export class InventoryClient {
   trackCrossChainTransfer(l1Token: EvmAddress, l2Token: Address, rebalance: BigNumber, chainId: number): void {
     this.tokenClient.decrementLocalBalance(this.hubPoolClient.chainId, l1Token, rebalance);
     this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, l2Token, rebalance, chainId);
+  }
+
+  untrackCrossChainTransfer(l1Token: EvmAddress, l2Token: Address, rebalance: BigNumber, chainId: number): void {
+    this.tokenClient.incrementLocalBalance(this.hubPoolClient.chainId, l1Token, rebalance);
+    this.crossChainTransferClient.decreaseOutstandingTransfer(this.relayer, l1Token, l2Token, rebalance, chainId);
   }
 
   setBundleData(): void {
@@ -1085,6 +1091,9 @@ export class InventoryClient {
         );
         executedTransactions.push({ ...rebalance, hash });
       } catch (error) {
+        if (error instanceof BridgeTransferDeclinedError) {
+          this.untrackCrossChainTransfer(l1Token, l2Token, amount, chainId);
+        }
         this.log(
           "Something errored during inventory rebalance",
           { error, chainId, l1Token, l2Token, amount, optionalParams }, // include all info to help debugging.
