@@ -455,8 +455,28 @@ describe("InventoryClient: Rebalancing inventory", function () {
       EvmAddress.from(mainnetUsdc),
       arbitrumUsdcL2Token
     );
+    expect(
+      crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+        EvmAddress.from(owner.address),
+        ARBITRUM,
+        EvmAddress.from(mainnetUsdc),
+        arbitrumUsdcL2Token
+      )
+    ).to.equal(0);
     expect(arbitrumUsdcBalance.eq(tokenClient.getBalance(ARBITRUM, arbitrumUsdcL2Token).add(pendingUsdcSwapRebalance)))
       .to.be.true;
+  });
+
+  it("Counts pending rebalances when sizing shortfall coverage", async function () {
+    const l1Token = EvmAddress.from(mainnetUsdc);
+    const l2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
+    const shortfall = toMegaWei(100);
+    tokenClient.setTokenShortFallData(ARBITRUM, l2Token, [BigNumber.from(1)], [shortfall]);
+    mockRebalancerClient.setPendingRebalance(ARBITRUM, "USDC", shortfall);
+
+    await inventoryClient.update();
+
+    expect(inventoryClient._getPossibleShortfallRebalances(l1Token, ARBITRUM, l2Token)).to.be.empty;
   });
 
   it("Only refuses to send rebalance when on-chain balance cannot fund the transfer", async function () {

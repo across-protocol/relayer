@@ -80,4 +80,12 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       "Binance withdrawal recipient must match signer"
     );
   });
+
+  it("leaves bridge-event accounting to Redis-backed pending rebalances", async function () {
+    const { bridge, signer, l1Token } = await makeBridge();
+    const eventConfig = { from: 0, to: 0, maxBlockLookBack: 1 };
+
+    expect(await bridge.queryL1BridgeInitiationEvents(l1Token, signer, signer, eventConfig)).to.deep.equal({});
+    expect(await bridge.queryL2BridgeFinalizationEvents(l1Token, signer, signer, eventConfig)).to.deep.equal({});
+  });
 });

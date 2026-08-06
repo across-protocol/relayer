@@ -75,18 +75,24 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     throw new Error("BinanceStablecoinSwapAdapter submits through sendL1ToL2Transfer");
   }
 
+  /**
+   * Binance swap deposits are tracked as Redis orders, not bridge events. InventoryClient consumes them through
+   * RebalancerClient.getPendingRebalances, so returning initiation events here would count the same transfer twice.
+   */
   queryL1BridgeInitiationEvents(): Promise<BridgeEvents> {
-    // Binance lifecycle balances are already included by RebalancerClient.getPendingRebalances.
     return Promise.resolve({});
   }
 
+  /**
+   * Binance withdrawals likewise have no bridge-event accounting owner: the Redis order remains a pending virtual
+   * balance until the swap rebalancer finalizes it. Returning finalizations here would conflict with that lifecycle.
+   */
   queryL2BridgeFinalizationEvents(
     _l1Token: EvmAddress,
     _fromAddress: Address,
     _toAddress: Address,
     _eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
-    // Binance orders do not expose chain-event-shaped finalizations and must not be counted a second time here.
     return Promise.resolve({});
   }
 

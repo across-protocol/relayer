@@ -913,7 +913,7 @@ export class InventoryClient {
   }
 
   _getPossibleShortfallRebalances(l1Token: EvmAddress, chainId: number, l2Token: Address): Rebalance[] {
-    const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const { decimals: l1TokenDecimals, symbol } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: l2TokenDecimals } = this.getTokenInfo(l2Token, chainId);
     // Order unfilled amounts from largest to smallest to prioritize larger shortfalls.
     const unfilledDepositAmounts = this.tokenClient
@@ -926,6 +926,13 @@ export class InventoryClient {
       l1Token,
       l2Token
     );
+    const canonicalL2Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient.chainId);
+    const pendingRebalance = canonicalL2Token?.eq(l2Token) ? this.pendingRebalances[chainId]?.[symbol] : undefined;
+    if (isDefined(pendingRebalance)) {
+      outstandingCrossChainTransferAmount = outstandingCrossChainTransferAmount.add(
+        sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(pendingRebalance)
+      );
+    }
     const rebalancesRequired: Rebalance[] = [];
     for (const depositAmount of unfilledDepositAmounts) {
       // If this pending deposit amount is greater than the outstanding cross chain transfer amount,
