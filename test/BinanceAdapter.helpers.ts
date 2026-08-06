@@ -508,6 +508,39 @@ describe("Binance adapter helpers", function () {
     expect(deleteOrder.called).to.equal(false);
   });
 
+  it("prefers an explicit recovery TTL over the configured order TTL", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const set = sinon.stub().resolves("OK");
+    Object.assign(adapter, { _redisCache: { sAdd: sinon.stub().resolves(1), set } });
+    const createOrder = (
+      adapter as unknown as { _redisCreateOrder(...args: unknown[]): Promise<void> }
+    )._redisCreateOrder.bind(adapter);
+    const configuredTtl = process.env.REBALANCER_PENDING_ORDER_TTL;
+    process.env.REBALANCER_PENDING_ORDER_TTL = "3600";
+
+    try {
+      await createOrder(
+        "cloid",
+        STATUS.PENDING_DEPOSIT_SUBMISSION,
+        {
+          sourceChain: CHAIN_IDs.MAINNET,
+          sourceToken: "USDT",
+          destinationChain: CHAIN_IDs.AVALANCHE,
+          destinationToken: "USDT",
+        },
+        toBNWei("100", 6),
+        EvmAddress.from(await signer.getAddress()),
+        2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+      );
+    } finally {
+      configuredTtl
+        ? (process.env.REBALANCER_PENDING_ORDER_TTL = configuredTtl)
+        : delete process.env.REBALANCER_PENDING_ORDER_TTL;
+    }
+    expect(set.firstCall.args[2]).to.equal(2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
+  });
+
   it("persists the direct deposit hash at the broadcast boundary", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();
