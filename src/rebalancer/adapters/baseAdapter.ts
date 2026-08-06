@@ -359,9 +359,9 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     );
   }
 
-  // The Redis order store can be shared by multiple rebalancer bots running with the same signer (e.g. the
-  // swapRebalancer and sameAssetRebalancer), so updateRebalanceStatuses() can encounter pending orders created by a
-  // bot configured with a different route catalog. Each adapter should only progress orders whose routes it supports:
+  // The Redis order store can be shared by multiple processes running with the same signer, so
+  // updateRebalanceStatuses() can encounter pending orders created with a different route catalog. Each adapter
+  // should only progress orders whose routes it supports:
   // skipped orders are left pending for a properly-configured instance to progress, and if no such instance exists
   // (e.g. after config drift) the order is eventually TTL-pruned with a warning by _redisCleanupPendingOrders.
   protected _canProgressOrder(at: string, cloid: string, orderDetails: OrderDetails): boolean {

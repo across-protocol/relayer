@@ -87,10 +87,8 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
     sinon.restore();
   });
 
-  // Multiple rebalancer bots (e.g. swapRebalancer and sameAssetRebalancer) share a signer and Redis order store, so
-  // an adapter can encounter pending orders created by a bot with a different route catalog. Regression test for the
-  // sameAssetRebalancer crashing with "Route is not supported: USDC 999 -> USDC 1" while progressing a swap-created
-  // Hyperliquid order through its final CCTP bridge leg.
+  // Processes can share a signer and Redis order store, so an adapter can encounter pending orders created with a
+  // different route catalog. Unsupported orders must not block the lifecycle pass.
   it("skips pending orders whose routes are not in availableRoutes without throwing", async function () {
     const { adapter, internals } = await makeHyperliquidAdapter();
     expect(internals.availableRoutes).to.deep.equal([]);

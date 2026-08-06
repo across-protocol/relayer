@@ -54,10 +54,6 @@ Operational note:
 - Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; current `WETH` routes therefore source or settle through mainnet rather than bridging WETH into another Binance ETH network.
 - Hyperliquid routes intentionally exclude Avalanche, BSC, and Tron USDT endpoints and BSC USDC endpoints because those token/chain combinations cannot bridge through HyperEVM. Same-asset routes involving those endpoints do not use OFT or CCTP.
 
-The dedicated SameAsset mode has a separate route source in `src/rebalancer/buildSameAssetRebalanceRoutes.ts`. Its read-only `SAME_ASSET_REBALANCE_ROUTE_SUPPORT` catalog is the source of truth for token, destination-chain, and adapter combinations that this mode can execute. `buildSameAssetRebalanceRoutes(rebalancerConfig)` returns only the intersection of that catalog and `sameAssetBalances`; adding configuration alone does not enable an unsupported route. Both `SameAssetRebalancerClient` and Jussi topology preparation consume this builder so runtime support and graph edges stay aligned.
-
-SameAsset routes are directional. They move an unchanged asset from the hub chain to a configured destination chain through the selected swap-rebalancer adapter. Excess destination-chain inventory moving back to the hub chain remains an InventoryClient responsibility and is not emitted as a reverse SameAsset route.
-
 ### Rebalancer Adapter
 
 Adapters in `src/rebalancer/adapters/` initiate and progress multi-stage swap workflows. The interface currently is:
@@ -181,7 +177,7 @@ When adding a new file in `src/rebalancer/adapters/`, contributors should usuall
 
 `RebalancerConfig` is loaded from `REBALANCER_CONFIG` or `REBALANCER_EXTERNAL_CONFIG`.
 
-The active config supports cumulative-target and SameAsset modes:
+The active config supports cumulative-target mode:
 
 ```json
 {
@@ -191,11 +187,6 @@ The active config supports cumulative-target and SameAsset modes:
       "thresholdBalance": "1000000",
       "priorityTier": 1,
       "chains": { "1": 1, "42161": 0 }
-    }
-  },
-  "sameAssetBalances": {
-    "USDT": {
-      "chains": { "43114": 1 }
     }
   },
   "maxAmountsToTransfer": {
@@ -213,9 +204,7 @@ Notes:
 - `targetBalance` and `thresholdBalance` values are human-readable and converted to token-native decimals.
 - `cumulativeTargetBalances` define per-token aggregate objectives plus allowed source/destination chain sets for `CumulativeBalanceRebalancerClient.rebalanceInventory()`.
 - `cumulativeTargetBalances[token].chains[chainId]` is a chain priority tier used when selecting where to source excess inventory from and where to land deficit inventory. Lower tiers are preferred for sourcing; higher tiers are preferred for destinations.
-- `sameAssetBalances[token].chains` enables destination chains for `SameAssetRebalancerClient`; InventoryConfig supplies the per-chain target and threshold used to decide whether a transfer is needed. Values in this chain map are enablement markers after parsing, not route-ranking inputs.
-- A SameAsset entry becomes executable only when the support catalog contains the same token and destination chain. The configured source and destination must also be present for that token in InventoryConfig when the route is included in a Jussi graph.
-- `chainIds` are derived from the union of chains found in `cumulativeTargetBalances` and `sameAssetBalances`, with the hub chain included when SameAsset mode is configured.
+- `chainIds` are derived from the chains found in `cumulativeTargetBalances`.
 
 For an operator playbook on sizing these values from expected deposit fills, see
 [`docs/rebalancer-config-from-deposit-flow.md`](../../docs/rebalancer-config-from-deposit-flow.md).
@@ -254,21 +243,6 @@ Same-token routes registered in `CANONICAL_BRIDGE` or `CUSTOM_BRIDGE` are initia
 
 AdapterManager only initiates these Redis-backed orders. The regularly scheduled `swapRebalancer` owns lifecycle progression; its Binance adapter includes bridge-derived routes for status updates without adding those routes to cumulative rebalance selection. Disable the dedicated `sameAssetRebalancer` schedule before enabling an AdapterManager route so only one process owns initiation.
 
-### Deprecated SameAsset mode: `SameAssetRebalancerClient.rebalanceInventory()`
-
-This mode handles configured same-token hub-to-destination transfers that InventoryClient cannot reliably execute through its own bridge adapters. It reuses InventoryClient's inventory targets but delegates execution and lifecycle tracking to the swap-rebalancer adapters.
-
-High-level flow:
-
-1. Ask InventoryClient for the currently needed hub-to-destination inventory rebalances without allowing InventoryClient to execute them.
-2. Match each candidate against the directional routes produced by `buildSameAssetRebalanceRoutes` and discard candidates with no configured, supported route.
-3. Cap the amount using `maxAmountsToTransfer`, reject estimates above `MAX_FEE_PCT`, and initialize the route through its configured adapter when transaction sending is enabled.
-4. Track intermediate venue and bridge state in the adapter's Redis lifecycle, preserving the destination-chain context that the InventoryClient bridge-adapter path cannot represent.
-
-The deprecated runtime entrypoint is `runSameAssetRebalancer`, exposed as the `sameAssetRebalancer` bot. It is retained only as a rollback path while deployments migrate to AdapterManager; do not schedule it alongside bridge-owned initiation. Operators enable its destination token/chain pairs under `sameAssetBalances`, while the support catalog controls which of those pairs can become routes.
-
-Cross-mode pending orders: the `swapRebalancer` and `sameAssetRebalancer` bots typically share a base signer and the Redis order store, so each bot's `updateRebalanceStatuses()` pass can encounter pending orders created by the other mode. Adapters only progress orders whose routes are in their own configured `availableRoutes` (`BaseAdapter._canProgressOrder`); unsupported orders are skipped with a debug log and left pending for the properly-configured bot to progress. If no configured instance supports an order's route (e.g. after config drift), the order is eventually TTL-pruned with a warning by `_redisCleanupPendingOrders`.
-
 ### Read-only mode: `ReadOnlyRebalancerClient`
 
 `ReadOnlyRebalancerClient` is used by consumers that only need pending-state visibility (for example, inventory
@@ -284,7 +258,6 @@ The OFT and CCTP adapters also expose their pending bridge-pre-deposit Redis sch
 Use the rebalancer construction layer to instantiate mode-specific clients:
 
 - `constructCumulativeBalanceRebalancerClient()` for operational runs.
-- `constructSameAssetRebalancerClient()` for configured same-token hub-to-destination runs.
 - `constructReadOnlyRebalancerClient()` for pending-state consumers.
 
 Lifecycle note:
@@ -307,10 +280,9 @@ Lifecycle note:
 Runtime entrypoints in `src/rebalancer/`:
 
 - `runCumulativeBalanceRebalancer` (supported operational path).
-- `runSameAssetRebalancer` (directional SameAsset operational path).
 - The runtime updates adapter status/sweeps first, then refreshes `TokenClient` balances before applying adapter-reported pending rebalance adjustments and evaluating new rebalances. The refresh is required because the sweeps and `updateRebalanceStatuses` calls submit OFT/CCTP/Hypercore transactions that leave the initial `TokenClient.update()` snapshot stale; without it, `rebalanceInventory` can size a new bridge against a pre-burn balance and crash on the underlying simulation revert.
 - Venue-outage degradation: the status/sweep update loop isolates per-adapter failures (a venue whose API is down is
-  logged with a warning and skipped for the run while the remaining adapters progress), both run entrypoints skip
+  logged with a warning and skipped for the run while the remaining adapters progress), the runtime skips
   initiating new rebalances for the run whenever `getAdaptersWithFailedPendingReads()` is non-empty (see the
   duplicate-rebalance rationale above), and a route whose `getEstimatedCost` read fails is excluded from that
   round's route competition instead of aborting the pass.
