@@ -954,6 +954,18 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
     });
 
     it("Ignores deposits with quote times in future", async function () {
+      // Pin the average block time rather than sampling the hardhat chain. The relayer derives its
+      // quoteTimestamp tolerance from it (HUB_SPOKE_BLOCK_LAG * average), and the SDK memoises the
+      // sample per chainId for 15 minutes — so the tolerance this test sees is whatever the first
+      // file in the mocha process measured. Any preceding file that warps block.timestamp forward
+      // (setSpokePoolTime et al) leaves an average large enough to push the tolerance past the 100s
+      // offset used below, and the deposit gets filled instead of skipped. Which files precede this
+      // one is decided by the CI test split, so the failure moves around as test files are added.
+      archStub = sinon.stub(arch, "evm").value({
+        ...arch.evm,
+        averageBlockTime: async () => ({ average: 1, blockRange: 120 }),
+      });
+
       const { quoteTimestamp } = await depositV3(
         spokePool_1,
         destinationChainId,
