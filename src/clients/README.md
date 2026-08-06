@@ -106,7 +106,7 @@ For transactions submitted with `ensureConfirmation: true`, confirmation is awai
 
 `Multicall3.tryAggregate(requireSuccess=false, ...)` must not be sized by estimating itself: it catches inner reverts, so a batch whose calls all ran out of gas still succeeds and the estimate prices the failure. Submitted raw it mines a batch that did nothing, with `status: 1` and no events (this discarded a 76,064.59 USDC CCTP v2 mint on 2026-08-05, and stalled two OP-stack withdrawals the same day). Padding doesn't fix it either, since OP-stack `SafeCall.callWithMinGas` gates on `gasleft()` rather than on consumption. `buildFinalizationBatches()` sizes each batch from its calls' own estimates instead, plus `MULTICALL3_BATCH_GAS_OVERHEAD` for the wrapper those estimates don't price. A call that no longer estimates has no size, so it is dropped rather than charged against a limit summed from its neighbours — `tryAggregate` contains a revert, but not gas exhaustion.
 
-Every batch is therefore sized, and `finalizationBatchTxn()` has no unsized path.
+Every batch is therefore sized, and none is submitted unsized. Batches also set `ensureConfirmation: true`, so a batch that reverts outright surfaces as a submission failure rather than a hash — `submit()` stops there and returns the hashes it already has, and the chain's messages report unconfirmed instead of being credited to a transaction that carried nothing. It also keeps a chain's batches sequential, so a stuck early nonce is repriced rather than leaving the later ones queued behind it.
 
 `test/Finalizer.BatchBuilding.test.ts` and `test/MultiCallerClient.TryAggregateGas.test.ts` pin these properties against real Multicall3 bytecode.
 

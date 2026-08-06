@@ -498,6 +498,11 @@ export async function finalize(
                 unpermissioned: true,
                 // @dev Batches share a target; without this MultiCallerClient bundles them back together.
                 nonMulticall: true,
+                // @dev A batch that reverts outright then surfaces as a submission failure rather than a hash:
+                // TransactionClient#submit stops there and returns what it already has, so the chain's messages
+                // report unconfirmed instead of being credited to it. It also keeps the batches sequential, so a
+                // stuck early nonce is repriced rather than leaving the later ones queued behind it.
+                ensureConfirmation: true,
                 message: `Batch finalized ${calls.length} txns`,
                 mrkdwn: `Batch finalized ${calls.length} txns`,
               })
