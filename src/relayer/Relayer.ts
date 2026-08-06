@@ -532,11 +532,8 @@ export class Relayer {
   }
 
   /**
-   * Drop any candidate repayment chain whose relayer refund could not currently be funded by the HubPool. A refund
-   * taken on the origin chain is funded by the deposit itself, so it never draws on HubPool liquidity. A refund on any
-   * other chain does, and if the HubPool can't cover it then the refund may be stuck for as long as it takes for
-   * liquidity to return - potentially 7 days. The constraint is therefore a property of the repayment chain, not of
-   * the deposit, and is only applied once the API has supplied at least one set of limits.
+   * Restrict repayment to the origin chain when the HubPool can't currently fund a refund anywhere else. An origin
+   * chain refund is funded by the deposit itself; a refund on any other chain draws on HubPool liquidity.
    * @param deposit Deposit under evaluation.
    * @param repaymentChainIds Candidate repayment chain IDs, ordered from highest to lowest priority.
    * @returns The subset of repaymentChainIds whose refund can be funded, preserving the input ordering.
@@ -545,48 +542,36 @@ export class Relayer {
     const { acrossApiClient, inventoryClient } = this.clients;
     const { depositId, inputAmount, inputToken, originChainId, txnRef } = deposit;
 
-    // There's nothing to constrain, so don't bother resolving a limit. determineRefundChainId() dedups its result, so
-    // in practice this is [] (nothing was eligible) or [originChainId] (any deposit forced onto origin chain
-    // repayment); every() covers both, and doesn't oblige a caller of this helper to pre-dedup.
-    if (repaymentChainIds.every((chainId) => chainId === originChainId)) {
-      return repaymentChainIds;
-    }
-
     if (this.config.ignoreLimits || !acrossApiClient.updatedLimits) {
       return repaymentChainIds;
     }
 
-    // The relayer only queries limits for supported tokens, so an unmapped input token has no limit to compare against.
-    // That isn't purely hypothetical: filterDeposit() only drops an unmapped input token when no swap route covers it,
-    // and this mapping is symbol-based (getInventoryEquivalentL1TokenAddress) rather than PoolRebalanceRoute-based, so
-    // it can be absent even where the HubPool does permit destination chain repayment. Without a limit there's no basis
-    // to call a non-origin refund fundable, so fall through and keep only origin chain repayment.
-    const l1Token = inventoryClient.getL1TokenAddress(inputToken, originChainId);
-    const limit = isDefined(l1Token) ? acrossApiClient.getLimit(originChainId, l1Token) : undefined;
-    if (isDefined(limit) && inputAmount.lte(limit)) {
+    // Only non-origin repayment draws on HubPool liquidity, so there's nothing to constrain.
+    if (repaymentChainIds.every((chainId) => chainId === originChainId)) {
       return repaymentChainIds;
     }
 
-    const fundableChainIds = repaymentChainIds.filter((chainId) => chainId === originChainId);
-    if (fundableChainIds.length !== repaymentChainIds.length) {
-      this.logger.debug({
-        at: "Relayer::filterFundableRepaymentChains",
-        message: isDefined(limit)
-          ? "😱 Dropped repayment chains requiring more HubPool liquidity than the API suggested limit."
-          : "😱 Dropped non-origin repayment chains for an input token with no L1 token mapping.",
-        depositId,
-        originChainId,
-        inputToken,
-        inputAmount,
-        l1Token,
-        limit,
-        repaymentChainIds,
-        fundableChainIds,
-        txnRef,
-      });
+    // An unmapped input token has no limit to compare against, so treat it as no liquidity available.
+    const l1Token = inventoryClient.getL1TokenAddress(inputToken, originChainId);
+    const limit = isDefined(l1Token) ? acrossApiClient.getLimit(originChainId, l1Token) : bnZero;
+    if (inputAmount.lte(limit)) {
+      return repaymentChainIds;
     }
 
-    return fundableChainIds;
+    this.logger.debug({
+      at: "Relayer::filterFundableRepaymentChains",
+      message: "😱 Restricting to origin chain repayment; HubPool liquidity is insufficient.",
+      depositId,
+      originChainId,
+      inputToken,
+      inputAmount,
+      l1Token,
+      limit,
+      repaymentChainIds,
+      txnRef,
+    });
+
+    return repaymentChainIds.filter((chainId) => chainId === originChainId);
   }
 
   /**

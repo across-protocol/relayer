@@ -37,7 +37,7 @@ flowchart TD
     possible --> precompute[batchComputeLpFees]
     precompute --> eligible[determineRefundChainId]
     eligible --> fundable[filterFundableRepaymentChains]
-    fundable -->|none left| unfundable[UnfundableRepaymentSkipFill]
+    fundable -->|none left| none[NoRepaymentChainSelected]
     fundable -->|some remain| resolve[resolveRepaymentChain]
     resolve --> prof{AnyPreferredChainProfitable}
     prof -->|yes| firstProfitable[ChooseFirstProfitablePreferredChain]
@@ -75,33 +75,11 @@ For the full eligibility internals, see `docs/repayment-eligibility.md`.
 
 ## Step 2a: HubPool liquidity filter
 
-`filterFundableRepaymentChains()` drops eligible chains whose relayer refund could not currently be funded by the
-HubPool, based on the `/liquid-reserves` limits held by `AcrossApiClient`.
-
-Key properties:
-
-- the constraint belongs to the **repayment chain**, not the deposit: a refund on the origin chain is funded by the
-  deposit itself, so origin chain repayment always survives the filter. A deposit that is forced to take origin chain
-  repayment - whether by protocol rules (`fromLiteChain`, no PoolRebalanceRoute) or by
-  `forceOriginRepayment` / `forceOriginRepaymentPerChain` config - is therefore never refused for want of reserves.
-- `getLimit()` returns `uint256Max` when the origin chain is the hub chain, so hub-origin deposits are unconstrained.
-- the filter is inert until `AcrossApiClient.updatedLimits` is set, and when `ignoreLimits` is configured. A failed
-  `/liquid-reserves` query leaves `updatedLimits` unset rather than reporting zero reserves.
-- an input token with no L1 token mapping has no limit to compare against, and is treated like an exhausted reserve:
-  only origin chain repayment survives. This is reachable rather than hypothetical - `filterDeposit()` drops an
-  unmapped input token only when no swap route covers it, and the mapping is symbol-based
-  (`getInventoryEquivalentL1TokenAddress()`) rather than PoolRebalanceRoute-based, so it can be absent even where the
-  HubPool permits destination chain repayment.
-- when the filter empties a non-empty eligible list, `resolveRepaymentChain()` reports no repayment chain, exactly as it
-  does for any other failure to identify one. `evaluateFill()` then handles it via the existing unprofitable-fill path:
-  the deposit is captured as unprofitable and added to `ignoredDeposits` until the next `runMaintenance()` flush. This is
-  deliberate - HubPool utilisation high enough to refuse a refund is a real condition rather than a transient blip, since
-  a failed `/liquid-reserves` query now retains the last known limits instead of reporting zero, and a refund the HubPool
-  cannot fund may stall settlement.
-
-Caveat: origin chain repayment is only strictly self-funding when the deposit and the refund land in the same bundle.
-If the origin chain's excess running balance was already swept back to the HubPool, an origin refund does draw on
-HubPool liquidity. This has always been true for forced-origin deposits and is treated as an accepted approximation.
+`filterFundableRepaymentChains()` restricts repayment to the origin chain when `AcrossApiClient`'s `/liquid-reserves`
+limits show the HubPool can't fund a refund elsewhere. An origin chain refund is funded by the deposit itself, so it
+always survives; forced-origin deposits are therefore never refused for want of reserves. The filter is inert when
+`ignoreLimits` is set or limits have not been fetched. If nothing survives, the deposit follows the normal
+unprofitable-fill path.
 
 ## Step 3: Profitability pass
 
@@ -136,7 +114,7 @@ This protects against accidental policy violations even if upstream selection lo
 ## Failure outcomes
 
 - no preferred chains: no eligible path from inventory stage
-- no fundable chains: every eligible chain needs HubPool liquidity that isn't currently available (deposit is retried)
+- no fundable chains: every eligible chain needs HubPool liquidity that isn't currently available
 - preferred chains but no profitability: economics fail at current LP fee/gas conditions
 - fallback profitable but top preferred chosen: intentional inventory-priority behavior
 
