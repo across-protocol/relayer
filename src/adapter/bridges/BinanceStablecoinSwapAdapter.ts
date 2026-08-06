@@ -88,6 +88,10 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     throw new Error("BinanceStablecoinSwapAdapter submits through sendL1ToL2Transfer");
   }
 
+  releaseL1ToL2Transfer(amount: BigNumber): void {
+    this.consumePreparedAmount(amount);
+  }
+
   /**
    * Binance swap deposits are tracked as Redis orders, not bridge events. InventoryClient consumes them through
    * RebalancerClient.getPendingRebalances, so returning initiation events here would count the same transfer twice.
