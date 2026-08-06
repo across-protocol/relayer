@@ -969,6 +969,16 @@ export class InventoryClient {
       return [];
     }
 
+    const failedAdapters = this.rebalancerClient.getAdaptersWithFailedPendingReads();
+    if (failedAdapters.length > 0) {
+      this.log(
+        "Skipping inventory rebalances because pending-rebalance state is incomplete",
+        { failedAdapters },
+        "warn"
+      );
+      return [];
+    }
+
     const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
     this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
 

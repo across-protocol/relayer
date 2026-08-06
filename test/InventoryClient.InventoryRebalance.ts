@@ -356,6 +356,17 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(rebalances).to.have.lengthOf(1);
   });
 
+  it("skips initiation when pending-rebalance state is incomplete", async function () {
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+    const initialMainnetBalance = tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc));
+    mockRebalancerClient.setFailedPendingReads(["binance"]);
+
+    await inventoryClient.rebalanceInventoryIfNeeded();
+
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
+    expect(tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc))).to.equal(initialMainnetBalance);
+  });
+
   // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
   // alongside that logic.
   it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {

@@ -761,7 +761,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   async initializeRebalanceWithTransaction(
     rebalanceRoute: RebalanceRoute,
-    amountToTransfer: BigNumber
+    amountToTransfer: BigNumber,
+    onSubmission?: () => void
   ): Promise<{ amount: BigNumber; transactionHash?: string }> {
     this._assertInitialized();
     this._assertRouteIsSupported(rebalanceRoute);
@@ -809,6 +810,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         )} from ${getNetworkName(sourceChain)} before depositing into Binance in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
         expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
+      onSubmission?.();
       const amountReceivedFromBridge = await this._bridgeToChain(
         sourceToken,
         sourceChain,
@@ -835,7 +837,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
         expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
-      const transactionHash = await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer);
+      const transactionHash = await this._depositToBinance(
+        cloid,
+        sourceToken,
+        sourceChain,
+        amountToTransfer,
+        onSubmission
+      );
       await this._redisCreateOrder(
         cloid,
         STATUS.PENDING_DEPOSIT,
@@ -1163,7 +1171,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     cloid: string,
     sourceToken: string,
     sourceChain: number,
-    amountToDeposit: BigNumber
+    amountToDeposit: BigNumber,
+    onSubmission?: () => void
   ): Promise<string> {
     assert(isDefined(BINANCE_NETWORKS[sourceChain]), "Source chain should be a Binance network");
     assert(
@@ -1184,7 +1193,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       txnHash = await this._depositNativeEthToBinanceViaAtomicDepositor(
         sourceChain,
         depositAddress.address,
-        amountToDeposit
+        amountToDeposit,
+        onSubmission
       );
     } else {
       const txn = this._buildDirectBinanceTokenDepositTransaction(
@@ -1196,6 +1206,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         amountToDeposit,
         amountReadable
       );
+      onSubmission?.();
       txnHash = await this._submitTransaction(txn);
     }
     // TTL must outlive the finalizer lookback so completed swaps are not re-counted as finalizable.
@@ -1244,7 +1255,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private async _depositNativeEthToBinanceViaAtomicDepositor(
     sourceChain: number,
     depositAddress: string,
-    amountToDeposit: BigNumber
+    amountToDeposit: BigNumber,
+    onSubmission?: () => void
   ): Promise<string> {
     const sourceProvider = await getProvider(sourceChain);
     const connectedSigner = this.baseSigner.connect(sourceProvider);
@@ -1261,7 +1273,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const bridgeCalldata = transferProxy.interface.encodeFunctionData("transfer", [depositAddress]);
     // @dev The AtomicWethDepositor today is only deployed to Ethereum and the only way to use it to deposit ETH
     // into Binance is to use the bridgeCalldata as the whitelisted function selector mapped to chain ID 56.
-    return this._submitTransaction({
+    const transaction = {
       contract: atomicDepositor,
       method: "bridgeWeth",
       args: [CHAIN_IDs.BSC, amountToDeposit, amountToDeposit, bnZero, bridgeCalldata],
@@ -1275,7 +1287,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       mrkdwn: `Deposited ${fromWei(amountToDeposit, 18)} WETH to Binance via native ETH on chain ${getNetworkName(
         sourceChain
       )}`,
-    });
+    };
+    onSubmission?.();
+    return this._submitTransaction(transaction);
   }
 
   private async _getBinanceBalance(token: string): Promise<number> {

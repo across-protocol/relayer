@@ -13,7 +13,15 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
   };
 
   async function makeBridge(
-    options: { pending?: number; cost?: string; maxAmount?: string; valid?: boolean; initialize?: boolean } = {}
+    options: {
+      pending?: number;
+      cost?: string;
+      maxAmount?: string;
+      valid?: boolean;
+      initialize?: boolean;
+      initializeError?: Error;
+      submissionError?: Error;
+    } = {}
   ) {
     const [signer, other] = await ethers.getSigners();
     const { spyLogger } = createSpyLogger();
@@ -29,10 +37,25 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       getEstimatedCost: async () => toBNWei(options.cost ?? "0", 6),
       getValidatedRebalanceAmount: async (_route: RebalanceRoute, amount: ReturnType<typeof toBNWei>) =>
         options.valid === false ? toBNWei("0", 6) : amount,
-      initializeRebalanceWithTransaction: async (_route: RebalanceRoute, amount: ReturnType<typeof toBNWei>) => ({
-        amount: options.initialize === false ? toBNWei("0", 6) : amount,
-        transactionHash: options.initialize === false ? undefined : "0xdeposit",
-      }),
+      initializeRebalanceWithTransaction: async (
+        _route: RebalanceRoute,
+        amount: ReturnType<typeof toBNWei>,
+        onSubmission?: () => void
+      ) => {
+        if (options.initializeError) {
+          throw options.initializeError;
+        }
+        if (options.initialize !== false) {
+          onSubmission?.();
+        }
+        if (options.submissionError) {
+          throw options.submissionError;
+        }
+        return {
+          amount: options.initialize === false ? toBNWei("0", 6) : amount,
+          transactionHash: options.initialize === false ? undefined : "0xdeposit",
+        };
+      },
     };
     const bridge = new BinanceStablecoinSwapAdapter(
       CHAIN_IDs.AVALANCHE,
@@ -105,6 +128,34 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     await expect(bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, amount, false)).to.be.rejectedWith(
       BridgeTransferDeclinedError
     );
+
+    const failed = await makeBridge({ initializeError: new Error("deposit address unavailable") });
+    const failedAmount = await failed.bridge.prepareL1ToL2Transfer(
+      failed.signer,
+      failed.l1Token,
+      failed.l2Token,
+      toBNWei("100", 6)
+    );
+    await expect(
+      failed.bridge.sendL1ToL2Transfer(failed.signer, failed.l1Token, failed.l2Token, failedAmount, false)
+    ).to.be.rejectedWith(BridgeTransferDeclinedError);
+
+    const submitted = await makeBridge({ submissionError: new Error("confirmation unavailable") });
+    const submittedAmount = await submitted.bridge.prepareL1ToL2Transfer(
+      submitted.signer,
+      submitted.l1Token,
+      submitted.l2Token,
+      toBNWei("100", 6)
+    );
+    await expect(
+      submitted.bridge.sendL1ToL2Transfer(
+        submitted.signer,
+        submitted.l1Token,
+        submitted.l2Token,
+        submittedAmount,
+        false
+      )
+    ).to.be.rejectedWith("confirmation unavailable");
   });
 
   it("leaves bridge-event accounting to Redis-backed pending rebalances", async function () {
