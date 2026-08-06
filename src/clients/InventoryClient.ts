@@ -43,7 +43,7 @@ import {
   isUnmeteredFastRebalance,
 } from "../utils";
 import { getAcrossHost } from "./AcrossAPIClient";
-import { BinanceClient } from "./BinanceClient";
+import { BinanceClient, BinanceRoute } from "./BinanceClient";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
 import { HubPoolClient, TokenClient, TransactionClient } from ".";
 import { Deposit, TokenInfo } from "../interfaces";
@@ -1675,9 +1675,19 @@ export class InventoryClient {
     }
 
     if (isDefined(this.binanceClient)) {
-      await this.binanceClient.refresh();
+      await this.binanceClient.refresh(this.getBinanceRoutes());
       await this.updateTokenPrices();
     }
+  }
+
+  // The (chain, token) pairs this client expects Binance to service. Handed to the BinanceClient so it can
+  // report live deposit/withdraw availability for the routes we actually rely on.
+  private getBinanceRoutes(): BinanceRoute[] {
+    return this.getL1Tokens().flatMap((l1Token) =>
+      this.getEnabledChains()
+        .filter((chainId) => hasBinanceRoute(chainId, l1Token))
+        .map((chainId) => ({ chainId, l1Token }))
+    );
   }
 
   // Strict-fail: any error clears the cache.
@@ -1762,7 +1772,13 @@ export class InventoryClient {
     const { chainId: hubChainId } = this.hubPoolClient;
     try {
       const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
-      return hasBinanceRoute(repaymentChainId, l1Token);
+      if (!hasBinanceRoute(repaymentChainId, l1Token)) {
+        return false;
+      }
+      // A configured Binance route is not necessarily an open one: Binance suspends deposits and
+      // withdrawals per coin/network without warning. Treat a suspended route as slow so we stop claiming
+      // repayment taken here can be drained quickly. Absent a wired client we can't know, so assume open.
+      return this.binanceClient?.canDrainToHubChain(repaymentChainId, l1Token) ?? true;
     } catch {
       return false;
     }
