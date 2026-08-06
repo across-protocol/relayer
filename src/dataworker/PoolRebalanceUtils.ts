@@ -38,6 +38,21 @@ export function generateMarkdownForDisputeInvalidBundleBlocks(
   );
 }
 
+export function generateMarkdownForDisputeInvalidDisabledChainEndBlocks(
+  invalidDisabledChainEndBlocks: { chainId: number; proposedEndBlock: number; expectedEndBlock: number }[]
+): string {
+  return (
+    "Disputed pending root bundle because a chain in DISABLED_CHAINS did not re-use its end block from the latest " +
+    "executed bundle:" +
+    invalidDisabledChainEndBlocks
+      .map(
+        ({ chainId, proposedEndBlock, expectedEndBlock }) =>
+          `\n\t\t${getNetworkName(chainId)} (${chainId}): proposed ${proposedEndBlock}, expected ${expectedEndBlock}`
+      )
+      .join("")
+  );
+}
+
 export function generateMarkdownForDispute(pendingRootBundle: PendingRootBundle): string {
   return (
     "Disputed pending root bundle:" +

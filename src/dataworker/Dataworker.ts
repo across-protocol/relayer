@@ -899,6 +899,51 @@ export class Dataworker {
     const chainIds = this.clients.configStoreClient.getChainIdIndicesForBlock(mainnetBundleStartBlock);
     const endBlockBuffers = getEndBlockBuffers(chainIds, this.blockRangeEndBlockBuffer);
 
+    // UMIP-157 requires that a chain listed in DISABLED_CHAINS re-uses its end block from the latest executed
+    // bundle. This is checked explicitly against the latest executed bundle rather than being inferred from
+    // `widestPossibleExpectedBlockRange`, because callers are free to derive that range from the proposal itself.
+    // `scripts/validateRootBundle.ts` does exactly that via `getImpliedBundleBlockRanges`, which resolves a disabled
+    // chain to [proposedEndBlock, proposedEndBlock]. The end block comparisons below would then compare the proposal
+    // against itself and accept any end block the proposer picked, including one that walks the chain backwards over
+    // a range that a previous bundle already settled.
+    const { proposalBlockNumber } = rootBundle;
+    assert(isDefined(proposalBlockNumber), "validateRootBundle: rootBundle.proposalBlockNumber is required");
+    const enabledChains = this.clients.configStoreClient.getEnabledChains(mainnetBundleStartBlock);
+    // @dev Skip this check if the HubPoolClient's lookback is too short to see the preceding bundle, otherwise
+    // `getLatestBundleEndBlockForChain` returns 0 for every chain and we would dispute a valid proposal. The block
+    // ranges rebuilt below are unusable in that case anyway, so `_validateBlockRanges` reports it as a lookback error.
+    const previousBundleIsKnown = isDefined(
+      this.clients.hubPoolClient.getLatestFullyExecutedRootBundle(proposalBlockNumber)
+    );
+    const invalidDisabledChainEndBlocks = chainIds
+      .map((chainId, index) => {
+        if (!previousBundleIsKnown || enabledChains.includes(chainId)) {
+          return undefined;
+        }
+        // @dev This resolves the same bundle that `getImpliedBundleBlockRanges` uses as the previous bundle, so the
+        // expected end block is consistent with the block ranges the roots are rebuilt over.
+        const expectedEndBlock = this.clients.hubPoolClient.getLatestBundleEndBlockForChain(
+          chainIds,
+          proposalBlockNumber,
+          chainId
+        );
+        const proposedEndBlock = rootBundle.bundleEvaluationBlockNumbers[index];
+        return proposedEndBlock === expectedEndBlock ? undefined : { chainId, proposedEndBlock, expectedEndBlock };
+      })
+      .filter(isDefined);
+    if (invalidDisabledChainEndBlocks.length > 0) {
+      this.logger.debug({
+        at: "Dataworker#validate",
+        message: "A disabled chain's end block does not match the latest executed bundle, submitting dispute",
+        invalidDisabledChainEndBlocks,
+      });
+      return {
+        valid: false,
+        reason:
+          PoolRebalanceUtils.generateMarkdownForDisputeInvalidDisabledChainEndBlocks(invalidDisabledChainEndBlocks),
+      };
+    }
+
     // Make sure that all end blocks are >= expected start blocks. Allow for situation where chain was halted
     // and bundle end blocks hadn't advanced at time of proposal, meaning that the end blocks were equal to the
     // previous end blocks. So, even if by the time the disputer runs, the chain has started advancing again, then
@@ -1029,12 +1074,11 @@ export class Dataworker {
       );
     }
 
-    assert(isDefined(rootBundle.proposalBlockNumber), "validateRootBundle: rootBundle.proposalBlockNumber is required");
     const logData = true;
     const rootBundleData = await this._proposeRootBundle(
       blockRangesImpliedByBundleEndBlocks,
       spokePoolClients,
-      rootBundle.proposalBlockNumber,
+      proposalBlockNumber,
       loadDataFromArweave,
       logData
     );

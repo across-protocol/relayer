@@ -7,6 +7,7 @@ import {
   MAX_REFUNDS_PER_RELAYER_REFUND_LEAF,
   amountToDeposit,
   destinationChainId,
+  repaymentChainId,
 } from "./constants";
 import { setupDataworker } from "./fixtures/Dataworker.Fixture";
 import {
@@ -371,6 +372,116 @@ describe("Dataworker: Validate pending root bundle", function () {
     await updateAllClients();
     await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
     expect(spy.getCall(-2).lastArg.message).to.equal("Unexpected pool rebalance root, submitting dispute");
+    await multiCallerClient.executeTxnQueues();
+  });
+  it("Disputes a proposal that moves a disabled chain's end block", async function () {
+    // Regression test: UMIP-157 requires a chain listed in DISABLED_CHAINS to re-use its end block from the latest
+    // executed bundle. A disabled chain's implied block range is [proposedEndBlock, proposedEndBlock], so a
+    // validator that derives its expected range from the proposal itself (as scripts/validateRootBundle.ts does via
+    // getImpliedBundleBlockRanges) rebuilds identical roots and accepts whatever end block the proposer picked,
+    // including one that walks the chain backwards over a range a previously executed bundle already settled.
+    await updateAllClients();
+
+    const deposit = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit
+    );
+    await updateAllClients();
+    await fillV3Relay(spokePool_2, deposit, depositor, destinationChainId);
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {
+      await hre.network.provider.send("evm_mine");
+    }
+    await updateAllClients();
+
+    // Propose a first bundle and execute all of its leaves so that it becomes the latest executed bundle.
+    const latestBlock = await hubPool.provider.getBlockNumber();
+    const blockRange = Object.keys(spokePoolClients).map(() => [0, latestBlock]);
+    const poolRebalanceRoot = await dataworkerInstance.buildPoolRebalanceRoot(blockRange, spokePoolClients);
+    await l1Token_1.approve(hubPool.address, MAX_UINT_VAL);
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    await multiCallerClient.executeTxnQueues();
+    await hubPool.setCurrentTime(Number(await hubPool.getCurrentTime()) + Number(await hubPool.liveness()) + 1);
+    for (const leaf of poolRebalanceRoot.leaves) {
+      await hubPool.executeRootBundle(
+        leaf.chainId,
+        leaf.groupIndex,
+        leaf.bundleLpFees,
+        leaf.netSendAmounts,
+        leaf.runningBalances,
+        leaf.leafId,
+        leaf.l1Tokens.map((l1Token) => l1Token.toEvmAddress()),
+        poolRebalanceRoot.tree.getHexProof(leaf)
+      );
+    }
+    await updateAllClients();
+
+    // The executed bundle pinned an end block for every chain. Disable one of them from the very first block so
+    // that it is disabled at the next bundle's mainnet start block.
+    const executedEndBlocks = hubPoolClient
+      .getLatestProposedRootBundle()
+      .bundleEvaluationBlockNumbers.map((blockNumber) => blockNumber.toNumber());
+    const disabledChainIndex = dataworkerInstance.chainIdListForBundleEvaluationBlockNumbers.indexOf(repaymentChainId);
+    configStoreClient._updateDisabledChains([repaymentChainId], 0);
+
+    // Give the next bundle something to propose.
+    const deposit2 = await depositV3(
+      spokePool_1,
+      destinationChainId,
+      depositor,
+      erc20_1.address,
+      amountToDeposit,
+      erc20_2.address,
+      amountToDeposit
+    );
+    await updateAllClients();
+    await fillV3Relay(spokePool_2, deposit2, depositor, destinationChainId);
+    for (let i = 0; i < BUNDLE_END_BLOCK_BUFFER; i++) {
+      await hre.network.provider.send("evm_mine");
+    }
+    await updateAllClients();
+
+    // The proposer freezes the disabled chain at the executed bundle's end block, and the proposal validates.
+    await dataworkerInstance.proposeRootBundle(spokePoolClients);
+    await multiCallerClient.executeTxnQueues();
+    await updateAllClients();
+    const proposal = hubPoolClient.getLatestProposedRootBundle();
+    const proposedEndBlocks = proposal.bundleEvaluationBlockNumbers.map((blockNumber) => blockNumber.toNumber());
+    expect(proposedEndBlocks[disabledChainIndex]).to.equal(executedEndBlocks[disabledChainIndex]);
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
+    expect(lastSpyLogIncludes(spy, "Pending root bundle matches with expected")).to.be.true;
+
+    // Re-propose the identical roots, but roll the disabled chain's end block backwards. The disabled chain
+    // contributes a zero-length range either way, so the roots are unchanged and the proposal is only detectable by
+    // comparing its end block against the latest executed bundle.
+    await hubPool.emergencyDeleteProposal();
+    await updateAllClients();
+    const rolledBackEndBlocks = [...proposedEndBlocks];
+    rolledBackEndBlocks[disabledChainIndex] -= 1;
+    expect(rolledBackEndBlocks[disabledChainIndex]).to.be.greaterThan(0);
+    await hubPool.proposeRootBundle(
+      rolledBackEndBlocks,
+      proposal.poolRebalanceLeafCount,
+      proposal.poolRebalanceRoot,
+      proposal.relayerRefundRoot,
+      proposal.slowRelayRoot
+    );
+    await updateAllClients();
+    await dataworkerInstance.validatePendingRootBundle(spokePoolClients);
+    expect(spy.getCall(-2).lastArg.message).to.equal(
+      "A disabled chain's end block does not match the latest executed bundle, submitting dispute"
+    );
+    expect(spy.getCall(-2).lastArg.invalidDisabledChainEndBlocks).to.deep.equal([
+      {
+        chainId: repaymentChainId,
+        proposedEndBlock: executedEndBlocks[disabledChainIndex] - 1,
+        expectedEndBlock: executedEndBlocks[disabledChainIndex],
+      },
+    ]);
     await multiCallerClient.executeTxnQueues();
   });
   it("Validates root bundle with large bundleEvaluationBlockNumbers", async function () {
