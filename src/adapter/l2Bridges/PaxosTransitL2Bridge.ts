@@ -41,7 +41,7 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
     const l2TokenAddress = getPaxosTransitDestinationToken(l2chainId, l1Token);
     assert(
       isDefined(l2TokenAddress),
-      `No Paxos Transit destination token configured for chain ${l2chainId} and L1 token ${l1Token.toNative()}`
+      `No Paxos Transit destination token configured for chain ${l2chainId} and L1 token ${l1Token}`
     );
 
     this.client = createPaxosTransitClient();
@@ -62,8 +62,8 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
     l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<AugmentedTransaction[]> {
-    assert(l2Token.eq(this.l2TokenAddress), `Unsupported L2 token ${l2Token.toNative()}`);
-    assert(l1Token.eq(this.l1Token), `Unsupported L1 token ${l1Token.toNative()}`);
+    assert(l2Token.eq(this.l2TokenAddress), `Unsupported L2 token ${l2Token}`);
+    assert(l1Token.eq(this.l1Token), `Unsupported L1 token ${l1Token}`);
 
     if (amount.lt(PAXOS_TRANSIT_MINIMUMS[this.l2chainId]?.[this.hubChainId] ?? toBN(Number.MAX_SAFE_INTEGER))) {
       throw new Error(`Cannot bridge to ${getNetworkName(this.hubChainId)} due to invalid amount ${amount}`);
@@ -106,7 +106,7 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
   ): Promise<BigNumber> {
     const { l2Signer } = this;
     assert(isDefined(l2Signer), "PaxosTransitL2Bridge: l2Signer is required");
-    assert(l2Token.eq(this.l2TokenAddress), `Unsupported L2 token ${l2Token.toNative()}`);
+    assert(l2Token.eq(this.l2TokenAddress), `Unsupported L2 token ${l2Token}`);
 
     const l2Provider = l2Signer.provider;
     assert(isDefined(l2Provider), "PaxosTransitL2Bridge: l2Signer must have a provider");

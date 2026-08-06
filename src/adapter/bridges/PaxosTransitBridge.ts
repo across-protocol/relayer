@@ -52,7 +52,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     const l2TokenAddress = getPaxosTransitDestinationToken(l2chainId, l1Token);
     assert(
       isDefined(l2TokenAddress),
-      `No Paxos Transit destination token configured for chain ${l2chainId} and L1 token ${l1Token.toNative()}`
+      `No Paxos Transit destination token configured for chain ${l2chainId} and L1 token ${l1Token}`
     );
 
     this.l1Bridge = new Contract(l1Token.toNative(), ERC20_ABI, l1Signer);
@@ -69,7 +69,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     amount: BigNumber,
     _optionalParams?: TransferTokenParams
   ): Promise<BridgeTransactionDetails> {
-    assert(l2Token.eq(this.l2TokenAddress), `Attempting to bridge unsupported l2 token ${l2Token.toNative()}`);
+    assert(l2Token.eq(this.l2TokenAddress), `Attempting to bridge unsupported l2 token ${l2Token}`);
     assert(l1Token.toNative() === this.l1Bridge?.address, "L1 token mismatch for Paxos Transit bridge");
 
     if (amount.lt(PAXOS_TRANSIT_MINIMUMS[this.hubChainId]?.[this.l2chainId] ?? bnZero)) {
