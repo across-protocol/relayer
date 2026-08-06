@@ -2,7 +2,8 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { ZKStackBridge } from "../../src/adapter/l2Bridges/ZKStackBridge";
 import { ZKStackNativeBridge } from "../../src/adapter/l2Bridges/ZKStackNativeBridge";
-import { getContractEntry } from "../../src/common";
+import { BinanceCEXBridge } from "../../src/adapter/l2Bridges";
+import { CANONICAL_L2_BRIDGE, CUSTOM_L2_BRIDGE, getContractEntry, SUPPORTED_TOKENS } from "../../src/common";
 import { EvmAddress, toBNWei } from "../../src/utils/SDKUtils";
 import { Contract, ethers, expect, getContractFactory, randomAddress } from "../utils";
 
@@ -196,6 +197,44 @@ describe("Cross Chain Adapter: ZK Stack Native L2 Bridge", function () {
     expect(
       await adapter.getL2PendingWithdrawalAmount(searchConfig, searchConfig, toAddress(monitoredEoa), toAddress(l2Weth))
     ).to.equal(amountToWithdraw);
+  });
+});
+
+describe("Cross Chain Adapter: ZK Stack L2 bridge configuration", function () {
+  // Mirrors the resolution order in AdapterManager, jussi's topology builder and its edge pricing. A token that
+  // resolves to no bridge is skipped everywhere; one that resolves to a bridge which then constructs no
+  // transaction is advertised to the rebalancer as a zero-cost edge that can never execute.
+  const resolveL2Bridge = (chainId: number, symbol: string) => {
+    const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[CHAIN_IDs.MAINNET];
+    return CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_L2_BRIDGE[chainId];
+  };
+
+  // Every supported token is pinned so that adding one to SUPPORTED_TOKENS cannot silently inherit a route.
+  const expectedBridges: { [chainId: number]: { [symbol: string]: unknown } } = {
+    [CHAIN_IDs.LENS]: {
+      WETH: ZKStackBridge,
+      // Standalone bridge, unknown to the native token vault, and misfinalized if sent via the asset router.
+      USDC: undefined,
+      // Lens's wrapped base token; withdrawing it would deliver untracked L1 GHO.
+      WGHO: undefined,
+    },
+    [CHAIN_IDs.ZK_SYNC]: {
+      USDT: ZKStackBridge,
+      WBTC: ZKStackBridge,
+      DAI: ZKStackBridge,
+      // The native token vault refuses to burn its own WETH_TOKEN, so WETH exits as unwrapped ETH.
+      WETH: ZKStackNativeBridge,
+      // Left on Binance so that hasBinanceRoute() is unchanged.
+      USDC: BinanceCEXBridge,
+    },
+  };
+
+  Object.entries(expectedBridges).forEach(([chainId, expected]) => {
+    it(`resolves the intended L2 bridge for every supported token on chain ${chainId}`, function () {
+      const supported = SUPPORTED_TOKENS[chainId];
+      expect(supported.slice().sort()).to.deep.equal(Object.keys(expected).sort());
+      supported.forEach((symbol) => expect(resolveL2Bridge(Number(chainId), symbol)).to.equal(expected[symbol]));
+    });
   });
 });
 
