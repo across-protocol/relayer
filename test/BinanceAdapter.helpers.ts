@@ -4,6 +4,7 @@ import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
+import { FINALIZER_TOKENBRIDGE_LOOKBACK } from "../src/common";
 import {
   getPendingBridgeDepositRecoveryKey,
   getPendingBridgeDepositTxnKey,
@@ -481,8 +482,9 @@ describe("Binance adapter helpers", function () {
     sinon.stub(internals, "_getTokenInfo").returns({ symbol: "USDT", decimals: 6 });
     sinon.stub(internals, "_redisGetNextCloid").resolves("cloid");
     sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.MAINNET);
-    sinon.stub(internals, "_redisCreateOrder").callsFake(async (_cloid, status) => {
+    sinon.stub(internals, "_redisCreateOrder").callsFake(async (_cloid, status, _route, _amount, _account, ttl) => {
       expect(status).to.equal(STATUS.PENDING_DEPOSIT_SUBMISSION);
+      expect(ttl).to.equal(2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
       calls.push("order");
     });
     sinon.stub(internals, "_redisUpdateOrderStatus").callsFake(async (_cloid, oldStatus, newStatus) => {
@@ -510,6 +512,7 @@ describe("Binance adapter helpers", function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();
     const set = sinon.stub().resolves("OK");
+    set.onFirstCall().rejects(new Error("temporary Redis outage"));
     const internals = adapter as unknown as {
       baseSignerAddress: EvmAddress;
       binanceApiClient: { depositAddress: sinon.SinonStub };
@@ -525,11 +528,13 @@ describe("Binance adapter helpers", function () {
         amount: BigNumber,
         onSubmission?: () => void | Promise<void>
       ): Promise<string>;
+      _wait(seconds: number): Promise<void>;
     };
     internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
     internals.binanceApiClient = { depositAddress: sinon.stub().resolves({ address: await signer.getAddress() }) };
     Object.assign(adapter, { _redisCache: { set } });
     sinon.stub(adapter.baseSigner, "connect").returns(signer);
+    sinon.stub(internals, "_wait").resolves();
     sinon.stub(internals, "_getTokenInfo").returns({
       symbol: "USDT",
       decimals: 6,
@@ -556,6 +561,7 @@ describe("Binance adapter helpers", function () {
       chainId: CHAIN_IDs.MAINNET,
       transactionHash: "0xdeposit",
     });
+    expect(set.callCount).to.equal(2);
   });
 
   it("reconciles a recoverable deposit transaction before lifecycle progression", async function () {

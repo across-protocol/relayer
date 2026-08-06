@@ -1,5 +1,5 @@
 import { BinanceStablecoinSwapAdapter, BridgeTransferDeclinedError } from "../src/adapter/bridges";
-import { TransactionClient } from "../src/clients";
+import { TransactionBroadcastRejectedError, TransactionClient } from "../src/clients";
 import { BinanceStablecoinSwapAdapter as RebalancerBinanceAdapter } from "../src/rebalancer/adapters/binance";
 import { RebalanceRoute } from "../src/rebalancer/utils/interfaces";
 import { CHAIN_IDs, EvmAddress, submitTransaction, TOKEN_SYMBOLS_MAP, ZERO_BYTES } from "../src/utils";
@@ -264,6 +264,19 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
         toBNWei("100", 6)
       )
     ).to.equal(toBNWei("100", 6));
+
+    const rejected = await makeBridge({
+      submissionError: new TransactionBroadcastRejectedError(new Error("insufficient funds")),
+    });
+    const rejectedAmount = await rejected.bridge.prepareL1ToL2Transfer(
+      rejected.signer,
+      rejected.l1Token,
+      rejected.l2Token,
+      toBNWei("100", 6)
+    );
+    await expect(
+      rejected.bridge.sendL1ToL2Transfer(rejected.signer, rejected.l1Token, rejected.l2Token, rejectedAmount, false)
+    ).to.be.rejectedWith(BridgeTransferDeclinedError);
   });
 
   it("marks submission at the broadcast boundary", async function () {
