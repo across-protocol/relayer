@@ -20,10 +20,18 @@ import {
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 
-// A ZK Stack withdrawal is only claimable on L1 once the batch containing it has been executed. The finalizer
-// waits 6 hours before it even attempts to finalize (see src/finalizer/utils/zkSync.ts), so allow generous
-// headroom on top of that so that in-flight withdrawals are not double-counted as spendable inventory.
-const ZK_STACK_WITHDRAWAL_LOOKBACK_SECONDS = 24 * 60 * 60;
+/**
+ * A ZK Stack withdrawal is only claimable on L1 once the L1 batch containing it has been executed, which is
+ * observed to take 3-4 hours and drifts with the chain's batch cadence. The finalizer no longer assumes a fixed
+ * delay — it reads the executed-batch boundary from chain (see src/finalizer/utils/zkSync.ts) — so there is no
+ * constant to mirror here. This window does not need to track that boundary precisely, it only has to be long
+ * enough that a burn which has not yet been minted on L1 is still visible, and erring long is the safe direction:
+ * over-counting pending withdrawals suppresses a duplicate withdrawal, whereas under-counting would report bridged
+ * inventory as spendable on both sides at once. A day gives the finalizer room to be down for a few cycles.
+ *
+ * @dev Shared with ZKStackNativeBridge; the same batch-execution delay governs base token withdrawals.
+ */
+export const ZK_STACK_WITHDRAWAL_LOOKBACK_SECONDS = 24 * 60 * 60;
 
 /**
  * Withdraws ERC20s from a ZK Stack chain (zkSync Era, Lens) back to L1 via the L2 asset router.
@@ -45,7 +53,7 @@ export class ZKStackBridge extends BaseL2BridgeAdapter {
   protected readonly assetRouter: Contract;
 
   private assetId?: Promise<string>;
-  private nativeWrapper?: Promise<string>;
+  private nativeWrapper?: Promise<EvmAddress>;
 
   constructor(
     l2chainId: number,
@@ -75,8 +83,18 @@ export class ZKStackBridge extends BaseL2BridgeAdapter {
     return (this.assetId ??= this.getL2Bridge().assetId(l2Token.toNative()));
   }
 
-  protected resolveNativeWrapper(): Promise<string> {
-    return (this.nativeWrapper ??= this.getL2Bridge().WETH_TOKEN());
+  /**
+   * @dev The vault's `WETH_TOKEN` is the chain's wrapped *base* token, so this is the wrapped ETH contract on
+   * zkSync Era but a wrapped GHO contract on Lens. It is not necessarily the wrapped native token Across holds:
+   * on Lens it resolves to WLGHO, which is a different (and currently zero-supply) contract from the WGHO the
+   * inventory book is keyed on. So this guard establishes only that the vault will refuse the burn, and is not by
+   * itself a filter for "the token Across would want to withdraw natively" — that is a routing decision, made
+   * statically in CUSTOM_L2_BRIDGE.
+   */
+  protected resolveNativeWrapper(): Promise<EvmAddress> {
+    return (this.nativeWrapper ??= this.getL2Bridge()
+      .WETH_TOKEN()
+      .then((address: string) => EvmAddress.from(address)));
   }
 
   async constructWithdrawToL1Txns(
@@ -90,7 +108,7 @@ export class ZKStackBridge extends BaseL2BridgeAdapter {
     // A token that has never been bridged has no assetId, and the vault explicitly refuses to burn the chain's own
     // wrapped native token (`BurningNativeWETHNotSupported`). The latter is checked separately because a token can
     // be registered (non-zero assetId) and still be unburnable.
-    if (assetId === ZERO_BYTES || compareAddressesSimple(l2Token.toNative(), nativeWrapper)) {
+    if (assetId === ZERO_BYTES || l2Token.eq(nativeWrapper)) {
       this.logger?.warn({
         at: "ZKStackBridge#constructWithdrawToL1Txns",
         message: `Cannot withdraw ${l2Token} from ${getNetworkName(this.l2chainId)} via the asset router.`,

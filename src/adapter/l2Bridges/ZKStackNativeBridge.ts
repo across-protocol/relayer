@@ -14,10 +14,8 @@ import {
   winston,
 } from "../../utils";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
+import { ZK_STACK_WITHDRAWAL_LOOKBACK_SECONDS } from "./ZKStackBridge";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
-
-// See ZKStackBridge; the same batch-execution delay applies to base token withdrawals.
-const ZK_STACK_WITHDRAWAL_LOOKBACK_SECONDS = 24 * 60 * 60;
 
 /**
  * Withdraws a ZK Stack chain's wrapped native token back to L1.
