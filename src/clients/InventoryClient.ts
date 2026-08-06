@@ -1733,7 +1733,8 @@ export class InventoryClient {
     );
   }
 
-  // True for unmetered fast-rebalance routes (CCTP, OFT, hub). Binance is excluded — it's quota-gated.
+  // True for unmetered fast-rebalance routes (CCTP, OFT, Paxos Transit, hub). Binance is excluded —
+  // it's quota-gated.
   private isUnmeteredFastRebalance(repaymentChainId: number, repaymentToken: Address): boolean {
     return isUnmeteredFastRebalance(repaymentChainId, repaymentToken, this.hubPoolClient.chainId);
   }
