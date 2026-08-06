@@ -762,7 +762,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return this._redisGetPendingOrders(this.baseSignerAddress);
   }
 
-  async reservePendingOrderSlot(maxPendingOrders: number): Promise<string | undefined> {
+  async reservePendingOrderSlot(maxPendingOrders: number, candidate: string): Promise<string | undefined> {
     const account = this.baseSignerAddress.toNative();
     const lockKey = `${this.REDIS_PREFIX}initiation-lock:${account}`;
     const lockToken = randomUUID();
@@ -782,10 +782,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if ((await this.getPendingOrders()).length + liveReservations.length >= maxPendingOrders) {
         return;
       }
+      if (reservationDetails.some((details) => details === candidate)) {
+        return;
+      }
       const reservation = `${this.REDIS_PREFIX}initiation-reservation:${account}:${randomUUID()}`;
       const ttl = Number(process.env.REBALANCER_PENDING_ORDER_TTL ?? 60 * 60);
       assert(ttl > 0, "REBALANCER_PENDING_ORDER_TTL must be positive");
-      assert(isDefined(await this.redisCache.set(reservation, "1", ttl)), "Failed to persist initiation reservation");
+      assert(
+        isDefined(await this.redisCache.set(reservation, candidate, ttl)),
+        "Failed to persist initiation reservation"
+      );
       try {
         await this.redisCache.sAdd(reservationSetKey, reservation);
       } catch (error) {

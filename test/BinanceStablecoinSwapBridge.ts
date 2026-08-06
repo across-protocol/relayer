@@ -180,15 +180,21 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     };
     const first = makeAdapter();
     const second = makeAdapter();
-    const reservations = await Promise.all([first.reservePendingOrderSlot(1), second.reservePendingOrderSlot(1)]);
+    const reservations = await Promise.all([
+      first.reservePendingOrderSlot(1, "first"),
+      second.reservePendingOrderSlot(1, "second"),
+    ]);
 
     expect(reservations.filter(Boolean)).to.have.length(1);
     await first.releasePendingOrderSlot(reservations.find(Boolean) as string);
-    const nextReservation = await second.reservePendingOrderSlot(1);
+    const nextReservation = await second.reservePendingOrderSlot(1, "next");
     expect(nextReservation).to.be.a("string");
     await second.releasePendingOrderSlot(nextReservation as string);
+    const duplicate = await first.reservePendingOrderSlot(2, "same-route-and-amount");
+    expect(await second.reservePendingOrderSlot(2, "same-route-and-amount")).to.equal(undefined);
+    await first.releasePendingOrderSlot(duplicate as string);
     failUnlock = true;
-    expect(await first.reservePendingOrderSlot(1)).to.be.a("string");
+    expect(await first.reservePendingOrderSlot(1, "unlock-failure")).to.be.a("string");
   });
 
   it("rejects a withdrawal recipient other than the signer", async function () {

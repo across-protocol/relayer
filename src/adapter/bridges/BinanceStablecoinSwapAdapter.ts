@@ -58,7 +58,14 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     }
     const preparedAmount = await adapter.getValidatedRebalanceAmount(route, cappedAmount);
     if (preparedAmount.gt(bnZero)) {
-      const reservation = await adapter.reservePendingOrderSlot(maxPendingOrders);
+      const candidate = JSON.stringify([
+        route.sourceChain,
+        route.sourceToken,
+        route.destinationChain,
+        route.destinationToken,
+        preparedAmount.toString(),
+      ]);
+      const reservation = await adapter.reservePendingOrderSlot(maxPendingOrders, candidate);
       if (!isDefined(reservation)) {
         return bnZero;
       }
