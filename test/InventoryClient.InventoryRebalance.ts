@@ -324,6 +324,17 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc))).to.equal(initialMainnetBalance);
   });
 
+  it("skips a candidate whose cross-chain preparation fails", async function () {
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(1000));
+    tokenClient.decrementLocalBalance(OPTIMISM, toAddressType(l2TokensForUsdc[OPTIMISM], OPTIMISM), toMegaWei(1000));
+    adapterManager.prepareError = new Error("preflight failed");
+
+    await inventoryClient.update();
+    const rebalances = await inventoryClient.rebalanceInventoryIfNeeded(true);
+
+    expect(rebalances).to.have.lengthOf(1);
+  });
+
   // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
   // alongside that logic.
   it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {
@@ -511,6 +522,7 @@ describe("InventoryClient: Rebalancing inventory", function () {
     mainnetUsdcContract.balanceOf.whenCalledWith(owner.address).returns(toMegaWei(1));
     await inventoryClient.rebalanceInventoryIfNeeded();
     expect(spyLogIncludes(spy, -2, "Insufficient mainnet balance to fund rebalance")).to.be.true;
+    expect(adapterManager.releasedAmounts).to.have.lengthOf(1);
 
     // A balance that merely changed but still covers the transfer must NOT block the rebalance (the point of the
     // loosened check). Set the balance slightly below the snapshot but far above the rebalance amount.

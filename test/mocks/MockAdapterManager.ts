@@ -24,6 +24,8 @@ export class MockAdapterManager extends AdapterManager {
   } = {};
   public withdrawalsRequired: L2Withdrawal[] = [];
   public preparedAmount?: BigNumber;
+  public prepareError?: Error;
+  public releasedAmounts: BigNumber[] = [];
 
   public mockedOutstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
   async sendTokenCrossChain(
@@ -44,7 +46,16 @@ export class MockAdapterManager extends AdapterManager {
     _l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<BigNumber> {
+    if (this.prepareError) {
+      const error = this.prepareError;
+      this.prepareError = undefined;
+      return Promise.reject(error);
+    }
     return Promise.resolve(this.preparedAmount ?? amount);
+  }
+
+  releaseTokenCrossChain(_chainId: number, _l1Token: EvmAddress, amount: BigNumber): void {
+    this.releasedAmounts.push(amount);
   }
 
   setAdapters(chainId: number, adapter: BaseChainAdapter): void {
