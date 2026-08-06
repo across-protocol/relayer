@@ -6,8 +6,6 @@ import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, getContractEntry } from "../../common";
 import {
   convertFromWei,
-  getBlockForTimestamp,
-  getCurrentTime,
   getTokenInfo,
   getUniqueLogIndex,
   Multicall2Call,
@@ -24,7 +22,6 @@ import {
   Provider,
   CHAIN_IDs,
 } from "../../utils";
-import { getRedisCache } from "../../cache/Redis";
 import { AddressesToFinalize, FinalizerPromise, CrossChainMessage } from "../types";
 
 type TokensBridged = interfaces.TokensBridged;
@@ -175,20 +172,19 @@ export async function zkSyncFinalizer(
   assert(isSignerWallet(signer), "Signer is not a Wallet");
   const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
 
-  // Zksync takes ~6 hours to finalize so ignore any events
-  // earlier than that.
-  const redis = await getRedisCache(logger);
-  const latestBlockToFinalize = await getBlockForTimestamp(
-    logger,
-    l2ChainId,
-    getCurrentTime() - 60 * 60 * 6,
-    undefined,
-    redis
-  );
+  // A withdrawal is only claimable once the L1 batch containing it has been executed on the hub chain, so the last
+  // L2 block of the highest executed batch is the newest withdrawal worth querying. Read that boundary from the
+  // chains instead of assuming a fixed finalization delay, which drifts as zkSync's batch cadence changes.
+  const mainContract = await wallet.getMainContract();
+  const executedBatch = (await mainContract.getTotalBatchesExecuted()).toNumber();
+  const batchBlockRange = await l2Provider.getL1BatchBlockRange(executedBatch);
+  assert(isDefined(batchBlockRange), `zkSync: getL1BatchBlockRange returned null for executed batch ${executedBatch}`);
+  const latestBlockToFinalize = batchBlockRange[1];
 
   logger.debug({
     at: "Finalizer#ZkSyncFinalizer",
     message: "ZkSync TokensBridged event filter",
+    executedBatch,
     toBlock: latestBlockToFinalize,
   });
   const eoaWithdrawals = await getEOAWithdrawals(
