@@ -10,6 +10,19 @@ The primary use case for the refiller originally was to send native token balanc
 
 When a configured native-token balance (e.g. HYPE on HyperEVM, AVAX on Avalanche) falls below its trigger and the signer cannot transfer enough on-chain, the refiller submits an async cross-chain swap via the Across Swap API using the hardcoded route in `SWAP_ROUTES` (`src/common/Constants.ts`). Routes currently source Arbitrum USDC for Avalanche and HyperEVM (and WETH or USDT for other chains). The swap lands as native gas on the destination; a later run can then transfer to the target account if needed.
 
+## Refilling native TRX on Tron
+
+Tron native refills use the same `REFILL_BALANCES` / `REFILL_BALANCES_2` shape as any other chain: omit `token` so it resolves to the chain's native token, and give `account` as either Base58 or 0x-hex (`toAddressType` normalizes both). `target` and `trigger` are whole-TRX amounts — TRX has 6 decimals, not 18.
+
+The refiller emits the same value-only raw transaction it uses on EVM chains (no calldata), and `TransactionClient` routes it to `arch.tvm.submitTransaction`. Tron models a native TRX transfer as a `TransferContract`, distinct from the `TriggerSmartContract` used for contract calls, so the SDK dispatches on calldata being absent; `triggerSmartContract` requires a deployed contract at the target and can never fund an EOA. That dispatch landed in `@across-protocol/sdk` 4.4.18 — on earlier versions the same transaction throws. The fee limit the client computes is ignored here, because transfers pay bandwidth rather than energy, so `TVM_GAS_LIMIT` has no effect on TRX refills.
+
+Two constraints are specific to Tron:
+
+- **No swap fallback.** Tron has no `SWAP_ROUTES` entry, so the refiller can only move TRX the base signer already holds. A signer short on TRX logs `Cannot refill balance to target` rather than sourcing it cross-chain; keep that signer funded out of band.
+- **Local-key signer required.** `getTronWebFromEvmSigner` reads the signer's private key, so the signer must be `Wallet`-backed. `mnemonic`, `privateKey`, `secret` and `gckms` all qualify (GCKMS resolves to an `ethers.Wallet`); a `void` read-only signer does not.
+
+Retries are not idempotent on this path. TVM has no nonce, so a broadcast that lands but times out on the response is rebuilt as a fresh transfer with a new txID and can double-send. This is pre-existing for Tron contract calls; for a value transfer the failure mode is duplicated TRX rather than a duplicated call.
+
 ## Refilling USDH on HyperEVM
 
 The Refiller also has a function that lets it transfer USDC from Arbitrum and mint USDH on HyperEVM via the NativeMarkets API.
