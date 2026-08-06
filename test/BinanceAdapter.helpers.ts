@@ -487,10 +487,9 @@ describe("Binance adapter helpers", function () {
       expect(ttl).to.equal(undefined);
       calls.push("order");
     });
-    sinon.stub(internals, "_redisUpdateOrderStatus").callsFake(async (_cloid, oldStatus, newStatus, _account, ttl) => {
+    sinon.stub(internals, "_redisUpdateOrderStatus").callsFake(async (_cloid, oldStatus, newStatus) => {
       expect(oldStatus).to.equal(STATUS.PENDING_DEPOSIT_SUBMISSION);
       expect(newStatus).to.equal(STATUS.PENDING_DEPOSIT);
-      expect(ttl).to.equal(2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
       calls.push("promote");
     });
     sinon.stub(internals, "_depositToBinance").callsFake(async (_cloid, _token, _chain, _amount, onSubmission) => {
@@ -512,8 +511,8 @@ describe("Binance adapter helpers", function () {
   it("persists the direct deposit hash at the broadcast boundary", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();
-    const set = sinon.stub().resolves("OK");
-    set.onFirstCall().rejects(new Error("temporary Redis outage"));
+    const setAndExtend = sinon.stub().resolves(["OK", true]);
+    setAndExtend.onFirstCall().rejects(new Error("temporary Redis outage"));
     const internals = adapter as unknown as {
       baseSignerAddress: EvmAddress;
       binanceApiClient: { depositAddress: sinon.SinonStub };
@@ -533,7 +532,7 @@ describe("Binance adapter helpers", function () {
     };
     internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
     internals.binanceApiClient = { depositAddress: sinon.stub().resolves({ address: await signer.getAddress() }) };
-    Object.assign(adapter, { _redisCache: { set } });
+    Object.assign(adapter, { _redisCache: { setAndExtend } });
     sinon.stub(adapter.baseSigner, "connect").returns(signer);
     sinon.stub(internals, "_wait").resolves();
     sinon.stub(internals, "_getTokenInfo").returns({
@@ -558,11 +557,12 @@ describe("Binance adapter helpers", function () {
       rpcProviders ? (process.env.RPC_PROVIDERS_1 = rpcProviders) : delete process.env.RPC_PROVIDERS_1;
       rpcProvider ? (process.env.RPC_PROVIDER_test_1 = rpcProvider) : delete process.env.RPC_PROVIDER_test_1;
     }
-    expect(JSON.parse(set.firstCall.args[1])).to.deep.equal({
+    expect(JSON.parse(setAndExtend.firstCall.args[1])).to.deep.equal({
       chainId: CHAIN_IDs.MAINNET,
       transactionHash: "0xdeposit",
     });
-    expect(set.callCount).to.equal(2);
+    expect(setAndExtend.firstCall.args[3]).to.equal(2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
+    expect(setAndExtend.callCount).to.equal(2);
   });
 
   it("reconciles a recoverable deposit transaction before lifecycle progression", async function () {
