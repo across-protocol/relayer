@@ -282,8 +282,8 @@ export class AdapterManager {
     return this.adapters[chainId].prepareTokenToTargetChain(address, l1Token, l2Token, amount);
   }
 
-  releaseTokenCrossChain(chainId: number, l1Token: EvmAddress, amount: BigNumber): void {
-    this.adapters[chainId].releaseTokenToTargetChain(l1Token, amount);
+  releaseTokenCrossChain(chainId: number, l1Token: EvmAddress, amount: BigNumber): Promise<void> {
+    return this.adapters[chainId].releaseTokenToTargetChain(l1Token, amount);
   }
 
   withdrawTokenFromL2(

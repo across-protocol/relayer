@@ -1,8 +1,9 @@
 import { BinanceStablecoinSwapAdapter, BridgeTransferDeclinedError } from "../src/adapter/bridges";
 import { TransactionClient } from "../src/clients";
+import { BinanceStablecoinSwapAdapter as RebalancerBinanceAdapter } from "../src/rebalancer/adapters/binance";
 import { RebalanceRoute } from "../src/rebalancer/utils/interfaces";
 import { CHAIN_IDs, EvmAddress, submitTransaction, TOKEN_SYMBOLS_MAP, ZERO_BYTES } from "../src/utils";
-import { createSpyLogger, ethers, expect, toBNWei } from "./utils";
+import { createSpyLogger, ethers, expect, sinon, toBNWei } from "./utils";
 
 describe("BinanceStablecoinSwapAdapter bridge", function () {
   const route: RebalanceRoute = {
@@ -27,6 +28,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     const [signer, other] = await ethers.getSigners();
     const { spyLogger } = createSpyLogger();
     const baseSignerAddress = EvmAddress.from(signer.address);
+    const reservations = new Set<string>();
     const adapter = {
       baseSignerAddress,
       config: {
@@ -35,6 +37,17 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       },
       supportsRoute: () => true,
       getPendingOrders: async () => Array.from({ length: options.pending ?? 0 }, (_, i) => String(i)),
+      reservePendingOrderSlot: async (maxPendingOrders: number) => {
+        if ((options.pending ?? 0) + reservations.size >= maxPendingOrders) {
+          return;
+        }
+        const reservation = `reservation-${reservations.size}`;
+        reservations.add(reservation);
+        return reservation;
+      },
+      releasePendingOrderSlot: async (reservation: string) => {
+        reservations.delete(reservation);
+      },
       getEstimatedCost: async () => toBNWei(options.cost ?? "0", 6),
       getValidatedRebalanceAmount: async (_route: RebalanceRoute, amount: ReturnType<typeof toBNWei>) =>
         options.valid === false ? toBNWei("0", 6) : amount,
@@ -113,6 +126,54 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     expect(
       await invalid.bridge.prepareL1ToL2Transfer(invalid.signer, invalid.l1Token, invalid.l2Token, toBNWei("100", 6))
     ).to.equal(0);
+  });
+
+  it("reserves pending-order capacity across adapter instances", async function () {
+    const [signer] = await ethers.getSigners();
+    const account = EvmAddress.from(signer.address);
+    const values = new Map<string, string>();
+    const sets = new Map<string, Set<string>>();
+    let locked = false;
+    const redis = {
+      acquireLock: async () => {
+        if (locked) {
+          return false;
+        }
+        return (locked = true);
+      },
+      releaseLock: async () => {
+        locked = false;
+        return true;
+      },
+      get: async (key: string) => values.get(key),
+      set: async (key: string, value: string) => {
+        values.set(key, value);
+        return "OK";
+      },
+      del: async (key: string) => Number(values.delete(key)),
+      sMembers: async (key: string) => [...(sets.get(key) ?? [])],
+      sAdd: async (key: string, value: string) => {
+        const members = sets.get(key) ?? new Set<string>();
+        sets.set(key, members);
+        const size = members.size;
+        members.add(value);
+        return Number(members.size > size);
+      },
+      sRem: async (key: string, value: string) => Number(sets.get(key)?.delete(value) ?? false),
+    };
+    const makeAdapter = () => {
+      const adapter = new RebalancerBinanceAdapter({} as never, {} as never, signer, {} as never, {} as never);
+      Object.assign(adapter, { _baseSignerAddress: account, _redisCache: redis });
+      sinon.stub(adapter, "getPendingOrders").resolves([]);
+      return adapter;
+    };
+    const first = makeAdapter();
+    const second = makeAdapter();
+    const reservations = await Promise.all([first.reservePendingOrderSlot(1), second.reservePendingOrderSlot(1)]);
+
+    expect(reservations.filter(Boolean)).to.have.length(1);
+    await first.releasePendingOrderSlot(reservations.find(Boolean) as string);
+    expect(await second.reservePendingOrderSlot(1)).to.be.a("string");
   });
 
   it("rejects a withdrawal recipient other than the signer", async function () {

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Binance, NewOrderSpot, OrderType, QueryOrderResult } from "binance-api-node";
 import {
   assert,
@@ -88,6 +89,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
   private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
+  private static readonly INITIATION_LOCK_TTL_MS = 30_000;
 
   REDIS_KEY_INITIATED_WITHDRAWALS = this.REDIS_PREFIX + "initiated-withdrawals";
   constructor(
@@ -749,6 +751,48 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   async getPendingOrders(): Promise<string[]> {
     return this._redisGetPendingOrders(this.baseSignerAddress);
+  }
+
+  async reservePendingOrderSlot(maxPendingOrders: number): Promise<string | undefined> {
+    const account = this.baseSignerAddress.toNative();
+    const lockKey = `${this.REDIS_PREFIX}initiation-lock:${account}`;
+    const lockToken = randomUUID();
+    if (!(await this.redisCache.acquireLock(lockKey, lockToken, BinanceStablecoinSwapAdapter.INITIATION_LOCK_TTL_MS))) {
+      return;
+    }
+    try {
+      const reservationSetKey = `${this.REDIS_PREFIX}initiation-reservations:${account}`;
+      const reservations = await this.redisCache.sMembers(reservationSetKey);
+      const reservationDetails = await Promise.all(reservations.map((token) => this.redisCache.get(token)));
+      const liveReservations = reservations.filter((_token, index) => isDefined(reservationDetails[index]));
+      await Promise.all(
+        reservations
+          .filter((_token, index) => !isDefined(reservationDetails[index]))
+          .map((token) => this.redisCache.sRem(reservationSetKey, token))
+      );
+      if ((await this.getPendingOrders()).length + liveReservations.length >= maxPendingOrders) {
+        return;
+      }
+      const reservation = `${this.REDIS_PREFIX}initiation-reservation:${account}:${randomUUID()}`;
+      const ttl = Number(process.env.REBALANCER_PENDING_ORDER_TTL ?? 60 * 60);
+      assert(ttl > 0, "REBALANCER_PENDING_ORDER_TTL must be positive");
+      assert(isDefined(await this.redisCache.set(reservation, "1", ttl)), "Failed to persist initiation reservation");
+      try {
+        await this.redisCache.sAdd(reservationSetKey, reservation);
+      } catch (error) {
+        await this.redisCache.del(reservation);
+        throw error;
+      }
+      return reservation;
+    } finally {
+      await this.redisCache.releaseLock(lockKey, lockToken);
+    }
+  }
+
+  async releasePendingOrderSlot(reservation: string): Promise<void> {
+    const reservationSetKey = `${this.REDIS_PREFIX}initiation-reservations:${this.baseSignerAddress.toNative()}`;
+    await this.redisCache.sRem(reservationSetKey, reservation);
+    await this.redisCache.del(reservation);
   }
 
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {

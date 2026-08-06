@@ -79,7 +79,7 @@ export abstract class BaseBridgeAdapter {
     amount: BigNumber
   ): Promise<BigNumber>;
 
-  releaseL1ToL2Transfer?(amount: BigNumber): void;
+  releaseL1ToL2Transfer?(amount: BigNumber): void | Promise<void>;
 
   sendL1ToL2Transfer?(
     toAddress: Address,

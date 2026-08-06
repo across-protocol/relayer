@@ -513,8 +513,8 @@ export class BaseChainAdapter {
     return bridge.prepareL1ToL2Transfer?.(address, l1Token, l2Token, amount) ?? Promise.resolve(amount);
   }
 
-  releaseTokenToTargetChain(l1Token: EvmAddress, amount: BigNumber): void {
-    this.bridges[l1Token.toNative()]?.releaseL1ToL2Transfer?.(amount);
+  releaseTokenToTargetChain(l1Token: EvmAddress, amount: BigNumber): Promise<void> {
+    return Promise.resolve(this.bridges[l1Token.toNative()]?.releaseL1ToL2Transfer?.(amount));
   }
 
   async wrapNativeTokenIfAboveThreshold(
