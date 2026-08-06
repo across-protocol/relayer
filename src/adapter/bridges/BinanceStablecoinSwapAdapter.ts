@@ -33,7 +33,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     l1Signer: Signer,
     _l2SignerOrProvider: unknown,
     private readonly l1Token: EvmAddress,
-    _logger: winston.Logger,
+    private readonly logger: winston.Logger,
     private readonly adapterFactory?: (route: RebalanceRoute) => Promise<RebalancerBinanceStablecoinSwapAdapter>
   ) {
     super(l2chainId, hubChainId, l1Signer, []);
@@ -84,7 +84,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     assert(preparedAmount.gt(bnZero), "Binance stablecoin swap adapter declined transfer");
     assert(isDefined(reservation), "Binance stablecoin swap adapter did not reserve an order slot");
     if (simMode) {
-      await adapter.releasePendingOrderSlot(reservation);
+      await this.releaseReservation(adapter, reservation);
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
     let submissionStarted = false;
@@ -94,12 +94,12 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
       })
       .catch(async (error) => {
         if (!submissionStarted) {
-          await adapter.releasePendingOrderSlot(reservation);
+          await this.releaseReservation(adapter, reservation);
           throw new BridgeTransferDeclinedError("Binance stablecoin swap failed before submission", { cause: error });
         }
         throw error;
       });
-    await adapter.releasePendingOrderSlot(reservation);
+    await this.releaseReservation(adapter, reservation);
     if (result.amount.eq(bnZero)) {
       throw new BridgeTransferDeclinedError("Binance stablecoin swap adapter declined transfer during initialization");
     }
@@ -115,7 +115,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     const reservation = this.consumePreparedTransfer(amount);
     if (isDefined(reservation)) {
       assert(isDefined(this.adapter));
-      await this.adapter.releasePendingOrderSlot(reservation);
+      await this.releaseReservation(this.adapter, reservation);
     }
   }
 
@@ -174,5 +174,20 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
       return;
     }
     return this.preparedTransfers.splice(index, 1)[0].reservation;
+  }
+
+  private async releaseReservation(
+    adapter: RebalancerBinanceStablecoinSwapAdapter,
+    reservation: string
+  ): Promise<void> {
+    try {
+      await adapter.releasePendingOrderSlot(reservation);
+    } catch (error) {
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.releaseReservation",
+        message: "Failed to release Binance pending-order reservation; waiting for its TTL",
+        error,
+      });
+    }
   }
 }

@@ -23,6 +23,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       initialize?: boolean;
       initializeError?: Error;
       submissionError?: Error;
+      releaseError?: Error;
     } = {}
   ) {
     const [signer, other] = await ethers.getSigners();
@@ -46,6 +47,9 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
         return reservation;
       },
       releasePendingOrderSlot: async (reservation: string) => {
+        if (options.releaseError) {
+          throw options.releaseError;
+        }
         reservations.delete(reservation);
       },
       getEstimatedCost: async () => toBNWei(options.cost ?? "0", 6),
@@ -200,6 +204,26 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     );
     await expect(
       failed.bridge.sendL1ToL2Transfer(failed.signer, failed.l1Token, failed.l2Token, failedAmount, false)
+    ).to.be.rejectedWith(BridgeTransferDeclinedError);
+
+    const cleanupFailed = await makeBridge({
+      initializeError: new Error("deposit address unavailable"),
+      releaseError: new Error("redis unavailable"),
+    });
+    const cleanupFailedAmount = await cleanupFailed.bridge.prepareL1ToL2Transfer(
+      cleanupFailed.signer,
+      cleanupFailed.l1Token,
+      cleanupFailed.l2Token,
+      toBNWei("100", 6)
+    );
+    await expect(
+      cleanupFailed.bridge.sendL1ToL2Transfer(
+        cleanupFailed.signer,
+        cleanupFailed.l1Token,
+        cleanupFailed.l2Token,
+        cleanupFailedAmount,
+        false
+      )
     ).to.be.rejectedWith(BridgeTransferDeclinedError);
 
     const submitted = await makeBridge({ submissionError: new Error("confirmation unavailable") });
