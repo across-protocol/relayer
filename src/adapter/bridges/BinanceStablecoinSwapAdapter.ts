@@ -7,7 +7,6 @@ import {
   EventSearchConfig,
   getTokenInfo,
   isDefined,
-  Provider,
   Signer,
   toBNWei,
   TransactionResponse,
@@ -26,9 +25,10 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     l2chainId: number,
     hubChainId: number,
     l1Signer: Signer,
-    _l2SignerOrProvider: Signer | Provider,
+    _l2SignerOrProvider: unknown,
     private readonly l1Token: EvmAddress,
-    private readonly logger: winston.Logger
+    _logger: winston.Logger,
+    private readonly adapterFactory?: (route: RebalanceRoute) => Promise<RebalancerBinanceStablecoinSwapAdapter>
   ) {
     super(l2chainId, hubChainId, l1Signer, []);
   }
@@ -76,6 +76,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
   }
 
   queryL1BridgeInitiationEvents(): Promise<BridgeEvents> {
+    // Binance lifecycle balances are already included by RebalancerClient.getPendingRebalances.
     return Promise.resolve({});
   }
 
@@ -85,6 +86,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     _toAddress: Address,
     _eventConfig: EventSearchConfig
   ): Promise<BridgeEvents> {
+    // Binance orders do not expose chain-event-shaped finalizations and must not be counted a second time here.
     return Promise.resolve({});
   }
 
@@ -101,20 +103,8 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
       assert(this.adapter.supportsRoute(route), "Binance stablecoin swap adapter route changed after initialization");
       return this.adapter;
     }
-    const [{ BinanceStablecoinSwapAdapter }, { CctpAdapter }, { OftAdapter }, { RebalancerConfig }] = await Promise.all(
-      [
-        import("../../rebalancer/adapters/binance"),
-        import("../../rebalancer/adapters/cctpAdapter"),
-        import("../../rebalancer/adapters/oftAdapter"),
-        import("../../rebalancer/RebalancerConfig"),
-      ]
-    );
-    const config = new RebalancerConfig(process.env);
-    const cctpAdapter = new CctpAdapter(this.logger, config, this.l1Signer);
-    const oftAdapter = new OftAdapter(this.logger, config, this.l1Signer);
-    const adapter = new BinanceStablecoinSwapAdapter(this.logger, config, this.l1Signer, cctpAdapter, oftAdapter);
-    await Promise.all([cctpAdapter.initialize([route]), oftAdapter.initialize([route])]);
-    await adapter.initialize([route]);
+    assert(isDefined(this.adapterFactory), "Binance stablecoin swap adapter factory is required");
+    const adapter = await this.adapterFactory(route);
     this.route = route;
     return (this.adapter = adapter);
   }

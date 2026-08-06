@@ -69,6 +69,7 @@ export abstract class BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents>;
 
+  // Returns the amount accepted by bridges that can cap or decline a transfer, before InventoryClient reserves it.
   prepareL1ToL2Transfer?(
     toAddress: Address,
     l1Token: EvmAddress,

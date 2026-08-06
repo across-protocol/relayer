@@ -30,8 +30,24 @@ import {
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
 import { BaseChainAdapter } from "../../adapter";
+import { BinanceStablecoinSwapAdapter as BinanceStablecoinSwapBridge } from "../../adapter/bridges/BinanceStablecoinSwapAdapter";
 import { TransferTokenParams } from "../../adapter/utils";
 import { CctpOftReadOnlyClient } from "../../rebalancer/clients/CctpOftReadOnlyClient";
+import { BinanceStablecoinSwapAdapter } from "../../rebalancer/adapters/binance";
+import { CctpAdapter } from "../../rebalancer/adapters/cctpAdapter";
+import { OftAdapter } from "../../rebalancer/adapters/oftAdapter";
+import { RebalancerConfig } from "../../rebalancer/RebalancerConfig";
+import { RebalanceRoute } from "../../rebalancer/utils/interfaces";
+
+async function createBinanceRebalancerAdapter(logger: winston.Logger, signer: Signer, route: RebalanceRoute) {
+  const config = new RebalancerConfig(process.env);
+  const cctpAdapter = new CctpAdapter(logger, config, signer);
+  const oftAdapter = new OftAdapter(logger, config, signer);
+  const adapter = new BinanceStablecoinSwapAdapter(logger, config, signer, cctpAdapter, oftAdapter);
+  await Promise.all([cctpAdapter.initialize([route]), oftAdapter.initialize([route])]);
+  await adapter.initialize([route]);
+  return adapter;
+}
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
@@ -113,14 +129,25 @@ export class AdapterManager {
             if (!isDefined(bridgeConstructor)) {
               return undefined;
             }
-            const bridge = new bridgeConstructor(
-              chainId,
-              hubChainId,
-              l1Signer,
-              l2SignerOrProvider,
-              EvmAddress.from(l1Token),
-              logger
-            );
+            const bridge =
+              bridgeConstructor === BinanceStablecoinSwapBridge
+                ? new BinanceStablecoinSwapBridge(
+                    chainId,
+                    hubChainId,
+                    l1Signer,
+                    l2SignerOrProvider,
+                    EvmAddress.from(l1Token),
+                    logger,
+                    (route) => createBinanceRebalancerAdapter(logger, l1Signer, route)
+                  )
+                : new bridgeConstructor(
+                    chainId,
+                    hubChainId,
+                    l1Signer,
+                    l2SignerOrProvider,
+                    EvmAddress.from(l1Token),
+                    logger
+                  );
             return [l1Token, bridge];
           })
           .filter(isDefined) ?? []
