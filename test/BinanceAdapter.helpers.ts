@@ -4,7 +4,11 @@ import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
-import { STATUS } from "../src/rebalancer/utils/utils";
+import {
+  getPendingBridgeDepositRecoveryKey,
+  getPendingBridgeDepositTxnKey,
+  STATUS,
+} from "../src/rebalancer/utils/utils";
 import {
   BINANCE_NETWORKS,
   BINANCE_READ_RECV_WINDOW_MS,
@@ -461,6 +465,15 @@ describe("Binance adapter helpers", function () {
     internals.initialized = true;
     internals.availableRoutes = [route];
     internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    Object.assign(adapter, {
+      _redisCache: {
+        set: async () => {
+          calls.push("recovery");
+          return "OK";
+        },
+        del: async () => 1,
+      },
+    });
     sinon.stub(internals, "_getRebalancePreflight").resolves({
       destinationTokenInfo: { symbol: "USDT", decimals: 6 },
       expectedAmountToWithdrawInDestinationUnits: toBNWei("100", 6),
@@ -488,8 +501,31 @@ describe("Binance adapter helpers", function () {
     await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
       "post-broadcast redis failure"
     );
-    expect(calls).to.deep.equal(["order", "submission", "promote", "broadcast"]);
+    expect(calls).to.deep.equal(["order", "recovery", "submission", "promote", "broadcast"]);
     expect(deleteOrder.called).to.equal(false);
+  });
+
+  it("reconciles a recoverable deposit transaction before lifecycle progression", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const account = EvmAddress.from(await signer.getAddress());
+    const recoveryKey = getPendingBridgeDepositRecoveryKey(adapter.REDIS_PREFIX, "cloid", account.toNative());
+    const transactionKey = getPendingBridgeDepositTxnKey(adapter.REDIS_PREFIX, "cloid", account.toNative());
+    const values = new Map<string, string>([[recoveryKey, "1"]]);
+    Object.assign(adapter, {
+      _baseSignerAddress: account,
+      _redisCache: {
+        get: async (key: string) => values.get(key),
+        del: async (key: string) => Number(values.delete(key)),
+      },
+    });
+    const reconcile = (adapter as unknown as { _reconcileDepositRecovery(cloid: string): Promise<boolean> })
+      ._reconcileDepositRecovery;
+
+    expect(await reconcile.call(adapter, "cloid")).to.equal(false);
+    values.set(transactionKey, JSON.stringify({ chainId: CHAIN_IDs.MAINNET, transactionHash: "0xdeposit" }));
+    expect(await reconcile.call(adapter, "cloid")).to.equal(true);
+    expect(values.has(recoveryKey)).to.equal(false);
   });
 
   it("builds Tron direct deposit transfers with ethers-compatible addresses", async function () {

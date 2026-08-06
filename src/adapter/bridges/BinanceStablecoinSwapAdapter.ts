@@ -97,6 +97,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
           await this.releaseReservation(adapter, reservation);
           throw new BridgeTransferDeclinedError("Binance stablecoin swap failed before submission", { cause: error });
         }
+        await this.releaseReservation(adapter, reservation);
         throw error;
       });
     await this.releaseReservation(adapter, reservation);

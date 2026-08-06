@@ -55,7 +55,7 @@ import {
   blockExplorerLink,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
-import { getPendingBridgeDepositTxnKey, STATUS } from "../utils/utils";
+import { getPendingBridgeDepositRecoveryKey, getPendingBridgeDepositTxnKey, STATUS } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
 import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
@@ -308,6 +308,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     for (const cloid of pendingDeposits) {
       const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
       if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
+      if (!(await this._reconcileDepositRecovery(cloid))) {
         continue;
       }
       const { sourceToken, sourceChain, destinationToken, destinationChain, amountToTransfer } = orderDetails;
@@ -573,6 +576,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const { chainId, transactionHash } = JSON.parse(depositTxn) as { chainId: number; transactionHash: string };
     await this.redisCache.del(getBinanceTransactionTypeKey(chainId, transactionHash));
     await this.redisCache.del(depositTxnKey);
+    await this.redisCache.del(getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account.toNative()));
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._onExpiredOrderPruned",
       message: `Released SWAP deposit tag for pruned order ${cloid}; the Binance finalizer can now reclaim the deposited funds`,
@@ -893,9 +897,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         amountToTransfer,
         this.baseSignerAddress
       );
+      const depositRecoveryKey = getPendingBridgeDepositRecoveryKey(
+        this.REDIS_PREFIX,
+        cloid,
+        this.baseSignerAddress.toNative()
+      );
       let submissionStarted = false;
       let transactionHash: string;
       try {
+        assert(
+          isDefined(await this.redisCache.set(depositRecoveryKey, "1", 2 * FINALIZER_TOKENBRIDGE_LOOKBACK)),
+          "Failed to persist Binance deposit recovery marker"
+        );
         transactionHash = await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer, async () => {
           await this._redisUpdateOrderStatus(
             cloid,
@@ -911,6 +924,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           await Promise.all([
             this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT_SUBMISSION, this.baseSignerAddress),
             this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT, this.baseSignerAddress),
+            this.redisCache.del(depositRecoveryKey),
           ]).catch((cleanupError) =>
             this.logger.warn({
               at: "BinanceStablecoinSwapAdapter.initializeRebalance",
@@ -1280,11 +1294,19 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     // TTL must outlive the finalizer lookback so completed swaps are not re-counted as finalizable.
     // The cloid -> deposit txn mapping lets the prune path find abandoned deposit tags.
+    assert(
+      isDefined(
+        await this.redisCache.set(
+          getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative()),
+          JSON.stringify({ chainId: sourceChain, transactionHash: txnHash }),
+          2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+        )
+      ),
+      "Failed to persist Binance deposit transaction recovery data"
+    );
     await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, 2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
-    await this.redisCache.set(
-      getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative()),
-      JSON.stringify({ chainId: sourceChain, transactionHash: txnHash }),
-      2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+    await this.redisCache.del(
+      getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative())
     );
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._depositToBinance",
@@ -1292,6 +1314,33 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       redisDepositTypeKey: getBinanceTransactionTypeKey(sourceChain, txnHash),
     });
     return txnHash;
+  }
+
+  private async _reconcileDepositRecovery(cloid: string): Promise<boolean> {
+    const account = this.baseSignerAddress.toNative();
+    const recoveryKey = getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account);
+    if (!isDefined(await this.redisCache.get(recoveryKey))) {
+      return true;
+    }
+    const depositTxn = await this.redisCache.get<string>(
+      getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account)
+    );
+    if (!isDefined(depositTxn)) {
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter._reconcileDepositRecovery",
+        message: `Waiting for deposit transaction recovery data for order ${cloid}`,
+      });
+      return false;
+    }
+    const { chainId, transactionHash } = JSON.parse(depositTxn) as { chainId: number; transactionHash: string };
+    await setBinanceDepositType(
+      chainId,
+      transactionHash,
+      BinanceTransactionType.SWAP,
+      2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+    );
+    await this.redisCache.del(recoveryKey);
+    return true;
   }
 
   private _buildDirectBinanceTokenDepositTransaction(

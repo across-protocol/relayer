@@ -24,6 +24,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       initializeError?: Error;
       submissionError?: Error;
       releaseError?: Error;
+      maxPendingOrders?: number;
     } = {}
   ) {
     const [signer, other] = await ethers.getSigners();
@@ -34,7 +35,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       baseSignerAddress,
       config: {
         maxAmountsToTransfer: options.maxAmount ? { USDT: { [CHAIN_IDs.MAINNET]: toBNWei(options.maxAmount, 6) } } : {},
-        maxPendingOrders: { binance: 2 },
+        maxPendingOrders: { binance: options.maxPendingOrders ?? 2 },
       },
       supportsRoute: () => true,
       getPendingOrders: async () => Array.from({ length: options.pending ?? 0 }, (_, i) => String(i)),
@@ -236,7 +237,10 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       )
     ).to.be.rejectedWith(BridgeTransferDeclinedError);
 
-    const submitted = await makeBridge({ submissionError: new Error("confirmation unavailable") });
+    const submitted = await makeBridge({
+      submissionError: new Error("confirmation unavailable"),
+      maxPendingOrders: 1,
+    });
     const submittedAmount = await submitted.bridge.prepareL1ToL2Transfer(
       submitted.signer,
       submitted.l1Token,
@@ -252,6 +256,14 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
         false
       )
     ).to.be.rejectedWith("confirmation unavailable");
+    expect(
+      await submitted.bridge.prepareL1ToL2Transfer(
+        submitted.signer,
+        submitted.l1Token,
+        submitted.l2Token,
+        toBNWei("100", 6)
+      )
+    ).to.equal(toBNWei("100", 6));
   });
 
   it("marks submission at the broadcast boundary", async function () {
