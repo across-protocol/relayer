@@ -75,6 +75,14 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       await full.bridge.prepareL1ToL2Transfer(full.signer, full.l1Token, full.l2Token, toBNWei("100", 6))
     ).to.equal(0);
 
+    const oneSlot = await makeBridge({ pending: 1 });
+    expect(
+      await oneSlot.bridge.prepareL1ToL2Transfer(oneSlot.signer, oneSlot.l1Token, oneSlot.l2Token, toBNWei("100", 6))
+    ).to.equal(toBNWei("100", 6));
+    expect(
+      await oneSlot.bridge.prepareL1ToL2Transfer(oneSlot.signer, oneSlot.l1Token, oneSlot.l2Token, toBNWei("50", 6))
+    ).to.equal(0);
+
     const invalid = await makeBridge({ valid: false });
     expect(
       await invalid.bridge.prepareL1ToL2Transfer(invalid.signer, invalid.l1Token, invalid.l2Token, toBNWei("100", 6))
