@@ -535,11 +535,23 @@ async function _runTransactionTvm(
     ? { from: await contract.signer.getAddress(), to: contract.address, data: (args as Array<string>)[0] }
     : await contract.populateTransaction[method](...args, { value });
 
+  // Mirrors the SDK's dispatch: absent calldata makes submitTransaction send a TransferContract
+  // (a native TRX transfer) rather than a contract call.
+  const isNativeTransfer = !isDefined(populatedTransaction.data) && value.gt(bnZero);
+
   logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit });
   let result;
   try {
     result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
   } catch (error) {
+    // A native transfer must not be retried here. TVM has no nonce, so a retry rebuilds the transfer
+    // under a new txID rather than replacing the old one, and a broadcast that landed but lost its
+    // response is indistinguishable from one that never landed -- retrying would send the value
+    // twice. Callers re-derive the amount from the on-chain balance on their next iteration (the
+    // refiller recomputes its deficit), which is the idempotent way to retry this.
+    if (isNativeTransfer) {
+      throw error;
+    }
     if (--retries < 0) {
       throw error;
     }
