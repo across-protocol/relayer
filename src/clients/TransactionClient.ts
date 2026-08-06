@@ -94,9 +94,24 @@ export interface AugmentedTransaction {
 
 type TransactionCallbacks = Pick<AugmentedTransaction, "onSubmission" | "onBroadcast">;
 
-export class TransactionBroadcastRejectedError extends Error {
-  constructor(readonly cause: Error) {
-    super(`Transaction rejected before broadcast: ${cause.message}`);
+export class DefinitiveTransactionFailure extends Error {
+  constructor(
+    message: string,
+    readonly cause: Error
+  ) {
+    super(`${message}: ${cause.message}`);
+  }
+}
+
+export class TransactionBroadcastRejectedError extends DefinitiveTransactionFailure {
+  constructor(cause: Error) {
+    super("Transaction rejected before broadcast", cause);
+  }
+}
+
+export class TransactionRevertedError extends DefinitiveTransactionFailure {
+  constructor(cause: Error) {
+    super("Transaction reverted after broadcast", cause);
   }
 }
 
@@ -206,13 +221,13 @@ export class TransactionClient {
             case ethers.errors.CALL_EXCEPTION:
               // Call failed
               this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
-              throw error;
+              throw new TransactionRevertedError(error);
             case ethers.errors.TRANSACTION_REPLACED:
               // "repriced" ⇒ a transaction identical to ours (data/to/value) was mined at this nonce; adopt it.
               if (error.reason === "repriced" && isReplacedError(error)) {
                 if (error.receipt.status === 0) {
                   this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
-                  throw error;
+                  throw new TransactionRevertedError(error);
                 }
                 await txn.onBroadcast?.(error.replacement.hash);
                 return error.replacement;
@@ -273,7 +288,7 @@ export class TransactionClient {
       } else if (txnReceipt.status === 0) {
         // The TVM wait resolves reverted transactions rather than throwing CALL_EXCEPTION.
         this.logger.debug({ at, message: `Transaction on ${chain} failed during execution...`, txnRef });
-        throw new Error(`${chain} transaction reverted (${txnResponse.hash})`);
+        throw new TransactionRevertedError(new Error(`${chain} transaction reverted (${txnResponse.hash})`));
       }
     }
 
@@ -336,7 +351,7 @@ export class TransactionClient {
           error: stringifyThrownValue(error),
           notificationPath: "across-error",
         });
-        if (error instanceof TransactionBroadcastRejectedError) {
+        if (error instanceof DefinitiveTransactionFailure) {
           throw error;
         }
         return txnResponses;

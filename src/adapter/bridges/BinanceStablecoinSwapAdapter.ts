@@ -15,7 +15,7 @@ import {
 } from "../../utils";
 import type { BinanceStablecoinSwapAdapter as RebalancerBinanceStablecoinSwapAdapter } from "../../rebalancer/adapters/binance";
 import type { RebalanceRoute } from "../../rebalancer/utils/interfaces";
-import { TransactionBroadcastRejectedError } from "../../clients";
+import { DefinitiveTransactionFailure } from "../../clients";
 import {
   BaseBridgeAdapter,
   BridgeEvents,
@@ -94,7 +94,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
         submissionStarted = true;
       })
       .catch(async (error) => {
-        if (!submissionStarted || error instanceof TransactionBroadcastRejectedError) {
+        if (!submissionStarted || error instanceof DefinitiveTransactionFailure) {
           await this.releaseReservation(adapter, reservation);
           throw new BridgeTransferDeclinedError("Binance stablecoin swap failed before submission", { cause: error });
         }

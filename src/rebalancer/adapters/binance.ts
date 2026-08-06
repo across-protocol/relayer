@@ -57,7 +57,7 @@ import {
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
 import { getPendingBridgeDepositRecoveryKey, getPendingBridgeDepositTxnKey, STATUS } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
-import { AugmentedTransaction, MultiCallerClient, TransactionBroadcastRejectedError } from "../../clients";
+import { AugmentedTransaction, DefinitiveTransactionFailure, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
 import { FINALIZER_TOKENBRIDGE_LOOKBACK, getContractEntry } from "../../common";
 import { CctpAdapter } from "./cctpAdapter";
@@ -890,14 +890,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
         expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
-      // Keep a broadcast order reserved for the full recovery horizon even if its transaction mapping cannot be saved.
       await this._redisCreateOrder(
         cloid,
         STATUS.PENDING_DEPOSIT_SUBMISSION,
         rebalanceRoute,
         amountToTransfer,
-        this.baseSignerAddress,
-        2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+        this.baseSignerAddress
       );
       const depositRecoveryKey = getPendingBridgeDepositRecoveryKey(
         this.REDIS_PREFIX,
@@ -919,16 +917,20 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
             cloid,
             STATUS.PENDING_DEPOSIT_SUBMISSION,
             STATUS.PENDING_DEPOSIT,
-            this.baseSignerAddress
+            this.baseSignerAddress,
+            2 * FINALIZER_TOKENBRIDGE_LOOKBACK
           );
           submissionStarted = true;
           await onSubmission?.();
         });
       } catch (error) {
-        if (!submissionStarted || error instanceof TransactionBroadcastRejectedError) {
+        if (!submissionStarted || error instanceof DefinitiveTransactionFailure) {
           await Promise.all([
             this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT_SUBMISSION, this.baseSignerAddress),
             this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT, this.baseSignerAddress),
+            this.redisCache.del(
+              getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative())
+            ),
             this.redisCache.del(depositRecoveryKey),
           ]).catch((cleanupError) =>
             this.logger.warn({

@@ -1,4 +1,4 @@
-import { AugmentedTransaction, TransactionBroadcastRejectedError } from "../src/clients";
+import { AugmentedTransaction, TransactionBroadcastRejectedError, TransactionRevertedError } from "../src/clients";
 import {
   BigNumber,
   ethers,
@@ -221,8 +221,9 @@ describe("TransactionClient", function () {
         return Promise.reject(makeEthersError(ethers.errors.CALL_EXCEPTION));
       };
 
-      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
-      expect(txnResponses.length).to.equal(0);
+      await expect(txnClient.submit(chainId, [makeConfirmationTxn(chainId)])).to.be.rejectedWith(
+        TransactionRevertedError
+      );
     });
 
     it("Resubmits on TRANSACTION_REPLACED", async function () {

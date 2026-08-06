@@ -165,14 +165,23 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     cloid: string,
     oldStatus: number,
     status: number,
-    account: EvmAddress
+    account: EvmAddress,
+    ttlOverride?: number
   ): Promise<void> {
     const oldOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, oldStatus, account.toNative());
     const newOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
-    const result = await Promise.all([
-      this.redisCache.sRem(oldOrderStatusKey, cloid),
-      this.redisCache.sAdd(newOrderStatusKey, cloid),
-    ]);
+    const result = isDefined(ttlOverride)
+      ? await this.redisCache.moveSetMemberAndExpire(
+          oldOrderStatusKey,
+          newOrderStatusKey,
+          cloid,
+          getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative()),
+          ttlOverride
+        )
+      : await Promise.all([
+          this.redisCache.sRem(oldOrderStatusKey, cloid),
+          this.redisCache.sAdd(newOrderStatusKey, cloid),
+        ]);
     this.logger.debug({
       at: "BaseAdapter._redisUpdateOrderStatus",
       message: `Updated order status for cloid ${cloid} from ${oldOrderStatusKey} to ${newOrderStatusKey}`,
@@ -191,8 +200,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     const orderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
     const orderDetailsKey = getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account.toNative());
 
-    // The default TTL is 1 hour so a RebalancerClient can sweep excess exchange balances after finalized orders.
-    // Safety-critical lifecycle stages can override both that default and the process-wide configured TTL.
+    // Create a new order in Redis. We use a TTL of 1 hour so that all orders that are finalized in 1 hour are
+    // deleted from Redis and a RebalancerClient can sweep any excess balances that are left over on exchanges.
     const { sourceToken, destinationToken, sourceChain, destinationChain } = rebalanceRoute;
     this.logger.debug({
       at: "BaseAdapter._redisCreateOrder",
@@ -218,8 +227,9 @@ export abstract class BaseAdapter implements RebalancerAdapter {
           destinationChain,
           amountToTransfer: amountToTransfer.toString(),
         }),
-        ttlOverride ??
-          (process.env.REBALANCER_PENDING_ORDER_TTL ? Number(process.env.REBALANCER_PENDING_ORDER_TTL) : 60 * 60)
+        process.env.REBALANCER_PENDING_ORDER_TTL
+          ? Number(process.env.REBALANCER_PENDING_ORDER_TTL)
+          : (ttlOverride ?? 60 * 60) // default to 1 hour
       ),
     ]);
     this.logger.debug({
