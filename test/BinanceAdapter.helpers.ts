@@ -484,12 +484,13 @@ describe("Binance adapter helpers", function () {
     sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.MAINNET);
     sinon.stub(internals, "_redisCreateOrder").callsFake(async (_cloid, status, _route, _amount, _account, ttl) => {
       expect(status).to.equal(STATUS.PENDING_DEPOSIT_SUBMISSION);
-      expect(ttl).to.equal(2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
+      expect(ttl).to.equal(undefined);
       calls.push("order");
     });
-    sinon.stub(internals, "_redisUpdateOrderStatus").callsFake(async (_cloid, oldStatus, newStatus) => {
+    sinon.stub(internals, "_redisUpdateOrderStatus").callsFake(async (_cloid, oldStatus, newStatus, _account, ttl) => {
       expect(oldStatus).to.equal(STATUS.PENDING_DEPOSIT_SUBMISSION);
       expect(newStatus).to.equal(STATUS.PENDING_DEPOSIT);
+      expect(ttl).to.equal(2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
       calls.push("promote");
     });
     sinon.stub(internals, "_depositToBinance").callsFake(async (_cloid, _token, _chain, _amount, onSubmission) => {
@@ -506,39 +507,6 @@ describe("Binance adapter helpers", function () {
     );
     expect(calls).to.deep.equal(["order", "recovery", "submission", "promote", "broadcast"]);
     expect(deleteOrder.called).to.equal(false);
-  });
-
-  it("prefers an explicit recovery TTL over the configured order TTL", async function () {
-    const adapter = await makeAdapter();
-    const [signer] = await ethers.getSigners();
-    const set = sinon.stub().resolves("OK");
-    Object.assign(adapter, { _redisCache: { sAdd: sinon.stub().resolves(1), set } });
-    const createOrder = (
-      adapter as unknown as { _redisCreateOrder(...args: unknown[]): Promise<void> }
-    )._redisCreateOrder.bind(adapter);
-    const configuredTtl = process.env.REBALANCER_PENDING_ORDER_TTL;
-    process.env.REBALANCER_PENDING_ORDER_TTL = "3600";
-
-    try {
-      await createOrder(
-        "cloid",
-        STATUS.PENDING_DEPOSIT_SUBMISSION,
-        {
-          sourceChain: CHAIN_IDs.MAINNET,
-          sourceToken: "USDT",
-          destinationChain: CHAIN_IDs.AVALANCHE,
-          destinationToken: "USDT",
-        },
-        toBNWei("100", 6),
-        EvmAddress.from(await signer.getAddress()),
-        2 * FINALIZER_TOKENBRIDGE_LOOKBACK
-      );
-    } finally {
-      configuredTtl
-        ? (process.env.REBALANCER_PENDING_ORDER_TTL = configuredTtl)
-        : delete process.env.REBALANCER_PENDING_ORDER_TTL;
-    }
-    expect(set.firstCall.args[2]).to.equal(2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
   });
 
   it("persists the direct deposit hash at the broadcast boundary", async function () {
