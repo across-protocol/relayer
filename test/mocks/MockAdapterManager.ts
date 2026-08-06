@@ -11,6 +11,7 @@ import {
 import { createRandomBytes32 } from "../utils";
 import { OutstandingTransfers } from "../../src/interfaces";
 import { BaseChainAdapter } from "../../src/adapter";
+import { BridgeTransferDeclinedError } from "../../src/adapter/bridges";
 
 type L2Withdrawal = { l2Token: Address; amountToWithdraw: BigNumber; l2ChainId: number; address: Address };
 
@@ -25,6 +26,7 @@ export class MockAdapterManager extends AdapterManager {
   public withdrawalsRequired: L2Withdrawal[] = [];
   public preparedAmount?: BigNumber;
   public prepareError?: Error;
+  public declineSend = false;
   public releasedAmounts: BigNumber[] = [];
 
   public mockedOutstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
@@ -34,6 +36,9 @@ export class MockAdapterManager extends AdapterManager {
     l1Token: EvmAddress,
     amount: BigNumber
   ): Promise<TransactionResponse> {
+    if (this.declineSend) {
+      throw new BridgeTransferDeclinedError("declined");
+    }
     this.tokensSentCrossChain[chainId] ??= {};
     const hash = createRandomBytes32();
     this.tokensSentCrossChain[chainId][l1Token.toNative()] = { amount, hash };

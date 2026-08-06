@@ -1,4 +1,4 @@
-import { BinanceStablecoinSwapAdapter } from "../src/adapter/bridges";
+import { BinanceStablecoinSwapAdapter, BridgeTransferDeclinedError } from "../src/adapter/bridges";
 import { RebalanceRoute } from "../src/rebalancer/utils/interfaces";
 import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, ZERO_BYTES } from "../src/utils";
 import { createSpyLogger, ethers, expect, toBNWei } from "./utils";
@@ -12,7 +12,9 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     adapter: "binance",
   };
 
-  async function makeBridge(options: { pending?: number; cost?: string; maxAmount?: string; valid?: boolean } = {}) {
+  async function makeBridge(
+    options: { pending?: number; cost?: string; maxAmount?: string; valid?: boolean; initialize?: boolean } = {}
+  ) {
     const [signer, other] = await ethers.getSigners();
     const { spyLogger } = createSpyLogger();
     const baseSignerAddress = EvmAddress.from(signer.address);
@@ -28,8 +30,8 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       getValidatedRebalanceAmount: async (_route: RebalanceRoute, amount: ReturnType<typeof toBNWei>) =>
         options.valid === false ? toBNWei("0", 6) : amount,
       initializeRebalanceWithTransaction: async (_route: RebalanceRoute, amount: ReturnType<typeof toBNWei>) => ({
-        amount,
-        transactionHash: "0xdeposit",
+        amount: options.initialize === false ? toBNWei("0", 6) : amount,
+        transactionHash: options.initialize === false ? undefined : "0xdeposit",
       }),
     };
     const bridge = new BinanceStablecoinSwapAdapter(
@@ -93,6 +95,15 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     const { bridge, other, l1Token, l2Token } = await makeBridge();
     await expect(bridge.prepareL1ToL2Transfer(other, l1Token, l2Token, toBNWei("100", 6))).to.be.rejectedWith(
       "Binance withdrawal recipient must match signer"
+    );
+  });
+
+  it("distinguishes a repeated-preflight decline from a submission error", async function () {
+    const { bridge, signer, l1Token, l2Token } = await makeBridge({ initialize: false });
+    const amount = await bridge.prepareL1ToL2Transfer(signer, l1Token, l2Token, toBNWei("100", 6));
+
+    await expect(bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, amount, false)).to.be.rejectedWith(
+      BridgeTransferDeclinedError
     );
   });
 

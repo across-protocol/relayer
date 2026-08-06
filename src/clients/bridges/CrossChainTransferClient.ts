@@ -1,4 +1,4 @@
-import { BigNumber, bnZero, winston, DefaultLogLevels, AnyObject, Address, EvmAddress } from "../../utils";
+import { BigNumber, bnZero, winston, DefaultLogLevels, AnyObject, Address, EvmAddress, assert } from "../../utils";
 import { AdapterManager } from "./AdapterManager";
 import { OutstandingTransfers } from "../../interfaces";
 
@@ -76,6 +76,21 @@ export class CrossChainTransferClient {
     // TODO: Require a tx hash here so we can track it as well.
     transfers[address.toNative()][l1Token.toEvmAddress()][l2Token.toNative()].totalAmount =
       this.getOutstandingCrossChainTransferAmount(address, chainId, l1Token, l2Token).add(rebalance);
+  }
+
+  decreaseOutstandingTransfer(
+    address: Address,
+    l1Token: EvmAddress,
+    l2Token: Address,
+    rebalance: BigNumber,
+    chainId: number
+  ): void {
+    const transfer =
+      this.outstandingCrossChainTransfers[chainId]?.[address.toNative()]?.[l1Token.toEvmAddress()]?.[
+        l2Token.toNative()
+      ];
+    assert(transfer?.totalAmount.gte(rebalance));
+    transfer.totalAmount = transfer.totalAmount.sub(rebalance);
   }
 
   async update(l1Tokens: EvmAddress[], chainIds = this.getEnabledL2Chains()): Promise<void> {

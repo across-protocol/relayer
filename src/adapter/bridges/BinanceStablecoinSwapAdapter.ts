@@ -15,7 +15,12 @@ import {
 } from "../../utils";
 import type { BinanceStablecoinSwapAdapter as RebalancerBinanceStablecoinSwapAdapter } from "../../rebalancer/adapters/binance";
 import type { RebalanceRoute } from "../../rebalancer/utils/interfaces";
-import { BaseBridgeAdapter, BridgeEvents, BridgeTransactionDetails } from "./BaseBridgeAdapter";
+import {
+  BaseBridgeAdapter,
+  BridgeEvents,
+  BridgeTransactionDetails,
+  BridgeTransferDeclinedError,
+} from "./BaseBridgeAdapter";
 
 export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
   private adapter?: RebalancerBinanceStablecoinSwapAdapter;
@@ -79,7 +84,9 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
     const result = await adapter.initializeRebalanceWithTransaction(this.getRoute(), preparedAmount);
-    assert(result.amount.gt(bnZero), "Binance stablecoin swap adapter declined transfer during initialization");
+    if (result.amount.eq(bnZero)) {
+      throw new BridgeTransferDeclinedError("Binance stablecoin swap adapter declined transfer during initialization");
+    }
     assert(isDefined(result.transactionHash), "Binance stablecoin swap adapter did not submit a direct deposit");
     return { hash: result.transactionHash } as TransactionResponse;
   }

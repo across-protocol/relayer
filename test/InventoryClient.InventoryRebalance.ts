@@ -324,6 +324,27 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc))).to.equal(initialMainnetBalance);
   });
 
+  it("rolls back a reserved rebalance declined before transaction submission", async function () {
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+    const l1Token = EvmAddress.from(mainnetUsdc);
+    const l2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
+    const initialMainnetBalance = tokenClient.getBalance(CHAIN_IDs.MAINNET, l1Token);
+    adapterManager.declineSend = true;
+
+    await inventoryClient.update();
+    await inventoryClient.rebalanceInventoryIfNeeded();
+
+    expect(tokenClient.getBalance(CHAIN_IDs.MAINNET, l1Token)).to.equal(initialMainnetBalance);
+    expect(
+      crossChainTransferClient.getOutstandingCrossChainTransferAmount(
+        EvmAddress.from(owner.address),
+        ARBITRUM,
+        l1Token,
+        l2Token
+      )
+    ).to.equal(bnZero);
+  });
+
   it("skips a candidate whose cross-chain preparation fails", async function () {
     tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(1000));
     tokenClient.decrementLocalBalance(OPTIMISM, toAddressType(l2TokensForUsdc[OPTIMISM], OPTIMISM), toMegaWei(1000));
