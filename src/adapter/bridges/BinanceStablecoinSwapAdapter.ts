@@ -83,7 +83,17 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     if (simMode) {
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
-    const result = await adapter.initializeRebalanceWithTransaction(this.getRoute(), preparedAmount);
+    let submissionStarted = false;
+    const result = await adapter
+      .initializeRebalanceWithTransaction(this.getRoute(), preparedAmount, () => {
+        submissionStarted = true;
+      })
+      .catch((error) => {
+        if (!submissionStarted) {
+          throw new BridgeTransferDeclinedError("Binance stablecoin swap failed before submission", { cause: error });
+        }
+        throw error;
+      });
     if (result.amount.eq(bnZero)) {
       throw new BridgeTransferDeclinedError("Binance stablecoin swap adapter declined transfer during initialization");
     }
