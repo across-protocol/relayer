@@ -287,9 +287,14 @@ export class AcrossSwapApiClient extends BaseAcrossApiClient {
     return this._postOrThrow<DepositAddressSignWithdrawResponse>("deposit-addresses/sign-withdraw", req);
   }
 
-  /** v3 upgradeable-counterfactual deposit-execute quote (POST). */
-  async executeDepositAddress(req: DepositAddressExecuteRequest): Promise<DepositAddressExecuteResponse | undefined> {
-    return this._post<DepositAddressExecuteResponse>("deposit-addresses/execute", req);
+  /**
+   * v3 upgradeable-counterfactual deposit-execute quote (POST). Rethrows on failure (via
+   * `_postOrThrowWithErrorCode`) so the caller can classify the API's error `code`: an
+   * `AMOUNT_BELOW_MINIMUM` rejection is terminal and routes the transfer to a refund withdraw
+   * instead, while every other failure is retried.
+   */
+  async executeDepositAddress(req: DepositAddressExecuteRequest): Promise<DepositAddressExecuteResponse> {
+    return this._postOrThrowWithErrorCode<DepositAddressExecuteResponse>("deposit-addresses/execute", req);
   }
 
   private _isRouteSupported(route: SwapRoute): boolean {
