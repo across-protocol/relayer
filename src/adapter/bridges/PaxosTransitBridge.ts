@@ -23,7 +23,6 @@ import {
   PaxosTransitClient,
   bnZero,
   mapAsync,
-  toAddressType,
   listOutstandingPaxosTransitOrders,
   isPaxosTransitOrderOutstanding,
   paxosTransitOrderMatchesRoute,
@@ -36,7 +35,8 @@ import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 export class PaxosTransitBridge extends BaseBridgeAdapter {
   protected client: PaxosTransitClient;
   protected l1TokenInfo: TokenInfo;
-  protected l2TokenAddress: string;
+  protected l1TokenAddress: EvmAddress;
+  protected l2TokenAddress: Address;
 
   constructor(
     l2chainId: number,
@@ -53,13 +53,14 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     const l2TokenAddress = getPaxosTransitDestinationToken(l2chainId, l1Token);
     assert(
       isDefined(l2TokenAddress),
-      `No Paxos Transit destination token configured for chain ${l2chainId} and L1 token ${l1Token.toNative()}`
+      `No Paxos Transit destination token configured for chain ${l2chainId} and L1 token ${l1Token}`
     );
 
     this.l1Bridge = new Contract(l1Token.toNative(), ERC20_ABI, l1Signer);
-    this.l2Bridge = new Contract(l2TokenAddress, ERC20_ABI, l2SignerOrProvider);
+    this.l2Bridge = new Contract(l2TokenAddress.toNative(), ERC20_ABI, l2SignerOrProvider);
     this.client = createPaxosTransitClient(logger);
     this.l1TokenInfo = getTokenInfo(l1Token, this.hubChainId);
+    this.l1TokenAddress = l1Token;
     this.l2TokenAddress = l2TokenAddress;
   }
 
@@ -70,21 +71,18 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     amount: BigNumber,
     _optionalParams?: TransferTokenParams
   ): Promise<BridgeTransactionDetails> {
-    assert(
-      l2Token.toNative() === this.l2TokenAddress,
-      `Attempting to bridge unsupported l2 token ${l2Token.toNative()}`
-    );
-    assert(l1Token.toNative() === this.l1Bridge?.address, "L1 token mismatch for Paxos Transit bridge");
+    assert(l2Token.eq(this.l2TokenAddress), `Attempting to bridge unsupported l2 token ${l2Token}`);
+    assert(l1Token.eq(this.l1TokenAddress), "L1 token mismatch for Paxos Transit bridge");
 
     if (amount.lt(PAXOS_TRANSIT_MINIMUMS[this.hubChainId]?.[this.l2chainId] ?? bnZero)) {
       throw new Error(`Cannot bridge to ${getNetworkName(this.l2chainId)} due to invalid amount ${amount}`);
     }
 
-    const userAddress = await this.l1Signer.getAddress();
+    const userAddress = EvmAddress.from(await this.l1Signer.getAddress());
     const orderData = await buildPaxosTransitSubmitOrderTxn(this.client, this.l1Signer, {
       userAddress,
       offerAmount: amount,
-      offerAsset: l1Token.toNative(),
+      offerAsset: l1Token,
       wantAsset: this.l2TokenAddress,
       sourceChainId: this.hubChainId,
       destinationChainId: this.l2chainId,
@@ -118,17 +116,17 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     const offerAssets = getPaxosTransitOfferAssetsForWantAsset(this.l2chainId, this.l2TokenAddress);
     const processedEvents = (
       await mapAsync(offerAssets, async (offerAsset) => {
-        const tokenContract = new Contract(offerAsset, ERC20_ABI, l1Provider);
+        const tokenContract = new Contract(offerAsset.toNative(), ERC20_ABI, l1Provider);
         const events = await paginatedEventQuery(
           tokenContract,
-          tokenContract.filters.Transfer(fromAddress.toNative(), transitStation),
+          tokenContract.filters.Transfer(fromAddress.toNative(), transitStation.toNative()),
           eventConfig
         );
         return events.map((event) => processEvent(event, "value"));
       })
     ).flat();
     return {
-      [this.l2TokenAddress]: processedEvents,
+      [this.l2TokenAddress.toNative()]: processedEvents,
     };
   }
 
@@ -142,29 +140,29 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     const l2Provider = this.l2Bridge?.provider;
     assert(isDefined(l2Provider), "PaxosTransitBridge: l2 provider is required");
     const boringVault = getPaxosTransitBoringVaultAddress(this.l2chainId);
-    const tokenContract = new Contract(this.l2TokenAddress, ERC20_ABI, l2Provider);
+    const tokenContract = new Contract(this.l2TokenAddress.toNative(), ERC20_ABI, l2Provider);
     const events = await paginatedEventQuery(
       tokenContract,
-      tokenContract.filters.Transfer(boringVault, toAddress.toNative()),
+      tokenContract.filters.Transfer(boringVault.toNative(), toAddress.toNative()),
       eventConfig
     );
     return {
-      [this.l2TokenAddress]: events.map((event) => processEvent(event, "value")),
+      [this.l2TokenAddress.toNative()]: events.map((event) => processEvent(event, "value")),
     };
   }
 
   private async buildOutstandingTransfersFromApiOrders(
     l1Token: EvmAddress,
-    userAddress: EvmAddress
+    receiver: EvmAddress
   ): Promise<BridgeEvents> {
-    const orders = await listOutstandingPaxosTransitOrders(this.client, userAddress.toNative());
-    const l2TokenDecimals = getTokenInfo(toAddressType(this.l2TokenAddress, this.l2chainId), this.l2chainId).decimals;
+    const orders = await listOutstandingPaxosTransitOrders(this.client, receiver);
+    const l2TokenDecimals = getTokenInfo(this.l2TokenAddress, this.l2chainId).decimals;
     const l1TokenDecimals = this.l1TokenInfo.decimals;
     const routeParams = {
       wantAsset: this.l2TokenAddress,
       sourceChainId: this.hubChainId,
       destinationChainId: this.l2chainId,
-      receiver: userAddress.toNative(),
+      receiver,
     };
 
     const outstandingOrders = orders.filter(
@@ -182,14 +180,14 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     this.logger.debug({
       at: "PaxosTransitBridge#getOutstandingTransfersFromApi",
       message: "Resolved Paxos Transit outstanding orders from API",
-      offerAsset: l1Token.toNative(),
+      offerAsset: l1Token,
       wantAsset: this.l2TokenAddress,
       outstandingOrderCount: bridgeEvents.length,
       outstandingAmount: bridgeEvents.reduce((acc, event) => acc.add(event.amount), bnZero).toString(),
     });
 
     return {
-      [this.l2TokenAddress]: bridgeEvents,
+      [this.l2TokenAddress.toNative()]: bridgeEvents,
     };
   }
 }

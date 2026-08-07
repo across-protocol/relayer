@@ -87,7 +87,7 @@ export function isUnmeteredFastRebalance(chainId: number, token: Address, hubCha
     chainId !== CHAIN_IDs.HYPEREVM;
   // Paxos Transit withdrawals settle in ~7-11 min and cap at $50mm/order, so they're fast and
   // effectively unmetered at relayer size.
-  const paxosTransit = getPaxosTransitOfferAssetsForWantAsset(chainId, token.toNative()).length > 0;
+  const paxosTransit = getPaxosTransitOfferAssetsForWantAsset(chainId, token).length > 0;
   return cctp || oft || paxosTransit || chainId === hubChainId;
 }
 

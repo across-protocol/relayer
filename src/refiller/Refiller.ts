@@ -115,7 +115,7 @@ export class Refiller {
   private _hasMainnetUsdgSweepConfigured(): boolean {
     const mainnetUsdgAddress = getMainnetUsdgAddress();
     return this.config.refillEnabledBalances.some(
-      ({ chainId, token }) => chainId === CHAIN_IDs.MAINNET && token.toNative() === mainnetUsdgAddress
+      ({ chainId, token }) => chainId === CHAIN_IDs.MAINNET && token.eq(mainnetUsdgAddress)
     );
   }
 
@@ -151,7 +151,7 @@ export class Refiller {
         case TOKEN_SYMBOLS_MAP.USDH.addresses[CHAIN_IDs.HYPEREVM]:
           refillHandler = this.refillUsdh;
           break;
-        case getMainnetUsdgAddress():
+        case getMainnetUsdgAddress().toNative():
           assert(chainId === CHAIN_IDs.MAINNET, "Mainnet USDG sweep must be configured on mainnet");
           refillHandler = this.sweepMainnetUsdgToRobinhood;
           break;
@@ -616,14 +616,14 @@ export class Refiller {
       return;
     }
 
-    const mainnetUsdgAddress = getMainnetUsdgAddress();
+    const l1Token = getMainnetUsdgAddress();
     const rhUsdgAddress = TOKEN_SYMBOLS_MAP.USDG.addresses[CHAIN_IDs.ROBINHOOD];
     const mainnetProvider = this.clients.balanceAllocator.providers[CHAIN_IDs.MAINNET];
     const rhProvider = this.clients.balanceAllocator.providers[CHAIN_IDs.ROBINHOOD];
     assert(isDefined(mainnetProvider), "No mainnet provider found for USDG sweep");
     assert(isDefined(rhProvider), "No Robinhood provider found for USDG sweep");
 
-    const usdg = new Contract(mainnetUsdgAddress, ERC20_ABI, this.baseSigner.connect(mainnetProvider));
+    const usdg = new Contract(l1Token.toNative(), ERC20_ABI, this.baseSigner.connect(mainnetProvider));
     const amountToTransfer = await usdg.balanceOf(this.baseSignerAddress.toNative());
     if (amountToTransfer.lte(this.config.minUsdgSweepAmount)) {
       this.logger.debug({
@@ -635,7 +635,6 @@ export class Refiller {
       return;
     }
 
-    const l1Token = EvmAddress.from(mainnetUsdgAddress);
     const tokenBridge = new PaxosTransitBridge(
       CHAIN_IDs.ROBINHOOD,
       CHAIN_IDs.MAINNET,

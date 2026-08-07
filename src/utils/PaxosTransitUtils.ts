@@ -17,12 +17,15 @@ import {
   toBN,
   winston,
   Address,
+  compareAddressesSimple,
+  EvmAddress,
+  toAddressType,
 } from "./";
 
-export function getMainnetUsdgAddress(): string {
+export function getMainnetUsdgAddress(): EvmAddress {
   const address = TOKEN_SYMBOLS_MAP["USDG-MAINNET"].addresses[CHAIN_IDs.MAINNET];
   assert(isDefined(address), "USDG-MAINNET is not configured on mainnet");
-  return address;
+  return EvmAddress.from(address);
 }
 
 export const PAXOS_TRANSIT_DESTINATION_TOKENS: { [dstChainId: number]: { [l1TokenAddress: string]: string } } = {
@@ -128,36 +131,43 @@ export function isPaxosTransitOrderOutstanding(order: PaxosTransitOrder): boolea
   return PAXOS_TRANSIT_OUTSTANDING_ORDER_STATUSES.has(order.status);
 }
 
-export function getPaxosTransitOfferAssetsForWantAsset(dstChainId: number, wantAsset: string): string[] {
+/**
+ * Resolve the mainnet offer assets that Paxos Transit will bridge into `wantAsset` on `dstChainId`.
+ * Offer assets are always keyed on mainnet, hence the EvmAddress return type.
+ */
+export function getPaxosTransitOfferAssetsForWantAsset(dstChainId: number, wantAsset: Address): EvmAddress[] {
   const destinations = PAXOS_TRANSIT_DESTINATION_TOKENS[dstChainId];
   if (!isDefined(destinations)) {
     return [];
   }
   return Object.entries(destinations)
-    .filter(([, destinationWantAsset]) => destinationWantAsset.toLowerCase() === wantAsset.toLowerCase())
-    .map(([offerAsset]) => offerAsset);
+    .filter(([, destinationWantAsset]) => toAddressType(destinationWantAsset, dstChainId).eq(wantAsset))
+    .map(([offerAsset]) => EvmAddress.from(offerAsset));
 }
 
 export function paxosTransitOrderMatchesRoute(
   order: PaxosTransitOrder,
   params: {
-    wantAsset: string;
+    wantAsset: Address;
     sourceChainId: number;
     destinationChainId: number;
-    receiver: string;
+    receiver: Address;
   }
 ): boolean {
+  // order.wantAsset and order.receiver arrive as raw strings from the Paxos API, so compare them
+  // case-insensitively rather than parsing into an Address — a malformed field should fail to match,
+  // not throw.
   return (
-    order.wantAsset.toLowerCase() === params.wantAsset.toLowerCase() &&
+    compareAddressesSimple(order.wantAsset, params.wantAsset.toNative()) &&
     order.sourceChainId === params.sourceChainId &&
     order.destinationChainId === params.destinationChainId &&
-    order.receiver.toLowerCase() === params.receiver.toLowerCase()
+    compareAddressesSimple(order.receiver, params.receiver.toNative())
   );
 }
 
 export async function listPaxosTransitOrders(
   client: PaxosTransitClient,
-  userAddress: string,
+  userAddress: Address,
   filter?: string
 ): Promise<PaxosTransitOrder[]> {
   const orders: PaxosTransitOrder[] = [];
@@ -178,7 +188,7 @@ export async function listPaxosTransitOrders(
 /** @deprecated Use listPaxosTransitOrders or listOutstandingPaxosTransitOrders */
 export async function listAllPaxosTransitOrders(
   client: PaxosTransitClient,
-  userAddress: string
+  userAddress: Address
 ): Promise<PaxosTransitOrder[]> {
   return listPaxosTransitOrders(client, userAddress);
 }
@@ -189,7 +199,7 @@ export async function listAllPaxosTransitOrders(
  */
 export async function listOutstandingPaxosTransitOrders(
   client: PaxosTransitClient,
-  userAddress: string
+  userAddress: Address
 ): Promise<PaxosTransitOrder[]> {
   return listPaxosTransitOrders(client, userAddress, PAXOS_TRANSIT_OUTSTANDING_ORDERS_FILTER);
 }
@@ -202,28 +212,34 @@ export function getPaxosTransitOutstandingOrderAmountInL1Decimals(
   return ConvertDecimals(wantAssetDecimals, offerAssetDecimals)(getPaxosTransitOrderOutstandingWantAmount(order));
 }
 
-export function getPaxosTransitStationAddress(chainId: number): string {
+export function getPaxosTransitStationAddress(chainId: number): Address {
   const envKey = `PAXOS_TRANSIT_STATION_${chainId}`;
   const envAddress = process.env[envKey];
-  if (isDefined(envAddress) && envAddress.length > 0) {
-    return envAddress;
-  }
-  return getContractAddress(chainId, "paxosTransitStation");
+  const address =
+    isDefined(envAddress) && envAddress.length > 0 ? envAddress : getContractAddress(chainId, "paxosTransitStation");
+  return toAddressType(address, chainId);
 }
 
-export function getPaxosTransitBoringVaultAddress(chainId: number): string {
+export function getPaxosTransitBoringVaultAddress(chainId: number): Address {
   const envKey = `PAXOS_TRANSIT_BORING_VAULT_${chainId}`;
   const envAddress = process.env[envKey];
-  if (isDefined(envAddress) && envAddress.length > 0) {
-    return envAddress;
-  }
-  return getContractAddress(chainId, "paxosTransitBoringVault");
+  const address =
+    isDefined(envAddress) && envAddress.length > 0
+      ? envAddress
+      : getContractAddress(chainId, "paxosTransitBoringVault");
+  return toAddressType(address, chainId);
 }
 
-export function getPaxosTransitDestinationToken(dstChainId: number, l1Token: Address): string | undefined {
-  return PAXOS_TRANSIT_DESTINATION_TOKENS[dstChainId]?.[l1Token.toNative()];
+export function getPaxosTransitDestinationToken(dstChainId: number, l1Token: Address): Address | undefined {
+  const destinationToken = PAXOS_TRANSIT_DESTINATION_TOKENS[dstChainId]?.[l1Token.toNative()];
+  return isDefined(destinationToken) ? toAddressType(destinationToken, dstChainId) : undefined;
 }
 
+/**
+ * Request params are `Address` and are serialised to strings here, at the wire boundary. Response
+ * types stay string-typed: they are deserialised JSON, and `toAddressType()` throws on a malformed
+ * value where a string compare merely fails to match.
+ */
 export class PaxosTransitClient {
   constructor(
     readonly baseUrl: string,
@@ -233,40 +249,40 @@ export class PaxosTransitClient {
   ) {}
 
   async getAuthorization(params: {
-    spenderAddress: string;
-    tokenAddress: string;
+    spenderAddress: Address;
+    tokenAddress: Address;
     amount: BigNumber;
-    userAddress: string;
+    userAddress: Address;
     chainId: number;
   }): Promise<PaxosTransitAuthorizationResponse> {
     const query = new URLSearchParams({
-      spenderAddress: params.spenderAddress,
-      tokenAddress: params.tokenAddress,
+      spenderAddress: params.spenderAddress.toNative(),
+      tokenAddress: params.tokenAddress.toNative(),
       amount: params.amount.toString(),
-      userAddress: params.userAddress,
+      userAddress: params.userAddress.toNative(),
       chainId: String(params.chainId),
     });
     return this.getWithRetry<PaxosTransitAuthorizationResponse>(`v3/core/authorization?${query.toString()}`);
   }
 
   async getOrderQuote(params: {
-    userAddress: string;
+    userAddress: Address;
     offerAmount: BigNumber;
-    offerAsset: string;
-    wantAsset: string;
+    offerAsset: Address;
+    wantAsset: Address;
     sourceChainId: number;
     destinationChainId: number;
     permitSignature?: string;
     permitDeadline?: string;
     integratorFee?: string;
-    integratorFeeReceiver?: string;
+    integratorFeeReceiver?: Address;
     responseFormat?: "default" | "full" | "structured";
   }): Promise<PaxosTransitOrderQuoteResponse> {
     const query = new URLSearchParams({
-      userAddress: params.userAddress,
+      userAddress: params.userAddress.toNative(),
       offerAmount: params.offerAmount.toString(),
-      offerAsset: params.offerAsset,
-      wantAsset: params.wantAsset,
+      offerAsset: params.offerAsset.toNative(),
+      wantAsset: params.wantAsset.toNative(),
       sourceChainId: String(params.sourceChainId),
       destinationChainId: String(params.destinationChainId),
     });
@@ -280,7 +296,7 @@ export class PaxosTransitClient {
       query.set("integratorFee", params.integratorFee);
     }
     if (isDefined(params.integratorFeeReceiver)) {
-      query.set("integratorFeeReceiver", params.integratorFeeReceiver);
+      query.set("integratorFeeReceiver", params.integratorFeeReceiver.toNative());
     }
     if (isDefined(params.responseFormat)) {
       query.set("responseFormat", params.responseFormat);
@@ -300,13 +316,13 @@ export class PaxosTransitClient {
   }
 
   async listOrders(params: {
-    userAddress: string;
+    userAddress: Address;
     filter?: string;
     pageSize?: number;
     pageToken?: string;
   }): Promise<{ orders: PaxosTransitOrder[]; nextPageToken: string | null }> {
     const query = new URLSearchParams({
-      userAddress: params.userAddress,
+      userAddress: params.userAddress.toNative(),
     });
     if (isDefined(params.filter)) {
       query.set("filter", params.filter);
@@ -366,13 +382,13 @@ function permitTypesForSigning(
 
 async function submitPaxosTransitApproval(
   signer: Signer,
-  tokenAddress: string,
+  tokenAddress: Address,
   approvalCalldata: string
 ): Promise<void> {
   const provider = signer.provider;
   assert(isDefined(provider), "Signer must have a provider to submit Paxos Transit approval transaction");
   const tx = await signer.sendTransaction({
-    to: tokenAddress,
+    to: tokenAddress.toNative(),
     data: approvalCalldata,
   });
   await provider.waitForTransaction(tx.hash);
@@ -382,9 +398,9 @@ export async function resolvePaxosTransitAuthorization(
   client: PaxosTransitClient,
   signer: Signer,
   params: {
-    spenderAddress: string;
-    tokenAddress: string;
-    userAddress: string;
+    spenderAddress: Address;
+    tokenAddress: Address;
+    userAddress: Address;
     chainId: number;
     amount: BigNumber;
   }
@@ -425,13 +441,13 @@ export async function buildPaxosTransitSubmitOrderTxn(
   client: PaxosTransitClient,
   signer: Signer,
   params: {
-    userAddress: string;
+    userAddress: Address;
     offerAmount: BigNumber;
-    offerAsset: string;
-    wantAsset: string;
+    offerAsset: Address;
+    wantAsset: Address;
     sourceChainId: number;
     destinationChainId: number;
-    spenderAddress: string;
+    spenderAddress: Address;
   }
 ): Promise<PaxosTransitOrderQuoteResponse> {
   const authorization = await resolvePaxosTransitAuthorization(client, signer, {
