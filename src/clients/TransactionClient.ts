@@ -177,16 +177,24 @@ export class TransactionClient {
 
   protected async _submit(
     txn: AugmentedTransaction,
-    opts: { nonce: number | null; maxTries?: number }
+    opts: { nonce: number | null; maxTries?: number; pendingTransactionHash?: string }
   ): Promise<TransactionResponse> {
     const { chainId } = txn;
-    const { nonce = null, maxTries = 10 } = opts;
+    const { nonce = null, maxTries = 10, pendingTransactionHash } = opts;
     const txnPromise = this._getTransactionPromise(txn, nonce);
 
     if (txn.ensureConfirmation) {
       const at = "TransactionClient#_submit";
       const chain = getNetworkName(txn.chainId);
-      const txnResponse = await txnPromise;
+      let txnResponse: TransactionResponse;
+      try {
+        txnResponse = await txnPromise;
+      } catch (error) {
+        if (isDefined(pendingTransactionHash) && error instanceof DefinitiveTransactionFailure) {
+          throw new TransactionConfirmationPendingError(pendingTransactionHash);
+        }
+        throw error;
+      }
       const txnArgs = { chainId, contract: txn.contract.address, method: txn.method };
       const txnRef = blockExplorerLink(txnResponse.hash, chainId);
 
@@ -275,7 +283,11 @@ export class TransactionClient {
                 ...common,
                 message: `Transaction on ${chain} timed out at nonce ${txnResponse.nonce}, resubmitting...`,
               });
-              return this._submit(txn, { nonce: txnResponse.nonce, maxTries: maxTries - 1 });
+              return this._submit(txn, {
+                nonce: txnResponse.nonce,
+                maxTries: maxTries - 1,
+                pendingTransactionHash: txnResponse.hash,
+              });
             }
             default:
               this.logger.warn({

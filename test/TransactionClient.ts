@@ -329,6 +329,36 @@ describe("TransactionClient", function () {
       expect(txnResponses[0].nonce).to.equal(nonce);
     });
 
+    it("keeps the original pending when its replacement is rejected before broadcast", async function () {
+      const chainId = chainIds[0];
+      let submissions = 0;
+      class ReplacementRejectingClient extends MockedTransactionClient {
+        protected override _getTransactionPromise(
+          txn: AugmentedTransaction,
+          nonce: number | null
+        ): Promise<TransactionResponse> {
+          if (++submissions === 2) {
+            return Promise.reject(new DefinitiveTransactionFailure("Replacement rejected before broadcast"));
+          }
+          return super._getTransactionPromise(txn, nonce);
+        }
+      }
+      const client = new ReplacementRejectingClient(spyLogger);
+      let blockNumber = 100;
+      const transaction = makeConfirmationTxn(chainId, {
+        getBlockNumber: () => Promise.resolve((blockNumber += 2)),
+        getTransactionCount: () => Promise.resolve(1),
+      });
+      transaction.onBroadcast = () => undefined;
+      client.waitOverride = () => Promise.reject(makeEthersError(ethers.errors.TIMEOUT));
+
+      const error = await client.submit(chainId, [transaction]).catch((reason) => reason);
+
+      expect(error).to.be.an.instanceof(TransactionConfirmationPendingError);
+      expect(error.transactionHash).to.equal(ethers.utils.id(`Across-v2-${address}-${method}-1`));
+      expect(submissions).to.equal(2);
+    });
+
     it("Tolerates transient RPC errors while confirming", async function () {
       const chainId = chainIds[0];
       const client = new CountingClient(spyLogger);
