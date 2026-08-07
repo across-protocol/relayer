@@ -455,7 +455,7 @@ async function _runTransaction(
     // Linea uses linea_estimateGas and will throw on FilledRelay() reverts; skip retries.
     // nb. Requiring low-level chain & method inspection is a wart on the implementation. @todo: refactor it away.
     if ((chainId === CHAIN_IDs.LINEA && method === "fillRelay") || --retries < 0) {
-      throw error;
+      throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);
     }
     return await retry(nonce, retries);
   }
@@ -479,6 +479,16 @@ async function _runTransaction(
       ? await signer.sendTransaction({ to, data: (args as ethers.utils.BytesLike[])[0], ...txConfig })
       : await contract[method](...args, txConfig);
   } catch (error) {
+    // A transport failure may hide an accepted eth_sendRawTransaction. Recovery-enabled callers
+    // must retain their order and nonce rather than retrying a potentially live operation.
+    if (
+      onBroadcast &&
+      (!typeguards.isEthersError(error) ||
+        error.code === ethers.errors.SERVER_ERROR ||
+        error.code === ethers.errors.TIMEOUT)
+    ) {
+      throw new TransactionSubmissionPendingError(error, undefined, nonce);
+    }
     // Narrow type. All errors caught here should be Ethers errors.
     if (!typeguards.isEthersError(error)) {
       throw error;
