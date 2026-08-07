@@ -51,7 +51,7 @@ export async function submitTransactionTvm(
   feeLimit: number,
   callValue = 0,
   onSubmission?: (transactionHash?: string) => void | Promise<void>
-): Promise<{ txid: string; result: boolean }> {
+): Promise<{ txid: string; result: boolean; code?: string }> {
   if (!onSubmission) {
     return sdk.arch.tvm.submitTransaction(tronWeb, populatedTx, feeLimit, callValue);
   }
@@ -88,7 +88,13 @@ export async function submitTransactionTvm(
   const signed = await tronWeb.trx.sign(unsignedTransaction);
   await onSubmission(signed.txID);
   const broadcast = await tronWeb.trx.sendRawTransaction(signed);
-  return { txid: broadcast.txid ?? signed.txID, result: broadcast.result ?? false };
+  // The node returns response codes as string names (e.g. "DUP_TRANSACTION_ERROR"), though the
+  // tronweb type models the underlying protobuf enum.
+  return {
+    txid: broadcast.txid ?? signed.txID,
+    result: broadcast.result ?? false,
+    code: sdk.utils.isDefined(broadcast.code) ? String(broadcast.code) : undefined,
+  };
 }
 export type SVMProvider = sdk.arch.svm.SVMProvider;
 export type LatestBlockhash = sdk.arch.svm.LatestBlockhash;

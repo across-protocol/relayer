@@ -328,6 +328,23 @@ describe("TransactionClient", function () {
       expect(attempts).to.deep.equal(["0xtvm"]);
     });
 
+    it("surfaces the TVM broadcast response code", async function () {
+      const tronWeb = {
+        defaultAddress: { base58: "owner" },
+        transactionBuilder: {
+          triggerSmartContract: sinon.stub().resolves({ result: { result: true }, transaction: {} }),
+        },
+        trx: {
+          sign: sinon.stub().resolves({ txID: "0xtvm" }),
+          // A duplicate broadcast means the network already knows this signed transaction.
+          sendRawTransaction: sinon.stub().resolves({ result: false, code: "DUP_TRANSACTION_ERROR" }),
+        },
+      };
+
+      const result = await submitTransactionTvm(tronWeb as never, { to: address, data: "0x01" }, 1, 0, () => undefined);
+      expect(result).to.deep.equal({ txid: "0xtvm", result: false, code: "DUP_TRANSACTION_ERROR" });
+    });
+
     it("classifies exhausted setup failures as definitive", async function () {
       process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] = "0";
       const provider = {
