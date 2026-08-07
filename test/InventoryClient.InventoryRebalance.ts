@@ -301,6 +301,41 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
   });
 
+  it("Counts pending rebalances when sizing shortfall coverage", async function () {
+    const l1Token = EvmAddress.from(mainnetUsdc);
+    const l2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
+    const shortfall = toMegaWei(100);
+    tokenClient.setTokenShortFallData(ARBITRUM, l2Token, [BigNumber.from(1)], [shortfall]);
+    mockRebalancerClient.setPendingRebalance(ARBITRUM, "USDC", shortfall);
+
+    await inventoryClient.update();
+
+    // The pending same-asset rebalance already covers the shortfall, so no new coverage is required.
+    expect(inventoryClient._getPossibleShortfallRebalances(l1Token, ARBITRUM, l2Token)).to.be.empty;
+  });
+
+  it("Combines same-route shortfalls into one bridge transfer", async function () {
+    const l2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
+    const shortfalls = [toMegaWei(100), toMegaWei(50)];
+    tokenClient.setTokenShortFallData(ARBITRUM, l2Token, [BigNumber.from(1), BigNumber.from(2)], shortfalls);
+    inventoryConfig.rebalanceShortfalls = true;
+
+    try {
+      await inventoryClient.update();
+      const rebalances = inventoryClient
+        .getPossibleRebalances()
+        .filter(
+          ({ chainId, l2Token: token, isShortfallRebalance }) =>
+            chainId === ARBITRUM && token.eq(l2Token) && isShortfallRebalance
+        );
+
+      expect(rebalances).to.have.lengthOf(1);
+      expect(rebalances[0].amount).to.equal(shortfalls[0].add(shortfalls[1]));
+    } finally {
+      delete inventoryConfig.rebalanceShortfalls;
+    }
+  });
+
   // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
   // alongside that logic.
   it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {
