@@ -28,7 +28,7 @@ export const BINANCE_ORDER_RECV_WINDOW_MS = 60_000;
 // Withdrawals remain tight so delayed accepted requests cannot submit funds transfers much later than intended.
 export const BINANCE_WITHDRAW_RECV_WINDOW_MS = 5_000;
 // `@binance/wallet` defaults to a 1s request timeout, which a proxied SAPI read can exceed. The quota read
-// sits on the rebalancer's refresh path rather than anything latency-sensitive, so bound it generously.
+// sits on `InventoryClient#update` rather than anything latency-sensitive, so bound it generously.
 export const BINANCE_WALLET_TIMEOUT_MS = 30_000;
 
 export type WithdrawalQuota = {
