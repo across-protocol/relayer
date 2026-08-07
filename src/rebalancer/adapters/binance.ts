@@ -88,6 +88,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
   private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
+  // Long enough to cover an initiation's deposit transaction; a crashed initiator's guard expires on its own.
+  private static readonly INITIATION_GUARD_TTL_MS = 30 * 60 * 1000;
 
   REDIS_KEY_INITIATED_WITHDRAWALS = this.REDIS_PREFIX + "initiated-withdrawals";
   constructor(
@@ -856,74 +858,145 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
     const cloid = await this._redisGetNextCloid();
 
-    // Select which chain we will be depositing and withdrawing the source tokens in to and out of Binance from.
-    // If the chains are Binance networks, then we use the chain itself. Otherwise, we use the default Binance network
-    // of Arbitrum, which is selected for convenience because it is both a CCTP and OFT network as well as a
-    // Binance network with good stability.
-    const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
-    const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
-    if (requiresBridgeBeforeDeposit) {
-      assert(
-        supportsBinanceIntermediateBridgeToken(sourceToken),
-        `Source token ${sourceToken} cannot use an intermediate bridge leg into Binance`
-      );
-      const balance = await this._getERC20Balance(
-        sourceChain,
-        sourceTokenInfo.address.toNative(),
-        this.baseSignerAddress
-      );
-      if (balance.lt(amountToTransfer)) {
-        this.logger.debug({
-          at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-          message: `Not enough balance on ${sourceChain} to bridge ${sourceToken} to ${binanceDepositNetwork} for ${amountToTransfer.toString()}, waiting...`,
-          balance: balance.toString(),
-          amountToTransfer: amountToTransfer.toString(),
-        });
-        return bnZero;
-      }
-      this.logger.info({
-        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first bridging ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into ${getNetworkName(
-          binanceDepositNetwork
-        )} from ${getNetworkName(sourceChain)} before depositing into Binance in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
-        expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
-      });
-      const amountReceivedFromBridge = await this._bridgeToChain(
-        sourceToken,
-        sourceChain,
-        binanceDepositNetwork,
-        amountToTransfer
-      );
-      // Mirror the underlying OFT bridge's pending-order TTL. Without this, long-finality
-      // bridges (e.g. USDT0 from HyperEVM, ~12h to land on Arbitrum) outlive this adapter's
-      // default 1h TTL and get silently pruned by BaseAdapter._redisCleanupPendingOrders
-      // while the bridge is still in flight — losing the swap context entirely.
-      const preDepositTtlOverride = getOftPreDepositOrderTtlOverride(rebalanceRoute);
-      await this._redisCreateOrder(
-        cloid,
-        STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
-        rebalanceRoute,
-        amountReceivedFromBridge,
-        this.baseSignerAddress,
-        preDepositTtlOverride
-      );
-      return amountReceivedFromBridge;
-    } else {
-      this.logger.info({
-        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
-        expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
-      });
-      await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer);
-      await this._redisCreateOrder(
-        cloid,
-        STATUS.PENDING_DEPOSIT,
-        rebalanceRoute,
-        amountToTransfer,
-        this.baseSignerAddress
-      );
-      return amountToTransfer;
+    // Guard the initiation critical section so overlapping runs (two rebalancer instances, or an
+    // inventory-rebalancer overlapping the swap rebalancer) cannot double-initiate a route: an atomic SET NX per
+    // account+route declines the second concurrent initiator, and an already-pending same-route order declines
+    // re-initiation outright.
+    if (!(await this._acquireInitiationGuard(rebalanceRoute, cloid))) {
+      return bnZero;
     }
+    try {
+      // Select which chain we will be depositing and withdrawing the source tokens in to and out of Binance from.
+      // If the chains are Binance networks, then we use the chain itself. Otherwise, we use the default Binance network
+      // of Arbitrum, which is selected for convenience because it is both a CCTP and OFT network as well as a
+      // Binance network with good stability.
+      const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
+      const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
+      if (requiresBridgeBeforeDeposit) {
+        assert(
+          supportsBinanceIntermediateBridgeToken(sourceToken),
+          `Source token ${sourceToken} cannot use an intermediate bridge leg into Binance`
+        );
+        const balance = await this._getERC20Balance(
+          sourceChain,
+          sourceTokenInfo.address.toNative(),
+          this.baseSignerAddress
+        );
+        if (balance.lt(amountToTransfer)) {
+          this.logger.debug({
+            at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+            message: `Not enough balance on ${sourceChain} to bridge ${sourceToken} to ${binanceDepositNetwork} for ${amountToTransfer.toString()}, waiting...`,
+            balance: balance.toString(),
+            amountToTransfer: amountToTransfer.toString(),
+          });
+          return bnZero;
+        }
+        this.logger.info({
+          at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+          message: `🍻 Creating new order ${cloid} by first bridging ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into ${getNetworkName(
+            binanceDepositNetwork
+          )} from ${getNetworkName(sourceChain)} before depositing into Binance in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+          expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
+        });
+        const amountReceivedFromBridge = await this._bridgeToChain(
+          sourceToken,
+          sourceChain,
+          binanceDepositNetwork,
+          amountToTransfer
+        );
+        // Mirror the underlying OFT bridge's pending-order TTL. Without this, long-finality
+        // bridges (e.g. USDT0 from HyperEVM, ~12h to land on Arbitrum) outlive this adapter's
+        // default 1h TTL and get silently pruned by BaseAdapter._redisCleanupPendingOrders
+        // while the bridge is still in flight — losing the swap context entirely.
+        const preDepositTtlOverride = getOftPreDepositOrderTtlOverride(rebalanceRoute);
+        await this._redisCreateOrder(
+          cloid,
+          STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
+          rebalanceRoute,
+          amountReceivedFromBridge,
+          this.baseSignerAddress,
+          preDepositTtlOverride
+        );
+        return amountReceivedFromBridge;
+      } else {
+        this.logger.info({
+          at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+          message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
+          expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
+        });
+        await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer);
+        await this._redisCreateOrder(
+          cloid,
+          STATUS.PENDING_DEPOSIT,
+          rebalanceRoute,
+          amountToTransfer,
+          this.baseSignerAddress
+        );
+        return amountToTransfer;
+      }
+    } finally {
+      await this._releaseInitiationGuard(rebalanceRoute, cloid);
+    }
+  }
+
+  private _initiationGuardKey({
+    sourceChain,
+    sourceToken,
+    destinationChain,
+    destinationToken,
+  }: RebalanceRoute): string {
+    const account = this.baseSignerAddress.toNative();
+    return `${this.REDIS_PREFIX}initiation-guard:${account}:${sourceChain}:${sourceToken}:${destinationChain}:${destinationToken}`;
+  }
+
+  private async _acquireInitiationGuard(rebalanceRoute: RebalanceRoute, cloid: string): Promise<boolean> {
+    const acquired = await this.redisCache.acquireLock(
+      this._initiationGuardKey(rebalanceRoute),
+      cloid,
+      BinanceStablecoinSwapAdapter.INITIATION_GUARD_TTL_MS
+    );
+    if (!acquired) {
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: "Another initiator holds the Binance initiation guard for this route; declining rebalance",
+        rebalanceRoute,
+      });
+      return false;
+    }
+    const pendingOrderDetails = await Promise.all(
+      (await this.getPendingOrders()).map((pendingCloid) =>
+        this._redisGetOrderDetails(pendingCloid, this.baseSignerAddress)
+      )
+    );
+    const { sourceChain, sourceToken, destinationChain, destinationToken } = rebalanceRoute;
+    const duplicate = pendingOrderDetails.some(
+      (details) =>
+        isDefined(details) &&
+        details.sourceChain === sourceChain &&
+        details.sourceToken === sourceToken &&
+        details.destinationChain === destinationChain &&
+        details.destinationToken === destinationToken
+    );
+    if (duplicate) {
+      this.logger.debug({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: "A pending Binance order already covers this route; declining duplicate rebalance",
+        rebalanceRoute,
+      });
+      await this._releaseInitiationGuard(rebalanceRoute, cloid);
+      return false;
+    }
+    return true;
+  }
+
+  private async _releaseInitiationGuard(rebalanceRoute: RebalanceRoute, cloid: string): Promise<void> {
+    await this.redisCache.releaseLock(this._initiationGuardKey(rebalanceRoute), cloid).catch((error) =>
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: "Failed to release Binance initiation guard; waiting for its TTL",
+        error,
+      })
+    );
   }
 
   async getEstimatedCost(
