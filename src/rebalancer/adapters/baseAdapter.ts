@@ -339,21 +339,15 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   protected async _redisGetPendingOrders(account: EvmAddress): Promise<string[]> {
-    const [pendingDeposits, pendingSwaps, pendingWithdrawals, pendingBridgesPreDeposit, pendingDepositSubmissions] =
+    return (
       await Promise.all([
         this._redisGetPendingDeposits(account),
         this._redisGetPendingSwaps(account),
         this._redisGetPendingWithdrawals(account),
         this._redisGetPendingBridgesPreDeposit(account),
         this._redisGetPendingDepositSubmissions(account),
-      ]);
-    return [
-      ...pendingDeposits,
-      ...pendingSwaps,
-      ...pendingWithdrawals,
-      ...pendingBridgesPreDeposit,
-      ...pendingDepositSubmissions,
-    ];
+      ])
+    ).flat();
   }
 
   // ////////////////////////////////////////////////////////////

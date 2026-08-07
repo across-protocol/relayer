@@ -308,7 +308,6 @@ export async function submitTransaction(
       error.transactionHash !== persistedTransactionHash
     ) {
       await onBroadcast(error.transactionHash);
-      persistedTransactionHash = error.transactionHash;
     }
     if (
       isDefined(onBroadcast) &&

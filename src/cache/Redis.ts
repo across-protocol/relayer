@@ -82,14 +82,13 @@ export class RedisCache implements RedisCacheInterface {
     value: string,
     existingKey: string,
     ttl: number
-  ): Promise<unknown> {
+  ): Promise<void> {
     const results = await this.client
       .multi()
       .set(this.getNamespacedKey(key), value, { expiration: { type: "EX", value: ttl } })
       .expire(this.getNamespacedKey(existingKey), ttl)
       .exec();
     assert(results[1], `Cannot extend missing Redis key ${existingKey}`);
-    return results;
   }
 
   async acquireLock(key: string, token: string, ttlMs: number): Promise<boolean> {

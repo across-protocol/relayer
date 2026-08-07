@@ -4,7 +4,6 @@ import {
   BigNumber,
   bnZero,
   EvmAddress,
-  EventSearchConfig,
   getTokenInfo,
   isDefined,
   Signer,
@@ -131,12 +130,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
    * Binance withdrawals likewise have no bridge-event accounting owner: the Redis order remains a pending virtual
    * balance until the swap rebalancer finalizes it. Returning finalizations here would conflict with that lifecycle.
    */
-  queryL2BridgeFinalizationEvents(
-    _l1Token: EvmAddress,
-    _fromAddress: Address,
-    _toAddress: Address,
-    _eventConfig: EventSearchConfig
-  ): Promise<BridgeEvents> {
+  queryL2BridgeFinalizationEvents(): Promise<BridgeEvents> {
     return Promise.resolve({});
   }
 

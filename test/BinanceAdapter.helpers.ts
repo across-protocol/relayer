@@ -31,6 +31,14 @@ import {
 } from "../src/utils";
 
 describe("Binance adapter helpers", function () {
+  const usdtRoute = {
+    sourceChain: CHAIN_IDs.MAINNET,
+    sourceToken: "USDT",
+    destinationChain: CHAIN_IDs.AVALANCHE,
+    destinationToken: "USDT",
+    adapter: "binance",
+  } as const;
+
   afterEach(function () {
     sinon.restore();
   });
@@ -354,16 +362,7 @@ describe("Binance adapter helpers", function () {
     });
     const bridgingFees = sinon.stub(internals, "_getBridgingFees").resolves(bnZero);
 
-    const result = await internals.getValidatedRebalanceAmount(
-      {
-        sourceChain: CHAIN_IDs.MAINNET,
-        sourceToken: "USDT",
-        destinationChain: CHAIN_IDs.AVALANCHE,
-        destinationToken: "USDT",
-        adapter: "binance",
-      },
-      toBNWei("6000", 6)
-    );
+    const result = await internals.getValidatedRebalanceAmount(usdtRoute, toBNWei("6000", 6));
 
     expect(result.eq(bnZero)).to.equal(true);
     // The deposit leg into Binance is not reversible from this adapter, so the gate has to run before any pricing or
@@ -417,18 +416,9 @@ describe("Binance adapter helpers", function () {
     // Proves the gate let the route through: execution reached the next external call rather than returning early.
     const bridgingFees = sinon.stub(internals, "_getBridgingFees").rejects(new Error("reached bridging fees"));
 
-    await expect(
-      internals.initializeRebalance(
-        {
-          sourceChain: CHAIN_IDs.MAINNET,
-          sourceToken: "USDT",
-          destinationChain: CHAIN_IDs.AVALANCHE,
-          destinationToken: "USDT",
-          adapter: "binance",
-        },
-        toBNWei("6000", 6)
-      )
-    ).to.be.rejectedWith("reached bridging fees");
+    await expect(internals.initializeRebalance(usdtRoute, toBNWei("6000", 6))).to.be.rejectedWith(
+      "reached bridging fees"
+    );
 
     expect(bridgingFees.calledOnce).to.equal(true);
     expect(warn.called).to.equal(false);
@@ -437,17 +427,10 @@ describe("Binance adapter helpers", function () {
   it("persists a recoverable order before broadcasting a direct deposit", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();
-    const route = {
-      sourceChain: CHAIN_IDs.MAINNET,
-      sourceToken: "USDT",
-      destinationChain: CHAIN_IDs.AVALANCHE,
-      destinationToken: "USDT",
-      adapter: "binance",
-    };
     const calls: string[] = [];
     const internals = adapter as unknown as {
       initialized: boolean;
-      availableRoutes: (typeof route)[];
+      availableRoutes: (typeof usdtRoute)[];
       baseSignerAddress: EvmAddress;
       _getRebalancePreflight(): Promise<unknown>;
       _getTokenInfo(): { symbol: string; decimals: number };
@@ -459,7 +442,7 @@ describe("Binance adapter helpers", function () {
       _redisDeleteOrder(): Promise<boolean>;
     };
     internals.initialized = true;
-    internals.availableRoutes = [route];
+    internals.availableRoutes = [usdtRoute];
     internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
     Object.assign(adapter, {
       _redisCache: {
@@ -494,7 +477,7 @@ describe("Binance adapter helpers", function () {
     });
     const deleteOrder = sinon.stub(internals, "_redisDeleteOrder").resolves(true);
 
-    await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
+    await expect(adapter.initializeRebalanceWithTransaction(usdtRoute, toBNWei("100", 6))).to.be.rejectedWith(
       "post-broadcast redis failure"
     );
     expect(calls).to.deep.equal(["recovery", "order", "deposit"]);
@@ -503,26 +486,19 @@ describe("Binance adapter helpers", function () {
 
   it("classifies repeated preflight errors before submission as definitive", async function () {
     const adapter = await makeAdapter();
-    const route = {
-      sourceChain: CHAIN_IDs.MAINNET,
-      sourceToken: "USDT",
-      destinationChain: CHAIN_IDs.AVALANCHE,
-      destinationToken: "USDT",
-      adapter: "binance",
-    };
     const internals = adapter as unknown as {
       initialized: boolean;
-      availableRoutes: (typeof route)[];
+      availableRoutes: (typeof usdtRoute)[];
       _getRebalancePreflight(): Promise<unknown>;
       _getTokenInfo(): { decimals: number };
       _redisGetNextCloid(): Promise<string>;
       _getEntrypointNetwork(): Promise<number>;
     };
     internals.initialized = true;
-    internals.availableRoutes = [route];
+    internals.availableRoutes = [usdtRoute];
     sinon.stub(internals, "_getRebalancePreflight").rejects(new Error("accountCoins unavailable"));
 
-    await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
+    await expect(adapter.initializeRebalanceWithTransaction(usdtRoute, toBNWei("100", 6))).to.be.rejectedWith(
       DefinitiveTransactionFailure
     );
 
@@ -533,7 +509,7 @@ describe("Binance adapter helpers", function () {
     sinon.stub(internals, "_getTokenInfo").returns({ decimals: 6 });
     sinon.stub(internals, "_redisGetNextCloid").resolves("cloid");
     sinon.stub(internals, "_getEntrypointNetwork").rejects(new Error("status cache unavailable"));
-    await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
+    await expect(adapter.initializeRebalanceWithTransaction(usdtRoute, toBNWei("100", 6))).to.be.rejectedWith(
       DefinitiveTransactionFailure
     );
   });

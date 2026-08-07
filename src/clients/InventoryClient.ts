@@ -491,11 +491,6 @@ export class InventoryClient {
     this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, l2Token, rebalance, chainId);
   }
 
-  untrackCrossChainTransfer(l1Token: EvmAddress, l2Token: Address, rebalance: BigNumber, chainId: number): void {
-    this.tokenClient.incrementLocalBalance(this.hubPoolClient.chainId, l1Token, rebalance);
-    this.crossChainTransferClient.decreaseOutstandingTransfer(this.relayer, l1Token, l2Token, rebalance, chainId);
-  }
-
   setBundleData(): void {
     this.bundleDataApproxClient.initialize();
   }
@@ -1120,7 +1115,8 @@ export class InventoryClient {
         executedTransactions.push({ ...rebalance, hash });
       } catch (error) {
         if (error instanceof BridgeTransferDeclinedError) {
-          this.untrackCrossChainTransfer(l1Token, l2Token, amount, chainId);
+          this.tokenClient.incrementLocalBalance(this.hubPoolClient.chainId, l1Token, amount);
+          this.crossChainTransferClient.decreaseOutstandingTransfer(this.relayer, l1Token, l2Token, amount, chainId);
         }
         this.log(
           "Something errored during inventory rebalance",

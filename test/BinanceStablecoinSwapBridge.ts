@@ -24,8 +24,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       maxAmount?: string;
       valid?: boolean;
       initialize?: boolean;
-      initializeError?: Error;
-      submissionError?: Error;
+      error?: Error;
       releaseError?: Error;
       maxPendingOrders?: number;
     } = {}
@@ -41,7 +40,6 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
         maxPendingOrders: { binance: options.maxPendingOrders ?? 2 },
       },
       supportsRoute: () => true,
-      getPendingOrders: async () => Array.from({ length: options.pending ?? 0 }, (_, i) => String(i)),
       reservePendingOrderSlot: async (maxPendingOrders: number) => {
         if ((options.pending ?? 0) + reservations.size >= maxPendingOrders) {
           return;
@@ -60,11 +58,8 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       getValidatedRebalanceAmount: async (_route: RebalanceRoute, amount: ReturnType<typeof toBNWei>) =>
         options.valid === false ? toBNWei("0", 6) : amount,
       initializeRebalanceWithTransaction: async (_route: RebalanceRoute, amount: ReturnType<typeof toBNWei>) => {
-        if (options.initializeError) {
-          throw options.initializeError;
-        }
-        if (options.submissionError) {
-          throw options.submissionError;
+        if (options.error) {
+          throw options.error;
         }
         return {
           amount: options.initialize === false ? toBNWei("0", 6) : amount,
@@ -88,6 +83,11 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       l1Token: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]),
       l2Token: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.AVALANCHE]),
     };
+  }
+
+  async function prepareAndSend({ bridge, signer, l1Token, l2Token }: Awaited<ReturnType<typeof makeBridge>>) {
+    const amount = await bridge.prepareL1ToL2Transfer(signer, l1Token, l2Token, toBNWei("100", 6));
+    return bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, amount, false);
   }
 
   it("caps accepted amounts and returns the Binance deposit transaction hash", async function () {
@@ -228,71 +228,32 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
   });
 
   it("distinguishes a repeated-preflight decline from a submission error", async function () {
-    const { bridge, signer, l1Token, l2Token } = await makeBridge({ initialize: false });
-    const amount = await bridge.prepareL1ToL2Transfer(signer, l1Token, l2Token, toBNWei("100", 6));
-
-    await expect(bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, amount, false)).to.be.rejectedWith(
+    await expect(prepareAndSend(await makeBridge({ initialize: false }))).to.be.rejectedWith(
       BridgeTransferDeclinedError
     );
 
     const failed = await makeBridge({
-      initializeError: new DefinitiveTransactionFailure(
+      error: new DefinitiveTransactionFailure(
         "Failed to resolve Binance deposit address",
         new Error("deposit address unavailable")
       ),
     });
-    const failedAmount = await failed.bridge.prepareL1ToL2Transfer(
-      failed.signer,
-      failed.l1Token,
-      failed.l2Token,
-      toBNWei("100", 6)
-    );
-    await expect(
-      failed.bridge.sendL1ToL2Transfer(failed.signer, failed.l1Token, failed.l2Token, failedAmount, false)
-    ).to.be.rejectedWith(BridgeTransferDeclinedError);
+    await expect(prepareAndSend(failed)).to.be.rejectedWith(BridgeTransferDeclinedError);
 
     const cleanupFailed = await makeBridge({
-      initializeError: new DefinitiveTransactionFailure(
+      error: new DefinitiveTransactionFailure(
         "Failed to resolve Binance deposit address",
         new Error("deposit address unavailable")
       ),
       releaseError: new Error("redis unavailable"),
     });
-    const cleanupFailedAmount = await cleanupFailed.bridge.prepareL1ToL2Transfer(
-      cleanupFailed.signer,
-      cleanupFailed.l1Token,
-      cleanupFailed.l2Token,
-      toBNWei("100", 6)
-    );
-    await expect(
-      cleanupFailed.bridge.sendL1ToL2Transfer(
-        cleanupFailed.signer,
-        cleanupFailed.l1Token,
-        cleanupFailed.l2Token,
-        cleanupFailedAmount,
-        false
-      )
-    ).to.be.rejectedWith(BridgeTransferDeclinedError);
+    await expect(prepareAndSend(cleanupFailed)).to.be.rejectedWith(BridgeTransferDeclinedError);
 
     const submitted = await makeBridge({
-      submissionError: new Error("confirmation unavailable"),
+      error: new Error("confirmation unavailable"),
       maxPendingOrders: 1,
     });
-    const submittedAmount = await submitted.bridge.prepareL1ToL2Transfer(
-      submitted.signer,
-      submitted.l1Token,
-      submitted.l2Token,
-      toBNWei("100", 6)
-    );
-    await expect(
-      submitted.bridge.sendL1ToL2Transfer(
-        submitted.signer,
-        submitted.l1Token,
-        submitted.l2Token,
-        submittedAmount,
-        false
-      )
-    ).to.be.rejectedWith("confirmation unavailable");
+    await expect(prepareAndSend(submitted)).to.be.rejectedWith("confirmation unavailable");
     expect(
       await submitted.bridge.prepareL1ToL2Transfer(
         submitted.signer,
@@ -303,20 +264,9 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     ).to.equal(toBNWei("100", 6));
 
     const rejected = await makeBridge({
-      submissionError: new DefinitiveTransactionFailure(
-        "Transaction rejected before broadcast",
-        new Error("insufficient funds")
-      ),
+      error: new DefinitiveTransactionFailure("Transaction rejected before broadcast", new Error("insufficient funds")),
     });
-    const rejectedAmount = await rejected.bridge.prepareL1ToL2Transfer(
-      rejected.signer,
-      rejected.l1Token,
-      rejected.l2Token,
-      toBNWei("100", 6)
-    );
-    await expect(
-      rejected.bridge.sendL1ToL2Transfer(rejected.signer, rejected.l1Token, rejected.l2Token, rejectedAmount, false)
-    ).to.be.rejectedWith(BridgeTransferDeclinedError);
+    await expect(prepareAndSend(rejected)).to.be.rejectedWith(BridgeTransferDeclinedError);
   });
 
   it("classifies tracked pre-broadcast failures as definitive", async function () {
