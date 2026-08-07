@@ -26,7 +26,6 @@ const { AddressZero: ZERO_ADDRESS } = ethersConstants;
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
-  DaiOptimismBridge,
   UsdcTokenSplitterBridge,
   OpStackWethBridge,
   PolygonWethBridge,
@@ -354,23 +353,23 @@ export const spokesThatHoldNativeTokens = resolveNativeTokenSpokes();
 
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
-  [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC"],
+  [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "WBTC"],
   [CHAIN_IDs.ARC]: ["USDC"],
   [CHAIN_IDs.AVALANCHE]: ["USDC", "USDT"],
-  [CHAIN_IDs.BASE]: ["DAI", "ETH", "WETH", "USDC", "USDT"],
+  [CHAIN_IDs.BASE]: ["ETH", "WETH", "USDC", "USDT"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
   [CHAIN_IDs.BSC]: ["WBNB", "USDC", "USDT", "WETH"],
   [CHAIN_IDs.HYPEREVM]: ["USDC", "USDT"],
   [CHAIN_IDs.INK]: ["ETH", "WETH", "USDT", "USDC"],
   [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
-  [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC"],
   [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.MEGAETH]: ["WETH", "USDT"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.MONAD]: ["USDC", "USDT"], // @TODO: Add WBTC after its added to the chain token list
-  [CHAIN_IDs.OPTIMISM]: ["DAI", "WETH", "USDC", "USDT", "WBTC", "WLD"],
+  [CHAIN_IDs.OPTIMISM]: ["WETH", "USDC", "USDT", "WBTC", "WLD"],
   [CHAIN_IDs.PLASMA]: ["USDT", "WETH"],
-  [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC"],
+  [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "WBTC"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
   [CHAIN_IDs.ROBINHOOD]: ["WETH", "USDC"],
@@ -378,7 +377,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.TRON]: ["USDT"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT"],
   [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "WLD"],
-  [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC"],
   [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
 
   // Testnets:
@@ -530,7 +529,6 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     // [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
   },
   [CHAIN_IDs.OPTIMISM]: {
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: DaiOptimismBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
@@ -783,10 +781,6 @@ export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { [address: string]:
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
       l1: "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
       l2: "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B",
-    },
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: {
-      l1: "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
-      l2: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
     },
   },
   [CHAIN_IDs.ROBINHOOD]: {
