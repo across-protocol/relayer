@@ -597,6 +597,31 @@ describe("Binance adapter helpers", function () {
     expect(values.has(recoveryKey)).to.equal(true);
   });
 
+  it("does not release expired deposit tags through the status cache", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const account = EvmAddress.from(await signer.getAddress());
+    const statusCacheDelete = sinon.stub().resolves(1);
+    Object.assign(adapter, {
+      _redisCache: {
+        get: sinon.stub().resolves(JSON.stringify({ chainId: CHAIN_IDs.MAINNET, transactionHash: "0xdeposit" })),
+        del: statusCacheDelete,
+      },
+    });
+    const prune = (
+      adapter as unknown as {
+        _onExpiredOrderPruned(status: STATUS, cloid: string, account: EvmAddress): Promise<void>;
+      }
+    )._onExpiredOrderPruned;
+
+    await prune.call(adapter, STATUS.PENDING_DEPOSIT, "cloid", account);
+
+    expect(statusCacheDelete.args.map(([key]) => key)).to.have.members([
+      getPendingBridgeDepositTxnKey(adapter.REDIS_PREFIX, "cloid", account.toNative()),
+      getPendingBridgeDepositRecoveryKey(adapter.REDIS_PREFIX, "cloid", account.toNative()),
+    ]);
+  });
+
   it("builds Tron direct deposit transfers with ethers-compatible addresses", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();
