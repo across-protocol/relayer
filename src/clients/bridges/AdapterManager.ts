@@ -34,19 +34,20 @@ import { BinanceStablecoinSwapAdapter as BinanceStablecoinSwapBridge } from "../
 import { TransferTokenParams } from "../../adapter/utils";
 import { CctpOftReadOnlyClient } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 import { BinanceStablecoinSwapAdapter } from "../../rebalancer/adapters/binance";
-import { CctpAdapter } from "../../rebalancer/adapters/cctpAdapter";
-import { OftAdapter } from "../../rebalancer/adapters/oftAdapter";
-import { RebalancerConfig } from "../../rebalancer/RebalancerConfig";
+import { constructRebalancerDependencies } from "../../rebalancer/RebalancerClientHelper";
 import { RebalanceRoute } from "../../rebalancer/utils/interfaces";
 
 async function createBinanceRebalancerAdapter(logger: winston.Logger, signer: Signer, route: RebalanceRoute) {
-  const config = new RebalancerConfig(process.env);
-  const cctpAdapter = new CctpAdapter(logger, config, signer);
-  const oftAdapter = new OftAdapter(logger, config, signer);
-  const adapter = new BinanceStablecoinSwapAdapter(logger, config, signer, cctpAdapter, oftAdapter);
-  await Promise.all([cctpAdapter.initialize([route]), oftAdapter.initialize([route])]);
-  await adapter.initialize([route]);
-  return adapter;
+  const {
+    adapters: { binance, cctp, oft },
+  } = constructRebalancerDependencies(logger, signer);
+  assert(
+    binance instanceof BinanceStablecoinSwapAdapter && isDefined(cctp) && isDefined(oft),
+    "Binance rebalancer adapters are unavailable for the configured hub chain"
+  );
+  await Promise.all([cctp.initialize([route]), oft.initialize([route])]);
+  await binance.initialize([route]);
+  return binance;
 }
 
 export class AdapterManager {

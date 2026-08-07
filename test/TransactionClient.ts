@@ -1,8 +1,7 @@
 import {
   AugmentedTransaction,
-  TransactionBroadcastRejectedError,
+  DefinitiveTransactionFailure,
   TransactionConfirmationPendingError,
-  TransactionRevertedError,
 } from "../src/clients";
 import {
   BigNumber,
@@ -90,7 +89,9 @@ describe("TransactionClient", function () {
   it("Propagates definite pre-broadcast rejections", async function () {
     class RejectingClient extends MockedTransactionClient {
       protected override _getTransactionPromise(): Promise<TransactionResponse> {
-        return Promise.reject(new TransactionBroadcastRejectedError(new Error("insufficient funds")));
+        return Promise.reject(
+          new DefinitiveTransactionFailure("Transaction rejected before broadcast", new Error("insufficient funds"))
+        );
       }
     }
 
@@ -100,10 +101,10 @@ describe("TransactionClient", function () {
       contract: { address, signer },
       method,
       args: [],
-      onSubmission: () => undefined,
+      onBroadcast: () => undefined,
     } as AugmentedTransaction;
     await expect(new RejectingClient(spyLogger).submit(chainId, [transaction])).to.be.rejectedWith(
-      TransactionBroadcastRejectedError
+      DefinitiveTransactionFailure
     );
   });
 
@@ -236,8 +237,8 @@ describe("TransactionClient", function () {
       expect(txnResponses.length).to.equal(0);
 
       const callbackTransaction = makeConfirmationTxn(chainId);
-      callbackTransaction.onSubmission = () => undefined;
-      await expect(txnClient.submit(chainId, [callbackTransaction])).to.be.rejectedWith(TransactionRevertedError);
+      callbackTransaction.onBroadcast = () => undefined;
+      await expect(txnClient.submit(chainId, [callbackTransaction])).to.be.rejectedWith(DefinitiveTransactionFailure);
     });
 
     it("Resubmits on TRANSACTION_REPLACED", async function () {

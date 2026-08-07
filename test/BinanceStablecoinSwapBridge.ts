@@ -1,5 +1,5 @@
 import { BinanceStablecoinSwapAdapter, BridgeTransferDeclinedError } from "../src/adapter/bridges";
-import { TransactionBroadcastRejectedError, TransactionClient } from "../src/clients";
+import { DefinitiveTransactionFailure } from "../src/clients";
 import {
   BinanceStablecoinSwapAdapter as RebalancerBinanceAdapter,
   getBinanceRebalanceCandidate,
@@ -59,16 +59,9 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       getEstimatedCost: async () => toBNWei(options.cost ?? "0", 6),
       getValidatedRebalanceAmount: async (_route: RebalanceRoute, amount: ReturnType<typeof toBNWei>) =>
         options.valid === false ? toBNWei("0", 6) : amount,
-      initializeRebalanceWithTransaction: async (
-        _route: RebalanceRoute,
-        amount: ReturnType<typeof toBNWei>,
-        onSubmission?: () => void
-      ) => {
+      initializeRebalanceWithTransaction: async (_route: RebalanceRoute, amount: ReturnType<typeof toBNWei>) => {
         if (options.initializeError) {
           throw options.initializeError;
-        }
-        if (options.initialize !== false) {
-          onSubmission?.();
         }
         if (options.submissionError) {
           throw options.submissionError;
@@ -103,6 +96,11 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
 
     expect(amount).to.equal(toBNWei("100", 6));
     expect((await bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, amount, false)).hash).to.equal("0xdeposit");
+    // Sending consumes the prepared transfer, so each send requires its own prepare.
+    await expect(bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, amount, true)).to.be.rejectedWith(
+      "no prepared transfer"
+    );
+    expect(await bridge.prepareL1ToL2Transfer(signer, l1Token, l2Token, toBNWei("250", 6))).to.equal(amount);
     expect((await bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, amount, true)).hash).to.equal(ZERO_BYTES);
   });
 
@@ -203,15 +201,9 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     const duplicate = await first.reservePendingOrderSlot(2, "same-route-and-amount");
     expect(await second.reservePendingOrderSlot(2, "same-route-and-amount")).to.equal(undefined);
     await first.releasePendingOrderSlot(duplicate as string);
-    const amount = toBNWei("100", 6);
-    const pendingCandidate = getBinanceRebalanceCandidate(route, amount);
-    const routeReservation = await first.reservePendingOrderSlot(2, pendingCandidate);
-    expect(await second.reservePendingOrderSlot(2, getBinanceRebalanceCandidate(route, amount.add(1)))).to.equal(
-      undefined
-    );
-    await first.releasePendingOrderSlot(routeReservation as string);
+    const pendingCandidate = getBinanceRebalanceCandidate(route);
     (second.getPendingOrders as sinon.SinonStub).resolves(["pending"]);
-    sinon.stub(second as never, "_redisGetOrderDetails").resolves({ ...route, amountToTransfer: amount });
+    sinon.stub(second as never, "_redisGetOrderDetails").resolves({ ...route, amountToTransfer: toBNWei("100", 6) });
     expect(await second.reservePendingOrderSlot(2, pendingCandidate)).to.equal(undefined);
     failUnlock = true;
     expect(await first.reservePendingOrderSlot(1, "unlock-failure")).to.be.a("string");
@@ -232,7 +224,12 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       BridgeTransferDeclinedError
     );
 
-    const failed = await makeBridge({ initializeError: new Error("deposit address unavailable") });
+    const failed = await makeBridge({
+      initializeError: new DefinitiveTransactionFailure(
+        "Failed to resolve Binance deposit address",
+        new Error("deposit address unavailable")
+      ),
+    });
     const failedAmount = await failed.bridge.prepareL1ToL2Transfer(
       failed.signer,
       failed.l1Token,
@@ -244,7 +241,10 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     ).to.be.rejectedWith(BridgeTransferDeclinedError);
 
     const cleanupFailed = await makeBridge({
-      initializeError: new Error("deposit address unavailable"),
+      initializeError: new DefinitiveTransactionFailure(
+        "Failed to resolve Binance deposit address",
+        new Error("deposit address unavailable")
+      ),
       releaseError: new Error("redis unavailable"),
     });
     const cleanupFailedAmount = await cleanupFailed.bridge.prepareL1ToL2Transfer(
@@ -292,7 +292,10 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     ).to.equal(toBNWei("100", 6));
 
     const rejected = await makeBridge({
-      submissionError: new TransactionBroadcastRejectedError(new Error("insufficient funds")),
+      submissionError: new DefinitiveTransactionFailure(
+        "Transaction rejected before broadcast",
+        new Error("insufficient funds")
+      ),
     });
     const rejectedAmount = await rejected.bridge.prepareL1ToL2Transfer(
       rejected.signer,
@@ -305,47 +308,27 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     ).to.be.rejectedWith(BridgeTransferDeclinedError);
   });
 
-  it("marks submission at the broadcast boundary", async function () {
+  it("classifies pre-broadcast failures as definitive and swallowed submissions as ambiguous", async function () {
     const transaction = { contract: { address: ZERO_BYTES }, method: "transfer", args: [], chainId: 1 } as never;
-    let submissionStarted = false;
     const failedSimulation = {
       simulate: async () => [{ transaction, succeed: false, reason: "reverted" }],
       submit: async () => [],
     } as never;
 
-    await expect(
-      submitTransaction(transaction, failedSimulation, () => {
-        submissionStarted = true;
-      })
-    ).to.be.rejectedWith("Failed to simulate");
-    expect(submissionStarted).to.be.false;
+    // Simulation happens before anything is broadcast, so its failure is definitive.
+    await expect(submitTransaction(transaction, failedSimulation)).to.be.rejectedWith(DefinitiveTransactionFailure);
 
-    const { spyLogger } = createSpyLogger();
-    const preBroadcastFailure = {
-      ...transaction,
-      contract: { signer: { getAddress: async () => Promise.reject(new Error("signer unavailable")) } },
-      onSubmission: () => {
-        submissionStarted = true;
-      },
-    } as never;
-    await expect(new TransactionClient(spyLogger).submit(1, [preBroadcastFailure])).to.be.rejectedWith(
-      "signer unavailable"
-    );
-    expect(submissionStarted).to.be.false;
-
+    // A submission the TransactionClient swallowed may or may not have broadcast; it must stay ambiguous.
     const failedSubmission = {
       simulate: async () => [{ transaction, succeed: true }],
-      submit: async (_chainId: number, [transaction]: { onSubmission?: () => void | Promise<void> }[]) => {
-        await transaction.onSubmission?.();
-        return [];
-      },
+      submit: async () => [],
     } as never;
-    await expect(
-      submitTransaction(transaction, failedSubmission, () => {
-        submissionStarted = true;
-      })
-    ).to.be.rejectedWith("failed to submit onchain");
-    expect(submissionStarted).to.be.true;
+    const error = await submitTransaction(transaction, failedSubmission).then(
+      () => expect.fail("expected rejection"),
+      (error) => error
+    );
+    expect(error.message).to.contain("failed to submit onchain");
+    expect(error).to.not.be.an.instanceof(DefinitiveTransactionFailure);
   });
 
   it("leaves bridge-event accounting to Redis-backed pending rebalances", async function () {

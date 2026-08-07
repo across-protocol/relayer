@@ -1,6 +1,6 @@
 import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import dotenv from "dotenv";
-import { AugmentedTransaction, TransactionClient } from "../clients";
+import { AugmentedTransaction, DefinitiveTransactionFailure, TransactionClient } from "../clients";
 import {
   BigNumber,
   Contract,
@@ -269,8 +269,7 @@ export function getTarget(targetAddress: string):
 
 export async function submitTransaction(
   transaction: AugmentedTransaction,
-  transactionClient: TransactionClient,
-  onSubmission?: () => void | Promise<void>
+  transactionClient: TransactionClient
 ): Promise<TransactionResponse> {
   const { reason, succeed, transaction: txnRequest } = (await transactionClient.simulate([transaction]))[0];
   const { contract: targetContract, method, ...txnRequestData } = txnRequest;
@@ -278,10 +277,11 @@ export async function submitTransaction(
     const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
       txnRequest.chainId
     }`;
-    throw new Error(`${message} (${reason})`);
+    // Nothing was broadcast, so callers relying on DefinitiveTransactionFailure may safely roll back.
+    throw new DefinitiveTransactionFailure(message, new Error(reason));
   }
 
-  const response = await transactionClient.submit(transaction.chainId, [{ ...transaction, onSubmission }]);
+  const response = await transactionClient.submit(transaction.chainId, [transaction]);
   if (response.length === 0) {
     throw new Error(
       `Transaction succeeded simulation but failed to submit onchain to ${

@@ -1021,8 +1021,6 @@ export class InventoryClient {
       }
       const preparedRebalance = { ...rebalance, amount };
       const { balance } = preparedRebalance;
-      let locallyFunded = false;
-      let executable = false;
       try {
         // This is the balance left after any assumed rebalances from earlier loop iterations.
         const unallocatedBalance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
@@ -1030,35 +1028,41 @@ export class InventoryClient {
         // If the amount required in the rebalance is less than the total amount of this token on L1 then we can execute
         // the rebalance to this particular chain. Note that if the sum of all rebalances required exceeds the l1
         // balance then this logic ensures that we only fill the first n number of chains where we can.
-        locallyFunded = toBN(amount).lte(unallocatedBalance);
-        if (locallyFunded) {
-          // As a precautionary step before proceeding, re-read the on-chain L1 balance and confirm we still hold enough
-          // to actually fund this transfer. The inventory snapshot may be stale (slow RPCs, or concurrent/overlapping
-          // bot instances that already moved funds), but a benign change - e.g. an incoming repayment that increased the
-          // balance - should not block the rebalance. Only skip if the current balance can no longer cover `amount`.
-          // TODO: This is a temporary loosening of the previous exact balance-equality guard, which was perpetually
-          // skipping rebalances whenever the mainnet balance drifted at all (e.g. from repayment inflows). It weakens
-          // the protection against concurrent/overlapping bot instances double-spending, so we must revisit this and
-          // decide on the right long-term safeguard.
-          const tokenContract = new Contract(l1Token.toNative(), ERC20.abi, this.hubPoolClient.hubPool.signer);
-          const currentBalance = await tokenContract.balanceOf(this.relayer.toNative());
+        if (toBN(amount).gt(unallocatedBalance)) {
+          unexecutedRebalances.push(preparedRebalance);
+          await releaseRebalance(preparedRebalance);
+          continue;
+        }
 
-          const insufficientBalance = currentBalance.lt(toBN(amount));
-          const [message, log] = insufficientBalance
-            ? ["🚧 Insufficient mainnet balance to fund rebalance, skipping", this.logger.warn]
-            : ["Sufficient mainnet balance to fund rebalance, sending cross chain transfer", this.logger.debug];
-          log({
-            at: "InventoryClient",
-            message,
-            l1Token,
-            l2Token,
-            l2ChainId: chainId,
-            amount,
-            balance,
-            currentBalance,
-          });
+        // As a precautionary step before proceeding, re-read the on-chain L1 balance and confirm we still hold enough
+        // to actually fund this transfer. The inventory snapshot may be stale (slow RPCs, or concurrent/overlapping
+        // bot instances that already moved funds), but a benign change - e.g. an incoming repayment that increased the
+        // balance - should not block the rebalance. Only skip if the current balance can no longer cover `amount`.
+        // TODO: This is a temporary loosening of the previous exact balance-equality guard, which was perpetually
+        // skipping rebalances whenever the mainnet balance drifted at all (e.g. from repayment inflows). It weakens
+        // the protection against concurrent/overlapping bot instances double-spending, so we must revisit this and
+        // decide on the right long-term safeguard.
+        const tokenContract = new Contract(l1Token.toNative(), ERC20.abi, this.hubPoolClient.hubPool.signer);
+        const currentBalance = await tokenContract.balanceOf(this.relayer.toNative());
 
-          executable = !insufficientBalance;
+        const insufficientBalance = currentBalance.lt(toBN(amount));
+        const [message, log] = insufficientBalance
+          ? ["🚧 Insufficient mainnet balance to fund rebalance, skipping", this.logger.warn]
+          : ["Sufficient mainnet balance to fund rebalance, sending cross chain transfer", this.logger.debug];
+        log({
+          at: "InventoryClient",
+          message,
+          l1Token,
+          l2Token,
+          l2ChainId: chainId,
+          amount,
+          balance,
+          currentBalance,
+        });
+
+        if (insufficientBalance) {
+          await releaseRebalance(preparedRebalance);
+          continue;
         }
       } catch (error) {
         this.log(
@@ -1066,17 +1070,12 @@ export class InventoryClient {
           { ...preparedRebalance, error },
           "warn"
         );
-      }
-      if (executable) {
-        possibleRebalances.push(preparedRebalance);
-        // Decrement token balance in client for this chain and increment cross chain counter.
-        this.trackCrossChainTransfer(l1Token, l2Token, amount, chainId);
-      } else {
-        if (!locallyFunded) {
-          unexecutedRebalances.push(preparedRebalance);
-        }
         await releaseRebalance(preparedRebalance);
+        continue;
       }
+      possibleRebalances.push(preparedRebalance);
+      // Decrement token balance in client for this chain and increment cross chain counter.
+      this.trackCrossChainTransfer(l1Token, l2Token, amount, chainId);
     }
 
     // Extract unexecutable rebalances for logging.

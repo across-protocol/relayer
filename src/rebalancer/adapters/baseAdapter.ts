@@ -445,11 +445,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     }
   }
 
-  protected async _submitTransaction(
-    transaction: AugmentedTransaction,
-    onSubmission?: () => void | Promise<void>
-  ): Promise<string> {
-    return (await submitTransaction(transaction, this.transactionClient, onSubmission)).hash;
+  protected async _submitTransaction(transaction: AugmentedTransaction): Promise<string> {
+    return (await submitTransaction(transaction, this.transactionClient)).hash;
   }
 
   /**

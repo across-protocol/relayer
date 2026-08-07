@@ -46,7 +46,7 @@ export function buildAdapterManagerBinanceRoutes(hubChainId = CHAIN_IDs.MAINNET)
   return [...customRoutes, ...canonicalRoutes];
 }
 
-function constructRebalancerDependencies(
+export function constructRebalancerDependencies(
   logger: winston.Logger,
   baseSigner: Signer
 ): {

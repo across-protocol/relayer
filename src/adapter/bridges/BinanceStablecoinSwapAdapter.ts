@@ -29,7 +29,9 @@ import {
 export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
   private adapter?: RebalancerBinanceStablecoinSwapAdapter;
   private route?: RebalanceRoute;
-  private readonly preparedTransfers: { amount: string; reservation: string }[] = [];
+  // At most one prepared transfer can be outstanding: the bridge covers a single route, and
+  // reservePendingOrderSlot declines a second same-route reservation while one is live.
+  private prepared?: { amount: BigNumber; reservation: string };
 
   constructor(
     l2chainId: number,
@@ -38,6 +40,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     _l2SignerOrProvider: unknown,
     private readonly l1Token: EvmAddress,
     private readonly logger: winston.Logger,
+    // Optional only so the class fits the registry's L1BridgeConstructor shape; getAdapter asserts it was supplied.
     private readonly adapterFactory?: (route: RebalanceRoute) => Promise<RebalancerBinanceStablecoinSwapAdapter>
   ) {
     super(l2chainId, hubChainId, l1Signer, []);
@@ -61,12 +64,12 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     }
     const preparedAmount = await adapter.getValidatedRebalanceAmount(route, cappedAmount);
     if (preparedAmount.gt(bnZero)) {
-      const candidate = getBinanceRebalanceCandidate(route, preparedAmount);
+      const candidate = getBinanceRebalanceCandidate(route);
       const reservation = await adapter.reservePendingOrderSlot(maxPendingOrders, candidate);
       if (!isDefined(reservation)) {
         return bnZero;
       }
-      this.preparedTransfers.push({ amount: preparedAmount.toString(), reservation });
+      this.prepared = { amount: preparedAmount, reservation };
     }
     return preparedAmount;
   }
@@ -80,37 +83,28 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
   ): Promise<TransactionResponse> {
     const adapter = await this.getAdapter(l1Token, l2Token);
     this.assertRecipient(toAddress, adapter.baseSignerAddress);
-    let preparedAmount = amount;
-    let reservation = this.consumePreparedTransfer(preparedAmount);
-    if (!isDefined(reservation)) {
-      preparedAmount = await this.prepareL1ToL2Transfer(toAddress, l1Token, l2Token, amount);
-      reservation = this.consumePreparedTransfer(preparedAmount);
-    }
-    assert(preparedAmount.gt(bnZero), "Binance stablecoin swap adapter declined transfer");
-    assert(isDefined(reservation), "Binance stablecoin swap adapter did not reserve an order slot");
-    if (simMode) {
-      await this.releaseReservation(adapter, reservation);
-      return { hash: ZERO_BYTES } as TransactionResponse;
-    }
-    let submissionStarted = false;
-    const result = await adapter
-      .initializeRebalanceWithTransaction(this.getRoute(), preparedAmount, () => {
-        submissionStarted = true;
-      })
-      .catch(async (error) => {
-        if (!submissionStarted || error instanceof DefinitiveTransactionFailure) {
-          await this.releaseReservation(adapter, reservation);
-          throw new BridgeTransferDeclinedError("Binance stablecoin swap failed before submission", { cause: error });
+    const reservation = this.consumePreparedTransfer(amount);
+    assert(isDefined(reservation), "Binance stablecoin swap adapter has no prepared transfer for this amount");
+    try {
+      if (simMode) {
+        return { hash: ZERO_BYTES } as TransactionResponse;
+      }
+      const result = await adapter.initializeRebalanceWithTransaction(this.getRoute(), amount).catch((error) => {
+        if (error instanceof DefinitiveTransactionFailure) {
+          throw new BridgeTransferDeclinedError("Binance stablecoin swap definitively failed", { cause: error });
         }
-        await this.releaseReservation(adapter, reservation);
         throw error;
       });
-    await this.releaseReservation(adapter, reservation);
-    if (result.amount.eq(bnZero)) {
-      throw new BridgeTransferDeclinedError("Binance stablecoin swap adapter declined transfer during initialization");
+      if (result.amount.eq(bnZero)) {
+        throw new BridgeTransferDeclinedError(
+          "Binance stablecoin swap adapter declined transfer during initialization"
+        );
+      }
+      assert(isDefined(result.transactionHash), "Binance stablecoin swap adapter did not submit a direct deposit");
+      return { hash: result.transactionHash } as TransactionResponse;
+    } finally {
+      await this.releaseReservation(adapter, reservation);
     }
-    assert(isDefined(result.transactionHash), "Binance stablecoin swap adapter did not submit a direct deposit");
-    return { hash: result.transactionHash } as TransactionResponse;
   }
 
   constructL1ToL2Txn(): Promise<BridgeTransactionDetails> {
@@ -175,11 +169,12 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
   }
 
   private consumePreparedTransfer(amount: BigNumber): string | undefined {
-    const index = this.preparedTransfers.findIndex((transfer) => transfer.amount === amount.toString());
-    if (index === -1) {
+    if (!this.prepared?.amount.eq(amount)) {
       return;
     }
-    return this.preparedTransfers.splice(index, 1)[0].reservation;
+    const { reservation } = this.prepared;
+    this.prepared = undefined;
+    return reservation;
   }
 
   private async releaseReservation(

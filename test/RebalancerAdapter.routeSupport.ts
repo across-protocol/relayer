@@ -176,7 +176,8 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
       TEST_LOGGER
     );
     Object.assign(bridge, { adapter: initiatingAdapter, route });
-    await bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, toBNWei("100", 6), false);
+    const preparedAmount = await bridge.prepareL1ToL2Transfer(signer, l1Token, l2Token, toBNWei("100", 6));
+    await bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, preparedAmount, false);
 
     const adapter = new BinanceStablecoinSwapAdapter(
       TEST_LOGGER,
@@ -189,7 +190,8 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
     internals.initialized = true;
     internals.availableRoutes = [route];
     adapter.baseSignerAddress = signer;
-    Object.assign(adapter, { _redisCache: { get: async () => undefined, del: async () => 1 } });
+    // The recovery marker is present, so both lifecycle loops route the order through reconciliation.
+    Object.assign(adapter, { _redisCache: { get: async () => "1", del: async () => 1 } });
 
     sinon.stub(internals, "_redisGetPendingBridgesPreDeposit").resolves([]);
     sinon.stub(internals, "_redisGetPendingDepositSubmissions").resolves(["adapter-manager-order"]);
@@ -198,18 +200,21 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
     sinon.stub(internals, "_redisGetPendingWithdrawals").resolves([]);
     sinon.stub(internals, "_redisGetOrderDetailsRequired").resolves(order);
     sinon.stub(internals, "_getBinanceBalance").resolves(100);
-    sinon.stub(internals, "_reconcileDepositRecovery").resolves(true);
+    const reconcile = sinon.stub(internals, "_reconcileDepositRecovery").resolves(true);
     sinon.stub(internals, "_withdraw").resolves(true);
     const updateStatus = sinon.stub(internals, "_redisUpdateOrderStatus").resolves();
     sinon.stub(internals, "_wait").resolves();
 
     await adapter.updateRebalanceStatuses();
 
+    // Reconciliation (which owns the PENDING_DEPOSIT_SUBMISSION -> PENDING_DEPOSIT promotion) ran for both the
+    // pending-submission and pending-deposit passes, and the order then progressed to withdrawal.
+    expect(reconcile.callCount).to.equal(2);
     expect(updateStatus.firstCall.args.slice(0, 3)).to.deep.equal([
       "adapter-manager-order",
-      STATUS.PENDING_DEPOSIT_SUBMISSION,
       STATUS.PENDING_DEPOSIT,
+      STATUS.PENDING_WITHDRAWAL,
     ]);
-    expect(updateStatus.callCount).to.equal(2);
+    expect(updateStatus.callCount).to.equal(1);
   });
 });

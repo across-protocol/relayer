@@ -454,13 +454,7 @@ describe("Binance adapter helpers", function () {
       _getEntrypointNetwork(): Promise<number>;
       _redisCreateOrder(): Promise<void>;
       _redisUpdateOrderStatus(): Promise<void>;
-      _depositToBinance(
-        cloid: string,
-        token: string,
-        chainId: number,
-        amount: BigNumber,
-        onSubmission: () => void | Promise<void>
-      ): Promise<string>;
+      _depositToBinance(cloid: string, token: string, chainId: number, amount: BigNumber): Promise<string>;
       _redisDeleteOrder(): Promise<boolean>;
     };
     internals.initialized = true;
@@ -492,11 +486,9 @@ describe("Binance adapter helpers", function () {
       expect(newStatus).to.equal(STATUS.PENDING_DEPOSIT);
       calls.push("promote");
     });
-    sinon.stub(internals, "_depositToBinance").callsFake(async (_cloid, _token, _chain, _amount, onSubmission) => {
-      calls.push("submission");
-      await onSubmission();
-      await onSubmission();
-      calls.push("broadcast");
+    sinon.stub(internals, "_depositToBinance").callsFake(async () => {
+      calls.push("deposit");
+      // An ambiguous (non-definitive) failure after the deposit may have broadcast funds.
       throw new Error("post-broadcast redis failure");
     });
     const deleteOrder = sinon.stub(internals, "_redisDeleteOrder").resolves(true);
@@ -504,7 +496,7 @@ describe("Binance adapter helpers", function () {
     await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
       "post-broadcast redis failure"
     );
-    expect(calls).to.deep.equal(["recovery", "order", "submission", "broadcast"]);
+    expect(calls).to.deep.equal(["recovery", "order", "deposit"]);
     expect(deleteOrder.called).to.equal(false);
   });
 
@@ -517,17 +509,10 @@ describe("Binance adapter helpers", function () {
       baseSignerAddress: EvmAddress;
       binanceApiClient: { depositAddress: sinon.SinonStub };
       _getTokenInfo(): { symbol: string; decimals: number; address: EvmAddress };
-      _submitTransaction(
-        transaction: { onBroadcast?: (transactionHash: string) => void | Promise<void> },
-        onSubmission?: () => void | Promise<void>
-      ): Promise<string>;
-      _depositToBinance(
-        cloid: string,
-        token: string,
-        chainId: number,
-        amount: BigNumber,
-        onSubmission?: () => void | Promise<void>
-      ): Promise<string>;
+      _submitTransaction(transaction: {
+        onBroadcast?: (transactionHash: string) => void | Promise<void>;
+      }): Promise<string>;
+      _depositToBinance(cloid: string, token: string, chainId: number, amount: BigNumber): Promise<string>;
       _wait(seconds: number): Promise<void>;
     };
     internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
@@ -577,11 +562,11 @@ describe("Binance adapter helpers", function () {
       _redisCache: {
         get: async (key: string) => values.get(key),
         del: async (key: string) => Number(values.delete(key)),
+        moveSetMember: async () => [1, 1],
       },
     });
-    const reconcile = (
-      adapter as unknown as { _reconcileDepositRecovery(cloid: string, requireRecovery?: boolean): Promise<boolean> }
-    )._reconcileDepositRecovery;
+    const reconcile = (adapter as unknown as { _reconcileDepositRecovery(cloid: string): Promise<boolean> })
+      ._reconcileDepositRecovery;
     const getReceipt = sinon
       .stub(
         adapter as unknown as { _getDepositTransactionReceipt(): Promise<{ status: number }> },
@@ -591,14 +576,17 @@ describe("Binance adapter helpers", function () {
       .resolves(undefined);
     getReceipt.onSecondCall().resolves({ status: 1 });
 
-    expect(await reconcile.call(adapter, "cloid", true)).to.equal(false);
-    expect(getReceipt.called).to.equal(false);
     values.set(recoveryKey, "1");
+    // No recorded deposit transaction yet: reconcile must wait, keeping the marker.
     expect(await reconcile.call(adapter, "cloid")).to.equal(false);
+    expect(getReceipt.called).to.equal(false);
     values.set(transactionKey, JSON.stringify({ chainId: CHAIN_IDs.MAINNET, transactionHash: "0xdeposit" }));
+    // Receipt not yet available: keep waiting.
     expect(await reconcile.call(adapter, "cloid")).to.equal(false);
-    expect(await reconcile.call(adapter, "cloid")).to.equal(true);
     expect(values.has(recoveryKey)).to.equal(true);
+    // Confirmed on-chain: the order may progress and the marker is cleared.
+    expect(await reconcile.call(adapter, "cloid")).to.equal(true);
+    expect(values.has(recoveryKey)).to.equal(false);
   });
 
   it("does not release expired deposit tags through the status cache", async function () {
