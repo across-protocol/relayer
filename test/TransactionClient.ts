@@ -1,4 +1,9 @@
-import { AugmentedTransaction, TransactionBroadcastRejectedError, TransactionRevertedError } from "../src/clients";
+import {
+  AugmentedTransaction,
+  TransactionBroadcastRejectedError,
+  TransactionConfirmationPendingError,
+  TransactionRevertedError,
+} from "../src/clients";
 import {
   BigNumber,
   ethers,
@@ -383,6 +388,14 @@ describe("TransactionClient", function () {
       expect(txnResponses.length).to.equal(1);
       // Initial submission + one resubmission per remaining maxTries (default is 10).
       expect(waitCalls).to.equal(11);
+    });
+
+    it("keeps recoverable submissions pending when confirmation is exhausted", async function () {
+      const chainId = chainIds[0];
+      txnClient.waitOverride = () => Promise.reject(makeEthersError(ethers.errors.TIMEOUT));
+      const transaction = { ...makeConfirmationTxn(chainId), onBroadcast: () => undefined };
+
+      await expect(txnClient.submit(chainId, [transaction])).to.be.rejectedWith(TransactionConfirmationPendingError);
     });
 
     it("Retries on transient error then succeeds", async function () {

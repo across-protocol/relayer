@@ -115,6 +115,12 @@ export class TransactionRevertedError extends DefinitiveTransactionFailure {
   }
 }
 
+export class TransactionConfirmationPendingError extends Error {
+  constructor(readonly transactionHash: string) {
+    super(`Transaction confirmation remains pending: ${transactionHash}`);
+  }
+}
+
 export function isAugmentedTransaction(txn: unknown): txn is AugmentedTransaction {
   if (txn === null || typeof txn !== "object") {
     return false;
@@ -283,8 +289,10 @@ export class TransactionClient {
       } while (!txnReceipt && ++nTries < maxTries);
 
       if (!txnReceipt) {
-        // Confirmation was exhausted; alert the on-call and hand back the unconfirmed response.
         this.logger.error({ at, message: `Unable to confirm ${chain} transaction.`, txnRef });
+        if (txn.onBroadcast) {
+          throw new TransactionConfirmationPendingError(txnResponse.hash);
+        }
       } else if (txnReceipt.status === 0) {
         // The TVM wait resolves reverted transactions rather than throwing CALL_EXCEPTION.
         this.logger.debug({ at, message: `Transaction on ${chain} failed during execution...`, txnRef });
@@ -351,7 +359,10 @@ export class TransactionClient {
           error: stringifyThrownValue(error),
           notificationPath: "across-error",
         });
-        if (error instanceof DefinitiveTransactionFailure && (txn.onSubmission || txn.onBroadcast)) {
+        if (
+          (error instanceof DefinitiveTransactionFailure || error instanceof TransactionConfirmationPendingError) &&
+          (txn.onSubmission || txn.onBroadcast)
+        ) {
           throw error;
         }
         return txnResponses;
@@ -581,7 +592,9 @@ async function _runTransactionTvm(
     result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
   } catch (error) {
     if (--retries < 0) {
-      throw error;
+      throw new TransactionBroadcastRejectedError(
+        error instanceof Error ? error : new Error(stringifyThrownValue(error))
+      );
     }
     logger.debug({
       at,
@@ -595,7 +608,7 @@ async function _runTransactionTvm(
   if (!result.result) {
     const error = new Error(`TVM transaction broadcast failed on ${chain}: ${result.txid}`);
     if (--retries < 0) {
-      throw error;
+      throw new TransactionBroadcastRejectedError(error);
     }
     logger.debug({
       at,

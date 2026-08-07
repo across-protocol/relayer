@@ -169,10 +169,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   ): Promise<void> {
     const oldOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, oldStatus, account.toNative());
     const newOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
-    const result = await Promise.all([
-      this.redisCache.sRem(oldOrderStatusKey, cloid),
-      this.redisCache.sAdd(newOrderStatusKey, cloid),
-    ]);
+    const result = await this.redisCache.moveSetMember(oldOrderStatusKey, newOrderStatusKey, cloid);
     this.logger.debug({
       at: "BaseAdapter._redisUpdateOrderStatus",
       message: `Updated order status for cloid ${cloid} from ${oldOrderStatusKey} to ${newOrderStatusKey}`,

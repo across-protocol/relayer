@@ -262,6 +262,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
 
+    const pendingDepositSubmissions = await this._redisGetPendingDepositSubmissions(this.baseSignerAddress);
+    for (const cloid of pendingDepositSubmissions) {
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+      if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
+      if (await this._reconcileDepositRecovery(cloid)) {
+        await this._redisUpdateOrderStatus(
+          cloid,
+          STATUS.PENDING_DEPOSIT_SUBMISSION,
+          STATUS.PENDING_DEPOSIT,
+          this.baseSignerAddress
+        );
+        await this.redisCache.del(
+          getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative())
+        );
+      }
+    }
+
     // Pending bridges to Binance network: we'll attempt to deposit the tokens to Binance if we have enough balance.
     const pendingBridgeToBinanceDepositNetwork = await this._redisGetPendingBridgesPreDeposit(this.baseSignerAddress);
     if (pendingBridgeToBinanceDepositNetwork.length > 0) {
@@ -331,6 +350,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (!(await this._reconcileDepositRecovery(cloid))) {
         continue;
       }
+      await this.redisCache.del(
+        getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative())
+      );
       const { sourceToken, sourceChain, destinationToken, destinationChain, amountToTransfer } = orderDetails;
 
       const binanceBalance = await this._getBinanceBalance(sourceToken);
@@ -956,6 +978,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           STATUS.PENDING_DEPOSIT,
           this.baseSignerAddress
         );
+        await this.redisCache.del(depositRecoveryKey);
       } catch (error) {
         if (!submissionStarted || error instanceof DefinitiveTransactionFailure) {
           await Promise.all([
@@ -1338,9 +1361,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // TTL must outlive the finalizer lookback so completed swaps are not re-counted as finalizable.
     // The cloid -> deposit txn mapping lets the prune path find abandoned deposit tags.
     await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, 2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
-    await this.redisCache.del(
-      getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative())
-    );
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._depositToBinance",
       message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,
@@ -1393,14 +1413,33 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       return false;
     }
     const { chainId, transactionHash } = JSON.parse(depositTxn) as { chainId: number; transactionHash: string };
+    const transactionReceipt = await this._getDepositTransactionReceipt(chainId, transactionHash);
+    if (!isDefined(transactionReceipt)) {
+      return false;
+    }
+    if (transactionReceipt.status === 0) {
+      await Promise.all([
+        this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT_SUBMISSION, this.baseSignerAddress),
+        this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT, this.baseSignerAddress),
+        this.redisCache.del(getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account)),
+        this.redisCache.del(recoveryKey),
+      ]);
+      return false;
+    }
     await setBinanceDepositType(
       chainId,
       transactionHash,
       BinanceTransactionType.SWAP,
       2 * FINALIZER_TOKENBRIDGE_LOOKBACK
     );
-    await this.redisCache.del(recoveryKey);
     return true;
+  }
+
+  private async _getDepositTransactionReceipt(chainId: number, transactionHash: string) {
+    const provider = await getProvider(chainId);
+    const hash =
+      chainId === CHAIN_IDs.TRON && !transactionHash.startsWith("0x") ? `0x${transactionHash}` : transactionHash;
+    return provider.getTransactionReceipt(hash);
   }
 
   private _buildDirectBinanceTokenDepositTransaction(
