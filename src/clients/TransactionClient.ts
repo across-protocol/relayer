@@ -491,18 +491,25 @@ async function _runTransaction(
       ? await signer.sendTransaction({ to, data: (args as ethers.utils.BytesLike[])[0], ...txConfig })
       : await contract[method](...args, txConfig);
   } catch (error) {
-    // A transport failure may hide an accepted eth_sendRawTransaction. Recovery-enabled callers
+    // BaseProvider.sendTransaction attaches the locally-computed hash to any error raised at or beyond the raw send,
+    // so its absence proves the failure occurred before broadcast. A post-send failure may hide an accepted
+    // eth_sendRawTransaction, so unless the node definitively rejected the transaction, recovery-enabled callers
     // must retain their order and nonce rather than retrying a potentially live operation.
-    if (
-      onBroadcast &&
-      (!typeguards.isEthersError(error) ||
-        error.code === ethers.errors.SERVER_ERROR ||
-        error.code === ethers.errors.TIMEOUT)
-    ) {
-      throw new TransactionSubmissionPendingError(error, undefined, nonce);
+    const { transactionHash: localHash } = (error ?? {}) as { transactionHash?: string };
+    const definiteRejections: string[] = [
+      ethers.errors.NONCE_EXPIRED,
+      ethers.errors.REPLACEMENT_UNDERPRICED,
+      ethers.errors.INSUFFICIENT_FUNDS,
+    ];
+    const definiteRejection = typeguards.isEthersError(error) && definiteRejections.includes(error.code);
+    if (onBroadcast && isDefined(localHash) && !definiteRejection) {
+      throw new TransactionSubmissionPendingError(error, localHash, nonce);
     }
     // Narrow type. All errors caught here should be Ethers errors.
     if (!typeguards.isEthersError(error)) {
+      if (onBroadcast) {
+        throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);
+      }
       throw error;
     }
 
@@ -572,6 +579,11 @@ async function _runTransaction(
 
     logger.debug({ at, message, code, reason, ...commonFields });
     if (--retries < 0) {
+      // Every error reaching this point either occurred before broadcast or was definitively rejected by the node,
+      // so recovery-enabled callers can safely roll back.
+      if (onBroadcast) {
+        throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);
+      }
       throw error;
     }
 
