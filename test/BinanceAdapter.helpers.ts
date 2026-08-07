@@ -683,6 +683,60 @@ describe("Binance adapter helpers", function () {
     expect(set.called).to.equal(false);
   });
 
+  it("serializes reservation release after lock contention", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const acquireLock = sinon.stub().onFirstCall().resolves(false).onSecondCall().resolves(true);
+    const sRem = sinon.stub().resolves(1);
+    const del = sinon.stub().resolves(1);
+    adapter.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    Object.assign(adapter, {
+      _redisCache: { acquireLock, releaseLock: sinon.stub().resolves(true), sRem, del },
+    });
+    sinon.stub(adapter as unknown as { _wait(): Promise<void> }, "_wait").resolves();
+
+    await adapter.releasePendingOrderSlot("reservation");
+
+    expect(acquireLock.callCount).to.equal(2);
+    expect(sRem.calledBefore(del)).to.equal(true);
+  });
+
+  it("honors an explicit order TTL over the environment default", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const set = sinon.stub().resolves("OK");
+    Object.assign(adapter, { _redisCache: { sAdd: sinon.stub().resolves(1), set } });
+    const previousTtl = process.env.REBALANCER_PENDING_ORDER_TTL;
+    process.env.REBALANCER_PENDING_ORDER_TTL = "60";
+    try {
+      await (
+        adapter as unknown as {
+          _redisCreateOrder(...args: unknown[]): Promise<void>;
+        }
+      )._redisCreateOrder(
+        "cloid",
+        STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
+        {
+          sourceChain: CHAIN_IDs.MAINNET,
+          sourceToken: "USDT",
+          destinationChain: CHAIN_IDs.AVALANCHE,
+          destinationToken: "USDT",
+          adapter: "binance",
+        },
+        toBNWei("1", 6),
+        EvmAddress.from(await signer.getAddress()),
+        Number.POSITIVE_INFINITY
+      );
+    } finally {
+      if (previousTtl === undefined) {
+        delete process.env.REBALANCER_PENDING_ORDER_TTL;
+      } else {
+        process.env.REBALANCER_PENDING_ORDER_TTL = previousTtl;
+      }
+    }
+    expect(set.firstCall.args[2]).to.equal(Number.POSITIVE_INFINITY);
+  });
+
   it("reconciles a recoverable deposit transaction before lifecycle progression", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();

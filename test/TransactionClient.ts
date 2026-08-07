@@ -14,10 +14,11 @@ import {
   TransactionReceipt,
   TransactionResponse,
   TransactionSimulationResult,
+  submitTransactionTvm,
 } from "../src/utils";
 import { CHAIN_ID_TEST_LIST as chainIds } from "./constants";
 import { MockedTransactionClient, txnClientPassResult } from "./mocks/MockTransactionClient";
-import { createSpyLogger, Contract, expect, randomAddress, toBN, winston, ethers as testEthers } from "./utils";
+import { createSpyLogger, Contract, expect, randomAddress, sinon, toBN, winston, ethers as testEthers } from "./utils";
 
 const { spyLogger }: { spyLogger: winston.Logger } = createSpyLogger();
 const address = randomAddress(); // Test contract address
@@ -171,6 +172,46 @@ describe("TransactionClient", function () {
 
       await expect(client.submit(chainId, [transaction])).to.be.rejectedWith(TransactionSubmissionPendingError);
       expect(client.noncesBySigner[chainId][await signer.getAddress()]).to.equal(nonce);
+    });
+
+    it("classifies EVM estimation reverts as definitive", async function () {
+      const provider = {
+        getNetwork: () => Promise.resolve({ chainId }),
+        getTransactionCount: () => Promise.resolve(nonce),
+      };
+      const error = Object.assign(new Error("execution reverted"), {
+        code: ethers.errors.UNPREDICTABLE_GAS_LIMIT,
+        reason: "execution reverted",
+      });
+
+      await expect(
+        new TransactionClient(spyLogger).submit(chainId, [makeTransaction(provider, () => Promise.reject(error))])
+      ).to.be.rejectedWith(DefinitiveTransactionFailure);
+    });
+
+    it("marks TVM submission only when the raw send begins", async function () {
+      const attempts: Array<string | undefined> = [];
+      const triggerSmartContract = sinon
+        .stub()
+        .onFirstCall()
+        .rejects(new Error("trigger failed"))
+        .resolves({
+          result: { result: true },
+          transaction: {},
+        });
+      const sendRawTransaction = sinon.stub().rejects(new Error("send failed"));
+      const tronWeb = {
+        defaultAddress: { base58: "owner" },
+        transactionBuilder: { triggerSmartContract },
+        trx: { sign: sinon.stub().resolves({ txID: "0xtvm" }), sendRawTransaction },
+      };
+      const submit = () =>
+        submitTransactionTvm(tronWeb as never, { to: address, data: "0x01" }, 1, 0, (hash) => attempts.push(hash));
+
+      await expect(submit()).to.be.rejectedWith("trigger failed");
+      expect(attempts).to.deep.equal([]);
+      await expect(submit()).to.be.rejectedWith("send failed");
+      expect(attempts).to.deep.equal(["0xtvm"]);
     });
 
     it("classifies exhausted setup failures as definitive", async function () {

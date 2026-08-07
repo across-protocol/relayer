@@ -839,20 +839,42 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       return reservation;
     } finally {
-      await this.redisCache.releaseLock(lockKey, lockToken).catch((error) =>
-        this.logger.warn({
-          at: "BinanceStablecoinSwapAdapter.reservePendingOrderSlot",
-          message: "Failed to release Binance initiation lock; waiting for its TTL",
-          error,
-        })
-      );
+      await this._releaseInitiationLock(lockKey, lockToken, "reservePendingOrderSlot");
     }
   }
 
   async releasePendingOrderSlot(reservation: string): Promise<void> {
-    const reservationSetKey = `${this.REDIS_PREFIX}initiation-reservations:${this.baseSignerAddress.toNative()}`;
-    await this.redisCache.sRem(reservationSetKey, reservation);
-    await this.redisCache.del(reservation);
+    const account = this.baseSignerAddress.toNative();
+    const lockKey = `${this.REDIS_PREFIX}initiation-lock:${account}`;
+    const lockToken = randomUUID();
+    let acquired = false;
+    for (let attempt = 0; attempt < 10 && !acquired; ++attempt) {
+      acquired = await this.redisCache.acquireLock(
+        lockKey,
+        lockToken,
+        BinanceStablecoinSwapAdapter.INITIATION_LOCK_TTL_MS
+      );
+      if (!acquired) {
+        await this._wait(0.1);
+      }
+    }
+    assert(acquired, "Failed to acquire Binance initiation lock while releasing reservation");
+    try {
+      await this.redisCache.sRem(`${this.REDIS_PREFIX}initiation-reservations:${account}`, reservation);
+      await this.redisCache.del(reservation);
+    } finally {
+      await this._releaseInitiationLock(lockKey, lockToken, "releasePendingOrderSlot");
+    }
+  }
+
+  private async _releaseInitiationLock(lockKey: string, lockToken: string, method: string): Promise<void> {
+    await this.redisCache.releaseLock(lockKey, lockToken).catch((error) =>
+      this.logger.warn({
+        at: `BinanceStablecoinSwapAdapter.${method}`,
+        message: "Failed to release Binance initiation lock; waiting for its TTL",
+        error,
+      })
+    );
   }
 
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {

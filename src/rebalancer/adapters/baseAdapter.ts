@@ -215,9 +215,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
           destinationChain,
           amountToTransfer: amountToTransfer.toString(),
         }),
-        process.env.REBALANCER_PENDING_ORDER_TTL
-          ? Number(process.env.REBALANCER_PENDING_ORDER_TTL)
-          : (ttlOverride ?? 60 * 60) // default to 1 hour
+        ttlOverride ??
+          (process.env.REBALANCER_PENDING_ORDER_TTL ? Number(process.env.REBALANCER_PENDING_ORDER_TTL) : 60 * 60) // default to 1 hour
       ),
     ]);
     this.logger.debug({
