@@ -3,6 +3,7 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { HubPoolClient, SpokePoolClient } from "../clients";
 import { FillStatus, FillWithBlock, SpokePoolClientsByChain, DepositWithBlock, RelayData } from "../interfaces";
 import { Address, compareAddressesSimple, EMPTY_MESSAGE } from "../utils";
+import { getPaxosTransitOfferAssetsForWantAsset } from "./PaxosTransitUtils";
 
 export type RelayerUnfilledDeposit = {
   deposit: DepositWithBlock;
@@ -70,9 +71,9 @@ export function getUnfilledDeposits(
 
 /**
  * Returns true if `(chainId, token)` can be drained off via an unmetered, low-latency bridge
- * (CCTP for USDC, OFT for USDT, or the hub chain itself via canonical bridges).
+ * (CCTP for USDC, OFT for USDT, Paxos Transit, or the hub chain itself via canonical bridges).
  *
- * Pure over the static CCTP/OFT chain registries plus a single hub-chain id, so it's safe to
+ * Pure over the static CCTP/OFT/Paxos chain registries plus a single hub-chain id, so it's safe to
  * call without taking a dependency on InventoryClient.
  */
 export function isUnmeteredFastRebalance(chainId: number, token: Address, hubChainId: number): boolean {
@@ -84,7 +85,10 @@ export function isUnmeteredFastRebalance(chainId: number, token: Address, hubCha
     sdkUtils.chainIsOFTEnabled(chainId) &&
     compareAddressesSimple(TOKEN_SYMBOLS_MAP.USDT.addresses[chainId], token.toNative()) &&
     chainId !== CHAIN_IDs.HYPEREVM;
-  return cctp || oft || chainId === hubChainId;
+  // Paxos Transit withdrawals settle in ~7-11 min and cap at $50mm/order, so they're fast and
+  // effectively unmetered at relayer size.
+  const paxosTransit = getPaxosTransitOfferAssetsForWantAsset(chainId, token.toNative()).length > 0;
+  return cctp || oft || paxosTransit || chainId === hubChainId;
 }
 
 export function depositForcesOriginChainRepayment(
