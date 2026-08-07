@@ -82,10 +82,14 @@ export class RedisCache implements RedisCacheInterface {
     existingKey: string,
     ttl: number
   ): Promise<unknown> {
+    // GT only ever lengthens the existing key's lifetime: a persistent (no-TTL) key is treated as
+    // infinite and stays persistent, so recovery orders pinned with a non-expiring TTL are never
+    // downgraded by recording their deposit hash.
     const results = await this.client
       .multi()
       .set(this.getNamespacedKey(key), value, { expiration: { type: "EX", value: ttl } })
-      .expire(this.getNamespacedKey(existingKey), ttl)
+      .exists(this.getNamespacedKey(existingKey))
+      .expire(this.getNamespacedKey(existingKey), ttl, "GT")
       .exec();
     assert(results[1], `Cannot extend missing Redis key ${existingKey}`);
     return results;
