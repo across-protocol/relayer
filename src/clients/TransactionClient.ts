@@ -194,7 +194,7 @@ export class TransactionClient {
       try {
         txnResponse = await txnPromise;
       } catch (error) {
-        if (isDefined(pendingTransaction) && error instanceof DefinitiveTransactionFailure) {
+        if (isDefined(pendingTransaction) && !(error instanceof TransactionSubmissionPendingError)) {
           throw new TransactionConfirmationPendingError(pendingTransaction.hash, pendingTransaction.nonce);
         }
         throw error;
@@ -432,7 +432,19 @@ async function _runTransaction(
 ): Promise<TransactionResponse> {
   const at = "TxUtil#_runTransaction";
   const { provider, signer } = contract;
-  const { chainId } = await provider.getNetwork();
+  let chainId: number;
+  try {
+    ({ chainId } = await provider.getNetwork());
+  } catch (error) {
+    retries ??= TRANSACTION_SUBMISSION_RETRIES_DEFAULT;
+    if (--retries >= 0) {
+      return _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, retryScaler, onBroadcast);
+    }
+    if (onBroadcast) {
+      throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);
+    }
+    throw error;
+  }
   const chain = getNetworkName(chainId);
   const sendRawTxn = method === "";
 
@@ -596,29 +608,36 @@ async function _runTransactionTvm(
 ): Promise<TransactionResponse> {
   const at = "TransactionClient#_runTransactionTvm";
   const { provider } = contract;
-  const { chainId } = await provider.getNetwork();
-  const chain = getNetworkName(chainId);
-  const sendRawTxn = method === "";
-
-  const { maxFeePerGasScaler, priorityFeeScaler, retries: _retries } = _readTransactionConfig(chainId);
-  retries ??= _retries;
-
-  // The fee limit is a function of both the gas price and gas limit. We specify the number of TRX we are willing to spend
-  // on the transaction, not the number of unit gas to spend nor the max price for each unit gas.
-  // Essentially, the fee limit is just maxFeePerGas * gasLimit.
-  const { maxFeePerGas } = await getGasPrice(
-    provider,
-    priorityFeeScaler, // No priority fee scalar for TRON.
-    maxFeePerGasScaler,
-    sendRawTxn ? undefined : await contract.populateTransaction[method](...args, { value })
-  );
-  const gasLimitNumber = gasLimit?.toNumber() ?? process.env.TVM_GAS_LIMIT;
-  const feeLimit = isDefined(gasLimitNumber) ? Number(gasLimitNumber) * maxFeePerGas.toNumber() : DEFAULT_TVM_FEE_LIMIT;
-
-  const tronWeb = getTronWebFromEvmSigner(contract.signer);
-  const populatedTransaction = sendRawTxn
-    ? { from: await contract.signer.getAddress(), to: contract.address, data: (args as Array<string>)[0] }
-    : await contract.populateTransaction[method](...args, { value });
+  let chainId: number,
+    chain: string,
+    feeLimit: number,
+    populatedTransaction: ethers.PopulatedTransaction,
+    tronWeb: ReturnType<typeof getTronWebFromEvmSigner>;
+  try {
+    ({ chainId } = await provider.getNetwork());
+    chain = getNetworkName(chainId);
+    const sendRawTxn = method === "";
+    const { maxFeePerGasScaler, priorityFeeScaler, retries: configuredRetries } = _readTransactionConfig(chainId);
+    retries ??= configuredRetries;
+    const { maxFeePerGas } = await getGasPrice(
+      provider,
+      priorityFeeScaler,
+      maxFeePerGasScaler,
+      sendRawTxn ? undefined : await contract.populateTransaction[method](...args, { value })
+    );
+    const gasLimitNumber = gasLimit?.toNumber() ?? process.env.TVM_GAS_LIMIT;
+    feeLimit = isDefined(gasLimitNumber) ? Number(gasLimitNumber) * maxFeePerGas.toNumber() : DEFAULT_TVM_FEE_LIMIT;
+    tronWeb = getTronWebFromEvmSigner(contract.signer);
+    populatedTransaction = sendRawTxn
+      ? { from: await contract.signer.getAddress(), to: contract.address, data: (args as Array<string>)[0] }
+      : await contract.populateTransaction[method](...args, { value });
+  } catch (error) {
+    retries ??= TRANSACTION_SUBMISSION_RETRIES_DEFAULT;
+    if (--retries < 0) {
+      throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);
+    }
+    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries, onBroadcast);
+  }
 
   logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit });
   let result;

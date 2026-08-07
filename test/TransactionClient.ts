@@ -7,6 +7,7 @@ import {
 } from "../src/clients";
 import {
   BigNumber,
+  CHAIN_IDs,
   dispatchTransaction,
   ethers,
   isDefined,
@@ -127,9 +128,13 @@ describe("TransactionClient", function () {
     const chainId = chainIds[0];
     const nonce = 7;
 
-    function makeTransaction(provider: Record<string, unknown>, send: () => Promise<never>): AugmentedTransaction {
+    function makeTransaction(
+      provider: Record<string, unknown>,
+      send: () => Promise<never>,
+      transactionChainId = chainId
+    ): AugmentedTransaction {
       return {
-        chainId,
+        chainId: transactionChainId,
         contract: {
           address,
           signer: { getAddress: () => signer.getAddress() },
@@ -152,6 +157,7 @@ describe("TransactionClient", function () {
       delete process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`];
       delete process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`];
       delete process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`];
+      delete process.env[`TRANSACTION_SUBMISSION_RETRIES_${CHAIN_IDs.TRON}`];
     });
 
     it("preserves the nonce after an ambiguous EVM send error", async function () {
@@ -176,6 +182,19 @@ describe("TransactionClient", function () {
       const transaction = makeTransaction(provider, () => Promise.reject(new Error("should not send")));
 
       await expect(new TransactionClient(spyLogger).submit(chainId, [transaction])).to.be.rejectedWith(
+        DefinitiveTransactionFailure
+      );
+    });
+
+    it("classifies exhausted TVM setup failures as definitive", async function () {
+      process.env[`TRANSACTION_SUBMISSION_RETRIES_${CHAIN_IDs.TRON}`] = "0";
+      const transaction = makeTransaction(
+        { getNetwork: () => Promise.reject(new Error("unavailable")) },
+        () => Promise.reject(new Error("should not send")),
+        CHAIN_IDs.TRON
+      );
+
+      await expect(new TransactionClient(spyLogger).submit(CHAIN_IDs.TRON, [transaction])).to.be.rejectedWith(
         DefinitiveTransactionFailure
       );
     });
@@ -392,31 +411,37 @@ describe("TransactionClient", function () {
     it("keeps the original pending when its replacement is rejected before broadcast", async function () {
       const chainId = chainIds[0];
       let submissions = 0;
-      class ReplacementRejectingClient extends MockedTransactionClient {
-        protected override _getTransactionPromise(
-          txn: AugmentedTransaction,
-          nonce: number | null
-        ): Promise<TransactionResponse> {
-          if (++submissions === 2) {
-            return Promise.reject(new DefinitiveTransactionFailure("Replacement rejected before broadcast"));
+      for (const replacementError of [
+        new DefinitiveTransactionFailure("Replacement rejected before broadcast"),
+        makeEthersError(ethers.errors.REPLACEMENT_UNDERPRICED),
+      ]) {
+        submissions = 0;
+        class ReplacementRejectingClient extends MockedTransactionClient {
+          protected override _getTransactionPromise(
+            txn: AugmentedTransaction,
+            nonce: number | null
+          ): Promise<TransactionResponse> {
+            if (++submissions === 2) {
+              return Promise.reject(replacementError);
+            }
+            return super._getTransactionPromise(txn, nonce);
           }
-          return super._getTransactionPromise(txn, nonce);
         }
+        const client = new ReplacementRejectingClient(spyLogger);
+        let blockNumber = 100;
+        const transaction = makeConfirmationTxn(chainId, {
+          getBlockNumber: () => Promise.resolve((blockNumber += 2)),
+          getTransactionCount: () => Promise.resolve(1),
+        });
+        transaction.onBroadcast = () => undefined;
+        client.waitOverride = () => Promise.reject(makeEthersError(ethers.errors.TIMEOUT));
+
+        const error = await client.submit(chainId, [transaction]).catch((reason) => reason);
+
+        expect(error).to.be.an.instanceof(TransactionConfirmationPendingError);
+        expect(error.transactionHash).to.equal(ethers.utils.id(`Across-v2-${address}-${method}-1`));
+        expect(submissions).to.equal(2);
       }
-      const client = new ReplacementRejectingClient(spyLogger);
-      let blockNumber = 100;
-      const transaction = makeConfirmationTxn(chainId, {
-        getBlockNumber: () => Promise.resolve((blockNumber += 2)),
-        getTransactionCount: () => Promise.resolve(1),
-      });
-      transaction.onBroadcast = () => undefined;
-      client.waitOverride = () => Promise.reject(makeEthersError(ethers.errors.TIMEOUT));
-
-      const error = await client.submit(chainId, [transaction]).catch((reason) => reason);
-
-      expect(error).to.be.an.instanceof(TransactionConfirmationPendingError);
-      expect(error.transactionHash).to.equal(ethers.utils.id(`Across-v2-${address}-${method}-1`));
-      expect(submissions).to.equal(2);
     });
 
     it("Tolerates transient RPC errors while confirming", async function () {
