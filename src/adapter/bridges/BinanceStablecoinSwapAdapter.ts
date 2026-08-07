@@ -50,22 +50,33 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     amount: BigNumber,
     simMode: boolean
   ): Promise<TransactionResponse> {
-    const adapter = await this.getAdapter(l1Token, l2Token);
-    const route = this.getRoute();
-    // Binance withdrawals land on the exchange account's withdrawal address, so the only supported recipient is
-    // the signer itself.
-    assert(
-      adapter.baseSignerAddress.eq(EvmAddress.from(toAddress.toNative())),
-      "Binance withdrawal recipient must match signer"
-    );
-    const maxPendingOrders = adapter.config.maxPendingOrders.binance ?? 2;
-    if ((await adapter.getPendingOrders()).length >= maxPendingOrders) {
-      throw new BridgeTransferDeclinedError("Too many pending Binance orders to initiate a new transfer");
-    }
-    const maxFee = amount.mul(toBNWei(process.env.MAX_FEE_PCT ?? "2.5")).div(toBNWei(100));
-    if ((await adapter.getEstimatedCost(route, amount, false)).gt(maxFee)) {
-      throw new BridgeTransferDeclinedError("Estimated Binance transfer cost exceeds the maximum fee");
-    }
+    // Everything up to the initiation call is preflight: no funds can have moved, so any failure here (an
+    // unreachable Binance API included) is a decline that lets InventoryClient roll back its balance accounting.
+    const [adapter, route] = await (async (): Promise<[RebalancerBinanceStablecoinSwapAdapter, RebalanceRoute]> => {
+      const adapter = await this.getAdapter(l1Token, l2Token);
+      const route = this.getRoute();
+      // Binance withdrawals land on the exchange account's withdrawal address, so the only supported recipient is
+      // the signer itself.
+      assert(
+        adapter.baseSignerAddress.eq(EvmAddress.from(toAddress.toNative())),
+        "Binance withdrawal recipient must match signer"
+      );
+      const maxPendingOrders = adapter.config.maxPendingOrders.binance ?? 2;
+      if ((await adapter.getPendingOrders()).length >= maxPendingOrders) {
+        throw new BridgeTransferDeclinedError("Too many pending Binance orders to initiate a new transfer");
+      }
+      const maxFee = amount.mul(toBNWei(process.env.MAX_FEE_PCT ?? "2.5")).div(toBNWei(100));
+      if ((await adapter.getEstimatedCost(route, amount, false)).gt(maxFee)) {
+        throw new BridgeTransferDeclinedError("Estimated Binance transfer cost exceeds the maximum fee");
+      }
+      return [adapter, route];
+    })().catch((error) => {
+      throw error instanceof BridgeTransferDeclinedError
+        ? error
+        : new BridgeTransferDeclinedError(`Binance transfer preflight failed before submission: ${error.message}`, {
+            cause: error,
+          });
+    });
     if (simMode) {
       return { hash: ZERO_BYTES } as TransactionResponse;
     }

@@ -16,6 +16,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     options: {
       pending?: number;
       cost?: string;
+      costError?: Error;
       initialize?: boolean;
       error?: Error;
       maxPendingOrders?: number;
@@ -32,7 +33,12 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       },
       supportsRoute: () => true,
       getPendingOrders: async () => Array.from({ length: options.pending ?? 0 }, (_, index) => `order-${index}`),
-      getEstimatedCost: async () => toBNWei(options.cost ?? "0", 6),
+      getEstimatedCost: async () => {
+        if (options.costError) {
+          throw options.costError;
+        }
+        return toBNWei(options.cost ?? "0", 6);
+      },
       initializeRebalanceWithTransaction: async (_route: RebalanceRoute, amount: ReturnType<typeof toBNWei>) => {
         if (options.error) {
           throw options.error;
@@ -85,6 +91,18 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     const declined = await makeBridge({ initialize: false });
     await expect(
       declined.bridge.sendL1ToL2Transfer(declined.signer, declined.l1Token, declined.l2Token, amount, false)
+    ).to.be.rejectedWith(BridgeTransferDeclinedError);
+
+    // A preflight dependency failure happens before anything can be submitted, so it is also a decline.
+    const preflightFailed = await makeBridge({ costError: new Error("Binance API unavailable") });
+    await expect(
+      preflightFailed.bridge.sendL1ToL2Transfer(
+        preflightFailed.signer,
+        preflightFailed.l1Token,
+        preflightFailed.l2Token,
+        amount,
+        false
+      )
     ).to.be.rejectedWith(BridgeTransferDeclinedError);
 
     // A submission error is not a decline: funds may have moved, so callers must not roll back accounting.
