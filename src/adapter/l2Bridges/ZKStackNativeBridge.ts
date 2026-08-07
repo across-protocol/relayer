@@ -22,12 +22,12 @@ import { AugmentedTransaction } from "../../clients/TransactionClient";
  *
  * The wrapped native token cannot go through the asset router — the native token vault refuses to burn it
  * (`BurningNativeWETHNotSupported`) — so it has to be unwrapped into the base token first and then withdrawn
- * through the L2BaseToken system contract. That means the funds arrive on L1 as the *unwrapped* native asset.
- *
- * @dev This is only wired up for chains whose base token is ETH (i.e. zkSync Era), because the relayer already
- * re-wraps ETH into WETH on the hub chain (`AdapterManager.chainsToWrapEtherOn` includes MAINNET). On a chain with
- * a non-ETH base token (Lens, whose base token is WGHO) the withdrawal would land as unwrapped L1 GHO, which the
- * inventory book — keyed on L1 WGHO — neither tracks nor re-wraps. Wiring Lens up needs that gap closed first.
+ * through the L2BaseToken system contract. The funds arrive on L1 as whatever the chain registered as its base
+ * token (`Bridgehub.baseToken(chainId)`):
+ *   - zkSync Era's base token is ETH, delivered as a plain native transfer and re-wrapped on the hub chain
+ *     (`AdapterManager.chainsToWrapEtherOn` includes MAINNET);
+ *   - Lens registered LGHO — the wrapper itself, and the L1 "WGHO" the inventory book is keyed on — so the
+ *     withdrawal is minted by the L1 native token vault as exactly that ERC20 and needs no re-wrap.
  */
 export class ZKStackNativeBridge extends BaseL2BridgeAdapter {
   // The L2BaseToken system contract is both the transaction target and the event source; the wrapped native

@@ -187,3 +187,34 @@ contract zkStack_L2BaseToken {
         emit Withdrawal(l2Sender, l1Receiver, amount);
     }
 }
+
+// Mocks the standalone ZK Stack USDC bridge. The L2 side emits WithdrawalInitiated when a withdrawal is
+// initiated and the L1 side emits WithdrawalFinalizedSharedBridge when it is finalized; one mock serves as both,
+// so l1USDCBridge() (the L2 bridge's pointer to its L1 counterparty) returns the mock itself.
+contract zkStack_USDCBridge {
+    function l1USDCBridge() external view returns (address) {
+        return address(this);
+    }
+
+    event WithdrawalInitiated(
+        address indexed l2Sender,
+        address indexed l1Receiver,
+        address indexed l2Token,
+        uint256 amount
+    );
+
+    event WithdrawalFinalizedSharedBridge(
+        uint256 indexed chainId,
+        address indexed to,
+        address indexed l1Token,
+        uint256 amount
+    );
+
+    function emitWithdrawalInitiated(address l2Sender, address l1Receiver, address l2Token, uint256 amount) external {
+        emit WithdrawalInitiated(l2Sender, l1Receiver, l2Token, amount);
+    }
+
+    function emitWithdrawalFinalized(uint256 chainId, address to, address l1Token, uint256 amount) external {
+        emit WithdrawalFinalizedSharedBridge(chainId, to, l1Token, amount);
+    }
+}

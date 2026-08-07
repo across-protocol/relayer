@@ -2,6 +2,7 @@ import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { utils } from "@across-protocol/sdk";
 import { ZKStackBridge } from "../../src/adapter/l2Bridges/ZKStackBridge";
 import { ZKStackNativeBridge } from "../../src/adapter/l2Bridges/ZKStackNativeBridge";
+import { ZKStackUSDCBridge } from "../../src/adapter/l2Bridges/ZKStackUSDCBridge";
 import { BinanceCEXBridge } from "../../src/adapter/l2Bridges";
 import { CANONICAL_L2_BRIDGE, CUSTOM_L2_BRIDGE, getContractEntry, SUPPORTED_TOKENS } from "../../src/common";
 import { EvmAddress, toBNWei } from "../../src/utils/SDKUtils";
@@ -198,6 +199,108 @@ describe("Cross Chain Adapter: ZK Stack Native L2 Bridge", function () {
       await adapter.getL2PendingWithdrawalAmount(searchConfig, searchConfig, toAddress(monitoredEoa), toAddress(l2Weth))
     ).to.equal(amountToWithdraw);
   });
+
+  it("targets the wrapped base token and L2BaseToken on Lens", async function () {
+    // Lens's base token is not ETH, so the unwrap leg must resolve the wrappedNativeToken contract entry.
+    const l1Wgho = TOKEN_SYMBOLS_MAP.WGHO.addresses[CHAIN_IDs.MAINNET];
+    const l2Wgho = TOKEN_SYMBOLS_MAP.WGHO.addresses[CHAIN_IDs.LENS];
+    const lensAdapter = new ZKStackNativeBridge(CHAIN_IDs.LENS, hubChainId, ...(await signers()), toAddress(l1Wgho));
+
+    const txns = await lensAdapter.constructWithdrawToL1Txns(
+      toAddress(monitoredEoa),
+      toAddress(l2Wgho),
+      toAddress(l1Wgho),
+      toBNWei("1")
+    );
+    expect(txns.length).to.equal(2);
+    const [unwrap, withdraw] = txns;
+    expect(unwrap.contract.address).to.equal(getContractEntry(CHAIN_IDs.LENS, "wrappedNativeToken").address);
+    expect(withdraw.contract.address).to.equal(getContractEntry(CHAIN_IDs.LENS, "l2BaseToken").address);
+  });
+});
+
+describe("Cross Chain Adapter: ZK Stack USDC L2 Bridge", function () {
+  const hubChainId = CHAIN_IDs.MAINNET;
+  const l2ChainId = CHAIN_IDs.LENS;
+  const l1Token = TOKEN_SYMBOLS_MAP.USDC.addresses[hubChainId];
+  const l2Token = TOKEN_SYMBOLS_MAP.USDC.addresses[l2ChainId];
+
+  let adapter: MockZKStackUSDCBridge;
+  let monitoredEoa: string;
+  let usdcBridge: Contract;
+  let searchConfig: utils.EventSearchConfig;
+
+  beforeEach(async function () {
+    searchConfig = { from: 0, to: 1_000_000 };
+    const [deployer] = await ethers.getSigners();
+    monitoredEoa = randomAddress();
+
+    usdcBridge = await (await getContractFactory("zkStack_USDCBridge", deployer)).deploy();
+    adapter = new MockZKStackUSDCBridge(l2ChainId, hubChainId, deployer, deployer, toAddress(l1Token));
+    // Only the L2 side is injected; the adapter resolves the L1 side from the L2 bridge's l1USDCBridge(),
+    // which the mock points back at itself so one deployment serves as both sides.
+    adapter.setTargetL2Bridge(usdcBridge);
+  });
+
+  it("constructWithdrawToL1Txns withdraws via the standalone USDC bridge", async function () {
+    const amountToWithdraw = toBNWei("100", 6);
+    const txns = await adapter.constructWithdrawToL1Txns(
+      toAddress(monitoredEoa),
+      toAddress(l2Token),
+      toAddress(l1Token),
+      amountToWithdraw
+    );
+
+    expect(txns.length).to.equal(1);
+    const [result] = txns;
+    expect(result.chainId).to.equal(l2ChainId);
+    expect(result.contract.address).to.equal(usdcBridge.address);
+    expect(result.method).to.equal("withdraw");
+    expect(result.nonMulticall).to.be.true;
+    expect(result.args).to.deep.equal([monitoredEoa, toAddress(l2Token).toNative(), amountToWithdraw]);
+  });
+
+  it("getL2PendingWithdrawalAmount reconciles the L2 initiation against the L1 finalization", async function () {
+    const amountToWithdraw = toBNWei("100", 6);
+
+    await usdcBridge.emitWithdrawalInitiated(monitoredEoa, monitoredEoa, l2Token, amountToWithdraw);
+    expect(
+      await adapter.getL2PendingWithdrawalAmount(
+        searchConfig,
+        searchConfig,
+        toAddress(monitoredEoa),
+        toAddress(l2Token)
+      )
+    ).to.equal(amountToWithdraw);
+
+    // A finalization for another receiver is excluded by the topic filter and does not settle the withdrawal.
+    await usdcBridge.emitWithdrawalFinalized(l2ChainId, randomAddress(), l1Token, amountToWithdraw);
+    expect(
+      await adapter.getL2PendingWithdrawalAmount(
+        searchConfig,
+        searchConfig,
+        toAddress(monitoredEoa),
+        toAddress(l2Token)
+      )
+    ).to.equal(amountToWithdraw);
+
+    await usdcBridge.emitWithdrawalFinalized(l2ChainId, monitoredEoa, l1Token, amountToWithdraw);
+    expect(
+      await adapter.getL2PendingWithdrawalAmount(
+        searchConfig,
+        searchConfig,
+        toAddress(monitoredEoa),
+        toAddress(l2Token)
+      )
+    ).to.equal(0);
+  });
+
+  it("requiredTokenApprovals names the USDC bridge as the spender", async function () {
+    const approvals = adapter.requiredTokenApprovals();
+    expect(approvals.length).to.equal(1);
+    expect(approvals[0].token.eq(toAddress(l2Token))).to.be.true;
+    expect(approvals[0].bridge.eq(toAddress(usdcBridge.address))).to.be.true;
+  });
 });
 
 describe("Cross Chain Adapter: ZK Stack L2 bridge configuration", function () {
@@ -214,9 +317,9 @@ describe("Cross Chain Adapter: ZK Stack L2 bridge configuration", function () {
     [CHAIN_IDs.LENS]: {
       WETH: ZKStackBridge,
       // Standalone bridge, unknown to the native token vault, and misfinalized if sent via the asset router.
-      USDC: undefined,
-      // Lens's wrapped base token; withdrawing it would deliver untracked L1 GHO.
-      WGHO: undefined,
+      USDC: ZKStackUSDCBridge,
+      // Lens's wrapped base token, unburnable by the vault; exits via L2BaseToken and lands on L1 as LGHO.
+      WGHO: ZKStackNativeBridge,
     },
     [CHAIN_IDs.ZK_SYNC]: {
       USDT: ZKStackBridge,
@@ -254,6 +357,12 @@ class MockZKStackBridge extends ZKStackBridge {
 }
 
 class MockZKStackNativeBridge extends ZKStackNativeBridge {
+  setTargetL2Bridge(l2Bridge: Contract) {
+    this.l2Bridge = l2Bridge;
+  }
+}
+
+class MockZKStackUSDCBridge extends ZKStackUSDCBridge {
   setTargetL2Bridge(l2Bridge: Contract) {
     this.l2Bridge = l2Bridge;
   }

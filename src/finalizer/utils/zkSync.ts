@@ -90,10 +90,20 @@ async function getEOAWithdrawals(
   const { address: baseTokenAddress, abi: baseTokenAbi } = getContractEntry(l2ChainId, "l2BaseToken");
   const l2BaseToken = new Contract(baseTokenAddress, baseTokenAbi, provider);
 
-  const [burnEvents, baseTokenWithdrawalEvents] = await Promise.all([
+  // USDC on some ZK Stack chains (Lens) exits over the standalone USDC bridge rather than the asset router.
+  let usdcBridge: Contract | undefined;
+  if (isDefined(CONTRACT_ADDRESSES[l2ChainId]?.["usdcBridge"]?.address)) {
+    const { address, abi } = getContractEntry(l2ChainId, "usdcBridge");
+    usdcBridge = new Contract(address, abi, provider);
+  }
+
+  const [burnEvents, baseTokenWithdrawalEvents, usdcWithdrawalEvents] = await Promise.all([
     // The burn is emitted against the counterparty chain, which for a withdrawal is the hub chain.
     paginatedEventQuery(nativeTokenVault, nativeTokenVault.filters.BridgeBurn(l1ChainId, null, senders), searchConfig),
     paginatedEventQuery(l2BaseToken, l2BaseToken.filters.Withdrawal(senders), searchConfig),
+    usdcBridge
+      ? paginatedEventQuery(usdcBridge, usdcBridge.filters.WithdrawalInitiated(senders), searchConfig)
+      : Promise.resolve([]),
   ]);
 
   // A base token withdrawal is attributed to the chain's wrapped native token, since that is the token the
@@ -117,6 +127,11 @@ async function getEOAWithdrawals(
       event,
       amountToReturn: event.args._amount,
       l2TokenAddress: wrappedNativeToken,
+    })),
+    ...usdcWithdrawalEvents.map((event) => ({
+      event,
+      amountToReturn: event.args.amount,
+      l2TokenAddress: event.args.l2Token,
     })),
   ];
 
