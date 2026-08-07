@@ -522,7 +522,7 @@ async function _runTransaction(
         message = `Unable to simulate transaction (${cause}).`;
         if ([cause, reason].some((err) => err.includes("revert"))) {
           logger.warn({ at, message, retries, reason, ...commonFields });
-          throw error;
+          throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);
         }
         scaleGas = ["gas", "fee"].some((cause) => cause.includes(reason));
         break;
@@ -641,12 +641,22 @@ async function _runTransactionTvm(
 
   logger.debug({ at, message: "Submitting TVM transaction.", chain, method, feeLimit });
   let result;
+  let submissionAttempted = false;
+  let submissionHash: string | undefined;
   try {
-    result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
+    result = await submitTransactionTvm(
+      tronWeb,
+      populatedTransaction,
+      feeLimit,
+      value.toNumber(),
+      (transactionHash) => {
+        submissionAttempted = true;
+        submissionHash = transactionHash;
+      }
+    );
   } catch (error) {
-    // The TRON helper signs and broadcasts internally, so a thrown RPC response cannot prove that no funds moved.
-    if (onBroadcast) {
-      throw new TransactionSubmissionPendingError(error);
+    if (onBroadcast && submissionAttempted) {
+      throw new TransactionSubmissionPendingError(error, submissionHash, 0);
     }
     if (--retries < 0) {
       throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);

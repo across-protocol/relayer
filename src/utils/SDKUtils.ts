@@ -1,4 +1,6 @@
 import * as sdk from "@across-protocol/sdk";
+import type { PopulatedTransaction } from "ethers";
+import type { TronWeb } from "tronweb";
 
 // EVMBlockFinder returns _only_ EVMBlock types.
 export class EVMBlockFinder extends sdk.arch.evm.EVMBlockFinder {}
@@ -43,7 +45,51 @@ export const {
   createDefaultTransaction,
   getCCTPDepositAccounts,
 } = sdk.arch.svm;
-export const { submitTransaction: submitTransactionTvm } = sdk.arch.tvm;
+export async function submitTransactionTvm(
+  tronWeb: TronWeb,
+  populatedTx: PopulatedTransaction,
+  feeLimit: number,
+  callValue = 0,
+  onSubmission?: (transactionHash?: string) => void
+): Promise<{ txid: string; result: boolean }> {
+  if (!onSubmission) {
+    return sdk.arch.tvm.submitTransaction(tronWeb, populatedTx, feeLimit, callValue);
+  }
+  const { to, data } = populatedTx;
+  if (!to) {
+    throw new Error("submitTransaction: populatedTx must have a 'to' field");
+  }
+  const recipient = TvmAddress.from(to).toNative();
+  const owner = tronWeb.defaultAddress?.base58;
+  if (!owner) {
+    throw new Error("submitTransaction: TronWeb instance must have a default address configured");
+  }
+  let unsignedTransaction;
+  if (!sdk.utils.isDefined(data)) {
+    if (callValue <= 0) {
+      throw new Error("submitTransaction: a transaction with no calldata must transfer a non-zero value");
+    }
+    unsignedTransaction = await tronWeb.transactionBuilder.sendTrx(recipient, callValue, owner);
+  } else {
+    const transaction = await tronWeb.transactionBuilder.triggerSmartContract(
+      recipient,
+      "",
+      { feeLimit, input: data.startsWith("0x") ? data.slice(2) : data, callValue },
+      [],
+      owner
+    );
+    if (!transaction?.result?.result) {
+      throw new Error(
+        `submitTransaction: triggerSmartContract failed: ${transaction?.result?.message ?? "Unknown error"}`
+      );
+    }
+    unsignedTransaction = transaction.transaction;
+  }
+  const signed = await tronWeb.trx.sign(unsignedTransaction);
+  onSubmission(signed.txID);
+  const broadcast = await tronWeb.trx.sendRawTransaction(signed);
+  return { txid: broadcast.txid ?? signed.txID, result: broadcast.result ?? false };
+}
 export type SVMProvider = sdk.arch.svm.SVMProvider;
 export type LatestBlockhash = sdk.arch.svm.LatestBlockhash;
 export type SolanaTransaction = sdk.arch.svm.SolanaTransaction;
