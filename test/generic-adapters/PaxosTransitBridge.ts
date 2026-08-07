@@ -398,14 +398,23 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
     it("identifies outstanding Paxos orders and matching routes", function () {
       const order = buildOrder({ status: "PROCESSING", remainingAmountDue: "1000" });
       const routeParams = {
-        wantAsset: l2UsdgAddress,
+        wantAsset: toAddress(l2UsdgAddress),
         sourceChainId: hubChainId,
         destinationChainId: l2ChainId,
-        receiver: relayerAddress,
+        receiver: toAddress(relayerAddress),
       };
       expect(isPaxosTransitOrderOutstanding(order)).to.be.true;
       expect(paxosTransitOrderMatchesRoute(order, routeParams)).to.be.true;
       expect(isPaxosTransitOrderOutstanding(buildOrder({ status: "PROCESSED", remainingAmountDue: "0" }))).to.be.false;
+
+      // Order fields come from the Paxos API: casing must not matter, and a malformed address must
+      // fail to match rather than throw.
+      const lowercased = buildOrder({
+        wantAsset: l2UsdgAddress.toLowerCase(),
+        receiver: relayerAddress.toLowerCase(),
+      });
+      expect(paxosTransitOrderMatchesRoute(lowercased, routeParams)).to.be.true;
+      expect(paxosTransitOrderMatchesRoute(buildOrder({ wantAsset: "not-an-address" }), routeParams)).to.be.false;
     });
 
     it("routes mainnet USDG-MAINNET to Robinhood USDG", function () {

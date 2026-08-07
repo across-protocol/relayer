@@ -17,6 +17,7 @@ import {
   toBN,
   winston,
   Address,
+  compareAddressesSimple,
   EvmAddress,
   toAddressType,
 } from "./";
@@ -147,17 +148,20 @@ export function getPaxosTransitOfferAssetsForWantAsset(dstChainId: number, wantA
 export function paxosTransitOrderMatchesRoute(
   order: PaxosTransitOrder,
   params: {
-    wantAsset: string;
+    wantAsset: Address;
     sourceChainId: number;
     destinationChainId: number;
-    receiver: string;
+    receiver: Address;
   }
 ): boolean {
+  // order.wantAsset and order.receiver arrive as raw strings from the Paxos API, so compare them
+  // case-insensitively rather than parsing into an Address — a malformed field should fail to match,
+  // not throw.
   return (
-    order.wantAsset.toLowerCase() === params.wantAsset.toLowerCase() &&
+    compareAddressesSimple(order.wantAsset, params.wantAsset.toNative()) &&
     order.sourceChainId === params.sourceChainId &&
     order.destinationChainId === params.destinationChainId &&
-    order.receiver.toLowerCase() === params.receiver.toLowerCase()
+    compareAddressesSimple(order.receiver, params.receiver.toNative())
   );
 }
 

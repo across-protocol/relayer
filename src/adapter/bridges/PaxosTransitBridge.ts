@@ -157,10 +157,10 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     const l2TokenDecimals = getTokenInfo(this.l2TokenAddress, this.l2chainId).decimals;
     const l1TokenDecimals = this.l1TokenInfo.decimals;
     const routeParams = {
-      wantAsset: this.l2TokenAddress.toNative(),
+      wantAsset: this.l2TokenAddress,
       sourceChainId: this.hubChainId,
       destinationChainId: this.l2chainId,
-      receiver: userAddress.toNative(),
+      receiver: userAddress,
     };
 
     const outstandingOrders = orders.filter(
