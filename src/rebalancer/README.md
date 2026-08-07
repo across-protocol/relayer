@@ -250,7 +250,7 @@ Design tradeoff:
 
 ### AdapterManager bridge-owned same-asset initiation
 
-Same-token routes registered in `CANONICAL_BRIDGE` or `CUSTOM_BRIDGE` are initiated by the primary relayer's InventoryClient through AdapterManager. The initiating relayer must use the same signer, Redis namespace, `REBALANCER_EXTERNAL_CONFIG`, Binance API key, and Binance secret-key CLI argument as the swap rebalancer. The bridge adapter applies the configured transfer cap, pending-order limit, fee limit, and live Binance withdrawal limits before InventoryClient reserves the accepted amount.
+Same-token routes registered in `CANONICAL_BRIDGE` or `CUSTOM_BRIDGE` are initiated through AdapterManager by whichever process calls `InventoryClient.rebalanceInventoryIfNeeded()`. In production that is the `--rebalancer` entrypoint (`yarn run-rebalancer`, the inventory-rebalancer bot) — NOT the `--relayer` fill bot, which never executes inventory rebalances. Point Binance credentials and rebalancer configuration at the rebalancer bot: it must use the same signer, Redis namespace, `REBALANCER_EXTERNAL_CONFIG`, Binance API key, and Binance secret-key CLI argument as the swap rebalancer. The bridge adapter applies the configured transfer cap, pending-order limit, fee limit, and live Binance withdrawal limits before InventoryClient reserves the accepted amount.
 
 AdapterManager only initiates these Redis-backed orders. The regularly scheduled `swapRebalancer` owns lifecycle progression; its Binance adapter includes bridge-derived routes for status updates without adding those routes to cumulative rebalance selection. Disable the dedicated `sameAssetRebalancer` schedule before enabling an AdapterManager route so only one process owns initiation.
 
