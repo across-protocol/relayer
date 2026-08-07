@@ -1,4 +1,4 @@
-import { expect, sinon } from "./utils";
+import { expect, makeFakeBinanceApi, sinon } from "./utils";
 import {
   type BinanceApi,
   BINANCE_ORDER_RECV_WINDOW_MS,
@@ -131,16 +131,14 @@ describe("BinanceUtils recvWindow helpers", function () {
   it("reads the withdraw quota off the wallet connector, unvalidated", async function () {
     let calls = 0;
     // Binance reports both quota fields as strings; the helper must not coerce them itself.
-    const wallet = {
-      restAPI: {
-        fetchWithdrawQuota: async () => {
-          calls++;
-          return { data: async () => ({ wdQuota: "10000", usedWdQuota: "1" }) };
-        },
+    const binanceApi = makeFakeBinanceApi({
+      fetchWithdrawQuota: () => {
+        calls++;
+        return { wdQuota: "10000", usedWdQuota: "1" };
       },
-    } as unknown as Parameters<typeof getBinanceWithdrawalLimits>[0];
+    });
 
-    const quota = await getBinanceWithdrawalLimits(wallet);
+    const quota = await getBinanceWithdrawalLimits(binanceApi);
 
     expect(calls).to.equal(1);
     expect(quota).to.deep.equal({ wdQuota: "10000", usedWdQuota: "1" });
@@ -148,20 +146,20 @@ describe("BinanceUtils recvWindow helpers", function () {
 
   it("applies the read recvWindow to signed read helpers that accept it", async function () {
     const calls: Record<string, unknown> = {};
-    const binanceApi = {
-      tradeFee: async (payload: object) => {
+    const binanceApi = makeFakeBinanceApi({
+      tradeFee: (payload) => {
         calls.tradeFee = payload;
         return [];
       },
-      depositAddress: async (payload: object) => {
+      depositAddress: (payload) => {
         calls.depositAddress = payload;
         return { address: "0x1", tag: "", coin: "USDT", url: "" };
       },
-      allOrders: async (payload: object) => {
+      allOrders: (payload) => {
         calls.allOrders = payload;
         return [];
       },
-    } as unknown as Parameters<typeof getBinanceTradeFees>[0];
+    });
 
     await getBinanceTradeFees(binanceApi);
     await getBinanceDepositAddress(binanceApi, { coin: "USDT", network: "ETH" });
@@ -181,12 +179,12 @@ describe("BinanceUtils recvWindow helpers", function () {
 
   it("applies the market-order recvWindow to signed order helpers", async function () {
     const calls: Record<string, unknown> = {};
-    const binanceApi = {
-      order: async (payload: object) => {
+    const binanceApi = makeFakeBinanceApi({
+      newOrder: (payload) => {
         calls.order = payload;
         return { status: "FILLED" };
       },
-    } as unknown as Parameters<typeof submitBinanceOrder>[0];
+    });
 
     await submitBinanceOrder(binanceApi, {
       symbol: "USDCUSDT",
@@ -206,12 +204,12 @@ describe("BinanceUtils recvWindow helpers", function () {
 
   it("applies the withdrawal recvWindow to signed withdrawal helpers", async function () {
     const calls: Record<string, unknown> = {};
-    const binanceApi = {
-      withdraw: async (payload: object) => {
+    const binanceApi = makeFakeBinanceApi({
+      withdraw: (payload) => {
         calls.withdraw = payload;
         return { id: "withdrawal-id" };
       },
-    } as unknown as Parameters<typeof submitBinanceWithdrawal>[0];
+    });
 
     await submitBinanceWithdrawal(binanceApi, {
       coin: "USDT",
@@ -250,9 +248,9 @@ describe("BinanceUtils: getFillCommission", function () {
       commission: index === 0 ? "0.2" : "0.1",
       commissionAsset: index === 1 ? "BNB" : "USDC",
     }));
-    const myTradesStub = sinon.stub().resolves(trades);
-    const binanceApi: Pick<BinanceApi, "myTrades"> = {
-      myTrades: myTradesStub,
+    const myTradesStub = sinon.stub().callsFake(async () => ({ data: async () => trades }));
+    const binanceApi: Pick<BinanceApi, "spot"> = {
+      spot: { restAPI: { myTrades: myTradesStub } } as unknown as BinanceApi["spot"],
     };
     const spotMarketMeta: SpotMarketMeta = {
       symbol: "USDCUSDT",
@@ -272,6 +270,7 @@ describe("BinanceUtils: getFillCommission", function () {
       symbol: "USDCUSDT",
       orderId: 123,
       limit: 1000,
+      recvWindow: BINANCE_READ_RECV_WINDOW_MS,
     });
   });
 });

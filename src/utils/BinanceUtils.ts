@@ -1,12 +1,14 @@
-import Binance, {
-  DepositHistoryResponse,
-  WithdrawHistoryResponse,
-  OrderType_LT,
-  Symbol,
-  type Binance as BinanceApi,
-} from "binance-api-node";
-import { type Wallet as BinanceWallet, type WalletRestAPI } from "@binance/wallet";
-export type { BinanceApi };
+import { Spot as BinanceSpot, type SpotRestAPI } from "@binance/spot";
+import { Wallet as BinanceWallet, type WalletRestAPI } from "@binance/wallet";
+
+/**
+ * Binance splits its REST surface across per-product connectors. Callers hold one bundle so that
+ * plumbing a client through the codebase stays a single argument.
+ */
+export type BinanceApi = {
+  spot: BinanceSpot;
+  wallet: BinanceWallet;
+};
 import minimist from "minimist";
 import { JsonFragment } from "@ethersproject/abi";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, CHAIN_IDs, truncate } from "./";
@@ -19,6 +21,8 @@ import { fromWei, retry, toBNWei } from "./SDKUtils";
 let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
 const BINANCE_TRADES_FETCH_LIMIT = 1000;
+// Depth requested when sweeping the book for a market-order price estimate.
+export const BINANCE_ORDER_BOOK_DEPTH = 5000;
 
 // Binance only accepts a signed request while its timestamp remains within recvWindow.
 // Signed reads can tolerate a much larger window because a delayed accepted request still returns current server data.
@@ -27,9 +31,9 @@ export const BINANCE_READ_RECV_WINDOW_MS = 60_000;
 export const BINANCE_ORDER_RECV_WINDOW_MS = 60_000;
 // Withdrawals remain tight so delayed accepted requests cannot submit funds transfers much later than intended.
 export const BINANCE_WITHDRAW_RECV_WINDOW_MS = 5_000;
-// `@binance/wallet` defaults to a 1s request timeout, which a proxied SAPI read can exceed. The quota read
-// sits on `InventoryClient#update` rather than anything latency-sensitive, so bound it generously.
-export const BINANCE_WALLET_TIMEOUT_MS = 30_000;
+// The official connectors default to a 1s request timeout, which a proxied SAPI read can exceed. These
+// calls sit on `InventoryClient#update` and finalize paths rather than anything latency-sensitive.
+export const BINANCE_TIMEOUT_MS = 30_000;
 
 export type WithdrawalQuota = {
   wdQuota: number;
@@ -46,23 +50,31 @@ export type SpotMarketMeta = {
   isBuy: boolean;
 };
 
-type BinanceTradeReader = Pick<BinanceApi, "myTrades">;
-type FillCommissionMarketMeta = Pick<SpotMarketMeta, "symbol" | "baseAssetName" | "quoteAssetName" | "isBuy">;
+/** The connectors type integral fields as `number | bigint`; the ledger wants plain numbers. */
+function toNumber(value: number | bigint | undefined): number | undefined {
+  return isDefined(value) ? Number(value) : undefined;
+}
 
-type BinanceApiWithRecvWindow = BinanceApi & {
-  tradeFee(options?: { recvWindow?: number; useServerTime?: boolean }): ReturnType<BinanceApi["tradeFee"]>;
-  withdraw(
-    options: Parameters<BinanceApi["withdraw"]>[0] & {
-      recvWindow?: number;
-      withdrawOrderId?: string;
-    }
-  ): ReturnType<BinanceApi["withdraw"]>;
-  withdrawHistory(
-    options: Parameters<BinanceApi["withdrawHistory"]>[0] & {
-      recvWindow?: number;
-    }
-  ): ReturnType<BinanceApi["withdrawHistory"]>;
-};
+/** Exchange metadata and one market's record, re-exported so callers need not import the connector. */
+export type BinanceExchangeInfo = SpotRestAPI.ExchangeInfoResponse;
+export type BinanceOrderRequest = SpotRestAPI.NewOrderRequest;
+export type BinanceOrderRecord = NonNullable<SpotRestAPI.AllOrdersResponse>[number];
+export type BinanceOrderResult = SpotRestAPI.NewOrderResponse;
+export type BinanceTradeFees = WalletRestAPI.TradeFeeResponse;
+export type BinanceDepositAddress = WalletRestAPI.DepositAddressResponse;
+
+/**
+ * The REST order book arrives as `[price, quantity]` string tuples. Callers work in named fields, so
+ * normalise here rather than at each use site.
+ */
+export type BinanceOrderBookLevel = { price: string; quantity: string };
+export type BinanceOrderBook = { bids: BinanceOrderBookLevel[]; asks: BinanceOrderBookLevel[] };
+
+/** One entry from the spot connector's exchangeInfo `symbols` array. */
+export type SpotSymbolInfo = NonNullable<SpotRestAPI.ExchangeInfoResponse["symbols"]>[number];
+
+type BinanceTradeReader = Pick<BinanceApi, "spot">;
+type FillCommissionMarketMeta = Pick<SpotMarketMeta, "symbol" | "baseAssetName" | "quoteAssetName" | "isBuy">;
 
 // Alias for Binance network symbols.
 export const BINANCE_NETWORKS: { [chainId: number]: string } = {
@@ -195,15 +207,23 @@ export function binanceCredentialsConfigured(): boolean {
  * @param url The base HTTP url to use to connect to Binance.
  * @returns A Binance client from `binance-api-node`.
  */
-export async function getBinanceApiClient(url = "https://api.binance.com") {
+export async function getBinanceApiClient(url = "https://api.binance.com"): Promise<BinanceApi> {
   const apiKey = process.env["BINANCE_API_KEY"];
   const secretKey = (await getBinanceSecretKey()) ?? process.env["BINANCE_HMAC_KEY"];
   assert(isDefined(apiKey) && isDefined(secretKey), "Binance client cannot be constructed due to missing keys.");
-  return Binance({
-    apiKey,
-    apiSecret: secretKey,
-    httpBase: url,
-  });
+  return buildBinanceApi(apiKey, secretKey, url);
+}
+
+/**
+ * Constructs the per-product connectors from an already-resolved credential pair.
+ * @dev Both connectors need an explicit timeout: the default is 1s, which a proxied SAPI read exceeds.
+ */
+export function buildBinanceApi(apiKey: string, apiSecret: string, url = "https://api.binance.com"): BinanceApi {
+  const configurationRestAPI = { apiKey, apiSecret, basePath: url, timeout: BINANCE_TIMEOUT_MS };
+  return {
+    spot: new BinanceSpot({ configurationRestAPI }),
+    wallet: new BinanceWallet({ configurationRestAPI }),
+  };
 }
 
 /**
@@ -243,42 +263,75 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
  * `usedWdQuota` the amount already used.
  */
 export async function getBinanceWithdrawalLimits(
-  wallet: BinanceWallet
+  binanceApi: BinanceApi
 ): Promise<WalletRestAPI.FetchWithdrawQuotaResponse> {
-  const response = await wallet.restAPI.fetchWithdrawQuota();
+  const response = await binanceApi.wallet.restAPI.fetchWithdrawQuota();
   return response.data();
 }
 
-export async function getBinanceTradeFees(binanceApi: BinanceApi): ReturnType<BinanceApi["tradeFee"]> {
-  return (binanceApi as BinanceApiWithRecvWindow).tradeFee({ recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+export async function getBinanceTradeFees(binanceApi: BinanceApi): Promise<WalletRestAPI.TradeFeeResponse> {
+  const response = await binanceApi.wallet.restAPI.tradeFee({ recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+  return response.data();
 }
 
 export async function getBinanceDepositAddress(
   binanceApi: BinanceApi,
-  options: Parameters<BinanceApi["depositAddress"]>[0]
-): ReturnType<BinanceApi["depositAddress"]> {
-  return binanceApi.depositAddress({ ...options, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+  options: WalletRestAPI.DepositAddressRequest
+): Promise<WalletRestAPI.DepositAddressResponse> {
+  const response = await binanceApi.wallet.restAPI.depositAddress({
+    ...options,
+    recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+  });
+  return response.data();
 }
 
 export async function getBinanceAllOrders(
   binanceApi: BinanceApi,
-  options: Parameters<BinanceApi["allOrders"]>[0]
-): ReturnType<BinanceApi["allOrders"]> {
-  return binanceApi.allOrders({ ...options, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
+  options: SpotRestAPI.AllOrdersRequest
+): Promise<SpotRestAPI.AllOrdersResponse> {
+  const response = await binanceApi.spot.restAPI.allOrders({
+    ...options,
+    recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+  });
+  return response.data();
+}
+
+export async function getBinanceExchangeInfo(binanceApi: BinanceApi): Promise<BinanceExchangeInfo> {
+  const response = await binanceApi.spot.restAPI.exchangeInfo();
+  return response.data();
+}
+
+export async function getBinanceOrderBook(
+  binanceApi: BinanceApi,
+  symbol: string,
+  limit: number
+): Promise<BinanceOrderBook> {
+  const response = await binanceApi.spot.restAPI.depth({ symbol, limit });
+  const { bids = [], asks = [] } = await response.data();
+  const toLevels = (levels: string[][]) => levels.map(([price, quantity]) => ({ price, quantity }));
+  return { bids: toLevels(bids), asks: toLevels(asks) };
 }
 
 export async function submitBinanceOrder(
   binanceApi: BinanceApi,
-  options: Parameters<BinanceApi["order"]>[0]
-): ReturnType<BinanceApi["order"]> {
-  return binanceApi.order({ ...options, recvWindow: BINANCE_ORDER_RECV_WINDOW_MS });
+  options: SpotRestAPI.NewOrderRequest
+): Promise<SpotRestAPI.NewOrderResponse> {
+  const response = await binanceApi.spot.restAPI.newOrder({
+    ...options,
+    recvWindow: BINANCE_ORDER_RECV_WINDOW_MS,
+  });
+  return response.data();
 }
 
 export async function submitBinanceWithdrawal(
   binanceApi: BinanceApi,
-  options: Parameters<BinanceApi["withdraw"]>[0]
-): ReturnType<BinanceApi["withdraw"]> {
-  return (binanceApi as BinanceApiWithRecvWindow).withdraw({ ...options, recvWindow: BINANCE_WITHDRAW_RECV_WINDOW_MS });
+  options: WalletRestAPI.WithdrawRequest
+): Promise<WalletRestAPI.WithdrawResponse> {
+  const response = await binanceApi.wallet.restAPI.withdraw({
+    ...options,
+    recvWindow: BINANCE_WITHDRAW_RECV_WINDOW_MS,
+  });
+  return response.data();
 }
 
 export enum BinanceTransactionType {
@@ -394,19 +447,26 @@ export function isCompletedBinanceWithdrawal(status?: number): boolean {
 export async function getBinanceDeposits(
   binanceApi: BinanceApi,
   startTime: number,
-  maxRetries = 3,
+  // The connector already retries idempotent requests; an extra layer here would multiply, not add.
+  maxRetries = 1,
   delayS = 2
 ): Promise<BinanceDeposit[]> {
-  const fn = () => binanceApi.depositHistory.bind(binanceApi)({ startTime, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
-  const depositHistory = await retry<DepositHistoryResponse>(fn, maxRetries, delayS);
-  return Object.values(depositHistory).map((deposit) => {
+  const fn = async () => {
+    const response = await binanceApi.wallet.restAPI.depositHistory({
+      startTime,
+      recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+    });
+    return response.data();
+  };
+  const depositHistory = await retry(fn, maxRetries, delayS);
+  return depositHistory.map((deposit) => {
     return {
       amount: Number(deposit.amount),
-      coin: resolveBinanceCoinSymbol(deposit.coin),
-      network: deposit.network,
-      txId: deposit.txId,
-      status: deposit.status,
-      insertTime: deposit.insertTime,
+      coin: resolveBinanceCoinSymbol(deposit.coin ?? ""),
+      network: deposit.network ?? "",
+      txId: deposit.txId ?? "",
+      status: toNumber(deposit.status),
+      insertTime: toNumber(deposit.insertTime) ?? 0,
     } satisfies BinanceDeposit;
   });
 }
@@ -419,27 +479,30 @@ export async function getBinanceWithdrawals(
   binanceApi: BinanceApi,
   coin: string,
   startTime: number,
-  maxRetries = 3,
+  // As above: the connector's own retries make a second layer multiplicative.
+  maxRetries = 1,
   delayS = 2
 ): Promise<BinanceWithdrawal[]> {
-  const fn = () =>
-    (binanceApi as BinanceApiWithRecvWindow).withdrawHistory({
+  const fn = async () => {
+    const response = await binanceApi.wallet.restAPI.withdrawHistory({
       coin: resolveBinanceCoinSymbol(coin),
       startTime,
       recvWindow: BINANCE_READ_RECV_WINDOW_MS,
     });
-  const withdrawHistory = await retry<WithdrawHistoryResponse>(fn, maxRetries, delayS);
-  return Object.values(withdrawHistory).map((withdrawal) => {
+    return response.data();
+  };
+  const withdrawHistory = await retry(fn, maxRetries, delayS);
+  return withdrawHistory.map((withdrawal) => {
     return {
       amount: Number(withdrawal.amount),
       transactionFee: Number(withdrawal.transactionFee),
-      recipient: withdrawal.address,
+      recipient: withdrawal.address ?? "",
       coin: resolveBinanceCoinSymbol(coin),
-      id: withdrawal.id,
-      txId: withdrawal.txId,
-      network: withdrawal.network,
-      status: withdrawal.status,
-      applyTime: withdrawal.applyTime,
+      id: withdrawal.id ?? "",
+      txId: withdrawal.txId ?? "",
+      network: withdrawal.network ?? "",
+      status: toNumber(withdrawal.status),
+      applyTime: withdrawal.applyTime ?? "",
     } satisfies BinanceWithdrawal;
   });
 }
@@ -457,7 +520,7 @@ export async function getFillCommission(
   const trades = await getBinanceFillTrades(binanceApi, spotMarketMeta.symbol, orderId);
   return trades.reduce(
     (acc, trade) =>
-      acc + (resolveBinanceCoinSymbol(trade.commissionAsset) === receivedAsset ? Number(trade.commission) : 0),
+      acc + (resolveBinanceCoinSymbol(trade.commissionAsset ?? "") === receivedAsset ? Number(trade.commission) : 0),
     0
   );
 }
@@ -468,24 +531,22 @@ export async function getFillCommission(
  * @returns A typed `AccountCoins` response.
  */
 export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
-  // accountCoins is an undocumented Binance API method not present in binance-api-node type defs.
-  type RawCoin = { coin: string; free: string; networkList?: Record<string, unknown>[] };
-  const apiWithCoins = binanceApi as BinanceApi & {
-    accountCoins(options?: { recvWindow?: number }): Promise<Record<string, RawCoin>>;
-  };
-  const coins = Object.values(await apiWithCoins.accountCoins({ recvWindow: BINANCE_READ_RECV_WINDOW_MS }));
+  const response = await binanceApi.wallet.restAPI.allCoinsInformation({
+    recvWindow: BINANCE_READ_RECV_WINDOW_MS,
+  });
+  const coins = await response.data();
   return coins.map((coin) => {
     const networkList = coin.networkList?.map((network) => {
       return {
-        name: network["network"],
-        coin: resolveBinanceCoinSymbol(network["coin"] as string),
-        withdrawMin: network["withdrawMin"],
-        withdrawMax: network["withdrawMax"],
-        withdrawFee: network["withdrawFee"],
-        contractAddress: network["contractAddress"],
-        depositEnable: network["depositEnable"] as boolean | undefined,
-        withdrawEnable: network["withdrawEnable"] as boolean | undefined,
-        withdrawTag: network["withdrawTag"] as boolean | undefined,
+        name: network.network,
+        coin: resolveBinanceCoinSymbol(network.coin ?? ""),
+        withdrawMin: network.withdrawMin,
+        withdrawMax: network.withdrawMax,
+        withdrawFee: network.withdrawFee,
+        contractAddress: network.contractAddress,
+        depositEnable: network.depositEnable,
+        withdrawEnable: network.withdrawEnable,
+        withdrawTag: network.withdrawTag,
       } as Network;
     });
     return {
@@ -500,15 +561,18 @@ async function getBinanceFillTrades(
   binanceApi: BinanceTradeReader,
   symbol: string,
   orderId: number,
-  maxRetries = 3,
+  maxRetries = 1,
   delayS = 2
-): Promise<Awaited<ReturnType<BinanceApi["myTrades"]>>> {
-  const fn = () =>
-    binanceApi.myTrades.bind(binanceApi)({
+): Promise<SpotRestAPI.MyTradesResponse> {
+  const fn = async () => {
+    const response = await binanceApi.spot.restAPI.myTrades({
       symbol,
       orderId,
       limit: BINANCE_TRADES_FETCH_LIMIT,
+      recvWindow: BINANCE_READ_RECV_WINDOW_MS,
     });
+    return response.data();
+  };
   return retry(fn, maxRetries, delayS);
 }
 
@@ -649,7 +713,7 @@ export function usesBinanceAtomicDepositorTransfer(token: string, chainId: numbe
 export function deriveBinanceSpotMarketMeta(
   sourceToken: string,
   destinationToken: string,
-  symbol: Symbol<OrderType_LT>
+  symbol: SpotSymbolInfo
 ): SpotMarketMeta {
   const sourceAsset = resolveBinanceCoinSymbol(sourceToken);
   const destinationAsset = resolveBinanceCoinSymbol(destinationToken);
@@ -657,11 +721,16 @@ export function deriveBinanceSpotMarketMeta(
   const isSell = symbol.baseAsset === sourceAsset && symbol.quoteAsset === destinationAsset;
   assert(isBuy || isSell, `No spot market meta found for route: ${sourceToken}-${destinationToken}`);
 
-  const priceFilter = symbol.filters.find((filter) => filter.filterType === "PRICE_FILTER");
-  const sizeFilter = symbol.filters.find((filter) => filter.filterType === "LOT_SIZE");
+  const filters = symbol.filters ?? [];
+  const priceFilter = filters.find((filter) => filter.filterType === "PRICE_FILTER");
+  const sizeFilter = filters.find((filter) => filter.filterType === "LOT_SIZE");
   assert(isDefined(priceFilter?.tickSize), `PRICE_FILTER missing tickSize for ${symbol.symbol}`);
   assert(isDefined(sizeFilter?.stepSize) && isDefined(sizeFilter?.minQty), `LOT_SIZE missing for ${symbol.symbol}`);
 
+  assert(
+    isDefined(symbol.symbol) && isDefined(symbol.baseAsset) && isDefined(symbol.quoteAsset),
+    "Incomplete exchangeInfo symbol entry."
+  );
   return {
     symbol: symbol.symbol,
     baseAssetName: symbol.baseAsset,

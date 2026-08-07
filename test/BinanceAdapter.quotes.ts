@@ -1,6 +1,6 @@
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance";
-import { ethers, expect, sinon, toBNWei } from "./utils";
+import { ethers, expect, makeFakeBinanceApi, sinon, toBNWei } from "./utils";
 
 type OrderBook = ReturnType<typeof makeOrderBook>;
 type QuoteTestAdapter = {
@@ -35,13 +35,13 @@ describe("Binance adapter quotes", function () {
     const adapter = asQuoteAdapter(await makeAdapter());
     const book = makeOrderBook({ asks: [{ price: "1.0001", quantity: "1000" }], bids: [] });
     const bookStub = sinon.stub().resolves(book);
-    adapter.binanceApiClient = { book: bookStub };
+    adapter.binanceApiClient = makeFakeBinanceApi({ depth: bookStub });
 
     const first = await adapter._getOrderBook("USDCUSDT");
     const second = await adapter._getOrderBook("USDCUSDT");
 
-    expect(first).to.equal(book);
-    expect(second).to.equal(book);
+    expect(first).to.deep.equal(expectedOrderBook({ asks: [{ price: "1.0001", quantity: "1000" }], bids: [] }));
+    expect(second).to.equal(first); // served from cache, not re-parsed
     expect(bookStub.callCount).to.equal(1);
   });
 
@@ -52,12 +52,12 @@ describe("Binance adapter quotes", function () {
       await new Promise((resolve) => setTimeout(resolve, 10));
       return book;
     });
-    adapter.binanceApiClient = { book: bookStub };
+    adapter.binanceApiClient = makeFakeBinanceApi({ depth: bookStub });
 
     const [first, second] = await Promise.all([adapter._getOrderBook("USDCUSDT"), adapter._getOrderBook("USDCUSDT")]);
 
-    expect(first).to.equal(book);
-    expect(second).to.equal(book);
+    expect(first).to.deep.equal(expectedOrderBook({ asks: [{ price: "1.0001", quantity: "1000" }], bids: [] }));
+    expect(second).to.equal(first); // both callers share one in-flight fetch
     expect(bookStub.callCount).to.equal(1);
   });
 
@@ -67,11 +67,11 @@ describe("Binance adapter quotes", function () {
     const bookStub = sinon.stub();
     bookStub.onCall(0).rejects(new Error("temporary outage"));
     bookStub.onCall(1).resolves(book);
-    adapter.binanceApiClient = { book: bookStub };
+    adapter.binanceApiClient = makeFakeBinanceApi({ depth: bookStub });
 
     const fetched = await adapter._fetchOrderBook("USDCUSDT", 0, 1);
 
-    expect(fetched).to.equal(book);
+    expect(fetched).to.deep.equal(expectedOrderBook({ asks: [{ price: "1.0001", quantity: "1000" }], bids: [] }));
     expect(bookStub.callCount).to.equal(2);
   });
 
@@ -104,7 +104,7 @@ describe("Binance adapter quotes", function () {
       })
     );
     adapter.exchangeInfoPromise = Promise.resolve(exchangeInfo);
-    adapter.binanceApiClient = { book: bookStub };
+    adapter.binanceApiClient = makeFakeBinanceApi({ depth: bookStub });
 
     try {
       await adapter._getLatestPrice("USDT", "USDC", CHAIN_IDs.MAINNET, toBNWei("1000", 6));
@@ -124,6 +124,14 @@ function asQuoteAdapter(adapter: BinanceStablecoinSwapAdapter): QuoteTestAdapter
   return adapter as unknown as QuoteTestAdapter;
 }
 
+/** The normalised `{ price, quantity }` form the adapter returns after parsing the wire tuples. */
+function expectedOrderBook(levels: {
+  asks: Array<{ price: string; quantity: string }>;
+  bids: Array<{ price: string; quantity: string }>;
+}) {
+  return levels;
+}
+
 function makeOrderBook({
   asks,
   bids,
@@ -131,7 +139,10 @@ function makeOrderBook({
   asks: Array<{ price: string; quantity: string }>;
   bids: Array<{ price: string; quantity: string }>;
 }) {
-  return { asks, bids };
+  // The REST depth endpoint reports levels as [price, quantity] tuples.
+  const toTuples = (levels: Array<{ price: string; quantity: string }>) =>
+    levels.map(({ price, quantity }) => [price, quantity]);
+  return { asks: toTuples(asks), bids: toTuples(bids) };
 }
 
 const TEST_LOGGER = {

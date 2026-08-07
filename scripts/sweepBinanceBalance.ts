@@ -24,7 +24,10 @@ import {
   chainIsTvm,
   createFormatFunction,
   fromWei,
+  assert,
   getAccountCoins,
+  isDefined,
+  submitBinanceWithdrawal,
   getNetworkName,
   parseUnits,
   resolveBinanceCoinSymbol,
@@ -117,13 +120,14 @@ async function run(): Promise<void> {
 
   const withdrawalSubmittedAtMs = Date.now();
   const amountReadable = Number(fromWei(sweepPlan.withdrawalAmount, destination.tokenDecimals));
-  const response = await binanceClient.rawApi().withdraw({
+  const response = await submitBinanceWithdrawal(binanceClient.rawApi(), {
     coin: destination.binanceCoin,
     address: recipient,
     amount: truncate(amountReadable, destination.tokenDecimals),
     network: destination.network.name,
     transactionFeeFlag: false,
   });
+  assert(isDefined(response.id), "Binance withdrawal returned no id.");
   const withdrawalId = response.id;
   console.log(`Withdrawal initiated. Binance withdrawal id: ${withdrawalId}`);
 

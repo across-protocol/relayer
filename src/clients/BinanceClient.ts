@@ -1,11 +1,14 @@
-import { Wallet as BinanceWallet } from "@binance/wallet";
-import Binance, { type Binance as BinanceApi } from "binance-api-node";
 import minimist from "minimist";
 import { coerce, create, number, string, type } from "superstruct";
 import winston from "winston";
 import { hasBinanceRoute } from "../common";
 import { Address, assert, BigNumber, bnZero, getGckmsConfig, isDefined, retrieveGckmsKeys, toBNWei } from "../utils";
-import { BINANCE_WALLET_TIMEOUT_MS, getBinanceWithdrawalLimits, type WithdrawalQuota } from "../utils/BinanceUtils";
+import {
+  buildBinanceApi,
+  getBinanceWithdrawalLimits,
+  type BinanceApi,
+  type WithdrawalQuota,
+} from "../utils/BinanceUtils";
 
 export type { WithdrawalQuota };
 
@@ -30,8 +33,6 @@ export class BinanceClient {
 
   private constructor(
     private readonly api: BinanceApi,
-    // Wallet-side SAPI reads go through the official connector; see getBinanceWithdrawalLimits.
-    private readonly wallet: BinanceWallet,
     private readonly logger: winston.Logger
   ) {}
 
@@ -40,18 +41,7 @@ export class BinanceClient {
     const apiKey = process.env.BINANCE_API_KEY;
     const secretKey = (await BinanceClient.getBinanceSecretKey()) ?? process.env.BINANCE_HMAC_KEY;
     assert(isDefined(apiKey) && isDefined(secretKey), "Binance client cannot be constructed due to missing keys.");
-    return new BinanceClient(
-      Binance({ apiKey, apiSecret: secretKey, httpBase: url }),
-      new BinanceWallet({
-        configurationRestAPI: {
-          apiKey,
-          apiSecret: secretKey,
-          basePath: url,
-          timeout: BINANCE_WALLET_TIMEOUT_MS,
-        },
-      }),
-      logger
-    );
+    return new BinanceClient(buildBinanceApi(apiKey, secretKey, url), logger);
   }
 
   rawApi(): BinanceApi {
@@ -59,7 +49,7 @@ export class BinanceClient {
   }
 
   async getWithdrawalLimits(): Promise<WithdrawalQuota> {
-    const raw = await getBinanceWithdrawalLimits(this.wallet);
+    const raw = await getBinanceWithdrawalLimits(this.api);
     return create(raw, WithdrawalQuotaSS);
   }
 
