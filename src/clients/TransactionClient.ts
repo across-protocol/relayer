@@ -109,6 +109,13 @@ export class TransactionConfirmationPendingError extends Error {
   }
 }
 
+// An EVM submission may have reached the node even when no transaction response was returned.
+export class TransactionSubmissionPendingError extends Error {
+  constructor(readonly cause: Error) {
+    super(`Transaction submission outcome is unknown: ${cause.message}`);
+  }
+}
+
 export function isAugmentedTransaction(txn: unknown): txn is AugmentedTransaction {
   if (txn === null || typeof txn !== "object") {
     return false;
@@ -350,7 +357,9 @@ export class TransactionClient {
           notificationPath: "across-error",
         });
         if (
-          (error instanceof DefinitiveTransactionFailure || error instanceof TransactionConfirmationPendingError) &&
+          (error instanceof DefinitiveTransactionFailure ||
+            error instanceof TransactionConfirmationPendingError ||
+            error instanceof TransactionSubmissionPendingError) &&
           txn.onBroadcast
         ) {
           throw error;
@@ -449,7 +458,9 @@ async function _runTransaction(
   } catch (error) {
     // Narrow type. All errors caught here should be Ethers errors.
     if (!typeguards.isEthersError(error)) {
-      throw error;
+      throw new TransactionSubmissionPendingError(
+        error instanceof Error ? error : new Error(stringifyThrownValue(error))
+      );
     }
 
     const getCause = (error: unknown): string => {
@@ -518,7 +529,7 @@ async function _runTransaction(
 
     logger.debug({ at, message, code, reason, ...commonFields });
     if (--retries < 0) {
-      throw error;
+      throw new TransactionSubmissionPendingError(error);
     }
 
     if (scaleGas) {

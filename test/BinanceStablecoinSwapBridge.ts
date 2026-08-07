@@ -1,5 +1,5 @@
 import { BinanceStablecoinSwapAdapter, BridgeTransferDeclinedError } from "../src/adapter/bridges";
-import { DefinitiveTransactionFailure } from "../src/clients";
+import { DefinitiveTransactionFailure, TransactionSubmissionPendingError } from "../src/clients";
 import {
   BinanceStablecoinSwapAdapter as RebalancerBinanceAdapter,
   getBinanceRebalanceCandidate,
@@ -352,6 +352,14 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     await expect(submitTransaction(trackedTransaction, preparationFailure as never)).to.be.rejectedWith(
       DefinitiveTransactionFailure
     );
+
+    const submissionFailure = {
+      ...failedSubmission,
+      submit: async () => Promise.reject(new TransactionSubmissionPendingError(new Error("RPC response lost"))),
+    };
+    const pending = await submitTransaction(trackedTransaction, submissionFailure as never).catch((error) => error);
+    expect(pending).to.be.an.instanceof(TransactionSubmissionPendingError);
+    expect(pending).to.not.be.an.instanceof(DefinitiveTransactionFailure);
 
     const broadcastFailure = {
       simulate: async () => [{ transaction: trackedTransaction, succeed: true }],

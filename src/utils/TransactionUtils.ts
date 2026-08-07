@@ -1,6 +1,11 @@
 import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import dotenv from "dotenv";
-import { AugmentedTransaction, DefinitiveTransactionFailure, TransactionClient } from "../clients";
+import {
+  AugmentedTransaction,
+  DefinitiveTransactionFailure,
+  TransactionClient,
+  TransactionSubmissionPendingError,
+} from "../clients";
 import {
   BigNumber,
   Contract,
@@ -296,7 +301,11 @@ export async function submitTransaction(
   try {
     response = await transactionClient.submit(transaction.chainId, [trackedTransaction]);
   } catch (error) {
-    if (isDefined(onBroadcast) && !broadcast && !(error instanceof DefinitiveTransactionFailure)) {
+    if (
+      isDefined(onBroadcast) &&
+      !broadcast &&
+      !(error instanceof DefinitiveTransactionFailure || error instanceof TransactionSubmissionPendingError)
+    ) {
       throw new DefinitiveTransactionFailure(
         "Transaction preparation failed before broadcast",
         error instanceof Error ? error : new Error(String(error))
