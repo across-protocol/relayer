@@ -77,6 +77,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       network: this.depositNetwork,
     });
     const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
+    const network = getNetworkName(this.l2chainId);
     const transferTxn: AugmentedTransaction = {
       contract: this.getL2Bridge(),
       chainId: this.l2chainId,
@@ -88,10 +89,8 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       nonMulticall: true,
       canFailInSimulation: false,
       value: bnZero,
-      message: `🎰 Withdrew BNB ${l2TokenInfo.symbol} to L1`,
-      mrkdwn: `Withdrew ${formatter(amount.toString())} ${l2TokenInfo.symbol} from ${getNetworkName(
-        this.l2chainId
-      )} to L1`,
+      message: `🎰 Withdrew ${network} ${l2TokenInfo.symbol} to L1 via Binance`,
+      mrkdwn: `Withdrew ${formatter(amount.toString())} ${l2TokenInfo.symbol} from ${network} to L1 via Binance`,
     };
     return [transferTxn];
   }

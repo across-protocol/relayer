@@ -1349,5 +1349,121 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
       expect((await txnReceipts[destinationChainId]).length).to.equal(1);
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
     });
+
+    describe("HubPool liquid reserves constraint", function () {
+      let acrossApiClient: AcrossApiClient;
+      let getLimit: sinon.SinonStub;
+      let determineRefundChainId: sinon.SinonStub;
+
+      const logged = (text: string): boolean => spy.getCalls().some(({ lastArg }) => lastArg.message?.includes(text));
+
+      const deposit = () =>
+        depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
+
+      beforeEach(function () {
+        ({ acrossApiClient } = relayerInstance.clients);
+
+        // Simulate an exhausted HubPool: /liquid-reserves reports no liquidity available for the input token.
+        acrossApiClient.updatedLimits = true;
+        getLimit = sinon.stub(acrossApiClient, "getLimit").returns(bnZero);
+
+        // Take direct control of the eligible repayment chains, which are otherwise inventory-dependent.
+        determineRefundChainId = sinon.stub(inventoryClient, "determineRefundChainId");
+      });
+
+      afterEach(function () {
+        getLimit.restore();
+        determineRefundChainId.restore();
+      });
+
+      it("Fills deposits that are forced to take origin chain repayment", async function () {
+        determineRefundChainId.resolves([originChainId]);
+        await deposit();
+        await updateAllClients();
+
+        const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+        expect(logged(`with repayment on ${originChainId}`)).to.be.true;
+      });
+
+      it("Drops preferred repayment chains that can't be funded", async function () {
+        determineRefundChainId.resolves([destinationChainId, originChainId]);
+        await deposit();
+        await updateAllClients();
+
+        const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+        expect(logged(`with repayment on ${originChainId}`)).to.be.true;
+        expect(logged(`with repayment on ${destinationChainId}`)).to.be.false;
+      });
+
+      it("Treats an unfundable repayment as an unprofitable fill", async function () {
+        determineRefundChainId.resolves([destinationChainId]);
+        await deposit();
+        await updateAllClients();
+
+        let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect((await txnReceipts[destinationChainId]).length).to.equal(0);
+        expect(logged("can be funded by available HubPool liquidity")).to.be.true;
+
+        // Utilisation high enough to refuse every eligible refund is a real condition rather than a transient blip, so
+        // it goes through the existing unprofitable-fill mechanism instead of a bespoke retry path.
+        expect(profitClient.getUnprofitableFills()[originChainId]?.length ?? 0).to.equal(1);
+
+        // Which also means the deposit is suppressed until runMaintenance() flushes ignoredDeposits, even once
+        // HubPool liquidity recovers.
+        getLimit.returns(inputAmount);
+        txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect((await txnReceipts[destinationChainId]).length).to.equal(0);
+      });
+
+      it("Doesn't constrain hub chain origins", async function () {
+        // Funds can be JIT-bridged from the hub chain to anywhere, so a hub chain origin keeps its non-origin
+        // candidates - taking repayment out on a pool rebalance route is what keeps utilisation low.
+        const chainId = sinon.stub(hubPoolClient, "chainId").value(originChainId);
+        determineRefundChainId.resolves([destinationChainId, originChainId]);
+
+        try {
+          await deposit();
+          await updateAllClients();
+
+          const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+          expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+          expect(logged(`with repayment on ${destinationChainId}`)).to.be.true;
+        } finally {
+          chainId.restore();
+        }
+      });
+    });
+  });
+
+  describe("AcrossApiClient: /liquid-reserves failures", function () {
+    let apiHost: string | undefined;
+
+    beforeEach(function () {
+      apiHost = process.env.ACROSS_API_HOST;
+
+      // Unroutable, so the query fails immediately without touching the network.
+      process.env.ACROSS_API_HOST = "127.0.0.1:1";
+    });
+
+    afterEach(function () {
+      if (isDefined(apiHost)) {
+        process.env.ACROSS_API_HOST = apiHost;
+      } else {
+        delete process.env.ACROSS_API_HOST;
+      }
+    });
+
+    it("Doesn't interpret a failed query as zero available liquidity", async function () {
+      await updateAllClients();
+      const apiClient = new AcrossApiClient(spyLogger, hubPoolClient, chainIds, [EvmAddress.from(l1Token.address)], 1);
+      await apiClient.update(false);
+
+      // Limits are unknown rather than zero, so no limit-based constraint may be applied.
+      expect(apiClient.updatedLimits).to.be.false;
+      expect(spy.getCalls().some(({ lastArg }) => lastArg.message?.includes("Failed to fetch HubPool liquid reserves")))
+        .to.be.true;
+    });
   });
 });
