@@ -793,6 +793,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     if (!(await this.redisCache.acquireLock(lockKey, lockToken, BinanceStablecoinSwapAdapter.INITIATION_LOCK_TTL_MS))) {
       return;
     }
+    const renewLock = () =>
+      this.redisCache.renewLock(lockKey, lockToken, BinanceStablecoinSwapAdapter.INITIATION_LOCK_TTL_MS);
     try {
       const reservationSetKey = `${this.REDIS_PREFIX}initiation-reservations:${account}`;
       // Reservations are keyed by candidate route, so a live reservation is also the same-route dedup check.
@@ -800,6 +802,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const reservations = await this.redisCache.sMembers(reservationSetKey);
       const reservationLiveness = await Promise.all(reservations.map((key) => this.redisCache.get<string>(key)));
       const liveReservations = reservations.filter((_key, index) => isDefined(reservationLiveness[index]));
+      if (!(await renewLock())) {
+        return;
+      }
       await Promise.all(
         reservations
           .filter((_key, index) => !isDefined(reservationLiveness[index]))
@@ -818,6 +823,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (
         pendingOrderDetails.some((details) => isDefined(details) && getBinanceRebalanceCandidate(details) === candidate)
       ) {
+        return;
+      }
+      if (!(await renewLock())) {
         return;
       }
       const ttl = Number(process.env.REBALANCER_PENDING_ORDER_TTL ?? 60 * 60);
@@ -1344,22 +1352,23 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _persistDepositTransaction(cloid: string, chainId: number, transactionHash: string): Promise<void> {
-    // Tag first so a crash cannot expose accepted source funds to the Binance finalizer.
-    await setBinanceDepositType(
-      chainId,
-      transactionHash,
-      BinanceTransactionType.SWAP,
-      2 * FINALIZER_TOKENBRIDGE_LOOKBACK
-    );
     const account = this.baseSignerAddress.toNative();
     await retry(
-      () =>
-        this.redisCache.setAndExtend(
+      async () => {
+        // Tag first so a crash cannot expose accepted source funds to the Binance finalizer.
+        await setBinanceDepositType(
+          chainId,
+          transactionHash,
+          BinanceTransactionType.SWAP,
+          2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+        );
+        return this.redisCache.setAndExtend(
           getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account),
           JSON.stringify({ chainId, transactionHash }),
           getPendingBridgeOrderKey(this.REDIS_PREFIX, cloid, account),
           2 * FINALIZER_TOKENBRIDGE_LOOKBACK
-        ),
+        );
+      },
       4,
       2
     );

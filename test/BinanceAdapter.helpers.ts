@@ -661,6 +661,28 @@ describe("Binance adapter helpers", function () {
     expect(setAndExtend.callCount).to.equal(2);
   });
 
+  it("does not reserve after losing the initiation lock", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const set = sinon.stub();
+    const renewLock = sinon.stub().onFirstCall().resolves(true).onSecondCall().resolves(false);
+    adapter.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    Object.assign(adapter, {
+      _redisCache: {
+        acquireLock: sinon.stub().resolves(true),
+        releaseLock: sinon.stub().resolves(false),
+        renewLock,
+        sMembers: sinon.stub().resolves([]),
+        set,
+      },
+    });
+    sinon.stub(adapter, "getPendingOrders").resolves([]);
+
+    expect(await adapter.reservePendingOrderSlot(2, "1:USDT:43114:USDT")).to.equal(undefined);
+    expect(renewLock.callCount).to.equal(2);
+    expect(set.called).to.equal(false);
+  });
+
   it("reconciles a recoverable deposit transaction before lifecycle progression", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();
