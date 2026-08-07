@@ -588,13 +588,19 @@ describe("TransactionClient", function () {
           getBlockNumber: () => Promise.resolve((blockNumber += 2)),
           getTransactionCount: () => Promise.resolve(1),
         });
-        transaction.onBroadcast = () => undefined;
+        const broadcasts: string[] = [];
+        transaction.onBroadcast = (transactionHash) => {
+          broadcasts.push(transactionHash);
+        };
         client.waitOverride = () => Promise.reject(makeEthersError(ethers.errors.TIMEOUT));
 
         const error = await client.submit(chainId, [transaction]).catch((reason) => reason);
 
+        const originalHash = ethers.utils.id(`Across-v2-${address}-${method}-1`);
         expect(error).to.be.an.instanceof(TransactionConfirmationPendingError);
-        expect(error.transactionHash).to.equal(ethers.utils.id(`Across-v2-${address}-${method}-1`));
+        expect(error.transactionHash).to.equal(originalHash);
+        // Recovery state may point at the rejected replacement; the original hash must be restored.
+        expect(broadcasts[broadcasts.length - 1]).to.equal(originalHash);
         expect(submissions).to.equal(2);
       }
     });
