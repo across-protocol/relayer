@@ -36,7 +36,9 @@ flowchart TD
     deposit[Deposit] --> possible[getPossibleRepaymentChainIds]
     possible --> precompute[batchComputeLpFees]
     precompute --> eligible[determineRefundChainId]
-    eligible --> resolve[resolveRepaymentChain]
+    eligible --> fundable[filterRepaymentChains]
+    fundable -->|none left| none[NoRepaymentChainSelected]
+    fundable -->|some remain| resolve[resolveRepaymentChain]
     resolve --> prof{AnyPreferredChainProfitable}
     prof -->|yes| firstProfitable[ChooseFirstProfitablePreferredChain]
     prof -->|no| fallback{DestinationFallbackPathAllowed}
@@ -71,6 +73,14 @@ If none are returned, relayer treats deposit as not currently selectable (with u
 
 For the full eligibility internals, see `docs/repayment-eligibility.md`.
 
+## Step 2a: HubPool liquidity filter
+
+`filterRepaymentChains()` restricts repayment to the origin chain when `AcrossApiClient`'s `/liquid-reserves`
+limits show the HubPool can't fund a refund elsewhere. An origin chain refund is funded by the deposit itself, so it
+always survives; forced-origin deposits are therefore never refused for want of reserves. The filter is inert for hub
+chain origins (funds can be JIT-bridged from there to anywhere), when `ignoreLimits` is set, and until limits have been
+fetched. If nothing survives, the deposit follows the normal unprofitable-fill path.
+
 ## Step 3: Profitability pass
 
 For each preferred chain:
@@ -104,6 +114,7 @@ This protects against accidental policy violations even if upstream selection lo
 ## Failure outcomes
 
 - no preferred chains: no eligible path from inventory stage
+- no fundable chains: every eligible chain needs HubPool liquidity that isn't currently available
 - preferred chains but no profitability: economics fail at current LP fee/gas conditions
 - fallback profitable but top preferred chosen: intentional inventory-priority behavior
 
@@ -112,6 +123,7 @@ This protects against accidental policy violations even if upstream selection lo
 - eligibility/precompute contract drift: if `getPossibleRepaymentChainIds()` and eligibility logic diverge, LP-fee data can be missing for candidate chains.
 - ordering sensitivity: changing preferred-chain ordering in InventoryClient can change selected repayment chain even when profitability code is unchanged.
 - force-origin invariant: removing or weakening `fillRelay()` guardrails can permit invalid repayment-chain submissions.
+- liquidity-filter placement: applying the `/liquid-reserves` limit before a repayment chain is known reintroduces refusal of fills that only ever needed origin chain repayment.
 
 ## Contributor recommendations
 
