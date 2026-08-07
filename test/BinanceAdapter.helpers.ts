@@ -595,16 +595,20 @@ describe("Binance adapter helpers", function () {
     const recoveryKey = getPendingBridgeDepositRecoveryKey(adapter.REDIS_PREFIX, "cloid", account.toNative());
     const transactionKey = getPendingBridgeDepositTxnKey(adapter.REDIS_PREFIX, "cloid", account.toNative());
     const values = new Map<string, string>();
+    const statusMoves: string[][] = [];
     Object.assign(adapter, {
       _baseSignerAddress: account,
       _redisCache: {
         get: async (key: string) => values.get(key),
         del: async (key: string) => Number(values.delete(key)),
-        moveSetMember: async () => [1, 1],
+        moveSetMember: async (...args: string[]) => (statusMoves.push(args), [1, 1]),
       },
     });
-    const reconcile = (adapter as unknown as { _reconcileDepositRecovery(cloid: string): Promise<boolean> })
-      ._reconcileDepositRecovery;
+    const reconcile = (
+      adapter as unknown as {
+        _reconcileDepositRecovery(cloid: string, currentStatus?: STATUS): Promise<boolean>;
+      }
+    )._reconcileDepositRecovery;
     const getReceipt = sinon
       .stub(
         adapter as unknown as { _getDepositTransactionReceipt(): Promise<{ status: number }> },
@@ -613,6 +617,7 @@ describe("Binance adapter helpers", function () {
       .onFirstCall()
       .resolves(undefined);
     getReceipt.onSecondCall().resolves({ status: 1 });
+    getReceipt.onThirdCall().resolves({ status: 1 });
 
     values.set(recoveryKey, "1");
     // No recorded deposit transaction yet: reconcile must wait, keeping the marker.
@@ -625,6 +630,11 @@ describe("Binance adapter helpers", function () {
     // Confirmed on-chain: the order may progress and the marker is cleared.
     expect(await reconcile.call(adapter, "cloid")).to.equal(true);
     expect(values.has(recoveryKey)).to.equal(false);
+    expect(statusMoves[0][0]).to.contain("pending-deposit-submission");
+
+    values.set(recoveryKey, "1");
+    expect(await reconcile.call(adapter, "cloid", STATUS.PENDING_BRIDGE_PRE_DEPOSIT)).to.equal(true);
+    expect(statusMoves[1][0]).to.contain("pending-bridge-pre-deposit");
   });
 
   it("does not release expired deposit tags through the status cache", async function () {

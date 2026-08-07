@@ -109,7 +109,7 @@ export class TransactionConfirmationPendingError extends Error {
   }
 }
 
-// An EVM submission may have reached the node even when no transaction response was returned.
+// A submission may have reached the node even when no transaction response was returned.
 export class TransactionSubmissionPendingError extends Error {
   readonly cause: Error;
 
@@ -610,6 +610,10 @@ async function _runTransactionTvm(
   try {
     result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
   } catch (error) {
+    // The TRON helper signs and broadcasts internally, so a thrown RPC response cannot prove that no funds moved.
+    if (onBroadcast) {
+      throw new TransactionSubmissionPendingError(error);
+    }
     if (--retries < 0) {
       throw new DefinitiveTransactionFailure(
         "Transaction rejected before broadcast",

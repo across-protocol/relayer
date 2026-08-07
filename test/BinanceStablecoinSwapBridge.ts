@@ -364,6 +364,43 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     expect(pending).to.not.be.an.instanceof(DefinitiveTransactionFailure);
     expect(recoveredHash).to.equal("0xrecovered");
 
+    const hashlessFailure = {
+      ...failedSubmission,
+      submit: async () => Promise.reject(new TransactionSubmissionPendingError(new Error("TRON RPC response lost"))),
+    };
+    const hashless = await submitTransaction(trackedTransaction, hashlessFailure as never).catch((error) => error);
+    expect(hashless).to.be.an.instanceof(TransactionSubmissionPendingError);
+    expect(hashless).to.not.be.an.instanceof(DefinitiveTransactionFailure);
+
+    const persistedHashes: string[] = [];
+    let replacementAttempts = 0;
+    const replacementTransaction = {
+      ...transaction,
+      onBroadcast: (hash: string) => {
+        persistedHashes.push(hash);
+        if (hash === "0xreplacement" && replacementAttempts++ === 0) {
+          throw new Error("replacement persistence failed");
+        }
+      },
+    } as never;
+    const replacementFailure = {
+      simulate: async () => [{ transaction: replacementTransaction, succeed: true }],
+      submit: async (_chainId: number, [txn]: [{ onBroadcast: (hash: string) => Promise<void> }]) => {
+        await txn.onBroadcast("0xoriginal");
+        try {
+          await txn.onBroadcast("0xreplacement");
+        } catch (error) {
+          throw new TransactionSubmissionPendingError(error, "0xreplacement");
+        }
+        return [];
+      },
+    } as never;
+    const replacementPending = await submitTransaction(replacementTransaction, replacementFailure).catch(
+      (error) => error
+    );
+    expect(replacementPending).to.be.an.instanceof(TransactionSubmissionPendingError);
+    expect(persistedHashes).to.deep.equal(["0xoriginal", "0xreplacement", "0xreplacement"]);
+
     const broadcastFailure = {
       simulate: async () => [{ transaction: trackedTransaction, succeed: true }],
       submit: async (_chainId: number, [txn]: [{ onBroadcast: (hash: string) => Promise<void> }]) => {

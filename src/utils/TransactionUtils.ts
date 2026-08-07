@@ -287,13 +287,13 @@ export async function submitTransaction(
   }
 
   const onBroadcast = transaction.onBroadcast;
-  let broadcast = false;
+  let persistedTransactionHash: string | undefined;
   const trackedTransaction = isDefined(onBroadcast)
     ? {
         ...transaction,
         onBroadcast: async (transactionHash: string) => {
           await onBroadcast(transactionHash);
-          broadcast = true;
+          persistedTransactionHash = transactionHash;
         },
       }
     : transaction;
@@ -305,13 +305,14 @@ export async function submitTransaction(
       error instanceof TransactionSubmissionPendingError &&
       isDefined(error.transactionHash) &&
       isDefined(onBroadcast) &&
-      !broadcast
+      error.transactionHash !== persistedTransactionHash
     ) {
       await onBroadcast(error.transactionHash);
+      persistedTransactionHash = error.transactionHash;
     }
     if (
       isDefined(onBroadcast) &&
-      !broadcast &&
+      !isDefined(persistedTransactionHash) &&
       !(error instanceof DefinitiveTransactionFailure || error instanceof TransactionSubmissionPendingError)
     ) {
       throw new DefinitiveTransactionFailure(
@@ -327,7 +328,7 @@ export async function submitTransaction(
         targetContract.address
       }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
     );
-    if (isDefined(onBroadcast) && !broadcast) {
+    if (isDefined(onBroadcast) && !isDefined(persistedTransactionHash)) {
       throw new DefinitiveTransactionFailure("Transaction preparation failed before broadcast", error);
     }
     throw error;
