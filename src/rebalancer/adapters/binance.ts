@@ -12,6 +12,7 @@ import {
   Coin,
   Contract,
   delay,
+  deleteBinanceDepositType,
   ERC20,
   EvmAddress,
   forEachAsync,
@@ -614,7 +615,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       return;
     }
     const { chainId, transactionHash } = JSON.parse(depositTxn) as { chainId: number; transactionHash: string };
-    await this.redisCache.del(getBinanceTransactionTypeKey(chainId, transactionHash));
+    await deleteBinanceDepositType(chainId, transactionHash);
     await this.redisCache.del(depositTxnKey);
     await this.redisCache.del(getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account.toNative()));
     this.logger.debug({
