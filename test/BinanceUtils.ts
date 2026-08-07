@@ -128,18 +128,22 @@ describe("BinanceUtils: getOutstandingBinanceDeposits", function () {
 });
 
 describe("BinanceUtils recvWindow helpers", function () {
-  it("keeps the withdraw quota helper parameterless", async function () {
-    const calls: Record<string, unknown> = {};
-    const binanceApi = {
-      privateRequest: async (_method: string, _url: string, payload: object) => {
-        calls.privateRequest = payload;
-        return { wdQuota: 10, usedWdQuota: 1 };
+  it("reads the withdraw quota off the wallet connector, unvalidated", async function () {
+    let calls = 0;
+    // Binance reports both quota fields as strings; the helper must not coerce them itself.
+    const wallet = {
+      restAPI: {
+        fetchWithdrawQuota: async () => {
+          calls++;
+          return { data: async () => ({ wdQuota: "10000", usedWdQuota: "1" }) };
+        },
       },
     } as unknown as Parameters<typeof getBinanceWithdrawalLimits>[0];
 
-    await getBinanceWithdrawalLimits(binanceApi);
+    const quota = await getBinanceWithdrawalLimits(wallet);
 
-    expect(calls.privateRequest).to.deep.equal({});
+    expect(calls).to.equal(1);
+    expect(quota).to.deep.equal({ wdQuota: "10000", usedWdQuota: "1" });
   });
 
   it("applies the read recvWindow to signed read helpers that accept it", async function () {

@@ -1,11 +1,11 @@
 import Binance, {
-  HttpMethod,
   DepositHistoryResponse,
   WithdrawHistoryResponse,
   OrderType_LT,
   Symbol,
   type Binance as BinanceApi,
 } from "binance-api-node";
+import { type Wallet as BinanceWallet, type WalletRestAPI } from "@binance/wallet";
 export type { BinanceApi };
 import minimist from "minimist";
 import { JsonFragment } from "@ethersproject/abi";
@@ -27,6 +27,9 @@ export const BINANCE_READ_RECV_WINDOW_MS = 60_000;
 export const BINANCE_ORDER_RECV_WINDOW_MS = 60_000;
 // Withdrawals remain tight so delayed accepted requests cannot submit funds transfers much later than intended.
 export const BINANCE_WITHDRAW_RECV_WINDOW_MS = 5_000;
+// `@binance/wallet` defaults to a 1s request timeout, which a proxied SAPI read can exceed. The quota read
+// sits on the rebalancer's refresh path rather than anything latency-sensitive, so bound it generously.
+export const BINANCE_WALLET_TIMEOUT_MS = 30_000;
 
 export type WithdrawalQuota = {
   wdQuota: number;
@@ -233,23 +236,17 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
 
 /**
  * Retrieves the input client account's withdrawal quota.
- * @dev This is in a utility function since the Binance API does not natively support calling this endpoint.
- * @returns an object with two fields: `wdQuota` and `usedWdQuota`, corresponding to the total amount
- * available to rebalance per day and the amount already used.
+ * @dev Uses the official `@binance/wallet` connector rather than `binance-api-node`, which neither wraps
+ * this endpoint nor types it. Binance returns both fields as strings and may omit either, so the response
+ * is deliberately returned unvalidated — `BinanceClient.getWithdrawalLimits` is the coercion boundary.
+ * @returns The raw quota response: `wdQuota` is the total amount available to rebalance per day, and
+ * `usedWdQuota` the amount already used.
  */
-export async function getBinanceWithdrawalLimits(binanceApi: BinanceApi): Promise<WithdrawalQuota> {
-  const unparsedQuota = (await binanceApi.privateRequest(
-    "GET" as HttpMethod,
-    "/sapi/v1/capital/withdraw/quota",
-    {}
-  )) as {
-    wdQuota: number;
-    usedWdQuota: number;
-  };
-  return {
-    wdQuota: unparsedQuota.wdQuota,
-    usedWdQuota: unparsedQuota.usedWdQuota,
-  };
+export async function getBinanceWithdrawalLimits(
+  wallet: BinanceWallet
+): Promise<WalletRestAPI.FetchWithdrawQuotaResponse> {
+  const response = await wallet.restAPI.fetchWithdrawQuota();
+  return response.data();
 }
 
 export async function getBinanceTradeFees(binanceApi: BinanceApi): ReturnType<BinanceApi["tradeFee"]> {
