@@ -153,16 +153,16 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
 
   private async buildOutstandingTransfersFromApiOrders(
     l1Token: EvmAddress,
-    userAddress: EvmAddress
+    receiver: EvmAddress
   ): Promise<BridgeEvents> {
-    const orders = await listOutstandingPaxosTransitOrders(this.client, userAddress);
+    const orders = await listOutstandingPaxosTransitOrders(this.client, receiver);
     const l2TokenDecimals = getTokenInfo(this.l2TokenAddress, this.l2chainId).decimals;
     const l1TokenDecimals = this.l1TokenInfo.decimals;
     const routeParams = {
       wantAsset: this.l2TokenAddress,
       sourceChainId: this.hubChainId,
       destinationChainId: this.l2chainId,
-      receiver: userAddress,
+      receiver,
     };
 
     const outstandingOrders = orders.filter(
