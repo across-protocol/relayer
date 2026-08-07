@@ -578,6 +578,7 @@ describe("Binance adapter helpers", function () {
     Object.assign(adapter, {
       _redisCache: {
         set: async () => "OK",
+        get: async () => undefined,
         del: async (key: string) => {
           deleted.push(key);
           return 1;
@@ -604,7 +605,10 @@ describe("Binance adapter helpers", function () {
         "recovery-key"
       )
     ).to.be.rejectedWith("simulation failed");
-    expect(deleted).to.deep.equal(["recovery-key"]);
+    expect(deleted).to.have.members([
+      getPendingBridgeDepositTxnKey(adapter.REDIS_PREFIX, "cloid", internals.baseSignerAddress.toNative()),
+      "recovery-key",
+    ]);
     expect(saveOrder.callCount).to.equal(2);
     expect(deleteOrder.called).to.equal(false);
   });
