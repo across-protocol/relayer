@@ -714,6 +714,36 @@ describe("Binance adapter helpers", function () {
     expect(set.called).to.equal(false);
   });
 
+  it("reserves with an initiation-scoped TTL independent of the order TTL", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const set = sinon.stub().resolves("OK");
+    adapter.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    Object.assign(adapter, {
+      _redisCache: {
+        acquireLock: sinon.stub().resolves(true),
+        renewLock: sinon.stub().resolves(true),
+        releaseLock: sinon.stub().resolves(true),
+        sMembers: sinon.stub().resolves([]),
+        sAdd: sinon.stub().resolves(1),
+        set,
+      },
+    });
+    sinon.stub(adapter, "getPendingOrders").resolves([]);
+    const previousTtl = process.env.REBALANCER_PENDING_ORDER_TTL;
+    process.env.REBALANCER_PENDING_ORDER_TTL = "60";
+    try {
+      const handle = await adapter.reservePendingOrderSlot(2, "1:USDT:43114:USDT");
+      expect(handle).to.contain("#");
+      // A short order TTL must not expire the reservation mid-initiation.
+      expect(set.firstCall.args[2]).to.equal(30 * 60);
+    } finally {
+      previousTtl
+        ? (process.env.REBALANCER_PENDING_ORDER_TTL = previousTtl)
+        : delete process.env.REBALANCER_PENDING_ORDER_TTL;
+    }
+  });
+
   it("serializes reservation release after lock contention", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();

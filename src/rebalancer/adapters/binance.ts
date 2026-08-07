@@ -103,6 +103,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   REDIS_PREFIX = "binance-stablecoin-swap:";
   private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
   private static readonly INITIATION_LOCK_TTL_MS = 30_000;
+  // Bounds a single initiation attempt (reserve → prepare → broadcast → order record), after which
+  // a crashed holder's reservation self-cleans. Deliberately independent of the env-tunable
+  // REBALANCER_PENDING_ORDER_TTL so a short order TTL cannot expire a reservation mid-initiation
+  // and admit a duplicate same-route order.
+  private static readonly INITIATION_RESERVATION_TTL_S = 30 * 60;
 
   REDIS_KEY_INITIATED_WITHDRAWALS = this.REDIS_PREFIX + "initiated-withdrawals";
   constructor(
@@ -828,13 +833,17 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (!(await renewLock())) {
         return;
       }
-      const ttl = Number(process.env.REBALANCER_PENDING_ORDER_TTL ?? 60 * 60);
-      assert(ttl > 0, "REBALANCER_PENDING_ORDER_TTL must be positive");
       // The stored token proves ownership: a release only deletes the reservation if the value still matches,
       // so a stale caller cannot remove a newer reservation created after its own expired.
       const reservationToken = randomUUID();
       assert(
-        isDefined(await this.redisCache.set(reservation, reservationToken, ttl)),
+        isDefined(
+          await this.redisCache.set(
+            reservation,
+            reservationToken,
+            BinanceStablecoinSwapAdapter.INITIATION_RESERVATION_TTL_S
+          )
+        ),
         "Failed to persist initiation reservation"
       );
       try {
