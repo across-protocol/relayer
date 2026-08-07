@@ -169,10 +169,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   ): Promise<void> {
     const oldOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, oldStatus, account.toNative());
     const newOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
-    const result = await Promise.all([
-      this.redisCache.sRem(oldOrderStatusKey, cloid),
-      this.redisCache.sAdd(newOrderStatusKey, cloid),
-    ]);
+    const result = await this.redisCache.moveSetMember(oldOrderStatusKey, newOrderStatusKey, cloid);
     this.logger.debug({
       at: "BaseAdapter._redisUpdateOrderStatus",
       message: `Updated order status for cloid ${cloid} from ${oldOrderStatusKey} to ${newOrderStatusKey}`,
@@ -318,6 +315,13 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return sMembers;
   }
 
+  protected async _redisGetPendingDepositSubmissions(account: EvmAddress): Promise<string[]> {
+    await this._redisCleanupPendingOrders(STATUS.PENDING_DEPOSIT_SUBMISSION, account);
+    return this.redisCache.sMembers(
+      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, STATUS.PENDING_DEPOSIT_SUBMISSION, account.toNative())
+    );
+  }
+
   protected async _redisGetPendingSwaps(account: EvmAddress): Promise<string[]> {
     await this._redisCleanupPendingOrders(STATUS.PENDING_SWAP, account);
     const sMembers = await this.redisCache.sMembers(
@@ -335,13 +339,21 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   protected async _redisGetPendingOrders(account: EvmAddress): Promise<string[]> {
-    const [pendingDeposits, pendingSwaps, pendingWithdrawals, pendingBridgesPreDeposit] = await Promise.all([
-      this._redisGetPendingDeposits(account),
-      this._redisGetPendingSwaps(account),
-      this._redisGetPendingWithdrawals(account),
-      this._redisGetPendingBridgesPreDeposit(account),
-    ]);
-    return [...pendingDeposits, ...pendingSwaps, ...pendingWithdrawals, ...pendingBridgesPreDeposit];
+    const [pendingDeposits, pendingSwaps, pendingWithdrawals, pendingBridgesPreDeposit, pendingDepositSubmissions] =
+      await Promise.all([
+        this._redisGetPendingDeposits(account),
+        this._redisGetPendingSwaps(account),
+        this._redisGetPendingWithdrawals(account),
+        this._redisGetPendingBridgesPreDeposit(account),
+        this._redisGetPendingDepositSubmissions(account),
+      ]);
+    return [
+      ...pendingDeposits,
+      ...pendingSwaps,
+      ...pendingWithdrawals,
+      ...pendingBridgesPreDeposit,
+      ...pendingDepositSubmissions,
+    ];
   }
 
   // ////////////////////////////////////////////////////////////

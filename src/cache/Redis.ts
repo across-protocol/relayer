@@ -15,6 +15,7 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   renewLock(key: string, token: string, ttlMs: number): Promise<boolean>;
   incr(key: string): Promise<number>;
   incrBy(key: string, amount: number): Promise<number>;
+  moveSetMember(source: string, destination: string, value: string): Promise<unknown>;
   ttl(key: string): Promise<number | undefined>;
 }
 
@@ -76,6 +77,21 @@ export class RedisCache implements RedisCacheInterface {
     });
   }
 
+  async setAndExtend(
+    key: string,
+    value: string,
+    existingKey: string,
+    ttl: number
+  ): Promise<unknown> {
+    const results = await this.client
+      .multi()
+      .set(this.getNamespacedKey(key), value, { expiration: { type: "EX", value: ttl } })
+      .expire(this.getNamespacedKey(existingKey), ttl)
+      .exec();
+    assert(results[1], `Cannot extend missing Redis key ${existingKey}`);
+    return results;
+  }
+
   async acquireLock(key: string, token: string, ttlMs: number): Promise<boolean> {
     const reply = await this.client.set(this.getNamespacedKey(key), token, {
       expiration: { type: "PX", value: ttlMs },
@@ -116,6 +132,14 @@ export class RedisCache implements RedisCacheInterface {
 
   sRem(key: string, value: string): Promise<number> {
     return this.client.sRem(this.getNamespacedKey(key), value);
+  }
+
+  moveSetMember(source: string, destination: string, value: string): Promise<unknown> {
+    return this.client
+      .multi()
+      .sAdd(this.getNamespacedKey(destination), value)
+      .sRem(this.getNamespacedKey(source), value)
+      .exec();
   }
 
   del(key: string): Promise<number> {

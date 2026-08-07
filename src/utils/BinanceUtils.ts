@@ -322,6 +322,11 @@ export async function setBinanceDepositType(
   await redisCache.set(redisKey, type, ttl);
 }
 
+export async function deleteBinanceDepositType(depositChain: number, transactionHash: string): Promise<void> {
+  const redisCache = await getRedisCache();
+  await redisCache?.del(getBinanceTransactionTypeKey(depositChain, transactionHash));
+}
+
 /**
  * @notice Tag a withdrawal to the Redis cache with a custom status so that all functions interacting with the
  * same Binance account can distinguish between "types" of withdrawals.

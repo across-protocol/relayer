@@ -40,7 +40,12 @@ type BinanceAdapterInternals = BinanceStablecoinSwapAdapter & {
   _getAccountCoins: (token: string) => Promise<BinanceCoinStub>;
   _getEntrypointNetwork: (chainId: number, token: string) => Promise<number>;
   _redisGetNextCloid: () => Promise<string>;
-  _depositToBinance: (sourceToken: string, sourceChain: number, amountToDeposit: BigNumber) => Promise<void>;
+  _depositToBinance: (
+    cloid: string,
+    sourceToken: string,
+    sourceChain: number,
+    amountToDeposit: BigNumber
+  ) => Promise<string>;
   _redisCreateOrder: (
     cloid: string,
     status: number,
@@ -72,7 +77,7 @@ describe("Binance adapter conversion sizing", function () {
     const route = makeStablecoinRoute();
     const adapter = await makeInitializedAdapter(route);
     const internals = withBinanceInternals(adapter);
-    const depositStub = sinon.stub();
+    const depositStub = sinon.stub().resolves("0xdeposit");
     const createOrderStub = sinon.stub().resolves();
     sinon.stub(adapter, "getEstimatedCost").resolves(toBNWei("0", 6));
     sinon.stub(internals, "_getSpotMarketMetaForRoute").resolves(makeSpotMeta(true, 1));
@@ -84,9 +89,10 @@ describe("Binance adapter conversion sizing", function () {
     sinon.stub(internals, "_redisCreateOrder").callsFake(createOrderStub);
 
     const amount = toBNWei("100", 6);
-    const result = await adapter.initializeRebalance(route, amount);
+    const result = await adapter.initializeRebalanceWithTransaction(route, amount);
 
-    expect(result.eq(amount)).to.equal(true);
+    expect(result.amount.eq(amount)).to.equal(true);
+    expect(result.transactionHash).to.equal("0xdeposit");
     expect(depositStub.calledOnce).to.equal(true);
     expect(createOrderStub.calledOnce).to.equal(true);
   });
@@ -218,6 +224,11 @@ async function makeInitializedAdapter(
   internals.initialized = true;
   internals.availableRoutes = [route];
   internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+  (adapter as unknown as { _redisCache: object })._redisCache = {
+    set: sinon.stub().resolves("OK"),
+    del: sinon.stub().resolves(1),
+    moveSetMember: sinon.stub().resolves([1, 1]),
+  };
   return adapter;
 }
 

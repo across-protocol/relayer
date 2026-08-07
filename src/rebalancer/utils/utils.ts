@@ -84,6 +84,7 @@ export enum STATUS {
   PENDING_DEPOSIT,
   PENDING_SWAP,
   PENDING_WITHDRAWAL,
+  PENDING_DEPOSIT_SUBMISSION,
 }
 
 export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS, account: string): string {
@@ -101,6 +102,9 @@ export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS
     case STATUS.PENDING_BRIDGE_PRE_DEPOSIT:
       orderStatusKey = redisPrefix + "pending-bridge-pre-deposit";
       break;
+    case STATUS.PENDING_DEPOSIT_SUBMISSION:
+      orderStatusKey = redisPrefix + "pending-deposit-submission";
+      break;
     default:
       throw new Error(`Invalid status: ${status}`);
   }
@@ -115,6 +119,10 @@ export function getPendingBridgeOrderKey(redisPrefix: string, cloid: string, acc
 // (e.g. pruning an expired order) can locate and untag the deposit.
 export function getPendingBridgeDepositTxnKey(redisPrefix: string, cloid: string, account: string): string {
   return `${redisPrefix}deposit-txn:${cloid}:${account.toLowerCase()}`;
+}
+
+export function getPendingBridgeDepositRecoveryKey(redisPrefix: string, cloid: string, account: string): string {
+  return `${redisPrefix}deposit-recovery:${cloid}:${account.toLowerCase()}`;
 }
 
 export async function redisGetOrderDetailsForAdapter(

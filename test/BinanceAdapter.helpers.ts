@@ -4,6 +4,12 @@ import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
+import { FINALIZER_TOKENBRIDGE_LOOKBACK } from "../src/common";
+import {
+  getPendingBridgeDepositRecoveryKey,
+  getPendingBridgeDepositTxnKey,
+  STATUS,
+} from "../src/rebalancer/utils/utils";
 import {
   BINANCE_NETWORKS,
   BINANCE_READ_RECV_WINDOW_MS,
@@ -318,7 +324,7 @@ describe("Binance adapter helpers", function () {
       {} as OftAdapter
     );
     const internals = adapter as unknown as {
-      initializeRebalance(route: unknown, amountToTransfer: BigNumber): Promise<BigNumber>;
+      getValidatedRebalanceAmount(route: unknown, amountToTransfer: BigNumber): Promise<BigNumber>;
       _assertInitialized(): void;
       _assertRouteIsSupported(route: unknown): void;
       _routeRequiresSwap(sourceToken: string, destinationToken: string): boolean;
@@ -347,7 +353,7 @@ describe("Binance adapter helpers", function () {
     });
     const bridgingFees = sinon.stub(internals, "_getBridgingFees").resolves(bnZero);
 
-    const result = await internals.initializeRebalance(
+    const result = await internals.getValidatedRebalanceAmount(
       {
         sourceChain: CHAIN_IDs.MAINNET,
         sourceToken: "USDT",
@@ -425,6 +431,187 @@ describe("Binance adapter helpers", function () {
 
     expect(bridgingFees.calledOnce).to.equal(true);
     expect(warn.called).to.equal(false);
+  });
+
+  it("persists a recoverable order before broadcasting a direct deposit", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const route = {
+      sourceChain: CHAIN_IDs.MAINNET,
+      sourceToken: "USDT",
+      destinationChain: CHAIN_IDs.AVALANCHE,
+      destinationToken: "USDT",
+      adapter: "binance",
+    };
+    const calls: string[] = [];
+    const internals = adapter as unknown as {
+      initialized: boolean;
+      availableRoutes: (typeof route)[];
+      baseSignerAddress: EvmAddress;
+      _getRebalancePreflight(): Promise<unknown>;
+      _getTokenInfo(): { symbol: string; decimals: number };
+      _redisGetNextCloid(): Promise<string>;
+      _getEntrypointNetwork(): Promise<number>;
+      _redisCreateOrder(): Promise<void>;
+      _redisUpdateOrderStatus(): Promise<void>;
+      _depositToBinance(cloid: string, token: string, chainId: number, amount: BigNumber): Promise<string>;
+      _redisDeleteOrder(): Promise<boolean>;
+    };
+    internals.initialized = true;
+    internals.availableRoutes = [route];
+    internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    Object.assign(adapter, {
+      _redisCache: {
+        set: async () => {
+          calls.push("recovery");
+          return "OK";
+        },
+        del: async () => 1,
+      },
+    });
+    sinon.stub(internals, "_getRebalancePreflight").resolves({
+      destinationTokenInfo: { symbol: "USDT", decimals: 6 },
+      expectedAmountToWithdrawInDestinationUnits: toBNWei("100", 6),
+    });
+    sinon.stub(internals, "_getTokenInfo").returns({ symbol: "USDT", decimals: 6 });
+    sinon.stub(internals, "_redisGetNextCloid").resolves("cloid");
+    sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.MAINNET);
+    sinon.stub(internals, "_redisCreateOrder").callsFake(async (_cloid, status, _route, _amount, _account, ttl) => {
+      expect(status).to.equal(STATUS.PENDING_DEPOSIT_SUBMISSION);
+      expect(ttl).to.equal(undefined);
+      calls.push("order");
+    });
+    sinon.stub(internals, "_redisUpdateOrderStatus").callsFake(async (_cloid, oldStatus, newStatus) => {
+      expect(oldStatus).to.equal(STATUS.PENDING_DEPOSIT_SUBMISSION);
+      expect(newStatus).to.equal(STATUS.PENDING_DEPOSIT);
+      calls.push("promote");
+    });
+    sinon.stub(internals, "_depositToBinance").callsFake(async () => {
+      calls.push("deposit");
+      // An ambiguous (non-definitive) failure after the deposit may have broadcast funds.
+      throw new Error("post-broadcast redis failure");
+    });
+    const deleteOrder = sinon.stub(internals, "_redisDeleteOrder").resolves(true);
+
+    await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
+      "post-broadcast redis failure"
+    );
+    expect(calls).to.deep.equal(["recovery", "order", "deposit"]);
+    expect(deleteOrder.called).to.equal(false);
+  });
+
+  it("persists the direct deposit hash at the broadcast boundary", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const setAndExtend = sinon.stub().resolves(["OK", true]);
+    setAndExtend.onFirstCall().rejects(new Error("temporary Redis outage"));
+    const internals = adapter as unknown as {
+      baseSignerAddress: EvmAddress;
+      binanceApiClient: { depositAddress: sinon.SinonStub };
+      _getTokenInfo(): { symbol: string; decimals: number; address: EvmAddress };
+      _submitTransaction(transaction: {
+        onBroadcast?: (transactionHash: string) => void | Promise<void>;
+      }): Promise<string>;
+      _depositToBinance(cloid: string, token: string, chainId: number, amount: BigNumber): Promise<string>;
+      _wait(seconds: number): Promise<void>;
+    };
+    internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    internals.binanceApiClient = { depositAddress: sinon.stub().resolves({ address: await signer.getAddress() }) };
+    Object.assign(adapter, { _redisCache: { setAndExtend } });
+    sinon.stub(adapter.baseSigner, "connect").returns(signer);
+    sinon.stub(internals, "_wait").resolves();
+    sinon.stub(internals, "_getTokenInfo").returns({
+      symbol: "USDT",
+      decimals: 6,
+      address: EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]),
+    });
+    sinon.stub(internals, "_submitTransaction").callsFake(async (transaction) => {
+      await transaction.onBroadcast?.("0xdeposit");
+      throw new Error("stopped after broadcast");
+    });
+    const rpcProviders = process.env.RPC_PROVIDERS_1;
+    const rpcProvider = process.env.RPC_PROVIDER_test_1;
+    process.env.RPC_PROVIDERS_1 = "test";
+    process.env.RPC_PROVIDER_test_1 = "http://localhost:8545";
+
+    try {
+      await expect(
+        internals._depositToBinance("cloid", "USDT", CHAIN_IDs.MAINNET, toBNWei("100", 6))
+      ).to.be.rejectedWith("stopped after broadcast");
+    } finally {
+      rpcProviders ? (process.env.RPC_PROVIDERS_1 = rpcProviders) : delete process.env.RPC_PROVIDERS_1;
+      rpcProvider ? (process.env.RPC_PROVIDER_test_1 = rpcProvider) : delete process.env.RPC_PROVIDER_test_1;
+    }
+    expect(JSON.parse(setAndExtend.firstCall.args[1])).to.deep.equal({
+      chainId: CHAIN_IDs.MAINNET,
+      transactionHash: "0xdeposit",
+    });
+    expect(setAndExtend.firstCall.args[3]).to.equal(2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
+    expect(setAndExtend.callCount).to.equal(2);
+  });
+
+  it("reconciles a recoverable deposit transaction before lifecycle progression", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const account = EvmAddress.from(await signer.getAddress());
+    const recoveryKey = getPendingBridgeDepositRecoveryKey(adapter.REDIS_PREFIX, "cloid", account.toNative());
+    const transactionKey = getPendingBridgeDepositTxnKey(adapter.REDIS_PREFIX, "cloid", account.toNative());
+    const values = new Map<string, string>();
+    Object.assign(adapter, {
+      _baseSignerAddress: account,
+      _redisCache: {
+        get: async (key: string) => values.get(key),
+        del: async (key: string) => Number(values.delete(key)),
+        moveSetMember: async () => [1, 1],
+      },
+    });
+    const reconcile = (adapter as unknown as { _reconcileDepositRecovery(cloid: string): Promise<boolean> })
+      ._reconcileDepositRecovery;
+    const getReceipt = sinon
+      .stub(
+        adapter as unknown as { _getDepositTransactionReceipt(): Promise<{ status: number }> },
+        "_getDepositTransactionReceipt"
+      )
+      .onFirstCall()
+      .resolves(undefined);
+    getReceipt.onSecondCall().resolves({ status: 1 });
+
+    values.set(recoveryKey, "1");
+    // No recorded deposit transaction yet: reconcile must wait, keeping the marker.
+    expect(await reconcile.call(adapter, "cloid")).to.equal(false);
+    expect(getReceipt.called).to.equal(false);
+    values.set(transactionKey, JSON.stringify({ chainId: CHAIN_IDs.MAINNET, transactionHash: "0xdeposit" }));
+    // Receipt not yet available: keep waiting.
+    expect(await reconcile.call(adapter, "cloid")).to.equal(false);
+    expect(values.has(recoveryKey)).to.equal(true);
+    // Confirmed on-chain: the order may progress and the marker is cleared.
+    expect(await reconcile.call(adapter, "cloid")).to.equal(true);
+    expect(values.has(recoveryKey)).to.equal(false);
+  });
+
+  it("does not release expired deposit tags through the status cache", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const account = EvmAddress.from(await signer.getAddress());
+    const statusCacheDelete = sinon.stub().resolves(1);
+    Object.assign(adapter, {
+      _redisCache: {
+        get: sinon.stub().resolves(JSON.stringify({ chainId: CHAIN_IDs.MAINNET, transactionHash: "0xdeposit" })),
+        del: statusCacheDelete,
+      },
+    });
+    const prune = (
+      adapter as unknown as {
+        _onExpiredOrderPruned(status: STATUS, cloid: string, account: EvmAddress): Promise<void>;
+      }
+    )._onExpiredOrderPruned;
+
+    await prune.call(adapter, STATUS.PENDING_DEPOSIT, "cloid", account);
+
+    expect(statusCacheDelete.args.map(([key]) => key)).to.have.members([
+      getPendingBridgeDepositTxnKey(adapter.REDIS_PREFIX, "cloid", account.toNative()),
+      getPendingBridgeDepositRecoveryKey(adapter.REDIS_PREFIX, "cloid", account.toNative()),
+    ]);
   });
 
   it("builds Tron direct deposit transfers with ethers-compatible addresses", async function () {
