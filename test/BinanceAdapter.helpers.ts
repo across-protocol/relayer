@@ -504,7 +504,7 @@ describe("Binance adapter helpers", function () {
     await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
       "post-broadcast redis failure"
     );
-    expect(calls).to.deep.equal(["order", "recovery", "submission", "broadcast"]);
+    expect(calls).to.deep.equal(["recovery", "order", "submission", "broadcast"]);
     expect(deleteOrder.called).to.equal(false);
   });
 
@@ -571,7 +571,7 @@ describe("Binance adapter helpers", function () {
     const account = EvmAddress.from(await signer.getAddress());
     const recoveryKey = getPendingBridgeDepositRecoveryKey(adapter.REDIS_PREFIX, "cloid", account.toNative());
     const transactionKey = getPendingBridgeDepositTxnKey(adapter.REDIS_PREFIX, "cloid", account.toNative());
-    const values = new Map<string, string>([[recoveryKey, "1"]]);
+    const values = new Map<string, string>();
     Object.assign(adapter, {
       _baseSignerAddress: account,
       _redisCache: {
@@ -579,8 +579,9 @@ describe("Binance adapter helpers", function () {
         del: async (key: string) => Number(values.delete(key)),
       },
     });
-    const reconcile = (adapter as unknown as { _reconcileDepositRecovery(cloid: string): Promise<boolean> })
-      ._reconcileDepositRecovery;
+    const reconcile = (
+      adapter as unknown as { _reconcileDepositRecovery(cloid: string, requireRecovery?: boolean): Promise<boolean> }
+    )._reconcileDepositRecovery;
     const getReceipt = sinon
       .stub(
         adapter as unknown as { _getDepositTransactionReceipt(): Promise<{ status: number }> },
@@ -590,6 +591,9 @@ describe("Binance adapter helpers", function () {
       .resolves(undefined);
     getReceipt.onSecondCall().resolves({ status: 1 });
 
+    expect(await reconcile.call(adapter, "cloid", true)).to.equal(false);
+    expect(getReceipt.called).to.equal(false);
+    values.set(recoveryKey, "1");
     expect(await reconcile.call(adapter, "cloid")).to.equal(false);
     values.set(transactionKey, JSON.stringify({ chainId: CHAIN_IDs.MAINNET, transactionHash: "0xdeposit" }));
     expect(await reconcile.call(adapter, "cloid")).to.equal(false);
