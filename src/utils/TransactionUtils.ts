@@ -302,7 +302,7 @@ export async function dispatchTransaction(
     const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
       txnRequest.chainId
     }`;
-    throw new Error(`${message} (${reason})`);
+    throw new DefinitiveTransactionFailure(`${message} (${reason})`);
   }
 
   return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
