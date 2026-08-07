@@ -54,8 +54,7 @@ async function getEOAWithdrawals(
   logger: winston.Logger,
   spokePoolClient: SpokePoolClient,
   hubPoolClient: HubPoolClient,
-  senderAddresses: AddressesToFinalize,
-  latestBlockToFinalize: number
+  senderAddresses: AddressesToFinalize
 ): Promise<TokensBridged[]> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId: l2ChainId } = spokePoolClient;
@@ -82,8 +81,10 @@ async function getEOAWithdrawals(
     return [];
   }
 
+  // Withdrawals above the executed-batch boundary are discovered too: they cannot be finalized yet, but the
+  // caller reports them so that a withdrawal's progress is observable before it becomes claimable.
   const provider = spokePoolClient.spokePool.provider;
-  const searchConfig = { ...spokePoolClient.eventSearchConfig, to: latestBlockToFinalize };
+  const searchConfig = { ...spokePoolClient.eventSearchConfig, to: spokePoolClient.latestHeightSearched };
 
   const { address: vaultAddress, abi: vaultAbi } = getContractEntry(l2ChainId, "nativeTokenVault");
   const nativeTokenVault = new Contract(vaultAddress, vaultAbi, provider);
@@ -202,18 +203,14 @@ export async function zkSyncFinalizer(
     executedBatch,
     toBlock: latestBlockToFinalize,
   });
-  const eoaWithdrawals = await getEOAWithdrawals(
-    logger,
-    spokePoolClient,
-    hubPoolClient,
-    senderAddresses,
-    latestBlockToFinalize
-  );
-  const withdrawalsToQuery = spokePoolClient
+  const eoaWithdrawals = await getEOAWithdrawals(logger, spokePoolClient, hubPoolClient, senderAddresses);
+  const discoveredWithdrawals = spokePoolClient
     .getTokensBridged()
     .concat(eoaWithdrawals)
-    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize)
     .filter(({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef));
+  // Only withdrawals inside the executed-batch boundary are claimable; the rest are reported below.
+  const withdrawalsToQuery = discoveredWithdrawals.filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize);
+  const awaitingBatchExecution = discoveredWithdrawals.filter(({ blockNumber }) => blockNumber > latestBlockToFinalize);
   const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
   const l2Finalized = statuses["finalized"] ?? [];
   const candidates = await filterMessageLogs(wallet, l1ChainId, l2Finalized);
@@ -246,9 +243,15 @@ export async function zkSyncFinalizer(
       withdrawalProcessing: statuses["processing"]?.length,
       // Pending essentially includes txns with the "committed" statuses
       withdrawalPending: withdrawalsToQuery.length - l2Finalized.length,
+      withdrawalAwaitingBatchExecution: awaitingBatchExecution.length,
       withdrawalFinalizedNotExecuted: candidates.length,
       withdrawalExecuted: l2Finalized.length - candidates.length,
     },
+    awaitingBatchExecution: awaitingBatchExecution.map(({ txnRef, l2TokenAddress, amountToReturn }) => ({
+      txnRef,
+      l2TokenAddress: l2TokenAddress.toNative(),
+      amountToReturn: amountToReturn.toString(),
+    })),
   });
 
   return { callData: txns, crossChainMessages: withdrawals };
