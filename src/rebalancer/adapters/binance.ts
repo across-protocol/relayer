@@ -277,7 +277,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
         continue;
       }
-      if (await this._reconcileDepositRecovery(cloid)) {
+      if (await this._reconcileDepositRecovery(cloid, true)) {
         await this._redisUpdateOrderStatus(
           cloid,
           STATUS.PENDING_DEPOSIT_SUBMISSION,
@@ -960,13 +960,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
         expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
-      await this._redisCreateOrder(
-        cloid,
-        STATUS.PENDING_DEPOSIT_SUBMISSION,
-        rebalanceRoute,
-        amountToTransfer,
-        this.baseSignerAddress
-      );
       const depositRecoveryKey = getPendingBridgeDepositRecoveryKey(
         this.REDIS_PREFIX,
         cloid,
@@ -978,6 +971,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         assert(
           isDefined(await this.redisCache.set(depositRecoveryKey, "1", 2 * FINALIZER_TOKENBRIDGE_LOOKBACK)),
           "Failed to persist Binance deposit recovery marker"
+        );
+        await this._redisCreateOrder(
+          cloid,
+          STATUS.PENDING_DEPOSIT_SUBMISSION,
+          rebalanceRoute,
+          amountToTransfer,
+          this.baseSignerAddress
         );
         transactionHash = await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer, async () => {
           if (submissionStarted) {
@@ -1410,11 +1410,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
   }
 
-  private async _reconcileDepositRecovery(cloid: string): Promise<boolean> {
+  private async _reconcileDepositRecovery(cloid: string, requireRecovery = false): Promise<boolean> {
     const account = this.baseSignerAddress.toNative();
     const recoveryKey = getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account);
     if (!isDefined(await this.redisCache.get(recoveryKey))) {
-      return true;
+      return !requireRecovery;
     }
     const depositTxn = await this.redisCache.get<string>(
       getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account)
