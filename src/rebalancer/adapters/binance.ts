@@ -963,30 +963,36 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
       return false;
     }
-    const pendingOrderDetails = await Promise.all(
-      (await this.getPendingOrders()).map((pendingCloid) =>
-        this._redisGetOrderDetails(pendingCloid, this.baseSignerAddress)
-      )
-    );
-    const { sourceChain, sourceToken, destinationChain, destinationToken } = rebalanceRoute;
-    const duplicate = pendingOrderDetails.some(
-      (details) =>
-        isDefined(details) &&
-        details.sourceChain === sourceChain &&
-        details.sourceToken === sourceToken &&
-        details.destinationChain === destinationChain &&
-        details.destinationToken === destinationToken
-    );
-    if (duplicate) {
-      this.logger.debug({
-        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: "A pending Binance order already covers this route; declining duplicate rebalance",
-        rebalanceRoute,
-      });
+    // The guard is held from here on, so any failed or declining path must release it before returning.
+    try {
+      const pendingOrderDetails = await Promise.all(
+        (await this.getPendingOrders()).map((pendingCloid) =>
+          this._redisGetOrderDetails(pendingCloid, this.baseSignerAddress)
+        )
+      );
+      const { sourceChain, sourceToken, destinationChain, destinationToken } = rebalanceRoute;
+      const duplicate = pendingOrderDetails.some(
+        (details) =>
+          isDefined(details) &&
+          details.sourceChain === sourceChain &&
+          details.sourceToken === sourceToken &&
+          details.destinationChain === destinationChain &&
+          details.destinationToken === destinationToken
+      );
+      if (duplicate) {
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+          message: "A pending Binance order already covers this route; declining duplicate rebalance",
+          rebalanceRoute,
+        });
+        await this._releaseInitiationGuard(rebalanceRoute, cloid);
+        return false;
+      }
+      return true;
+    } catch (error) {
       await this._releaseInitiationGuard(rebalanceRoute, cloid);
-      return false;
+      throw error;
     }
-    return true;
   }
 
   private async _releaseInitiationGuard(rebalanceRoute: RebalanceRoute, cloid: string): Promise<void> {

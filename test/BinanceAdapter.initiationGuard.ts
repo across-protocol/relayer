@@ -152,6 +152,15 @@ describe("Binance adapter initiation collision guard", function () {
     expect(redis.locks.size).to.equal(0);
   });
 
+  it("releases the guard when the pending-order lookup fails", async function () {
+    const redis = makeRedis();
+    const { internals, adapter } = await makeAdapter(redis);
+    (adapter.getPendingOrders as sinon.SinonStub).rejects(new Error("redis unavailable"));
+
+    await expect(internals.initializeRebalance(ROUTE, toBNWei("6000", 6))).to.be.rejectedWith("redis unavailable");
+    expect(redis.locks.size).to.equal(0);
+  });
+
   it("releases the guard when initiation fails", async function () {
     const redis = makeRedis();
     const { internals, deposit } = await makeAdapter(redis);
