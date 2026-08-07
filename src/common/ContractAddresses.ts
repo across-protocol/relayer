@@ -15,8 +15,6 @@ import OP_USDC_BRIDGE_ABI from "./abi/OpStackUSDCBridge.json";
 import SPONSORED_CCTP_DST_PERIPHERY_ABI from "./abi/SponsoredCCTPDstPeriphery.json";
 import OVM_L1_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL1.json";
 import OVM_L2_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL2.json";
-import DAI_OPTIMISM_BRIDGE_L1_ABI from "./abi/DaiOptimismBridgeL1.json";
-import DAI_OPTIMISM_BRIDGE_L2_ABI from "./abi/DaiOptimismBridgeL2.json";
 import POLYGON_BRIDGE_ABI from "./abi/PolygonBridge.json";
 import POLYGON_ROOT_CHAIN_MANAGER_ABI from "./abi/PolygonRootChainManager.json";
 import POLYGON_WITHDRAWABLE_ERC20_ABI from "./abi/PolygonWithdrawableErc20.json";
@@ -83,10 +81,6 @@ export const CONTRACT_ADDRESSES: {
     zkStackUSDCBridge_232: {
       address: "0xf553E6D903AA43420ED7e3bc2313bE9286A8F987",
       abi: ZKSTACK_USDC_BRIDGE_ABI,
-    },
-    daiOptimismBridge: {
-      address: "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f",
-      abi: DAI_OPTIMISM_BRIDGE_L1_ABI,
     },
     // OVM, ZkSync, Linea, and Polygon can't deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
@@ -282,10 +276,6 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.OPTIMISM]: {
-    daiOptimismBridge: {
-      address: "0x467194771dae2967aef3ecbedd3bf9a310c76c65",
-      abi: DAI_OPTIMISM_BRIDGE_L2_ABI,
-    },
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,

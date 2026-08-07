@@ -40,7 +40,7 @@ export type SwapRouteV2 = {
 
 /**
  * Example configuration:
- * - DAI on chains 10 & 42161.
+ * - WBTC on chains 10 & 42161.
  * - Bridged USDC (USDC.e, USDbC) on chains 10, 137, 324, 8453, 42161 & 59144.
  * - Native USDC on Polygon.
  *
@@ -49,7 +49,7 @@ export type SwapRouteV2 = {
  * - 4% as Bridged USDC.
  *
  * "tokenConfig": {
- *   "DAI": {
+ *   "WBTC": {
  *     "10": { "targetPct": 8, "thresholdPct": 4 },
  *     "42161": { "targetPct": 8, "thresholdPct": 4 },
  *   },
