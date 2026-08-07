@@ -622,13 +622,11 @@ describe("Binance adapter helpers", function () {
         onBroadcast?: (transactionHash: string) => void | Promise<void>;
       }): Promise<string>;
       _depositToBinance(cloid: string, token: string, chainId: number, amount: BigNumber): Promise<string>;
-      _wait(seconds: number): Promise<void>;
     };
     internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
     internals.binanceApiClient = { depositAddress: sinon.stub().resolves({ address: await signer.getAddress() }) };
     Object.assign(adapter, { _redisCache: { setAndExtend } });
     sinon.stub(adapter.baseSigner, "connect").returns(signer);
-    sinon.stub(internals, "_wait").resolves();
     sinon.stub(internals, "_getTokenInfo").returns({
       symbol: "USDT",
       decimals: 6,
