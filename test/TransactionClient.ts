@@ -300,6 +300,7 @@ describe("TransactionClient", function () {
       const pending = await txnClient.submit(chainId, [callbackFailure]).catch((error) => error);
       expect(pending).to.be.an.instanceof(TransactionSubmissionPendingError);
       expect(pending.transactionHash).to.equal(replacement.hash);
+      expect(txnClient.noncesBySigner[chainId][await signer.getAddress()]).to.equal(replacement.nonce);
     });
 
     it("Resubmits on confirmation timeout", async function () {
@@ -449,6 +450,7 @@ describe("TransactionClient", function () {
       const transaction = { ...makeConfirmationTxn(chainId), onBroadcast: () => undefined };
 
       await expect(txnClient.submit(chainId, [transaction])).to.be.rejectedWith(TransactionConfirmationPendingError);
+      expect(txnClient.noncesBySigner[chainId][await signer.getAddress()]).to.equal(1);
     });
 
     it("Retries on transient error then succeeds", async function () {

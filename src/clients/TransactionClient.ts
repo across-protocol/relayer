@@ -101,7 +101,10 @@ export class DefinitiveTransactionFailure extends Error {
 }
 
 export class TransactionConfirmationPendingError extends Error {
-  constructor(readonly transactionHash: string) {
+  constructor(
+    readonly transactionHash: string,
+    readonly nonce?: number
+  ) {
     super(`Transaction confirmation remains pending: ${transactionHash}`);
   }
 }
@@ -110,7 +113,8 @@ export class TransactionConfirmationPendingError extends Error {
 export class TransactionSubmissionPendingError extends Error {
   constructor(
     cause: unknown,
-    readonly transactionHash?: string
+    readonly transactionHash?: string,
+    readonly nonce?: number
   ) {
     const error = cause instanceof Error ? cause : new Error(stringifyThrownValue(cause));
     super(`Transaction submission outcome is unknown: ${error.message}`, { cause: error });
@@ -177,10 +181,10 @@ export class TransactionClient {
 
   protected async _submit(
     txn: AugmentedTransaction,
-    opts: { nonce: number | null; maxTries?: number; pendingTransactionHash?: string }
+    opts: { nonce: number | null; maxTries?: number; pendingTransaction?: Pick<TransactionResponse, "hash" | "nonce"> }
   ): Promise<TransactionResponse> {
     const { chainId } = txn;
-    const { nonce = null, maxTries = 10, pendingTransactionHash } = opts;
+    const { nonce = null, maxTries = 10, pendingTransaction } = opts;
     const txnPromise = this._getTransactionPromise(txn, nonce);
 
     if (txn.ensureConfirmation) {
@@ -190,8 +194,8 @@ export class TransactionClient {
       try {
         txnResponse = await txnPromise;
       } catch (error) {
-        if (isDefined(pendingTransactionHash) && error instanceof DefinitiveTransactionFailure) {
-          throw new TransactionConfirmationPendingError(pendingTransactionHash);
+        if (isDefined(pendingTransaction) && error instanceof DefinitiveTransactionFailure) {
+          throw new TransactionConfirmationPendingError(pendingTransaction.hash, pendingTransaction.nonce);
         }
         throw error;
       }
@@ -241,7 +245,11 @@ export class TransactionClient {
                 try {
                   await txn.onBroadcast?.(error.replacement.hash);
                 } catch (callbackError) {
-                  throw new TransactionSubmissionPendingError(callbackError, error.replacement.hash);
+                  throw new TransactionSubmissionPendingError(
+                    callbackError,
+                    error.replacement.hash,
+                    error.replacement.nonce
+                  );
                 }
                 return error.replacement;
               }
@@ -286,7 +294,7 @@ export class TransactionClient {
               return this._submit(txn, {
                 nonce: txnResponse.nonce,
                 maxTries: maxTries - 1,
-                pendingTransactionHash: txnResponse.hash,
+                pendingTransaction: txnResponse,
               });
             }
             default:
@@ -302,7 +310,7 @@ export class TransactionClient {
       if (!txnReceipt) {
         this.logger.error({ at, message: `Unable to confirm ${chain} transaction.`, txnRef });
         if (txn.onBroadcast) {
-          throw new TransactionConfirmationPendingError(txnResponse.hash);
+          throw new TransactionConfirmationPendingError(txnResponse.hash, txnResponse.nonce);
         }
       } else if (txnReceipt.status === 0) {
         // The TVM wait resolves reverted transactions rather than throwing CALL_EXCEPTION.
@@ -360,7 +368,13 @@ export class TransactionClient {
       try {
         response = await this._submit(txn, { nonce: nonce ?? null });
       } catch (error) {
-        delete chainNonceMap[signerAddr];
+        const pending =
+          error instanceof TransactionConfirmationPendingError || error instanceof TransactionSubmissionPendingError;
+        if (pending && txn.onBroadcast && isDefined(error.nonce)) {
+          chainNonceMap[signerAddr] = error.nonce;
+        } else {
+          delete chainNonceMap[signerAddr];
+        }
         this.logger.info({
           at: "TransactionClient#submit",
           message: `Transaction ${idx + 1} submission on ${networkName} failed or timed out.`,
@@ -370,12 +384,7 @@ export class TransactionClient {
           error: stringifyThrownValue(error),
           notificationPath: "across-error",
         });
-        if (
-          (error instanceof DefinitiveTransactionFailure ||
-            error instanceof TransactionConfirmationPendingError ||
-            error instanceof TransactionSubmissionPendingError) &&
-          txn.onBroadcast
-        ) {
+        if ((error instanceof DefinitiveTransactionFailure || pending) && txn.onBroadcast) {
           throw error;
         }
         return txnResponses;
@@ -559,7 +568,7 @@ async function _runTransaction(
   try {
     await onBroadcast?.(response.hash);
   } catch (error) {
-    throw new TransactionSubmissionPendingError(error, response.hash);
+    throw new TransactionSubmissionPendingError(error, response.hash, response.nonce);
   }
   return response;
 }
@@ -638,7 +647,7 @@ async function _runTransactionTvm(
   try {
     await onBroadcast?.(result.txid);
   } catch (error) {
-    throw new TransactionSubmissionPendingError(error, result.txid);
+    throw new TransactionSubmissionPendingError(error, result.txid, 0);
   }
   logger.debug({ at, message: "TVM transaction submitted.", chain, method, txid: result.txid });
 
