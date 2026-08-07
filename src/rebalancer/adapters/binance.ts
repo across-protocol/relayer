@@ -83,6 +83,14 @@ export function getBinanceRebalanceCandidate(
   ]);
 }
 
+function getBinanceRebalanceCandidateRoute(candidate: string): string {
+  try {
+    return JSON.stringify((JSON.parse(candidate) as unknown[]).slice(0, 4));
+  } catch {
+    return candidate;
+  }
+}
+
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private _binanceApiClient?: Binance;
   private exchangeInfoPromise?: ReturnType<Binance["exchangeInfo"]>;
@@ -808,7 +816,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     try {
       const reservationSetKey = `${this.REDIS_PREFIX}initiation-reservations:${account}`;
       const reservations = await this.redisCache.sMembers(reservationSetKey);
-      const reservationDetails = await Promise.all(reservations.map((token) => this.redisCache.get(token)));
+      const reservationDetails = await Promise.all(reservations.map((token) => this.redisCache.get<string>(token)));
       const liveReservations = reservations.filter((_token, index) => isDefined(reservationDetails[index]));
       const pendingOrders = await this.getPendingOrders();
       const pendingOrderDetails = await Promise.all(
@@ -822,11 +830,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (pendingOrders.length + liveReservations.length >= maxPendingOrders) {
         return;
       }
+      const candidateRoute = getBinanceRebalanceCandidateRoute(candidate);
       if (
-        reservationDetails.some((details) => details === candidate) ||
+        reservationDetails.some(
+          (details) => isDefined(details) && getBinanceRebalanceCandidateRoute(details) === candidateRoute
+        ) ||
         pendingOrderDetails.some(
           (details) =>
-            isDefined(details) && getBinanceRebalanceCandidate(details, details.amountToTransfer) === candidate
+            isDefined(details) &&
+            getBinanceRebalanceCandidateRoute(getBinanceRebalanceCandidate(details, details.amountToTransfer)) ===
+              candidateRoute
         )
       ) {
         return;
