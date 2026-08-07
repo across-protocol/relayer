@@ -91,6 +91,24 @@ export class RedisCache implements RedisCacheInterface {
     assert(results[1], `Cannot extend missing Redis key ${existingKey}`);
   }
 
+  async setAndAddToSet(
+    key: string,
+    value: string,
+    setKey: string,
+    setValue: string,
+    ttl: number
+  ): Promise<unknown> {
+    const transaction = this.client.multi();
+    key = this.getNamespacedKey(key);
+    if (ttl === Number.POSITIVE_INFINITY) {
+      transaction.set(key, value);
+    } else {
+      assert(ttl > 0, `Cannot set Redis key ${key} with non-positive TTL ${ttl}`);
+      transaction.set(key, value, { expiration: { type: "EX", value: ttl } });
+    }
+    return transaction.sAdd(this.getNamespacedKey(setKey), setValue).exec();
+  }
+
   async acquireLock(key: string, token: string, ttlMs: number): Promise<boolean> {
     const reply = await this.client.set(this.getNamespacedKey(key), token, {
       expiration: { type: "PX", value: ttlMs },
