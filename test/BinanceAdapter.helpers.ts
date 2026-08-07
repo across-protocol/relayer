@@ -609,6 +609,15 @@ describe("Binance adapter helpers", function () {
         _reconcileDepositRecovery(cloid: string, currentStatus?: STATUS): Promise<boolean>;
       }
     )._reconcileDepositRecovery;
+    const createOrder = sinon.stub(adapter as never, "_redisCreateOrder").resolves();
+    const purgeOrder = sinon.stub(adapter as never, "_purgeOrder").resolves();
+    sinon.stub(adapter as never, "_redisGetOrderDetailsRequired").resolves({
+      sourceChain: CHAIN_IDs.MAINNET,
+      sourceToken: "USDT",
+      destinationChain: CHAIN_IDs.AVALANCHE,
+      destinationToken: "USDT",
+      amountToTransfer: toBNWei("100", 6),
+    });
     const getReceipt = sinon
       .stub(
         adapter as unknown as { _getDepositTransactionReceipt(): Promise<{ status: number }> },
@@ -618,6 +627,8 @@ describe("Binance adapter helpers", function () {
       .resolves(undefined);
     getReceipt.onSecondCall().resolves({ status: 1 });
     getReceipt.onThirdCall().resolves({ status: 1 });
+    getReceipt.onCall(3).resolves({ status: 0 });
+    getReceipt.onCall(4).resolves({ status: 0 });
 
     values.set(recoveryKey, "1");
     // No recorded deposit transaction yet: reconcile must wait, keeping the marker.
@@ -635,6 +646,18 @@ describe("Binance adapter helpers", function () {
     values.set(recoveryKey, "1");
     expect(await reconcile.call(adapter, "cloid", STATUS.PENDING_BRIDGE_PRE_DEPOSIT)).to.equal(true);
     expect(statusMoves[1][0]).to.contain("pending-bridge-pre-deposit");
+
+    values.set(recoveryKey, "1");
+    expect(await reconcile.call(adapter, "cloid", STATUS.PENDING_BRIDGE_PRE_DEPOSIT)).to.equal(false);
+    expect(createOrder.calledOnce).to.equal(true);
+    expect(values.has(recoveryKey)).to.equal(false);
+    expect(values.has(transactionKey)).to.equal(false);
+    expect(purgeOrder.called).to.equal(false);
+
+    values.set(recoveryKey, "1");
+    values.set(transactionKey, JSON.stringify({ chainId: CHAIN_IDs.MAINNET, transactionHash: "0xdirect" }));
+    expect(await reconcile.call(adapter, "cloid")).to.equal(false);
+    expect(purgeOrder.calledOnceWith("cloid")).to.equal(true);
   });
 
   it("does not release expired deposit tags through the status cache", async function () {

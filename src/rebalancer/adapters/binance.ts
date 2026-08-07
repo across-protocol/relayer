@@ -1488,7 +1488,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   /**
    * Resolve a recovery-marked order from its deposit transaction receipt. Callers gate on the recovery marker.
-   * Purges the order if the deposit reverted; on confirmation, re-tags the deposit, promotes the order to
+   * On a reverted direct deposit, purges the order. On a reverted intermediate deposit, restores the pre-deposit
+   * order so its already-bridged funds can be retried. On confirmation, re-tags the deposit, promotes the order to
    * PENDING_DEPOSIT (idempotent for orders already there) and clears the marker. Returns whether the order may
    * progress this run.
    */
@@ -1513,7 +1514,23 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       return false;
     }
     if (transactionReceipt.status === 0) {
-      await this._purgeOrder(cloid);
+      if (currentStatus === STATUS.PENDING_BRIDGE_PRE_DEPOSIT) {
+        const order = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+        await this._redisCreateOrder(
+          cloid,
+          currentStatus,
+          { ...order, adapter: "binance" },
+          order.amountToTransfer,
+          this.baseSignerAddress,
+          getOftPreDepositOrderTtlOverride(order)
+        );
+        await Promise.all([
+          this.redisCache.del(getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account)),
+          this.redisCache.del(getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account)),
+        ]);
+      } else {
+        await this._purgeOrder(cloid);
+      }
       return false;
     }
     await setBinanceDepositType(
