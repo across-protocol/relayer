@@ -50,7 +50,7 @@ export async function submitTransactionTvm(
   populatedTx: PopulatedTransaction,
   feeLimit: number,
   callValue = 0,
-  onSubmission?: (transactionHash?: string) => void
+  onSubmission?: (transactionHash?: string) => void | Promise<void>
 ): Promise<{ txid: string; result: boolean }> {
   if (!onSubmission) {
     return sdk.arch.tvm.submitTransaction(tronWeb, populatedTx, feeLimit, callValue);
@@ -86,7 +86,7 @@ export async function submitTransactionTvm(
     unsignedTransaction = transaction.transaction;
   }
   const signed = await tronWeb.trx.sign(unsignedTransaction);
-  onSubmission(signed.txID);
+  await onSubmission(signed.txID);
   const broadcast = await tronWeb.trx.sendRawTransaction(signed);
   return { txid: broadcast.txid ?? signed.txID, result: broadcast.result ?? false };
 }
