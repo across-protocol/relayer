@@ -344,6 +344,8 @@ lookback — including after the swap completes, so a consumed deposit is never 
 wall clock: if an order is abandoned while still in `PENDING_DEPOSIT` (its `REBALANCER_PENDING_ORDER_TTL` elapses), the
 prune path deletes the deposit's tag via `_onExpiredOrderPruned`, and the finalizer reclaims the funds on its next run.
 Orders pruned in later statuses keep the tag, since their deposit was already consumed by the spot order.
+`PENDING_DEPOSIT_SUBMISSION` details do not expire until a transaction hash is recorded, preventing an ambiguous RPC
+submission from being pruned and re-initiated. Operators must manually clear a submission whose hash cannot be recovered.
 
 When Binance reports `RW00441`, the account has recently credited deposit value that is not withdrawal-unlocked yet.
 The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads

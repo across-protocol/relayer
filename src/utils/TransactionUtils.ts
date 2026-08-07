@@ -292,8 +292,8 @@ export async function submitTransaction(
     ? {
         ...transaction,
         onBroadcast: async (transactionHash: string) => {
-          broadcast = true;
           await onBroadcast(transactionHash);
+          broadcast = true;
         },
       }
     : transaction;
@@ -301,6 +301,14 @@ export async function submitTransaction(
   try {
     response = await transactionClient.submit(transaction.chainId, [trackedTransaction]);
   } catch (error) {
+    if (
+      error instanceof TransactionSubmissionPendingError &&
+      isDefined(error.transactionHash) &&
+      isDefined(onBroadcast) &&
+      !broadcast
+    ) {
+      await onBroadcast(error.transactionHash);
+    }
     if (
       isDefined(onBroadcast) &&
       !broadcast &&

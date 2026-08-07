@@ -996,7 +996,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           STATUS.PENDING_DEPOSIT_SUBMISSION,
           rebalanceRoute,
           amountToTransfer,
-          this.baseSignerAddress
+          this.baseSignerAddress,
+          Number.POSITIVE_INFINITY
         );
       } catch (error) {
         await this._purgeOrderBestEffort(cloid);

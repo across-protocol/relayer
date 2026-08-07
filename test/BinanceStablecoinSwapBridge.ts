@@ -341,7 +341,8 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     expect(error.message).to.contain("failed to submit onchain");
     expect(error).to.not.be.an.instanceof(DefinitiveTransactionFailure);
 
-    const trackedTransaction = { ...transaction, onBroadcast: () => undefined } as never;
+    let recoveredHash: string | undefined;
+    const trackedTransaction = { ...transaction, onBroadcast: (hash: string) => (recoveredHash = hash) } as never;
     await expect(submitTransaction(trackedTransaction, failedSubmission)).to.be.rejectedWith(
       DefinitiveTransactionFailure
     );
@@ -355,11 +356,13 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
 
     const submissionFailure = {
       ...failedSubmission,
-      submit: async () => Promise.reject(new TransactionSubmissionPendingError(new Error("RPC response lost"))),
+      submit: async () =>
+        Promise.reject(new TransactionSubmissionPendingError(new Error("RPC response lost"), "0xrecovered")),
     };
     const pending = await submitTransaction(trackedTransaction, submissionFailure as never).catch((error) => error);
     expect(pending).to.be.an.instanceof(TransactionSubmissionPendingError);
     expect(pending).to.not.be.an.instanceof(DefinitiveTransactionFailure);
+    expect(recoveredHash).to.equal("0xrecovered");
 
     const broadcastFailure = {
       simulate: async () => [{ transaction: trackedTransaction, succeed: true }],

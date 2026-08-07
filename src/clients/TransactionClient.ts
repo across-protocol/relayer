@@ -111,7 +111,10 @@ export class TransactionConfirmationPendingError extends Error {
 
 // An EVM submission may have reached the node even when no transaction response was returned.
 export class TransactionSubmissionPendingError extends Error {
-  constructor(readonly cause: Error) {
+  constructor(
+    readonly cause: Error,
+    readonly transactionHash?: string
+  ) {
     super(`Transaction submission outcome is unknown: ${cause.message}`);
   }
 }
@@ -456,10 +459,12 @@ async function _runTransaction(
       ? await signer.sendTransaction({ to, data: (args as ethers.utils.BytesLike[])[0], ...txConfig })
       : await contract[method](...args, txConfig);
   } catch (error) {
+    const transactionHash = (error as { transactionHash?: unknown })?.transactionHash;
     // Narrow type. All errors caught here should be Ethers errors.
     if (!typeguards.isEthersError(error)) {
       throw new TransactionSubmissionPendingError(
-        error instanceof Error ? error : new Error(stringifyThrownValue(error))
+        error instanceof Error ? error : new Error(stringifyThrownValue(error)),
+        typeof transactionHash === "string" ? transactionHash : undefined
       );
     }
 
@@ -528,6 +533,9 @@ async function _runTransaction(
     }
 
     logger.debug({ at, message, code, reason, ...commonFields });
+    if (typeof transactionHash === "string") {
+      throw new TransactionSubmissionPendingError(error, transactionHash);
+    }
     if (--retries < 0) {
       throw new TransactionSubmissionPendingError(error);
     }
@@ -544,7 +552,14 @@ async function _runTransaction(
 
     return await retry(nonce, retries, retryScaler);
   }
-  await onBroadcast?.(response.hash);
+  try {
+    await onBroadcast?.(response.hash);
+  } catch (error) {
+    throw new TransactionSubmissionPendingError(
+      error instanceof Error ? error : new Error(stringifyThrownValue(error)),
+      response.hash
+    );
+  }
   return response;
 }
 

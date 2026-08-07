@@ -479,7 +479,7 @@ describe("Binance adapter helpers", function () {
     sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.MAINNET);
     sinon.stub(internals, "_redisCreateOrder").callsFake(async (_cloid, status, _route, _amount, _account, ttl) => {
       expect(status).to.equal(STATUS.PENDING_DEPOSIT_SUBMISSION);
-      expect(ttl).to.equal(undefined);
+      expect(ttl).to.equal(Number.POSITIVE_INFINITY);
       calls.push("order");
     });
     sinon.stub(internals, "_redisUpdateOrderStatus").callsFake(async (_cloid, oldStatus, newStatus) => {
