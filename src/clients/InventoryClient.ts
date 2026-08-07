@@ -869,7 +869,13 @@ export class InventoryClient {
           // Make sure to prioritize shortfall rebalances over ordinary rebalances by pushing them into the array first
           if (this.inventoryConfig?.rebalanceShortfalls) {
             const shortfallRebalances = this._getPossibleShortfallRebalances(l1Token, chainId, l2Token);
-            rebalancesRequired.push(...shortfallRebalances);
+            const [firstShortfall] = shortfallRebalances;
+            if (isDefined(firstShortfall)) {
+              rebalancesRequired.push({
+                ...firstShortfall,
+                amount: shortfallRebalances.reduce((total, { amount }) => total.add(amount), bnZero),
+              });
+            }
           }
           const inventoryRebalance = this._getPossibleInventoryRebalances(cumulativeBalance, l1Token, chainId, l2Token);
           if (inventoryRebalance) {
