@@ -514,11 +514,25 @@ describe("Binance adapter helpers", function () {
       initialized: boolean;
       availableRoutes: (typeof route)[];
       _getRebalancePreflight(): Promise<unknown>;
+      _getTokenInfo(): { decimals: number };
+      _redisGetNextCloid(): Promise<string>;
+      _getEntrypointNetwork(): Promise<number>;
     };
     internals.initialized = true;
     internals.availableRoutes = [route];
     sinon.stub(internals, "_getRebalancePreflight").rejects(new Error("accountCoins unavailable"));
 
+    await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
+      DefinitiveTransactionFailure
+    );
+
+    (internals._getRebalancePreflight as sinon.SinonStub).resolves({
+      destinationTokenInfo: { decimals: 6 },
+      expectedAmountToWithdrawInDestinationUnits: toBNWei("100", 6),
+    });
+    sinon.stub(internals, "_getTokenInfo").returns({ decimals: 6 });
+    sinon.stub(internals, "_redisGetNextCloid").resolves("cloid");
+    sinon.stub(internals, "_getEntrypointNetwork").rejects(new Error("status cache unavailable"));
     await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
       DefinitiveTransactionFailure
     );

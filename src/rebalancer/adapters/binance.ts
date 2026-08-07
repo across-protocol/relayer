@@ -892,38 +892,53 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     this._assertInitialized();
     this._assertRouteIsSupported(rebalanceRoute);
     const { sourceChain, sourceToken, destinationChain } = rebalanceRoute;
-    const preflight = await this._getRebalancePreflight(rebalanceRoute, amountToTransfer).catch((error) => {
+    const failBeforeSubmission = (error: unknown): never => {
       throw new DefinitiveTransactionFailure(
-        "Binance preflight failed before submission",
+        "Binance setup failed before submission",
         error instanceof Error ? error : new Error(String(error))
       );
-    });
-    if (!preflight) {
+    };
+    const setup = await (async () => {
+      const preflight = await this._getRebalancePreflight(rebalanceRoute, amountToTransfer);
+      if (!preflight) {
+        return;
+      }
+      const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
+      return {
+        ...preflight,
+        sourceTokenInfo,
+        sourceFormatter: createFormatFunction(2, 4, false, sourceTokenInfo.decimals),
+        destinationFormatter: createFormatFunction(2, 4, false, preflight.destinationTokenInfo.decimals),
+        cloid: await this._redisGetNextCloid(),
+        binanceDepositNetwork: await this._getEntrypointNetwork(sourceChain, sourceToken),
+      };
+    })().catch(failBeforeSubmission);
+    if (!setup) {
       return { amount: bnZero };
     }
-    const { destinationTokenInfo, expectedAmountToWithdrawInDestinationUnits } = preflight;
-    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
-    const sourceFormatter = createFormatFunction(2, 4, false, sourceTokenInfo.decimals);
-    const destinationFormatter = createFormatFunction(2, 4, false, destinationTokenInfo.decimals);
-
-    const cloid = await this._redisGetNextCloid();
+    const {
+      binanceDepositNetwork,
+      cloid,
+      destinationFormatter,
+      destinationTokenInfo,
+      expectedAmountToWithdrawInDestinationUnits,
+      sourceFormatter,
+      sourceTokenInfo,
+    } = setup;
 
     // Select which chain we will be depositing and withdrawing the source tokens in to and out of Binance from.
     // If the chains are Binance networks, then we use the chain itself. Otherwise, we use the default Binance network
     // of Arbitrum, which is selected for convenience because it is both a CCTP and OFT network as well as a
     // Binance network with good stability.
-    const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
     const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
     if (requiresBridgeBeforeDeposit) {
-      assert(
-        supportsBinanceIntermediateBridgeToken(sourceToken),
-        `Source token ${sourceToken} cannot use an intermediate bridge leg into Binance`
-      );
-      const balance = await this._getERC20Balance(
-        sourceChain,
-        sourceTokenInfo.address.toNative(),
-        this.baseSignerAddress
-      );
+      const balance = await (async () => {
+        assert(
+          supportsBinanceIntermediateBridgeToken(sourceToken),
+          `Source token ${sourceToken} cannot use an intermediate bridge leg into Binance`
+        );
+        return this._getERC20Balance(sourceChain, sourceTokenInfo.address.toNative(), this.baseSignerAddress);
+      })().catch(failBeforeSubmission);
       if (balance.lt(amountToTransfer)) {
         this.logger.debug({
           at: "BinanceStablecoinSwapAdapter.initializeRebalance",
