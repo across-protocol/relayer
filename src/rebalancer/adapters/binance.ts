@@ -848,9 +848,25 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   async releasePendingOrderSlot(reservation: string): Promise<void> {
-    const reservationSetKey = `${this.REDIS_PREFIX}initiation-reservations:${this.baseSignerAddress.toNative()}`;
-    await this.redisCache.sRem(reservationSetKey, reservation);
-    await this.redisCache.del(reservation);
+    const account = this.baseSignerAddress.toNative();
+    const lockKey = `${this.REDIS_PREFIX}initiation-lock:${account}`;
+    const lockToken = randomUUID();
+    assert(
+      await this.redisCache.acquireLock(lockKey, lockToken, BinanceStablecoinSwapAdapter.INITIATION_LOCK_TTL_MS),
+      "Failed to acquire Binance initiation lock while releasing reservation"
+    );
+    try {
+      await this.redisCache.sRem(`${this.REDIS_PREFIX}initiation-reservations:${account}`, reservation);
+      await this.redisCache.del(reservation);
+    } finally {
+      await this.redisCache.releaseLock(lockKey, lockToken).catch((error) =>
+        this.logger.warn({
+          at: "BinanceStablecoinSwapAdapter.releasePendingOrderSlot",
+          message: "Failed to release Binance initiation lock; waiting for its TTL",
+          error,
+        })
+      );
+    }
   }
 
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
@@ -868,7 +884,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     this._assertInitialized();
     this._assertRouteIsSupported(rebalanceRoute);
     const { sourceChain, sourceToken, destinationChain } = rebalanceRoute;
-    const preflight = await this._getRebalancePreflight(rebalanceRoute, amountToTransfer);
+    const preflight = await this._getRebalancePreflight(rebalanceRoute, amountToTransfer).catch((error) => {
+      throw new DefinitiveTransactionFailure(
+        "Binance preflight failed before submission",
+        error instanceof Error ? error : new Error(String(error))
+      );
+    });
     if (!preflight) {
       return { amount: bnZero };
     }

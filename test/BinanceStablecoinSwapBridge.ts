@@ -161,7 +161,10 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
         values.set(key, value);
         return "OK";
       },
-      del: async (key: string) => Number(values.delete(key)),
+      del: async (key: string) => {
+        expect(locked).to.equal(true);
+        return Number(values.delete(key));
+      },
       sMembers: async (key: string) => [...(sets.get(key) ?? [])],
       sAdd: async (key: string, value: string) => {
         const members = sets.get(key) ?? new Set<string>();
@@ -170,7 +173,10 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
         members.add(value);
         return Number(members.size > size);
       },
-      sRem: async (key: string, value: string) => Number(sets.get(key)?.delete(value) ?? false),
+      sRem: async (key: string, value: string) => {
+        expect(locked).to.equal(true);
+        return Number(sets.get(key)?.delete(value) ?? false);
+      },
       moveSetMember: async (source: string, destination: string, value: string) => {
         sets.get(source)?.delete(value);
         const values = sets.get(destination) ?? new Set<string>();

@@ -5,6 +5,7 @@ import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { FINALIZER_TOKENBRIDGE_LOOKBACK } from "../src/common";
+import { DefinitiveTransactionFailure } from "../src/clients";
 import {
   getPendingBridgeDepositRecoveryKey,
   getPendingBridgeDepositTxnKey,
@@ -498,6 +499,29 @@ describe("Binance adapter helpers", function () {
     );
     expect(calls).to.deep.equal(["recovery", "order", "deposit"]);
     expect(deleteOrder.called).to.equal(false);
+  });
+
+  it("classifies repeated preflight errors before submission as definitive", async function () {
+    const adapter = await makeAdapter();
+    const route = {
+      sourceChain: CHAIN_IDs.MAINNET,
+      sourceToken: "USDT",
+      destinationChain: CHAIN_IDs.AVALANCHE,
+      destinationToken: "USDT",
+      adapter: "binance",
+    };
+    const internals = adapter as unknown as {
+      initialized: boolean;
+      availableRoutes: (typeof route)[];
+      _getRebalancePreflight(): Promise<unknown>;
+    };
+    internals.initialized = true;
+    internals.availableRoutes = [route];
+    sinon.stub(internals, "_getRebalancePreflight").rejects(new Error("accountCoins unavailable"));
+
+    await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
+      DefinitiveTransactionFailure
+    );
   });
 
   it("persists the direct deposit hash at the broadcast boundary", async function () {
