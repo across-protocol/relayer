@@ -336,6 +336,33 @@ describe("InventoryClient: Rebalancing inventory", function () {
     }
   });
 
+  it("Caps combined shortfalls at the fundable prefix", async function () {
+    const l1Token = EvmAddress.from(mainnetUsdc);
+    const l2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
+    inventoryConfig.rebalanceShortfalls = true;
+
+    try {
+      await inventoryClient.update();
+      // The first shortfall alone is fundable but the pair is not, so only the fundable prefix is aggregated;
+      // aggregating both would get the whole transfer rejected downstream, stranding the fundable shortfall.
+      const l1Balance = tokenClient.getBalance(CHAIN_IDs.MAINNET, l1Token);
+      const shortfalls = [l1Balance, l1Balance.div(2)];
+      tokenClient.setTokenShortFallData(ARBITRUM, l2Token, [BigNumber.from(1), BigNumber.from(2)], shortfalls);
+
+      const rebalances = inventoryClient
+        .getPossibleRebalances()
+        .filter(
+          ({ chainId, l2Token: token, isShortfallRebalance }) =>
+            chainId === ARBITRUM && token.eq(l2Token) && isShortfallRebalance
+        );
+
+      expect(rebalances).to.have.lengthOf(1);
+      expect(rebalances[0].amount).to.equal(shortfalls[0]);
+    } finally {
+      delete inventoryConfig.rebalanceShortfalls;
+    }
+  });
+
   // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
   // alongside that logic.
   it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {

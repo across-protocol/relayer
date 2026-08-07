@@ -864,13 +864,22 @@ export class InventoryClient {
           if (this.inventoryConfig?.rebalanceShortfalls) {
             // Combine same-route shortfalls into a single bridge transfer: each entry shares the same route, and
             // one transfer avoids burning per-transfer bridge fees and (for capacity-limited bridges) extra slots.
+            // Aggregate only the largest prefix the current L1 balance can fund: a combined amount above the
+            // balance would be rejected wholesale downstream, stranding shortfalls that were individually
+            // fundable. Entries are sorted largest-first, so the prefix matches what would have executed anyway.
             const shortfallRebalances = this._getPossibleShortfallRebalances(l1Token, chainId, l2Token);
             const [firstShortfall] = shortfallRebalances;
             if (isDefined(firstShortfall)) {
-              rebalancesRequired.push({
-                ...firstShortfall,
-                amount: shortfallRebalances.reduce((total, { amount }) => total.add(amount), bnZero),
-              });
+              const l1Balance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
+              let amount = bnZero;
+              for (const shortfall of shortfallRebalances) {
+                const combined = amount.add(shortfall.amount);
+                if (combined.gt(l1Balance) && amount.gt(bnZero)) {
+                  break;
+                }
+                amount = combined;
+              }
+              rebalancesRequired.push({ ...firstShortfall, amount });
             }
           }
           const inventoryRebalance = this._getPossibleInventoryRebalances(cumulativeBalance, l1Token, chainId, l2Token);

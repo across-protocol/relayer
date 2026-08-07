@@ -33,6 +33,8 @@ The InventoryClient exposes functions that let other bots like the `Relayer` and
 
 In addition to chain-level virtual balances, InventoryClient exposes cumulative token-level balance context via `getCumulativeBalanceWithApproximateUpcomingRefunds()`. The Rebalancer uses this to evaluate cumulative deficits and excesses when running cumulative inventory rebalancing.
 
+When shortfall rebalances are enabled (`rebalanceShortfalls`), pending same-asset rebalances tracked in Redis (e.g. Binance swap orders reported through `RebalancerClient.getPendingRebalances`) count toward the outstanding cross-chain transfer amount for the canonical L2 token, so an in-flight rebalance already covering a shortfall is not re-initiated every run. Same-route shortfalls are combined into a single bridge transfer rather than one transfer per unfilled deposit, and the combined amount is capped at the largest prefix (entries sorted largest-first) the current L1 balance can fund — a combined amount above the balance would be rejected wholesale downstream, stranding shortfalls that were individually fundable.
+
 ### Determining Refund Chain for Deposit
 
 Another important function of the InventoryClient is to choose where a relayer should get repaid for filling a particular deposit, which is purely a function of the user's configured "ideal" inventory across chains (i.e. defined in the `InventoryConfig`) and how the inventory state would look like post-filling the deposit.
