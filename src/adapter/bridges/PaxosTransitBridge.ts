@@ -35,6 +35,7 @@ import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 export class PaxosTransitBridge extends BaseBridgeAdapter {
   protected client: PaxosTransitClient;
   protected l1TokenInfo: TokenInfo;
+  protected l1TokenAddress: EvmAddress;
   protected l2TokenAddress: Address;
 
   constructor(
@@ -59,6 +60,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     this.l2Bridge = new Contract(l2TokenAddress.toNative(), ERC20_ABI, l2SignerOrProvider);
     this.client = createPaxosTransitClient(logger);
     this.l1TokenInfo = getTokenInfo(l1Token, this.hubChainId);
+    this.l1TokenAddress = l1Token;
     this.l2TokenAddress = l2TokenAddress;
   }
 
@@ -70,18 +72,18 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     _optionalParams?: TransferTokenParams
   ): Promise<BridgeTransactionDetails> {
     assert(l2Token.eq(this.l2TokenAddress), `Attempting to bridge unsupported l2 token ${l2Token}`);
-    assert(l1Token.toNative() === this.l1Bridge?.address, "L1 token mismatch for Paxos Transit bridge");
+    assert(l1Token.eq(this.l1TokenAddress), "L1 token mismatch for Paxos Transit bridge");
 
     if (amount.lt(PAXOS_TRANSIT_MINIMUMS[this.hubChainId]?.[this.l2chainId] ?? bnZero)) {
       throw new Error(`Cannot bridge to ${getNetworkName(this.l2chainId)} due to invalid amount ${amount}`);
     }
 
-    const userAddress = await this.l1Signer.getAddress();
+    const userAddress = EvmAddress.from(await this.l1Signer.getAddress());
     const orderData = await buildPaxosTransitSubmitOrderTxn(this.client, this.l1Signer, {
       userAddress,
       offerAmount: amount,
-      offerAsset: l1Token.toNative(),
-      wantAsset: this.l2TokenAddress.toNative(),
+      offerAsset: l1Token,
+      wantAsset: this.l2TokenAddress,
       sourceChainId: this.hubChainId,
       destinationChainId: this.l2chainId,
       spenderAddress: getPaxosTransitStationAddress(this.hubChainId),
@@ -117,7 +119,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
         const tokenContract = new Contract(offerAsset.toNative(), ERC20_ABI, l1Provider);
         const events = await paginatedEventQuery(
           tokenContract,
-          tokenContract.filters.Transfer(fromAddress.toNative(), transitStation),
+          tokenContract.filters.Transfer(fromAddress.toNative(), transitStation.toNative()),
           eventConfig
         );
         return events.map((event) => processEvent(event, "value"));
@@ -141,7 +143,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     const tokenContract = new Contract(this.l2TokenAddress.toNative(), ERC20_ABI, l2Provider);
     const events = await paginatedEventQuery(
       tokenContract,
-      tokenContract.filters.Transfer(boringVault, toAddress.toNative()),
+      tokenContract.filters.Transfer(boringVault.toNative(), toAddress.toNative()),
       eventConfig
     );
     return {
@@ -153,7 +155,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     l1Token: EvmAddress,
     userAddress: EvmAddress
   ): Promise<BridgeEvents> {
-    const orders = await listOutstandingPaxosTransitOrders(this.client, userAddress.toNative());
+    const orders = await listOutstandingPaxosTransitOrders(this.client, userAddress);
     const l2TokenDecimals = getTokenInfo(this.l2TokenAddress, this.l2chainId).decimals;
     const l1TokenDecimals = this.l1TokenInfo.decimals;
     const routeParams = {
@@ -178,7 +180,7 @@ export class PaxosTransitBridge extends BaseBridgeAdapter {
     this.logger.debug({
       at: "PaxosTransitBridge#getOutstandingTransfersFromApi",
       message: "Resolved Paxos Transit outstanding orders from API",
-      offerAsset: l1Token.toNative(),
+      offerAsset: l1Token,
       wantAsset: this.l2TokenAddress,
       outstandingOrderCount: bridgeEvents.length,
       outstandingAmount: bridgeEvents.reduce((acc, event) => acc.add(event.amount), bnZero).toString(),

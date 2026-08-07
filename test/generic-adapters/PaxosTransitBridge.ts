@@ -4,6 +4,7 @@ import { BigNumber } from "ethers";
 import { PaxosTransitBridge } from "../../src/adapter/bridges/PaxosTransitBridge";
 import { expect, createSpyLogger, sinon, toBNWei, randomAddress, assert } from "../utils";
 import {
+  Address,
   EvmAddress,
   isDefined,
   PAXOS_TRANSIT_DESTINATION_TOKENS,
@@ -57,10 +58,10 @@ class MockPaxosTransitClient extends PaxosTransitClient {
   }
 
   async getAuthorization(params: {
-    spenderAddress: string;
-    tokenAddress: string;
+    spenderAddress: Address;
+    tokenAddress: Address;
     amount: BigNumber;
-    userAddress: string;
+    userAddress: Address;
     chainId: number;
   }) {
     if (params.amount.toString() !== MAX_SAFE_ALLOWANCE) {
@@ -73,7 +74,7 @@ class MockPaxosTransitClient extends PaxosTransitClient {
     return this.orderQuote;
   }
 
-  async listOrders(params: { userAddress: string; filter?: string; pageSize?: number; pageToken?: string }) {
+  async listOrders(params: { userAddress: Address; filter?: string; pageSize?: number; pageToken?: string }) {
     const { filter } = params;
     const filteredOrders = isDefined(filter)
       ? this.orders.filter((order) => {
@@ -164,19 +165,19 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       delete process.env.PAXOS_TRANSIT_BORING_VAULT_1;
       delete process.env.PAXOS_TRANSIT_BORING_VAULT_4663;
 
-      expect(getPaxosTransitStationAddress(CHAIN_IDs.MAINNET)).to.equal("0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28");
-      expect(getPaxosTransitStationAddress(CHAIN_IDs.ROBINHOOD)).to.equal("0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28");
-      expect(getPaxosTransitBoringVaultAddress(CHAIN_IDs.MAINNET)).to.equal(
-        "0x91fe06c6e9f97e7de4580a280e03046155f8e1e3"
-      );
-      expect(getPaxosTransitBoringVaultAddress(CHAIN_IDs.ROBINHOOD)).to.equal(
-        "0x91fe06c6e9f97e7de4580a280e03046155f8e1e3"
-      );
+      const station = toAddress("0x49AAA987b1a7e9E4AE091dcD8332c39F322D7d28");
+      const boringVault = toAddress("0x91fe06c6e9f97e7de4580a280e03046155f8e1e3");
+      expect(getPaxosTransitStationAddress(CHAIN_IDs.MAINNET).eq(station)).to.be.true;
+      expect(getPaxosTransitStationAddress(CHAIN_IDs.ROBINHOOD).eq(station)).to.be.true;
+      expect(getPaxosTransitBoringVaultAddress(CHAIN_IDs.MAINNET).eq(boringVault)).to.be.true;
+      expect(getPaxosTransitBoringVaultAddress(CHAIN_IDs.ROBINHOOD).eq(boringVault)).to.be.true;
     });
 
     it("prefers env override over ContractAddresses default", function () {
       process.env.PAXOS_TRANSIT_STATION_1 = "0x2222222222222222222222222222222222222222";
-      expect(getPaxosTransitStationAddress(CHAIN_IDs.MAINNET)).to.equal("0x2222222222222222222222222222222222222222");
+      expect(
+        getPaxosTransitStationAddress(CHAIN_IDs.MAINNET).eq(toAddress("0x2222222222222222222222222222222222222222"))
+      ).to.be.true;
     });
 
     it("throws when l2Token does not match expected destination token", async function () {
@@ -419,14 +420,12 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
 
     it("routes mainnet USDG-MAINNET to Robinhood USDG", function () {
       const mainnetUsdgAddress = getMainnetUsdgAddress();
-      expect(getPaxosTransitDestinationToken(l2ChainId, toAddress(mainnetUsdgAddress))?.toNative()).to.equal(
-        l2UsdgAddress
-      );
+      expect(getPaxosTransitDestinationToken(l2ChainId, mainnetUsdgAddress)?.toNative()).to.equal(l2UsdgAddress);
       expect(
         getPaxosTransitOfferAssetsForWantAsset(l2ChainId, toAddressType(l2UsdgAddress, l2ChainId))
           .map((offerAsset) => offerAsset.toNative())
           .sort()
-      ).to.deep.equal([l1UsdcAddress, mainnetUsdgAddress].sort());
+      ).to.deep.equal([l1UsdcAddress, mainnetUsdgAddress.toNative()].sort());
     });
 
     it("does not match a token without a Paxos Transit route", function () {

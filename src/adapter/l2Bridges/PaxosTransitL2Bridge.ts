@@ -71,12 +71,12 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
 
     const { l2Signer } = this;
     assert(isDefined(l2Signer), "PaxosTransitL2Bridge: l2Signer is required");
-    const userAddress = await l2Signer.getAddress();
+    const userAddress = EvmAddress.from(await l2Signer.getAddress());
     const orderData = await buildPaxosTransitSubmitOrderTxn(this.client, l2Signer, {
       userAddress,
       offerAmount: amount,
-      offerAsset: this.l2TokenAddress.toNative(),
-      wantAsset: this.l1Token.toNative(),
+      offerAsset: this.l2TokenAddress,
+      wantAsset: this.l1Token,
       sourceChainId: this.l2chainId,
       destinationChainId: this.hubChainId,
       spenderAddress: getPaxosTransitStationAddress(this.l2chainId),
@@ -114,7 +114,7 @@ export class PaxosTransitL2Bridge extends BaseL2BridgeAdapter {
     const tokenContract = new Contract(this.l2TokenAddress.toNative(), ERC20_ABI, l2Provider);
     const events = await paginatedEventQuery(
       tokenContract,
-      tokenContract.filters.Transfer(fromAddress.toNative(), transitStation),
+      tokenContract.filters.Transfer(fromAddress.toNative(), transitStation.toNative()),
       l2EventConfig
     );
     return events.map((event) => processEvent(event, "value")).reduce((acc, event) => acc.add(event.amount), bnZero);
