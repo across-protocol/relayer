@@ -581,11 +581,20 @@ describe("Binance adapter helpers", function () {
     });
     const reconcile = (adapter as unknown as { _reconcileDepositRecovery(cloid: string): Promise<boolean> })
       ._reconcileDepositRecovery;
+    const getReceipt = sinon
+      .stub(
+        adapter as unknown as { _getDepositTransactionReceipt(): Promise<{ status: number }> },
+        "_getDepositTransactionReceipt"
+      )
+      .onFirstCall()
+      .resolves(undefined);
+    getReceipt.onSecondCall().resolves({ status: 1 });
 
     expect(await reconcile.call(adapter, "cloid")).to.equal(false);
     values.set(transactionKey, JSON.stringify({ chainId: CHAIN_IDs.MAINNET, transactionHash: "0xdeposit" }));
+    expect(await reconcile.call(adapter, "cloid")).to.equal(false);
     expect(await reconcile.call(adapter, "cloid")).to.equal(true);
-    expect(values.has(recoveryKey)).to.equal(false);
+    expect(values.has(recoveryKey)).to.equal(true);
   });
 
   it("builds Tron direct deposit transfers with ethers-compatible addresses", async function () {

@@ -8,6 +8,7 @@ import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { buildAdapterManagerBinanceRoutes } from "../src/rebalancer/RebalancerClientHelper";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { RebalanceRoute, OrderDetails } from "../src/rebalancer/utils/interfaces";
+import { STATUS } from "../src/rebalancer/utils/utils";
 import { BigNumber, bnZero, CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, toBNWei } from "../src/utils";
 
 const TEST_LOGGER = {
@@ -54,9 +55,11 @@ type BinanceAdapterInternals = {
   initialized: boolean;
   availableRoutes: RebalanceRoute[];
   _redisGetPendingBridgesPreDeposit(account: EvmAddress): Promise<string[]>;
+  _redisGetPendingDepositSubmissions(account: EvmAddress): Promise<string[]>;
   _redisGetPendingDeposits(account: EvmAddress): Promise<string[]>;
   _redisGetPendingSwaps(account: EvmAddress): Promise<string[]>;
   _redisGetPendingWithdrawals(account: EvmAddress): Promise<string[]>;
+  _reconcileDepositRecovery(cloid: string): Promise<boolean>;
   _redisGetOrderDetailsRequired(cloid: string, account: EvmAddress): Promise<OrderDetails>;
   _getBinanceBalance(token: string): Promise<number>;
   _withdraw(cloid: string, amount: number, token: string, chainId: number): Promise<boolean>;
@@ -186,20 +189,27 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
     internals.initialized = true;
     internals.availableRoutes = [route];
     adapter.baseSignerAddress = signer;
-    Object.assign(adapter, { _redisCache: { get: async () => undefined } });
+    Object.assign(adapter, { _redisCache: { get: async () => undefined, del: async () => 1 } });
 
     sinon.stub(internals, "_redisGetPendingBridgesPreDeposit").resolves([]);
+    sinon.stub(internals, "_redisGetPendingDepositSubmissions").resolves(["adapter-manager-order"]);
     sinon.stub(internals, "_redisGetPendingDeposits").resolves(["adapter-manager-order"]);
     sinon.stub(internals, "_redisGetPendingSwaps").resolves([]);
     sinon.stub(internals, "_redisGetPendingWithdrawals").resolves([]);
     sinon.stub(internals, "_redisGetOrderDetailsRequired").resolves(order);
     sinon.stub(internals, "_getBinanceBalance").resolves(100);
+    sinon.stub(internals, "_reconcileDepositRecovery").resolves(true);
     sinon.stub(internals, "_withdraw").resolves(true);
     const updateStatus = sinon.stub(internals, "_redisUpdateOrderStatus").resolves();
     sinon.stub(internals, "_wait").resolves();
 
     await adapter.updateRebalanceStatuses();
 
-    expect(updateStatus.calledOnce).to.equal(true);
+    expect(updateStatus.firstCall.args.slice(0, 3)).to.deep.equal([
+      "adapter-manager-order",
+      STATUS.PENDING_DEPOSIT_SUBMISSION,
+      STATUS.PENDING_DEPOSIT,
+    ]);
+    expect(updateStatus.callCount).to.equal(2);
   });
 });

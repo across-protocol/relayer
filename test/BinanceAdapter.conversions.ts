@@ -227,8 +227,7 @@ async function makeInitializedAdapter(
   (adapter as unknown as { _redisCache: object })._redisCache = {
     set: sinon.stub().resolves("OK"),
     del: sinon.stub().resolves(1),
-    sRem: sinon.stub().resolves(1),
-    sAdd: sinon.stub().resolves(1),
+    moveSetMember: sinon.stub().resolves([1, 1]),
   };
   return adapter;
 }

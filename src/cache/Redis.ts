@@ -15,6 +15,7 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   renewLock(key: string, token: string, ttlMs: number): Promise<boolean>;
   incr(key: string): Promise<number>;
   incrBy(key: string, amount: number): Promise<number>;
+  moveSetMember(source: string, destination: string, value: string): Promise<unknown>;
   ttl(key: string): Promise<number | undefined>;
 }
 
@@ -131,6 +132,14 @@ export class RedisCache implements RedisCacheInterface {
 
   sRem(key: string, value: string): Promise<number> {
     return this.client.sRem(this.getNamespacedKey(key), value);
+  }
+
+  moveSetMember(source: string, destination: string, value: string): Promise<unknown> {
+    return this.client
+      .multi()
+      .sAdd(this.getNamespacedKey(destination), value)
+      .sRem(this.getNamespacedKey(source), value)
+      .exec();
   }
 
   del(key: string): Promise<number> {

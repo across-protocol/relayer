@@ -173,6 +173,13 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
         return Number(members.size > size);
       },
       sRem: async (key: string, value: string) => Number(sets.get(key)?.delete(value) ?? false),
+      moveSetMember: async (source: string, destination: string, value: string) => {
+        sets.get(source)?.delete(value);
+        const values = sets.get(destination) ?? new Set<string>();
+        values.add(value);
+        sets.set(destination, values);
+        return [1, 1];
+      },
     };
     const { spyLogger } = createSpyLogger();
     const makeAdapter = () => {
