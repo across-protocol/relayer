@@ -223,11 +223,10 @@ export class Relayer {
    */
   filterDeposit({ deposit, version: depositVersion, invalidFills }: RelayerUnfilledDeposit): boolean {
     const { depositId, originChainId, destinationChainId, depositor, recipient, inputToken, blockNumber } = deposit;
-    const { acrossApiClient, configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
+    const { configStoreClient, hubPoolClient, profitClient, spokePoolClients } = this.clients;
     const {
       addressFilter,
       allowedRecipients,
-      ignoreLimits,
       relayerTokens,
       acceptInvalidFills,
       minDepositConfirmations,
@@ -467,28 +466,9 @@ export class Relayer {
       return false;
     }
 
-    // We query the relayer API to get the deposit limits for different token and origin combinations.
-    // The relayer should *not* be filling deposits that the HubPool doesn't have liquidity for otherwise the relayer's
-    // refund will be stuck for potentially 7 days. Note: Filter for supported tokens first, since the relayer only
-    // queries for limits on supported tokens.
-    if (!ignoreLimits && !depositForcesOriginChainRepayment(deposit, hubPoolClient) && isDefined(l1Token)) {
-      const { inputAmount } = deposit;
-      const limit = acrossApiClient.getLimit(originChainId, l1Token);
-      if (acrossApiClient.updatedLimits && inputAmount.gt(limit)) {
-        this.logger.warn({
-          ...common,
-          message: "😱 Skipping deposit with greater unfilled amount than API suggested limit",
-          limit,
-          l1Token,
-          depositId,
-          inputToken,
-          inputAmount,
-          originChainId,
-          txnRef: deposit.txnRef,
-        });
-        return false;
-      }
-    }
+    // @dev The API-sourced HubPool liquid reserves constraint is deliberately *not* evaluated here. It only binds on
+    // repayments taken away from the origin chain, so it can't be resolved until a repayment chain has been selected.
+    // See filterRepaymentChains().
 
     // The deposit passed all checks, so we can include it in the list of unfilled deposits.
     return true;
@@ -549,6 +529,64 @@ export class Relayer {
     }
 
     return true;
+  }
+
+  /**
+   * Restrict repayment to the origin chain when the HubPool can't currently fund a refund anywhere else. An origin
+   * chain refund is funded by the deposit itself; a refund on any other chain draws on HubPool liquidity.
+   * @param deposit Deposit under evaluation.
+   * @param repaymentChainIds Candidate repayment chain IDs, ordered from highest to lowest priority.
+   * @returns The subset of repaymentChainIds whose refund can be funded, preserving the input ordering.
+   */
+  protected filterRepaymentChains(deposit: DepositWithBlock, repaymentChainIds: number[]): number[] {
+    const { acrossApiClient, hubPoolClient } = this.clients;
+    const { depositId, inputAmount, inputToken, originChainId, txnRef } = deposit;
+
+    if (this.config.ignoreLimits || !acrossApiClient.updatedLimits) {
+      return repaymentChainIds;
+    }
+
+    // Funds can be JIT-bridged from the hub chain to anywhere, so a hub chain origin is never constrained; taking
+    // repayment out on a pool rebalance route is what keeps utilisation low. getLimit() encodes the same exemption,
+    // but state it here too rather than resting on that internal detail.
+    if (originChainId === hubPoolClient.chainId) {
+      return repaymentChainIds;
+    }
+
+    // Only non-origin repayment draws on HubPool liquidity, so there's nothing to constrain.
+    if (repaymentChainIds.every((chainId) => chainId === originChainId)) {
+      return repaymentChainIds;
+    }
+
+    // Key the limit on the PoolRebalanceRoute mapping, which is the token that actually funds the refund and is also
+    // how AcrossApiClient keys its limits. @dev An input token with no route forces origin chain repayment, so it has
+    // already returned above; the bnZero fallback is defensive and treats an unresolvable limit as no liquidity.
+    const l1Token = hubPoolClient.getL1TokenForL2TokenAtBlock(
+      inputToken,
+      originChainId,
+      hubPoolClient.latestHeightSearched
+    );
+    const limit = isDefined(l1Token) ? acrossApiClient.getLimit(originChainId, l1Token) : bnZero;
+    if (inputAmount.lte(limit)) {
+      return repaymentChainIds;
+    }
+
+    this.logger.debug({
+      at: "Relayer::filterRepaymentChains",
+      message: "😱 Restricting to origin chain repayment; HubPool liquidity is insufficient.",
+      depositId,
+      originChainId,
+      inputToken,
+      inputAmount,
+      l1Token,
+      limit,
+      repaymentChainIds,
+      txnRef,
+    });
+
+    // @dev Filter rather than returning [originChainId]: an origin chain absent from the candidates was withheld by
+    // inventory, and determineRefundChainId() already prefers no fill to forcing repayment onto such a chain.
+    return repaymentChainIds.filter((chainId) => chainId === originChainId);
   }
 
   /**
@@ -1311,16 +1349,33 @@ export class Relayer {
     const destinationChain = getNetworkName(destinationChainId);
 
     const mark = this.profiler.start("resolveRepaymentChain");
-    const preferredChainIds = await inventoryClient.determineRefundChainId(deposit);
-    if (preferredChainIds.length === 0) {
+    const availableChainIds = await inventoryClient.determineRefundChainId(deposit);
+
+    // Origin chain repayment survives this filter unconditionally, so a deposit that is forced to take origin chain
+    // repayment is never refused on the basis of HubPool liquid reserves.
+    const eligibleChainIds = this.filterRepaymentChains(deposit, availableChainIds);
+    // Local to the log below: an empty result is reported to the caller as "no repayment chain", the same as any other
+    // failure to identify one. HubPool utilisation is not treated as transient, since a failed /liquid-reserves query
+    // now retains the last known limits rather than reporting zero (AcrossApiClient.update()).
+    const unfundable = eligibleChainIds.length === 0 && availableChainIds.length > 0;
+
+    if (eligibleChainIds.length === 0) {
       // @dev If the origin chain is a lite chain and there are no preferred repayment chains, then we can assume
       // that the origin chain, the only possible repayment chain, is over-allocated. We should log this case because
       // it is a special edge case the relayer should be aware of.
-      this.logger.debug({
+      let message: string;
+      if (unfundable) {
+        message =
+          `😱 Skipping ${originChain} deposit ${depositId.toString()}: no available repayment chain ` +
+          `${JSON.stringify(availableChainIds)} can be funded by available HubPool liquidity.`;
+      } else if (depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient)) {
+        message = `Deposit ${depositId.toString()} forces origin chain repayment and has an over-allocated origin chain ${originChain}`;
+      } else {
+        message = `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId.toString()}.`;
+      }
+      this.logger[unfundable ? "warn" : "debug"]({
         at: "Relayer::resolveRepaymentChain",
-        message: depositForcesOriginChainRepayment(deposit, this.clients.hubPoolClient)
-          ? `Deposit ${depositId.toString()} forces origin chain repayment and has an over-allocated origin chain ${originChain}`
-          : `Unable to identify a preferred repayment chain for ${originChain} deposit ${depositId.toString()}.`,
+        message,
         txn: blockExplorerLink(txnRef, originChainId),
       });
       return {
@@ -1337,14 +1392,14 @@ export class Relayer {
 
     mark.stop({
       message: `Determined eligible repayment chains ${JSON.stringify(
-        preferredChainIds
+        eligibleChainIds
       )} for deposit ${depositId.toString()} from ${originChain} to ${destinationChain}.`,
-      preferredChainIds,
+      eligibleChainIds,
       originChain,
       destinationChain,
     });
 
-    const _repaymentFees = preferredChainIds.map((chainId) => {
+    const _repaymentFees = eligibleChainIds.map((chainId) => {
       const fee = repaymentFees.find(({ paymentChainId }) => paymentChainId === chainId);
       assert(isDefined(fee), `No repayment fee found for chain ${chainId}`);
       return fee;
@@ -1387,13 +1442,13 @@ export class Relayer {
     };
 
     const repaymentChainProfitabilities = await Promise.all(
-      preferredChainIds.map(async (preferredChainId, i) => {
+      eligibleChainIds.map(async (preferredChainId, i) => {
         const lpFeePct = lpFeePcts[i];
         assert(isDefined(lpFeePct), `Missing lp fee pct for chain potential repayment chain ${preferredChainId}`);
         return getRepaymentChainProfitability(preferredChainId, lpFeePcts[i]);
       })
     );
-    const profitableRepaymentChainIds = preferredChainIds.filter((_, i) => repaymentChainProfitabilities[i].profitable);
+    const profitableRepaymentChainIds = eligibleChainIds.filter((_, i) => repaymentChainProfitabilities[i].profitable);
 
     // @dev preferredChainId will not be defined until a chain is found to be profitable.
     let preferredChain: number | undefined = undefined;
@@ -1419,13 +1474,13 @@ export class Relayer {
 
     if (profitableRepaymentChainIds.length > 0) {
       preferredChain = profitableRepaymentChainIds[0];
-      const preferredChainIndex = preferredChainIds.indexOf(preferredChain);
+      const preferredChainIndex = eligibleChainIds.indexOf(preferredChain);
       profitabilityData = getProfitabilityDataForPreferredChainIndex(preferredChainIndex);
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
         message: `Selected preferred repayment chain ${preferredChain} for deposit ${depositId.toString()}, #${
           preferredChainIndex + 1
-        } in eligible chains ${JSON.stringify(preferredChainIds)} list.`,
+        } in eligible chains ${JSON.stringify(eligibleChainIds)} list.`,
         profitableRepaymentChainIds,
       });
     }
@@ -1443,14 +1498,14 @@ export class Relayer {
     // reason about destination chain repayments on lite chains.
     if (
       !isDefined(preferredChain) &&
-      !preferredChainIds.includes(destinationChainId) &&
+      !eligibleChainIds.includes(destinationChainId) &&
       this.clients.inventoryClient.canTakeDestinationChainRepayment(deposit) &&
       !this.clients.inventoryClient.shouldForceOriginRepayment(deposit)
     ) {
       this.logger.debug({
         at: "Relayer::resolveRepaymentChain",
         message: `Preferred chains ${JSON.stringify(
-          preferredChainIds
+          eligibleChainIds
         )} are not profitable. Checking destination chain ${destinationChainId} profitability.`,
         deposit: { originChain, depositId: depositId.toString(), destinationChain, txnRef },
       });
@@ -1468,7 +1523,7 @@ export class Relayer {
       // but log that we might be taking a loss. This is to not penalize an honest depositor who set their
       // fees according to the API that assumes destination chain repayment.
       if (fallbackProfitability.profitable) {
-        preferredChain = preferredChainIds[0];
+        preferredChain = eligibleChainIds[0];
         const deltaRelayerFee = profitabilityData.relayerFeePct.sub(fallbackProfitability.netRelayerFeePct);
         // This is the delta in the gross relayer fee. If negative, then the destination chain would have had a higher
         // gross relayer fee, and therefore represents a virtual loss to the relayer. However, the relayer is
@@ -1476,7 +1531,7 @@ export class Relayer {
         this.logger[this.config.sendingRelaysEnabled ? "info" : "debug"]({
           at: "Relayer::resolveRepaymentChain",
           message: `🦦 Taking repayment for filling deposit ${depositId.toString()} on preferred chains ${JSON.stringify(
-            preferredChainIds
+            eligibleChainIds
           )} is unprofitable but taking repayment on destination chain ${destinationChainId} is profitable. Electing to take repayment on top preferred chain ${preferredChain} as favor to depositor who assumed repayment on destination chain in their quote. Delta in net relayer fee: ${formatFeePct(
             deltaRelayerFee
           )}%`,
@@ -1502,7 +1557,7 @@ export class Relayer {
         this.logger.debug({
           at: "Relayer::resolveRepaymentChain",
           message: `Taking repayment for deposit ${depositId.toString()} with preferred chains ${JSON.stringify(
-            preferredChainIds
+            eligibleChainIds
           )} on destination chain ${destinationChainId} would also not be profitable.`,
           deposit: {
             originChain,
@@ -1512,7 +1567,7 @@ export class Relayer {
             inputAmount,
             outputAmount,
           },
-          preferredChain: getNetworkName(preferredChainIds[0]),
+          preferredChain: getNetworkName(eligibleChainIds[0]),
           preferredChainLpFeePct: `${formatFeePct(profitabilityData.lpFeePct)}%`,
           destinationChainLpFeePct: `${formatFeePct(destinationChainLpFeePct)}%`,
           preferredChainRelayerFeePct: `${formatFeePct(profitabilityData.relayerFeePct)}%`,
