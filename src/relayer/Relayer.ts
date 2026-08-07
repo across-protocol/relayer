@@ -468,7 +468,7 @@ export class Relayer {
 
     // @dev The API-sourced HubPool liquid reserves constraint is deliberately *not* evaluated here. It only binds on
     // repayments taken away from the origin chain, so it can't be resolved until a repayment chain has been selected.
-    // See filterFundableRepaymentChains().
+    // See filterRepaymentChains().
 
     // The deposit passed all checks, so we can include it in the list of unfilled deposits.
     return true;
@@ -538,7 +538,7 @@ export class Relayer {
    * @param repaymentChainIds Candidate repayment chain IDs, ordered from highest to lowest priority.
    * @returns The subset of repaymentChainIds whose refund can be funded, preserving the input ordering.
    */
-  protected filterFundableRepaymentChains(deposit: DepositWithBlock, repaymentChainIds: number[]): number[] {
+  protected filterRepaymentChains(deposit: DepositWithBlock, repaymentChainIds: number[]): number[] {
     const { acrossApiClient, inventoryClient } = this.clients;
     const { depositId, inputAmount, inputToken, originChainId, txnRef } = deposit;
 
@@ -559,7 +559,7 @@ export class Relayer {
     }
 
     this.logger.debug({
-      at: "Relayer::filterFundableRepaymentChains",
+      at: "Relayer::filterRepaymentChains",
       message: "😱 Restricting to origin chain repayment; HubPool liquidity is insufficient.",
       depositId,
       originChainId,
@@ -1338,7 +1338,7 @@ export class Relayer {
 
     // Origin chain repayment survives this filter unconditionally, so a deposit that is forced to take origin chain
     // repayment is never refused on the basis of HubPool liquid reserves.
-    const preferredChainIds = this.filterFundableRepaymentChains(deposit, eligibleChainIds);
+    const preferredChainIds = this.filterRepaymentChains(deposit, eligibleChainIds);
     // Local to the log below: an empty result is reported to the caller as "no repayment chain", the same as any other
     // failure to identify one. HubPool utilisation is not treated as transient, since a failed /liquid-reserves query
     // now retains the last known limits rather than reporting zero (AcrossApiClient.update()).

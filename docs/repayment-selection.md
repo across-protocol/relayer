@@ -36,7 +36,7 @@ flowchart TD
     deposit[Deposit] --> possible[getPossibleRepaymentChainIds]
     possible --> precompute[batchComputeLpFees]
     precompute --> eligible[determineRefundChainId]
-    eligible --> fundable[filterFundableRepaymentChains]
+    eligible --> fundable[filterRepaymentChains]
     fundable -->|none left| none[NoRepaymentChainSelected]
     fundable -->|some remain| resolve[resolveRepaymentChain]
     resolve --> prof{AnyPreferredChainProfitable}
@@ -75,7 +75,7 @@ For the full eligibility internals, see `docs/repayment-eligibility.md`.
 
 ## Step 2a: HubPool liquidity filter
 
-`filterFundableRepaymentChains()` restricts repayment to the origin chain when `AcrossApiClient`'s `/liquid-reserves`
+`filterRepaymentChains()` restricts repayment to the origin chain when `AcrossApiClient`'s `/liquid-reserves`
 limits show the HubPool can't fund a refund elsewhere. An origin chain refund is funded by the deposit itself, so it
 always survives; forced-origin deposits are therefore never refused for want of reserves. The filter is inert when
 `ignoreLimits` is set or limits have not been fetched. If nothing survives, the deposit follows the normal
