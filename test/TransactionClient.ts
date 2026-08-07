@@ -2,6 +2,7 @@ import {
   AugmentedTransaction,
   DefinitiveTransactionFailure,
   TransactionConfirmationPendingError,
+  TransactionSubmissionPendingError,
 } from "../src/clients";
 import {
   BigNumber,
@@ -291,6 +292,14 @@ describe("TransactionClient", function () {
       expect(txnResponses.length).to.equal(1);
       expect(txnResponses[0].hash).to.equal(replacement.hash);
       expect(broadcasts).to.deep.equal([replacement.hash]);
+
+      const callbackFailure = makeConfirmationTxn(chainId);
+      callbackFailure.onBroadcast = () => {
+        throw new Error("Redis unavailable");
+      };
+      const pending = await txnClient.submit(chainId, [callbackFailure]).catch((error) => error);
+      expect(pending).to.be.an.instanceof(TransactionSubmissionPendingError);
+      expect(pending.transactionHash).to.equal(replacement.hash);
     });
 
     it("Resubmits on confirmation timeout", async function () {
