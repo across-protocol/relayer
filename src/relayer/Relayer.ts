@@ -584,6 +584,8 @@ export class Relayer {
       txnRef,
     });
 
+    // @dev Filter rather than returning [originChainId]: an origin chain absent from the candidates was withheld by
+    // inventory, and determineRefundChainId() already prefers no fill to forcing repayment onto such a chain.
     return repaymentChainIds.filter((chainId) => chainId === originChainId);
   }
 
