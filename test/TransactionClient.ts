@@ -1,4 +1,8 @@
-import { AugmentedTransaction } from "../src/clients";
+import {
+  AugmentedTransaction,
+  DefinitiveTransactionFailure,
+  TransactionConfirmationPendingError,
+} from "../src/clients";
 import {
   BigNumber,
   ethers,
@@ -80,6 +84,28 @@ describe("TransactionClient", function () {
     // The bad txns in the middle should exclusively fail.
     txnResponses = await txnClient.submit(chainId, txns.slice(nTxns, nTxns + nTxns));
     expect(txnResponses.length).to.equal(0);
+  });
+
+  it("Propagates definite pre-broadcast rejections", async function () {
+    class RejectingClient extends MockedTransactionClient {
+      protected override _getTransactionPromise(): Promise<TransactionResponse> {
+        return Promise.reject(
+          new DefinitiveTransactionFailure("Transaction rejected before broadcast", new Error("insufficient funds"))
+        );
+      }
+    }
+
+    const chainId = chainIds[0];
+    const transaction = {
+      chainId,
+      contract: { address, signer },
+      method,
+      args: [],
+      onBroadcast: () => undefined,
+    } as AugmentedTransaction;
+    await expect(new RejectingClient(spyLogger).submit(chainId, [transaction])).to.be.rejectedWith(
+      DefinitiveTransactionFailure
+    );
   });
 
   it("Validates that successive transactions increment their nonce", async function () {
@@ -209,6 +235,10 @@ describe("TransactionClient", function () {
 
       const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
       expect(txnResponses.length).to.equal(0);
+
+      const callbackTransaction = makeConfirmationTxn(chainId);
+      callbackTransaction.onBroadcast = () => undefined;
+      await expect(txnClient.submit(chainId, [callbackTransaction])).to.be.rejectedWith(DefinitiveTransactionFailure);
     });
 
     it("Resubmits on TRANSACTION_REPLACED", async function () {
@@ -230,6 +260,7 @@ describe("TransactionClient", function () {
     it("Adopts a repriced replacement instead of resubmitting", async function () {
       const chainId = chainIds[0];
       const replacement = { hash: ethers.utils.id("repriced"), nonce: 1 } as TransactionResponse;
+      const broadcasts: string[] = [];
       txnClient.waitOverride = () => {
         return Promise.reject(
           makeEthersError(ethers.errors.TRANSACTION_REPLACED, {
@@ -241,9 +272,12 @@ describe("TransactionClient", function () {
       };
 
       // A mined transaction with identical calldata (i.e. our own raced resubmission) is adopted.
-      const txnResponses = await txnClient.submit(chainId, [makeConfirmationTxn(chainId)]);
+      const transaction = makeConfirmationTxn(chainId);
+      transaction.onBroadcast = (transactionHash) => broadcasts.push(transactionHash);
+      const txnResponses = await txnClient.submit(chainId, [transaction]);
       expect(txnResponses.length).to.equal(1);
       expect(txnResponses[0].hash).to.equal(replacement.hash);
+      expect(broadcasts).to.deep.equal([replacement.hash]);
     });
 
     it("Resubmits on confirmation timeout", async function () {
@@ -355,6 +389,14 @@ describe("TransactionClient", function () {
       expect(txnResponses.length).to.equal(1);
       // Initial submission + one resubmission per remaining maxTries (default is 10).
       expect(waitCalls).to.equal(11);
+    });
+
+    it("keeps recoverable submissions pending when confirmation is exhausted", async function () {
+      const chainId = chainIds[0];
+      txnClient.waitOverride = () => Promise.reject(makeEthersError(ethers.errors.TIMEOUT));
+      const transaction = { ...makeConfirmationTxn(chainId), onBroadcast: () => undefined };
+
+      await expect(txnClient.submit(chainId, [transaction])).to.be.rejectedWith(TransactionConfirmationPendingError);
     });
 
     it("Retries on transient error then succeeds", async function () {

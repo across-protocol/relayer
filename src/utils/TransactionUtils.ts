@@ -1,6 +1,6 @@
 import { gasPriceOracle, typeguards, utils as sdkUtils } from "@across-protocol/sdk";
 import dotenv from "dotenv";
-import { AugmentedTransaction, TransactionClient } from "../clients";
+import { AugmentedTransaction, DefinitiveTransactionFailure, TransactionClient } from "../clients";
 import {
   BigNumber,
   Contract,
@@ -277,7 +277,8 @@ export async function submitTransaction(
     const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
       txnRequest.chainId
     }`;
-    throw new Error(`${message} (${reason})`);
+    // Nothing was broadcast, so callers relying on DefinitiveTransactionFailure may safely roll back.
+    throw new DefinitiveTransactionFailure(message, new Error(reason));
   }
 
   const response = await transactionClient.submit(transaction.chainId, [transaction]);

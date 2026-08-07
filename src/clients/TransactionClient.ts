@@ -78,6 +78,7 @@ export interface AugmentedTransaction {
   unpermissioned?: boolean; // If false, the transaction must be sent from the enqueuer of the method.
   // If true, then can be sent from the MakerDAO multisender contract.
   canFailInSimulation?: boolean;
+  onBroadcast?: (transactionHash: string) => void | Promise<void>;
   // Optional batch ID to use to group transactions
   groupId?: string;
   // If true, the transaction is being sent to a non Multicall contract so we can't batch it together
@@ -88,6 +89,24 @@ export interface AugmentedTransaction {
   // If true, the contract's provider will be replaced with the TransactionClient's SpeedProvider for
   // this chain (if configured), enabling parallel multi-RPC dispatch for faster submission.
   spray?: boolean;
+}
+
+type OnBroadcast = AugmentedTransaction["onBroadcast"];
+
+// A transaction that terminally failed without moving funds: rejected before broadcast, or mined and reverted.
+export class DefinitiveTransactionFailure extends Error {
+  constructor(
+    message: string,
+    readonly cause: Error
+  ) {
+    super(`${message}: ${cause.message}`);
+  }
+}
+
+export class TransactionConfirmationPendingError extends Error {
+  constructor(readonly transactionHash: string) {
+    super(`Transaction confirmation remains pending: ${transactionHash}`);
+  }
 }
 
 export function isAugmentedTransaction(txn: unknown): txn is AugmentedTransaction {
@@ -142,9 +161,10 @@ export class TransactionClient {
   }
 
   protected _getTransactionPromise(txn: AugmentedTransaction, nonce: number | null): Promise<TransactionResponse> {
-    const { contract, method, args, value, gasLimit, chainId } = txn;
-    const transactionHandler = chainIsTvm(chainId) ? _runTransactionTvm : _runTransaction;
-    return transactionHandler(this.logger, contract, method, args, value, gasLimit, nonce);
+    const { contract, method, args, value, gasLimit, chainId, onBroadcast } = txn;
+    return chainIsTvm(chainId)
+      ? _runTransactionTvm(this.logger, contract, method, args, value, gasLimit, nonce, undefined, onBroadcast)
+      : _runTransaction(this.logger, contract, method, args, value, gasLimit, nonce, undefined, 1, onBroadcast);
   }
 
   protected async _submit(
@@ -194,14 +214,15 @@ export class TransactionClient {
             case ethers.errors.CALL_EXCEPTION:
               // Call failed
               this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
-              throw error;
+              throw new DefinitiveTransactionFailure("Transaction reverted after broadcast", error);
             case ethers.errors.TRANSACTION_REPLACED:
               // "repriced" ⇒ a transaction identical to ours (data/to/value) was mined at this nonce; adopt it.
               if (error.reason === "repriced" && isReplacedError(error)) {
                 if (error.receipt.status === 0) {
                   this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
-                  throw error;
+                  throw new DefinitiveTransactionFailure("Transaction reverted after broadcast", error);
                 }
+                await txn.onBroadcast?.(error.replacement.hash);
                 return error.replacement;
               }
               this.logger.warn({
@@ -255,12 +276,17 @@ export class TransactionClient {
       } while (!txnReceipt && ++nTries < maxTries);
 
       if (!txnReceipt) {
-        // Confirmation was exhausted; alert the on-call and hand back the unconfirmed response.
         this.logger.error({ at, message: `Unable to confirm ${chain} transaction.`, txnRef });
+        if (txn.onBroadcast) {
+          throw new TransactionConfirmationPendingError(txnResponse.hash);
+        }
       } else if (txnReceipt.status === 0) {
         // The TVM wait resolves reverted transactions rather than throwing CALL_EXCEPTION.
         this.logger.debug({ at, message: `Transaction on ${chain} failed during execution...`, txnRef });
-        throw new Error(`${chain} transaction reverted (${txnResponse.hash})`);
+        throw new DefinitiveTransactionFailure(
+          "Transaction reverted after broadcast",
+          new Error(`${chain} transaction reverted (${txnResponse.hash})`)
+        );
       }
     }
 
@@ -323,6 +349,12 @@ export class TransactionClient {
           error: stringifyThrownValue(error),
           notificationPath: "across-error",
         });
+        if (
+          (error instanceof DefinitiveTransactionFailure || error instanceof TransactionConfirmationPendingError) &&
+          txn.onBroadcast
+        ) {
+          throw error;
+        }
         return txnResponses;
       }
 
@@ -363,7 +395,8 @@ async function _runTransaction(
   gasLimit: BigNumber | null = null,
   nonce: number | null = null,
   retries?: number,
-  retryScaler = 1.0
+  retryScaler = 1.0,
+  onBroadcast?: OnBroadcast
 ): Promise<TransactionResponse> {
   const at = "TxUtil#_runTransaction";
   const { provider, signer } = contract;
@@ -375,6 +408,8 @@ async function _runTransaction(
   retries ??= _retries;
 
   let gas: Partial<FeeData>;
+  const retry = (nextNonce: number | null, nextRetries: number, nextScaler = retryScaler) =>
+    _runTransaction(logger, contract, method, args, value, gasLimit, nextNonce, nextRetries, nextScaler, onBroadcast);
   try {
     nonce ??= await provider.getTransactionCount(await signer.getAddress());
     const preGas = await getGasPrice(
@@ -390,7 +425,7 @@ async function _runTransaction(
     if ((chainId === CHAIN_IDs.LINEA && method === "fillRelay") || --retries < 0) {
       throw error;
     }
-    return await _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries);
+    return await retry(nonce, retries);
   }
 
   const to = contract.address;
@@ -406,8 +441,9 @@ async function _runTransaction(
     {}
   );
 
+  let response: TransactionResponse;
   try {
-    return sendRawTxn
+    response = sendRawTxn
       ? await signer.sendTransaction({ to, data: (args as ethers.utils.BytesLike[])[0], ...txConfig })
       : await contract[method](...args, txConfig);
   } catch (error) {
@@ -464,7 +500,7 @@ async function _runTransaction(
       case errors.INSUFFICIENT_FUNDS: {
         message = "Cannot execute transaction due to insufficient native token balance.";
         logger.warn({ at, message, code, reason, ...commonFields });
-        throw error;
+        throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);
       }
 
       // Bad errors - likely something wrong in the codebase.
@@ -473,7 +509,7 @@ async function _runTransaction(
       case errors.UNEXPECTED_ARGUMENT: {
         message = `Attempted invalid ${chain} transaction (${cause}).`;
         logger.warn({ at, message, code, reason, ...commonFields });
-        throw error;
+        throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);
       }
 
       default:
@@ -495,8 +531,10 @@ async function _runTransaction(
       retryScaler = Math.min(retryScaler, maxGasScaler);
     }
 
-    return await _runTransaction(logger, contract, method, args, value, gasLimit, nonce, retries, retryScaler);
+    return await retry(nonce, retries, retryScaler);
   }
+  await onBroadcast?.(response.hash);
+  return response;
 }
 
 async function _runTransactionTvm(
@@ -507,7 +545,8 @@ async function _runTransactionTvm(
   value = bnZero,
   gasLimit: BigNumber | null = null,
   _nonce: number | null = null,
-  retries?: number
+  retries?: number,
+  onBroadcast?: OnBroadcast
 ): Promise<TransactionResponse> {
   const at = "TransactionClient#_runTransactionTvm";
   const { provider } = contract;
@@ -541,7 +580,10 @@ async function _runTransactionTvm(
     result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
   } catch (error) {
     if (--retries < 0) {
-      throw error;
+      throw new DefinitiveTransactionFailure(
+        "Transaction rejected before broadcast",
+        error instanceof Error ? error : new Error(stringifyThrownValue(error))
+      );
     }
     logger.debug({
       at,
@@ -549,13 +591,13 @@ async function _runTransactionTvm(
       method,
       error: stringifyThrownValue(error),
     });
-    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries);
+    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries, onBroadcast);
   }
 
   if (!result.result) {
     const error = new Error(`TVM transaction broadcast failed on ${chain}: ${result.txid}`);
     if (--retries < 0) {
-      throw error;
+      throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);
     }
     logger.debug({
       at,
@@ -563,9 +605,10 @@ async function _runTransactionTvm(
       method,
       txid: result.txid,
     });
-    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries);
+    return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries, onBroadcast);
   }
 
+  await onBroadcast?.(result.txid);
   logger.debug({ at, message: "TVM transaction submitted.", chain, method, txid: result.txid });
 
   // Adapt TronTransactionResult to an ethers-compatible TransactionResponse. TVM doesn't use
