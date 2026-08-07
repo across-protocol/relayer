@@ -830,14 +830,20 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       const ttl = Number(process.env.REBALANCER_PENDING_ORDER_TTL ?? 60 * 60);
       assert(ttl > 0, "REBALANCER_PENDING_ORDER_TTL must be positive");
-      assert(isDefined(await this.redisCache.set(reservation, "1", ttl)), "Failed to persist initiation reservation");
+      // The stored token proves ownership: a release only deletes the reservation if the value still matches,
+      // so a stale caller cannot remove a newer reservation created after its own expired.
+      const reservationToken = randomUUID();
+      assert(
+        isDefined(await this.redisCache.set(reservation, reservationToken, ttl)),
+        "Failed to persist initiation reservation"
+      );
       try {
         await this.redisCache.sAdd(reservationSetKey, reservation);
       } catch (error) {
         await this.redisCache.del(reservation);
         throw error;
       }
-      return reservation;
+      return `${reservation}#${reservationToken}`;
     } finally {
       await this._releaseInitiationLock(lockKey, lockToken, "reservePendingOrderSlot");
     }
@@ -860,8 +866,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     assert(acquired, "Failed to acquire Binance initiation lock while releasing reservation");
     try {
-      await this.redisCache.sRem(`${this.REDIS_PREFIX}initiation-reservations:${account}`, reservation);
-      await this.redisCache.del(reservation);
+      const [reservationKey, reservationToken] = reservation.split("#");
+      const storedToken = await this.redisCache.get<string>(reservationKey);
+      if (isDefined(storedToken) && storedToken !== reservationToken) {
+        // A newer caller re-reserved the candidate after this reservation expired; leave its reservation intact.
+        return;
+      }
+      await this.redisCache.sRem(`${this.REDIS_PREFIX}initiation-reservations:${account}`, reservationKey);
+      if (isDefined(storedToken)) {
+        await this.redisCache.del(reservationKey);
+      }
     } finally {
       await this._releaseInitiationLock(lockKey, lockToken, "releasePendingOrderSlot");
     }

@@ -691,14 +691,65 @@ describe("Binance adapter helpers", function () {
     const del = sinon.stub().resolves(1);
     adapter.baseSignerAddress = EvmAddress.from(await signer.getAddress());
     Object.assign(adapter, {
-      _redisCache: { acquireLock, releaseLock: sinon.stub().resolves(true), sRem, del },
+      _redisCache: {
+        acquireLock,
+        releaseLock: sinon.stub().resolves(true),
+        get: sinon.stub().resolves("token"),
+        sRem,
+        del,
+      },
     });
     sinon.stub(adapter as unknown as { _wait(): Promise<void> }, "_wait").resolves();
 
-    await adapter.releasePendingOrderSlot("reservation");
+    await adapter.releasePendingOrderSlot("reservation#token");
 
     expect(acquireLock.callCount).to.equal(2);
     expect(sRem.calledBefore(del)).to.equal(true);
+    expect(del.firstCall.args[0]).to.equal("reservation");
+  });
+
+  it("does not delete a renewed reservation on stale release", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const sRem = sinon.stub().resolves(1);
+    const del = sinon.stub().resolves(1);
+    adapter.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    Object.assign(adapter, {
+      _redisCache: {
+        acquireLock: sinon.stub().resolves(true),
+        releaseLock: sinon.stub().resolves(true),
+        get: sinon.stub().resolves("newer-token"),
+        sRem,
+        del,
+      },
+    });
+
+    await adapter.releasePendingOrderSlot("reservation#stale-token");
+
+    expect(sRem.called).to.equal(false);
+    expect(del.called).to.equal(false);
+  });
+
+  it("prunes the set entry when releasing an expired reservation", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const sRem = sinon.stub().resolves(1);
+    const del = sinon.stub().resolves(1);
+    adapter.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    Object.assign(adapter, {
+      _redisCache: {
+        acquireLock: sinon.stub().resolves(true),
+        releaseLock: sinon.stub().resolves(true),
+        get: sinon.stub().resolves(undefined),
+        sRem,
+        del,
+      },
+    });
+
+    await adapter.releasePendingOrderSlot("reservation#stale-token");
+
+    expect(sRem.called).to.equal(true);
+    expect(del.called).to.equal(false);
   });
 
   it("honors an explicit order TTL over the environment default", async function () {
