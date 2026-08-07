@@ -1,6 +1,7 @@
 import {
   AugmentedTransaction,
   DefinitiveTransactionFailure,
+  TransactionClient,
   TransactionConfirmationPendingError,
   TransactionSubmissionPendingError,
 } from "../src/clients";
@@ -120,6 +121,64 @@ describe("TransactionClient", function () {
     await expect(new RejectingClient(spyLogger).submit(chainId, [transaction])).to.be.rejectedWith(
       DefinitiveTransactionFailure
     );
+  });
+
+  describe("broadcast recovery", function () {
+    const chainId = chainIds[0];
+    const nonce = 7;
+
+    function makeTransaction(provider: Record<string, unknown>, send: () => Promise<never>): AugmentedTransaction {
+      return {
+        chainId,
+        contract: {
+          address,
+          signer: { getAddress: () => signer.getAddress() },
+          provider,
+          populateTransaction: { [method]: () => Promise.resolve({}) },
+          [method]: send,
+        } as unknown as Contract,
+        method,
+        args: [],
+        onBroadcast: () => undefined,
+      };
+    }
+
+    beforeEach(function () {
+      process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`] = "1";
+      process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`] = "1";
+    });
+
+    afterEach(function () {
+      delete process.env[`MAX_FEE_PER_GAS_OVERRIDE_${chainId}`];
+      delete process.env[`MAX_PRIORITY_FEE_PER_GAS_OVERRIDE_${chainId}`];
+      delete process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`];
+    });
+
+    it("preserves the nonce after an ambiguous EVM send error", async function () {
+      const provider = {
+        getNetwork: () => Promise.resolve({ chainId }),
+        getTransactionCount: () => Promise.resolve(nonce),
+      };
+      const error = Object.assign(new Error("timeout"), { code: ethers.errors.SERVER_ERROR });
+      const transaction = makeTransaction(provider, () => Promise.reject(error));
+      const client = new TransactionClient(spyLogger);
+
+      await expect(client.submit(chainId, [transaction])).to.be.rejectedWith(TransactionSubmissionPendingError);
+      expect(client.noncesBySigner[chainId][await signer.getAddress()]).to.equal(nonce);
+    });
+
+    it("classifies exhausted setup failures as definitive", async function () {
+      process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] = "0";
+      const provider = {
+        getNetwork: () => Promise.resolve({ chainId }),
+        getTransactionCount: () => Promise.reject(new Error("unavailable")),
+      };
+      const transaction = makeTransaction(provider, () => Promise.reject(new Error("should not send")));
+
+      await expect(new TransactionClient(spyLogger).submit(chainId, [transaction])).to.be.rejectedWith(
+        DefinitiveTransactionFailure
+      );
+    });
   });
 
   it("Validates that successive transactions increment their nonce", async function () {
