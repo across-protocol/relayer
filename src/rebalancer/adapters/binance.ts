@@ -255,6 +255,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
+    const account = this.baseSignerAddress.toNative();
 
     const pendingDepositSubmissions = await this._redisGetPendingDepositSubmissions(this.baseSignerAddress);
     for (const cloid of pendingDepositSubmissions) {
@@ -264,11 +265,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       // Fail closed on markerless submissions: without a recovery marker there is no receipt trail to prove the
       // deposit landed, so leave the order for the TTL prune.
-      const recoveryKey = getPendingBridgeDepositRecoveryKey(
-        this.REDIS_PREFIX,
-        cloid,
-        this.baseSignerAddress.toNative()
-      );
+      const recoveryKey = getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account);
       if (isDefined(await this.redisCache.get(recoveryKey))) {
         await this._reconcileDepositRecovery(cloid);
       }
@@ -286,6 +283,11 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     for (const cloid of pendingBridgeToBinanceDepositNetwork) {
       const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
       if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
+      const recoveryKey = getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account);
+      if (isDefined(await this.redisCache.get(recoveryKey))) {
+        await this._reconcileDepositRecovery(cloid, STATUS.PENDING_BRIDGE_PRE_DEPOSIT);
         continue;
       }
       const { sourceToken, amountToTransfer, sourceChain } = orderDetails;
@@ -316,12 +318,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           message: `We have enough ${sourceToken} balance on Binance deposit network ${binanceDepositNetwork} to initiate a deposit now for ${requiredAmountOnDepositNetwork.toString()} for order ${cloid}`,
           depositNetworkBalance: depositNetworkBalance.toString(),
         });
-        await this._depositToBinance(cloid, sourceToken, binanceDepositNetwork, requiredAmountOnDepositNetwork);
-        await this._redisUpdateOrderStatus(
+        await this._depositBridgedFundsToBinance(
           cloid,
-          STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
-          STATUS.PENDING_DEPOSIT,
-          this.baseSignerAddress
+          orderDetails,
+          binanceDepositNetwork,
+          requiredAmountOnDepositNetwork,
+          recoveryKey
         );
       }
     }
@@ -340,11 +342,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
         continue;
       }
-      const recoveryKey = getPendingBridgeDepositRecoveryKey(
-        this.REDIS_PREFIX,
-        cloid,
-        this.baseSignerAddress.toNative()
-      );
+      const recoveryKey = getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account);
       if (isDefined(await this.redisCache.get(recoveryKey)) && !(await this._reconcileDepositRecovery(cloid))) {
         continue;
       }
@@ -1383,13 +1381,52 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
   }
 
+  private async _depositBridgedFundsToBinance(
+    cloid: string,
+    order: OrderDetails,
+    depositChain: number,
+    amount: BigNumber,
+    recoveryKey: string
+  ): Promise<void> {
+    await this._savePreDepositOrder(cloid, order, Number.POSITIVE_INFINITY);
+    try {
+      assert(
+        isDefined(await this.redisCache.set(recoveryKey, "1", 2 * FINALIZER_TOKENBRIDGE_LOOKBACK)),
+        "Failed to persist Binance deposit recovery marker"
+      );
+    } catch (error) {
+      await this._savePreDepositOrder(cloid, order, getOftPreDepositOrderTtlOverride(order));
+      throw error;
+    }
+    try {
+      await this._depositToBinance(cloid, order.sourceToken, depositChain, amount);
+      await this._redisUpdateOrderStatus(
+        cloid,
+        STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
+        STATUS.PENDING_DEPOSIT,
+        this.baseSignerAddress
+      );
+      await this.redisCache.del(recoveryKey);
+    } catch (error) {
+      if (error instanceof DefinitiveTransactionFailure) {
+        await this.redisCache.del(recoveryKey);
+        await this._savePreDepositOrder(cloid, order, getOftPreDepositOrderTtlOverride(order));
+      }
+      throw error;
+    }
+  }
+
   /**
    * Resolve a recovery-marked order from its deposit transaction receipt. Callers gate on the recovery marker.
-   * Purges the order if the deposit reverted; on confirmation, re-tags the deposit, promotes the order to
-   * PENDING_DEPOSIT (idempotent for orders already there) and clears the marker. Returns whether the order may
-   * progress this run.
+   * On a reverted direct deposit, purges the order. On a reverted intermediate deposit, restores the pre-deposit
+   * order so its already-bridged funds can be retried. On confirmation, re-tags the deposit, promotes the order to
+   * PENDING_DEPOSIT (idempotent for orders already there) and clears the marker. Returns whether the order may progress
+   * this run.
    */
-  private async _reconcileDepositRecovery(cloid: string): Promise<boolean> {
+  private async _reconcileDepositRecovery(
+    cloid: string,
+    oldStatus: STATUS = STATUS.PENDING_DEPOSIT_SUBMISSION
+  ): Promise<boolean> {
     const account = this.baseSignerAddress.toNative();
     const depositTxn = await this.redisCache.get<string>(
       getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account)
@@ -1407,7 +1444,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       return false;
     }
     if (transactionReceipt.status === 0) {
-      await this._purgeOrder(cloid);
+      if (oldStatus === STATUS.PENDING_BRIDGE_PRE_DEPOSIT) {
+        const order = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+        await this._savePreDepositOrder(cloid, order, getOftPreDepositOrderTtlOverride(order));
+        await Promise.all([
+          this.redisCache.del(getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account)),
+          this.redisCache.del(getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account)),
+        ]);
+      } else {
+        await this._purgeOrder(cloid);
+      }
       return false;
     }
     await setBinanceDepositType(
@@ -1416,14 +1462,20 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       BinanceTransactionType.SWAP,
       2 * FINALIZER_TOKENBRIDGE_LOOKBACK
     );
-    await this._redisUpdateOrderStatus(
-      cloid,
-      STATUS.PENDING_DEPOSIT_SUBMISSION,
-      STATUS.PENDING_DEPOSIT,
-      this.baseSignerAddress
-    );
+    await this._redisUpdateOrderStatus(cloid, oldStatus, STATUS.PENDING_DEPOSIT, this.baseSignerAddress);
     await this.redisCache.del(getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account));
     return true;
+  }
+
+  private _savePreDepositOrder(cloid: string, order: OrderDetails, ttl?: number): Promise<void> {
+    return this._redisCreateOrder(
+      cloid,
+      STATUS.PENDING_BRIDGE_PRE_DEPOSIT,
+      { ...order, adapter: "binance" },
+      order.amountToTransfer,
+      this.baseSignerAddress,
+      ttl
+    );
   }
 
   // Remove all Redis state for an order that definitively has no funds behind it.

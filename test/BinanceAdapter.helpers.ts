@@ -5,6 +5,7 @@ import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { FINALIZER_TOKENBRIDGE_LOOKBACK } from "../src/common";
+import { DefinitiveTransactionFailure } from "../src/clients";
 import {
   getPendingBridgeDepositRecoveryKey,
   getPendingBridgeDepositTxnKey,
@@ -386,7 +387,7 @@ describe("Binance adapter helpers", function () {
       {} as OftAdapter
     );
     const internals = adapter as unknown as {
-      initializeRebalance(route: unknown, amountToTransfer: BigNumber): Promise<BigNumber>;
+      getValidatedRebalanceAmount(route: unknown, amountToTransfer: BigNumber): Promise<BigNumber>;
       _assertInitialized(): void;
       _assertRouteIsSupported(route: unknown): void;
       _routeRequiresSwap(sourceToken: string, destinationToken: string): boolean;
@@ -417,7 +418,7 @@ describe("Binance adapter helpers", function () {
     const bridgingFees = sinon.stub(internals, "_getBridgingFees").rejects(new Error("reached bridging fees"));
 
     await expect(
-      internals.initializeRebalance(
+      internals.getValidatedRebalanceAmount(
         {
           sourceChain: CHAIN_IDs.MAINNET,
           sourceToken: "USDT",
@@ -497,6 +498,114 @@ describe("Binance adapter helpers", function () {
       "post-broadcast redis failure"
     );
     expect(calls).to.deep.equal(["recovery", "order", "deposit"]);
+    expect(deleteOrder.called).to.equal(false);
+  });
+
+  it("persists recovery state before depositing an intermediate bridge balance", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const calls: string[] = [];
+    const internals = adapter as unknown as {
+      baseSignerAddress: EvmAddress;
+      _depositBridgedFundsToBinance(
+        cloid: string,
+        order: object,
+        chainId: number,
+        amount: BigNumber,
+        recoveryKey: string
+      ): Promise<void>;
+      _depositToBinance(): Promise<string>;
+      _redisUpdateOrderStatus(): Promise<void>;
+      _savePreDepositOrder(): Promise<void>;
+    };
+    internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    Object.assign(adapter, {
+      _redisCache: {
+        set: async () => {
+          calls.push("recovery");
+          return "OK";
+        },
+        del: async () => 1,
+      },
+    });
+    sinon.stub(internals, "_savePreDepositOrder").callsFake(async () => {
+      calls.push("order");
+    });
+    sinon.stub(internals, "_depositToBinance").callsFake(async () => {
+      calls.push("deposit");
+      throw new Error("ambiguous post-broadcast failure");
+    });
+    const updateStatus = sinon.stub(internals, "_redisUpdateOrderStatus");
+
+    await expect(
+      internals._depositBridgedFundsToBinance(
+        "cloid",
+        {
+          sourceToken: "USDT",
+          destinationToken: "USDT",
+          sourceChain: CHAIN_IDs.HYPEREVM,
+          destinationChain: CHAIN_IDs.AVALANCHE,
+          amountToTransfer: toBNWei("100", 6),
+        },
+        CHAIN_IDs.ARBITRUM,
+        toBNWei("100", 6),
+        "recovery-key"
+      )
+    ).to.be.rejectedWith("ambiguous post-broadcast failure");
+    expect(calls).to.deep.equal(["order", "recovery", "deposit"]);
+    expect(updateStatus.called).to.equal(false);
+  });
+
+  it("keeps an intermediate bridge order retryable after a definitive deposit failure", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const deleted: string[] = [];
+    const internals = adapter as unknown as {
+      baseSignerAddress: EvmAddress;
+      _depositBridgedFundsToBinance(
+        cloid: string,
+        order: object,
+        chainId: number,
+        amount: BigNumber,
+        recoveryKey: string
+      ): Promise<void>;
+      _depositToBinance(): Promise<string>;
+      _redisUpdateOrderStatus(): Promise<void>;
+      _redisDeleteOrder(): Promise<boolean>;
+      _savePreDepositOrder(): Promise<void>;
+    };
+    internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    Object.assign(adapter, {
+      _redisCache: {
+        set: async () => "OK",
+        del: async (key: string) => {
+          deleted.push(key);
+          return 1;
+        },
+      },
+    });
+    const saveOrder = sinon.stub(internals, "_savePreDepositOrder").resolves();
+    sinon.stub(internals, "_depositToBinance").rejects(new DefinitiveTransactionFailure("simulation failed"));
+    sinon.stub(internals, "_redisUpdateOrderStatus");
+    const deleteOrder = sinon.stub(internals, "_redisDeleteOrder");
+
+    await expect(
+      internals._depositBridgedFundsToBinance(
+        "cloid",
+        {
+          sourceToken: "USDT",
+          destinationToken: "USDT",
+          sourceChain: CHAIN_IDs.HYPEREVM,
+          destinationChain: CHAIN_IDs.AVALANCHE,
+          amountToTransfer: toBNWei("100", 6),
+        },
+        CHAIN_IDs.ARBITRUM,
+        toBNWei("100", 6),
+        "recovery-key"
+      )
+    ).to.be.rejectedWith("simulation failed");
+    expect(deleted).to.deep.equal(["recovery-key"]);
+    expect(saveOrder.callCount).to.equal(2);
     expect(deleteOrder.called).to.equal(false);
   });
 

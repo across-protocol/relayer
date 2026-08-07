@@ -131,6 +131,23 @@ finalization log. At that point, operators should rely on adapter lifecycle reco
 `sweepIntermediateBalances`) to recover stranded intermediate capital instead of assuming pending-order cache entries
 remain indefinitely.
 
+Binance deposits use a crash-recovery marker and a signer-scoped transaction-hash record. For direct deposits, the
+adapter creates a `PENDING_DEPOSIT_SUBMISSION` order and marker before broadcasting. For deposits after an intermediate
+bridge, it marks and extends the existing `PENDING_BRIDGE_PRE_DEPOSIT` order before broadcasting. The transaction hash
+is recorded by the broadcast callback. A later status pass checks the receipt: confirmed deposits advance to
+`PENDING_DEPOSIT`, reverted direct deposits are purged, and reverted intermediate deposits return to the pre-deposit
+state for retry. Missing receipts and ambiguous submission failures retain the marker and do not submit again.
+Intermediate pre-deposit orders are made non-expiring during submission and require manual recovery if their hash
+cannot be recovered; direct and markerless submission orders fail closed until their order TTL expires. Recovery keys
+live for twice the finalizer bridge lookback so the finalizer cannot mistake a swap deposit for sweepable funds while
+recovery is pending.
+
+Binance also exposes signer-scoped, expiring Redis reservations under a short lock. A caller that can overlap another
+initiator must bracket `initializeRebalanceWithTransaction` with `reservePendingOrderSlot` and
+`releasePendingOrderSlot` to share its pending-order limit and reject duplicate in-flight routes. The AdapterManager
+bridge introduced by the follow-up integration owns that prepare/send/release sequence; existing rebalancer routes
+remain programmer-owned and must not be configured in both initiation paths.
+
 Contributor guidance:
 
 - Pending rebalance orders are intentionally short lived. In practice, a legacy Redis order-schema change is usually
