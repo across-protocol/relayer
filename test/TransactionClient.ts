@@ -166,12 +166,53 @@ describe("TransactionClient", function () {
         getNetwork: () => Promise.resolve({ chainId }),
         getTransactionCount: () => Promise.resolve(nonce),
       };
-      const error = Object.assign(new Error("timeout"), { code: ethers.errors.SERVER_ERROR });
+      // BaseProvider.sendTransaction attaches the local hash to errors raised at or beyond the raw send.
+      const error = Object.assign(new Error("timeout"), {
+        code: ethers.errors.SERVER_ERROR,
+        transactionHash: "0xsent",
+      });
       const transaction = makeTransaction(provider, () => Promise.reject(error));
       const client = new TransactionClient(spyLogger);
 
       await expect(client.submit(chainId, [transaction])).to.be.rejectedWith(TransactionSubmissionPendingError);
       expect(client.noncesBySigner[chainId][await signer.getAddress()]).to.equal(nonce);
+    });
+
+    it("preserves the nonce after an accepted send with a mismatched hash", async function () {
+      const provider = {
+        getNetwork: () => Promise.resolve({ chainId }),
+        getTransactionCount: () => Promise.resolve(nonce),
+      };
+      // ethers throws UNKNOWN_ERROR from _wrapTransaction when the RPC returns an unexpected hash post-send.
+      const error = Object.assign(new Error("Transaction hash mismatch from Provider.sendTransaction"), {
+        code: ethers.errors.UNKNOWN_ERROR,
+        transactionHash: "0xsent",
+      });
+      const transaction = makeTransaction(provider, () => Promise.reject(error));
+      const client = new TransactionClient(spyLogger);
+
+      const pending = await client.submit(chainId, [transaction]).then(
+        () => undefined,
+        (error) => error
+      );
+      expect(pending).to.be.an.instanceof(TransactionSubmissionPendingError);
+      expect(pending.transactionHash).to.equal("0xsent");
+      expect(client.noncesBySigner[chainId][await signer.getAddress()]).to.equal(nonce);
+    });
+
+    it("classifies exhausted pre-broadcast send errors as definitive", async function () {
+      process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] = "0";
+      const provider = {
+        getNetwork: () => Promise.resolve({ chainId }),
+        getTransactionCount: () => Promise.resolve(nonce),
+      };
+      // No transactionHash: the failure occurred before the raw send was dispatched.
+      const error = Object.assign(new Error("connection refused"), { code: ethers.errors.SERVER_ERROR });
+      const transaction = makeTransaction(provider, () => Promise.reject(error));
+
+      await expect(new TransactionClient(spyLogger).submit(chainId, [transaction])).to.be.rejectedWith(
+        DefinitiveTransactionFailure
+      );
     });
 
     it("classifies EVM estimation reverts as definitive", async function () {
