@@ -188,7 +188,11 @@ describe("TransactionClient", function () {
         code: ethers.errors.UNKNOWN_ERROR,
         transactionHash: "0xsent",
       });
+      const broadcasts: string[] = [];
       const transaction = makeTransaction(provider, () => Promise.reject(error));
+      transaction.onBroadcast = (transactionHash) => {
+        broadcasts.push(transactionHash);
+      };
       const client = new TransactionClient(spyLogger);
 
       const pending = await client.submit(chainId, [transaction]).then(
@@ -197,7 +201,26 @@ describe("TransactionClient", function () {
       );
       expect(pending).to.be.an.instanceof(TransactionSubmissionPendingError);
       expect(pending.transactionHash).to.equal("0xsent");
+      // The locally-known hash must reach the broadcast callback so recovery state can persist it.
+      expect(broadcasts).to.deep.equal(["0xsent"]);
       expect(client.noncesBySigner[chainId][await signer.getAddress()]).to.equal(nonce);
+    });
+
+    it("retains the cached nonce after a definitive pre-broadcast failure", async function () {
+      const cachedNonce = 41;
+      class RejectingClient extends MockedTransactionClient {
+        protected override _getTransactionPromise(): Promise<TransactionResponse> {
+          return Promise.reject(new DefinitiveTransactionFailure("Transaction rejected before broadcast"));
+        }
+      }
+      const client = new RejectingClient(spyLogger);
+      // The cached nonce may track a live recovery-sensitive transaction; a pre-broadcast rejection
+      // consumed no nonce, so the entry must survive for the next submission to build on.
+      client.noncesBySigner[chainId] = { [await signer.getAddress()]: cachedNonce };
+      const transaction = makeTransaction({}, () => Promise.reject(new Error("unused")));
+
+      await expect(client.submit(chainId, [transaction])).to.be.rejectedWith(DefinitiveTransactionFailure);
+      expect(client.noncesBySigner[chainId][await signer.getAddress()]).to.equal(cachedNonce);
     });
 
     it("classifies exhausted pre-broadcast send errors as definitive", async function () {
@@ -524,6 +547,20 @@ describe("TransactionClient", function () {
         expect(error.transactionHash).to.equal(ethers.utils.id(`Across-v2-${address}-${method}-1`));
         expect(submissions).to.equal(2);
       }
+    });
+
+    it("treats unexpected confirmation errors as pending", async function () {
+      const chainId = chainIds[0];
+      // A non-ethers confirmation error (e.g. a sprayed provider exhausting its backends) must not
+      // read as a submission failure: the transaction is already live.
+      txnClient.waitOverride = () => Promise.reject(new Error("all backends failed"));
+      const transaction = { ...makeConfirmationTxn(chainId), onBroadcast: () => undefined };
+
+      const error = await txnClient.submit(chainId, [transaction]).catch((reason) => reason);
+
+      expect(error).to.be.an.instanceof(TransactionConfirmationPendingError);
+      expect(error.transactionHash).to.equal(ethers.utils.id(`Across-v2-${address}-${method}-1`));
+      expect(txnClient.noncesBySigner[chainId][await signer.getAddress()]).to.equal(error.nonce);
     });
 
     it("Tolerates transient RPC errors while confirming", async function () {

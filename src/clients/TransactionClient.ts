@@ -95,7 +95,13 @@ type OnBroadcast = AugmentedTransaction["onBroadcast"];
 
 // A transaction that terminally failed without moving funds: rejected before broadcast, or mined and reverted.
 export class DefinitiveTransactionFailure extends Error {
-  constructor(message: string, cause?: unknown) {
+  // nonce is set when the transaction was broadcast and reverted (consuming its nonce); a
+  // pre-broadcast rejection consumed no nonce and leaves it undefined.
+  constructor(
+    message: string,
+    cause?: unknown,
+    readonly nonce?: number
+  ) {
     super(cause instanceof Error ? `${message}: ${cause.message}` : message, { cause });
   }
 }
@@ -225,6 +231,20 @@ export class TransactionClient {
           txnReceipt = await wait(1, timeout);
         } catch (error) {
           if (!typeguards.isEthersError(error)) {
+            // The transaction is already live, so an unexpected confirmation-phase error must not
+            // read as a submission failure for recovery-enabled callers. Retry the wait (bounded
+            // by maxTries); exhaustion propagates as TransactionConfirmationPendingError.
+            if (txn.onBroadcast) {
+              this.logger.debug({
+                at,
+                message: `Unexpected error while awaiting ${chain} confirmation; retrying.`,
+                txn: txnArgs,
+                txnRef,
+                error: stringifyThrownValue(error),
+              });
+              await delay(0.25);
+              continue;
+            }
             throw error;
           }
 
@@ -234,13 +254,17 @@ export class TransactionClient {
             case ethers.errors.CALL_EXCEPTION:
               // Call failed
               this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
-              throw new DefinitiveTransactionFailure("Transaction reverted after broadcast", error);
+              throw new DefinitiveTransactionFailure("Transaction reverted after broadcast", error, txnResponse.nonce);
             case ethers.errors.TRANSACTION_REPLACED:
               // "repriced" ⇒ a transaction identical to ours (data/to/value) was mined at this nonce; adopt it.
               if (error.reason === "repriced" && isReplacedError(error)) {
                 if (error.receipt.status === 0) {
                   this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
-                  throw new DefinitiveTransactionFailure("Transaction reverted after broadcast", error);
+                  throw new DefinitiveTransactionFailure(
+                    "Transaction reverted after broadcast",
+                    error,
+                    error.replacement.nonce
+                  );
                 }
                 try {
                   await txn.onBroadcast?.(error.replacement.hash);
@@ -315,7 +339,11 @@ export class TransactionClient {
       } else if (txnReceipt.status === 0) {
         // The TVM wait resolves reverted transactions rather than throwing CALL_EXCEPTION.
         this.logger.debug({ at, message: `Transaction on ${chain} failed during execution...`, txnRef });
-        throw new DefinitiveTransactionFailure(`${chain} transaction reverted after broadcast (${txnResponse.hash})`);
+        throw new DefinitiveTransactionFailure(
+          `${chain} transaction reverted after broadcast (${txnResponse.hash})`,
+          undefined,
+          txnResponse.nonce
+        );
       }
     }
 
@@ -372,6 +400,13 @@ export class TransactionClient {
           error instanceof TransactionConfirmationPendingError || error instanceof TransactionSubmissionPendingError;
         if (pending && txn.onBroadcast && isDefined(error.nonce)) {
           chainNonceMap[signerAddr] = error.nonce;
+        } else if (error instanceof DefinitiveTransactionFailure) {
+          // A pre-broadcast rejection consumed no nonce, so any previously-cached entry (which may
+          // track a live recovery-sensitive transaction) remains valid; a post-broadcast revert
+          // consumed its own known nonce.
+          if (isDefined(error.nonce)) {
+            chainNonceMap[signerAddr] = error.nonce;
+          }
         } else {
           delete chainNonceMap[signerAddr];
         }
@@ -503,6 +538,13 @@ async function _runTransaction(
     ];
     const definiteRejection = typeguards.isEthersError(error) && definiteRejections.includes(error.code);
     if (onBroadcast && isDefined(localHash) && !definiteRejection) {
+      // The transaction may be live under the locally-known hash, so persist it via the callback
+      // before surfacing the pending outcome; a callback failure is itself a pending outcome.
+      try {
+        await onBroadcast(localHash);
+      } catch (callbackError) {
+        throw new TransactionSubmissionPendingError(callbackError, localHash, nonce);
+      }
       throw new TransactionSubmissionPendingError(error, localHash, nonce);
     }
     // Narrow type. All errors caught here should be Ethers errors.
@@ -668,6 +710,15 @@ async function _runTransactionTvm(
     );
   } catch (error) {
     if (onBroadcast && submissionAttempted) {
+      // The transaction may be live under the locally-known hash, so persist it via the callback
+      // before surfacing the pending outcome; a callback failure is itself a pending outcome.
+      if (isDefined(submissionHash)) {
+        try {
+          await onBroadcast(submissionHash);
+        } catch (callbackError) {
+          throw new TransactionSubmissionPendingError(callbackError, submissionHash, 0);
+        }
+      }
       throw new TransactionSubmissionPendingError(error, submissionHash, 0);
     }
     if (--retries < 0) {
