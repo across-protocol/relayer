@@ -218,6 +218,21 @@ async function makeInitializedAdapter(
   internals.initialized = true;
   internals.availableRoutes = [route];
   internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+  // Crash-safe deposit initiation persists a recovery marker directly through the Redis cache.
+  const values = new Map<string, string>();
+  Object.assign(adapter, {
+    _redisCache: {
+      get: async (key: string) => values.get(key),
+      set: async (key: string, value: string) => {
+        values.set(key, value);
+        return "OK";
+      },
+      del: async (key: string) => Number(values.delete(key)),
+      sMembers: async () => [],
+      sAdd: async () => 1,
+      sRem: async () => 1,
+    },
+  });
   return adapter;
 }
 
