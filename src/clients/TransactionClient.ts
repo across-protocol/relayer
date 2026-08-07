@@ -111,11 +111,15 @@ export class TransactionConfirmationPendingError extends Error {
 
 // An EVM submission may have reached the node even when no transaction response was returned.
 export class TransactionSubmissionPendingError extends Error {
+  readonly cause: Error;
+
   constructor(
-    readonly cause: Error,
+    cause: unknown,
     readonly transactionHash?: string
   ) {
-    super(`Transaction submission outcome is unknown: ${cause.message}`);
+    const error = cause instanceof Error ? cause : new Error(stringifyThrownValue(cause));
+    super(`Transaction submission outcome is unknown: ${error.message}`);
+    this.cause = error;
   }
 }
 
@@ -232,7 +236,11 @@ export class TransactionClient {
                   this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
                   throw new DefinitiveTransactionFailure("Transaction reverted after broadcast", error);
                 }
-                await txn.onBroadcast?.(error.replacement.hash);
+                try {
+                  await txn.onBroadcast?.(error.replacement.hash);
+                } catch (callbackError) {
+                  throw new TransactionSubmissionPendingError(callbackError, error.replacement.hash);
+                }
                 return error.replacement;
               }
               this.logger.warn({
@@ -463,7 +471,7 @@ async function _runTransaction(
     // Narrow type. All errors caught here should be Ethers errors.
     if (!typeguards.isEthersError(error)) {
       throw new TransactionSubmissionPendingError(
-        error instanceof Error ? error : new Error(stringifyThrownValue(error)),
+        error,
         typeof transactionHash === "string" ? transactionHash : undefined
       );
     }
@@ -555,10 +563,7 @@ async function _runTransaction(
   try {
     await onBroadcast?.(response.hash);
   } catch (error) {
-    throw new TransactionSubmissionPendingError(
-      error instanceof Error ? error : new Error(stringifyThrownValue(error)),
-      response.hash
-    );
+    throw new TransactionSubmissionPendingError(error, response.hash);
   }
   return response;
 }
@@ -637,10 +642,7 @@ async function _runTransactionTvm(
   try {
     await onBroadcast?.(result.txid);
   } catch (error) {
-    throw new TransactionSubmissionPendingError(
-      error instanceof Error ? error : new Error(stringifyThrownValue(error)),
-      result.txid
-    );
+    throw new TransactionSubmissionPendingError(error, result.txid);
   }
   logger.debug({ at, message: "TVM transaction submitted.", chain, method, txid: result.txid });
 
