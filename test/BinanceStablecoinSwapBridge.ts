@@ -308,7 +308,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     ).to.be.rejectedWith(BridgeTransferDeclinedError);
   });
 
-  it("classifies pre-broadcast failures as definitive and swallowed submissions as ambiguous", async function () {
+  it("classifies tracked pre-broadcast failures as definitive", async function () {
     const transaction = { contract: { address: ZERO_BYTES }, method: "transfer", args: [], chainId: 1 } as never;
     const failedSimulation = {
       simulate: async () => [{ transaction, succeed: false, reason: "reverted" }],
@@ -318,7 +318,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     // Simulation happens before anything is broadcast, so its failure is definitive.
     await expect(submitTransaction(transaction, failedSimulation)).to.be.rejectedWith(DefinitiveTransactionFailure);
 
-    // A submission the TransactionClient swallowed may or may not have broadcast; it must stay ambiguous.
+    // Without a broadcast callback, a swallowed submission remains ambiguous.
     const failedSubmission = {
       simulate: async () => [{ transaction, succeed: true }],
       submit: async () => [],
@@ -329,6 +329,29 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     );
     expect(error.message).to.contain("failed to submit onchain");
     expect(error).to.not.be.an.instanceof(DefinitiveTransactionFailure);
+
+    const trackedTransaction = { ...transaction, onBroadcast: () => undefined } as never;
+    await expect(submitTransaction(trackedTransaction, failedSubmission)).to.be.rejectedWith(
+      DefinitiveTransactionFailure
+    );
+    const preparationFailure = {
+      ...failedSubmission,
+      submit: async () => Promise.reject(new Error("RPC unavailable")),
+    };
+    await expect(submitTransaction(trackedTransaction, preparationFailure as never)).to.be.rejectedWith(
+      DefinitiveTransactionFailure
+    );
+
+    const broadcastFailure = {
+      simulate: async () => [{ transaction: trackedTransaction, succeed: true }],
+      submit: async (_chainId: number, [txn]: [{ onBroadcast: (hash: string) => Promise<void> }]) => {
+        await txn.onBroadcast("0x1234");
+        throw new Error("confirmation unavailable");
+      },
+    } as never;
+    const ambiguous = await submitTransaction(trackedTransaction, broadcastFailure).catch((error) => error);
+    expect(ambiguous.message).to.equal("confirmation unavailable");
+    expect(ambiguous).to.not.be.an.instanceof(DefinitiveTransactionFailure);
   });
 
   it("leaves bridge-event accounting to Redis-backed pending rebalances", async function () {

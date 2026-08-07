@@ -281,13 +281,39 @@ export async function submitTransaction(
     throw new DefinitiveTransactionFailure(message, new Error(reason));
   }
 
-  const response = await transactionClient.submit(transaction.chainId, [transaction]);
+  const onBroadcast = transaction.onBroadcast;
+  let broadcast = false;
+  const trackedTransaction = isDefined(onBroadcast)
+    ? {
+        ...transaction,
+        onBroadcast: async (transactionHash: string) => {
+          broadcast = true;
+          await onBroadcast(transactionHash);
+        },
+      }
+    : transaction;
+  let response: TransactionResponse[];
+  try {
+    response = await transactionClient.submit(transaction.chainId, [trackedTransaction]);
+  } catch (error) {
+    if (isDefined(onBroadcast) && !broadcast && !(error instanceof DefinitiveTransactionFailure)) {
+      throw new DefinitiveTransactionFailure(
+        "Transaction preparation failed before broadcast",
+        error instanceof Error ? error : new Error(String(error))
+      );
+    }
+    throw error;
+  }
   if (response.length === 0) {
-    throw new Error(
+    const error = new Error(
       `Transaction succeeded simulation but failed to submit onchain to ${
         targetContract.address
       }.${method}(${txnRequestData.args.join(", ")}) on ${txnRequest.chainId}`
     );
+    if (isDefined(onBroadcast) && !broadcast) {
+      throw new DefinitiveTransactionFailure("Transaction preparation failed before broadcast", error);
+    }
+    throw error;
   }
   return response[0];
 }
