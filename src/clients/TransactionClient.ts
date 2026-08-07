@@ -403,9 +403,12 @@ export class TransactionClient {
         } else if (error instanceof DefinitiveTransactionFailure) {
           // A pre-broadcast rejection consumed no nonce, so any previously-cached entry (which may
           // track a live recovery-sensitive transaction) remains valid; a post-broadcast revert
-          // consumed its own known nonce.
+          // consumed its own known nonce. A nonce-expired rejection proves the cached entry stale,
+          // so drop it to force a resync.
           if (isDefined(error.nonce)) {
             chainNonceMap[signerAddr] = error.nonce;
+          } else if (typeguards.isEthersError(error.cause) && error.cause.code === ethers.errors.NONCE_EXPIRED) {
+            delete chainNonceMap[signerAddr];
           }
         } else {
           delete chainNonceMap[signerAddr];
@@ -521,30 +524,39 @@ async function _runTransaction(
   );
 
   let response: TransactionResponse;
+  let localHash: string | undefined;
+  let broadcastAttempted = false;
   try {
-    response = sendRawTxn
-      ? await signer.sendTransaction({ to, data: (args as ethers.utils.BytesLike[])[0], ...txConfig })
-      : await contract[method](...args, txConfig);
+    if (onBroadcast) {
+      // Recovery-enabled callers need the hash persisted before the raw send is dispatched, so a
+      // crash mid-send cannot lose it: populate and sign locally, surface the hash via the
+      // callback, then dispatch the signed transaction directly.
+      const request = sendRawTxn
+        ? { to, data: (args as ethers.utils.BytesLike[])[0], ...txConfig }
+        : await contract.populateTransaction[method](...args, txConfig);
+      const populated = await signer.populateTransaction(request);
+      const signed = await signer.signTransaction(populated);
+      localHash = ethers.utils.keccak256(signed);
+      await onBroadcast(localHash);
+      broadcastAttempted = true;
+      response = await provider.sendTransaction(signed);
+    } else {
+      response = sendRawTxn
+        ? await signer.sendTransaction({ to, data: (args as ethers.utils.BytesLike[])[0], ...txConfig })
+        : await contract[method](...args, txConfig);
+    }
   } catch (error) {
-    // BaseProvider.sendTransaction attaches the locally-computed hash to any error raised at or beyond the raw send,
-    // so its absence proves the failure occurred before broadcast. A post-send failure may hide an accepted
-    // eth_sendRawTransaction, so unless the node definitively rejected the transaction, recovery-enabled callers
-    // must retain their order and nonce rather than retrying a potentially live operation.
-    const { transactionHash: localHash } = (error ?? {}) as { transactionHash?: string };
+    // Failures raised before the raw send was dispatched provably moved no funds and may retry.
+    // A post-send failure may hide an accepted eth_sendRawTransaction, so unless the node
+    // definitively rejected the transaction, recovery-enabled callers must retain their order
+    // and nonce rather than retrying a potentially live operation.
     const definiteRejections: string[] = [
       ethers.errors.NONCE_EXPIRED,
       ethers.errors.REPLACEMENT_UNDERPRICED,
       ethers.errors.INSUFFICIENT_FUNDS,
     ];
     const definiteRejection = typeguards.isEthersError(error) && definiteRejections.includes(error.code);
-    if (onBroadcast && isDefined(localHash) && !definiteRejection) {
-      // The transaction may be live under the locally-known hash, so persist it via the callback
-      // before surfacing the pending outcome; a callback failure is itself a pending outcome.
-      try {
-        await onBroadcast(localHash);
-      } catch (callbackError) {
-        throw new TransactionSubmissionPendingError(callbackError, localHash, nonce);
-      }
+    if (broadcastAttempted && !definiteRejection) {
       throw new TransactionSubmissionPendingError(error, localHash, nonce);
     }
     // Narrow type. All errors caught here should be Ethers errors.
@@ -641,10 +653,13 @@ async function _runTransaction(
 
     return await retry(nonce, retries, retryScaler);
   }
-  try {
-    await onBroadcast?.(response.hash);
-  } catch (error) {
-    throw new TransactionSubmissionPendingError(error, response.hash, response.nonce);
+  // The recovery-enabled path already surfaced the hash before dispatch.
+  if (!broadcastAttempted) {
+    try {
+      await onBroadcast?.(response.hash);
+    } catch (error) {
+      throw new TransactionSubmissionPendingError(error, response.hash, response.nonce);
+    }
   }
   return response;
 }
@@ -703,22 +718,19 @@ async function _runTransactionTvm(
       populatedTransaction,
       feeLimit,
       value.toNumber(),
-      (transactionHash) => {
-        submissionAttempted = true;
+      // Persist the hash before the raw send is dispatched so a crash mid-send cannot lose it. A
+      // callback failure leaves submissionAttempted unset: nothing was dispatched, so the error
+      // retries to a definitive failure below.
+      async (transactionHash) => {
         submissionHash = transactionHash;
+        if (isDefined(transactionHash)) {
+          await onBroadcast?.(transactionHash);
+        }
+        submissionAttempted = true;
       }
     );
   } catch (error) {
     if (onBroadcast && submissionAttempted) {
-      // The transaction may be live under the locally-known hash, so persist it via the callback
-      // before surfacing the pending outcome; a callback failure is itself a pending outcome.
-      if (isDefined(submissionHash)) {
-        try {
-          await onBroadcast(submissionHash);
-        } catch (callbackError) {
-          throw new TransactionSubmissionPendingError(callbackError, submissionHash, 0);
-        }
-      }
       throw new TransactionSubmissionPendingError(error, submissionHash, 0);
     }
     if (--retries < 0) {
@@ -746,10 +758,13 @@ async function _runTransactionTvm(
     return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries, onBroadcast);
   }
 
-  try {
-    await onBroadcast?.(result.txid);
-  } catch (error) {
-    throw new TransactionSubmissionPendingError(error, result.txid, 0);
+  // The recovery-enabled path already surfaced the hash before dispatch.
+  if (!submissionAttempted) {
+    try {
+      await onBroadcast?.(result.txid);
+    } catch (error) {
+      throw new TransactionSubmissionPendingError(error, result.txid, 0);
+    }
   }
   logger.debug({ at, message: "TVM transaction submitted.", chain, method, txid: result.txid });
 

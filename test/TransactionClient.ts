@@ -128,6 +128,10 @@ describe("TransactionClient", function () {
   describe("broadcast recovery", function () {
     const chainId = chainIds[0];
     const nonce = 7;
+    // The recovery-enabled path signs locally and dispatches the raw transaction directly, so its
+    // hash is the keccak of the mock signed payload.
+    const signedTxn = "0x1234";
+    const localHash = ethers.utils.keccak256(signedTxn);
 
     function makeTransaction(
       provider: Record<string, unknown>,
@@ -138,8 +142,12 @@ describe("TransactionClient", function () {
         chainId: transactionChainId,
         contract: {
           address,
-          signer: { getAddress: () => signer.getAddress() },
-          provider,
+          signer: {
+            getAddress: () => signer.getAddress(),
+            populateTransaction: (request: unknown) => Promise.resolve(request),
+            signTransaction: () => Promise.resolve(signedTxn),
+          },
+          provider: { sendTransaction: send, ...provider },
           populateTransaction: { [method]: () => Promise.resolve({}) },
           [method]: send,
         } as unknown as Contract,
@@ -166,11 +174,8 @@ describe("TransactionClient", function () {
         getNetwork: () => Promise.resolve({ chainId }),
         getTransactionCount: () => Promise.resolve(nonce),
       };
-      // BaseProvider.sendTransaction attaches the local hash to errors raised at or beyond the raw send.
-      const error = Object.assign(new Error("timeout"), {
-        code: ethers.errors.SERVER_ERROR,
-        transactionHash: "0xsent",
-      });
+      // The raw send was dispatched, so a transport failure may hide an accepted transaction.
+      const error = Object.assign(new Error("timeout"), { code: ethers.errors.SERVER_ERROR });
       const transaction = makeTransaction(provider, () => Promise.reject(error));
       const client = new TransactionClient(spyLogger);
 
@@ -186,7 +191,6 @@ describe("TransactionClient", function () {
       // ethers throws UNKNOWN_ERROR from _wrapTransaction when the RPC returns an unexpected hash post-send.
       const error = Object.assign(new Error("Transaction hash mismatch from Provider.sendTransaction"), {
         code: ethers.errors.UNKNOWN_ERROR,
-        transactionHash: "0xsent",
       });
       const broadcasts: string[] = [];
       const transaction = makeTransaction(provider, () => Promise.reject(error));
@@ -200,10 +204,50 @@ describe("TransactionClient", function () {
         (error) => error
       );
       expect(pending).to.be.an.instanceof(TransactionSubmissionPendingError);
-      expect(pending.transactionHash).to.equal("0xsent");
-      // The locally-known hash must reach the broadcast callback so recovery state can persist it.
-      expect(broadcasts).to.deep.equal(["0xsent"]);
+      expect(pending.transactionHash).to.equal(localHash);
+      // The locally-known hash must reach the broadcast callback before dispatch so recovery
+      // state persists it even if the process dies mid-send.
+      expect(broadcasts).to.deep.equal([localHash]);
       expect(client.noncesBySigner[chainId][await signer.getAddress()]).to.equal(nonce);
+    });
+
+    it("persists the hash before dispatching the raw send", async function () {
+      const provider = {
+        getNetwork: () => Promise.resolve({ chainId }),
+        getTransactionCount: () => Promise.resolve(nonce),
+      };
+      const broadcasts: string[] = [];
+      let hashKnownAtDispatch = false;
+      const transaction = makeTransaction(provider, () => {
+        hashKnownAtDispatch = broadcasts.includes(localHash);
+        return Promise.reject(new Error("process died mid-send"));
+      });
+      transaction.onBroadcast = (transactionHash) => {
+        broadcasts.push(transactionHash);
+      };
+
+      await expect(new TransactionClient(spyLogger).submit(chainId, [transaction])).to.be.rejectedWith(
+        TransactionSubmissionPendingError
+      );
+      // A crash during the raw send must not lose the hash, so it persists before dispatch.
+      expect(hashKnownAtDispatch).to.equal(true);
+      expect(broadcasts).to.deep.equal([localHash]);
+    });
+
+    it("drops a stale cached nonce after nonce-expired exhaustion", async function () {
+      process.env[`TRANSACTION_SUBMISSION_RETRIES_${chainId}`] = "0";
+      const provider = {
+        getNetwork: () => Promise.resolve({ chainId }),
+        getTransactionCount: () => Promise.resolve(nonce),
+      };
+      const error = Object.assign(new Error("nonce has already been used"), { code: ethers.errors.NONCE_EXPIRED });
+      const transaction = makeTransaction(provider, () => Promise.reject(error));
+      const client = new TransactionClient(spyLogger);
+      client.noncesBySigner[chainId] = { [await signer.getAddress()]: nonce - 1 };
+
+      await expect(client.submit(chainId, [transaction])).to.be.rejectedWith(DefinitiveTransactionFailure);
+      // The node proved the cached nonce stale; the next submission must resynchronize.
+      expect(client.noncesBySigner[chainId][await signer.getAddress()]).to.equal(undefined);
     });
 
     it("retains the cached nonce after a definitive pre-broadcast failure", async function () {
@@ -229,9 +273,11 @@ describe("TransactionClient", function () {
         getNetwork: () => Promise.resolve({ chainId }),
         getTransactionCount: () => Promise.resolve(nonce),
       };
-      // No transactionHash: the failure occurred before the raw send was dispatched.
+      // A signing-phase failure occurs before the raw send is dispatched.
       const error = Object.assign(new Error("connection refused"), { code: ethers.errors.SERVER_ERROR });
-      const transaction = makeTransaction(provider, () => Promise.reject(error));
+      const transaction = makeTransaction(provider, () => Promise.reject(new Error("must not send")));
+      (transaction.contract.signer as unknown as Record<string, unknown>).populateTransaction = () =>
+        Promise.reject(error);
 
       await expect(new TransactionClient(spyLogger).submit(chainId, [transaction])).to.be.rejectedWith(
         DefinitiveTransactionFailure
@@ -243,14 +289,18 @@ describe("TransactionClient", function () {
         getNetwork: () => Promise.resolve({ chainId }),
         getTransactionCount: () => Promise.resolve(nonce),
       };
+      // Gas estimation runs during population, before the raw send is dispatched.
       const error = Object.assign(new Error("execution reverted"), {
         code: ethers.errors.UNPREDICTABLE_GAS_LIMIT,
         reason: "execution reverted",
       });
+      const transaction = makeTransaction(provider, () => Promise.reject(new Error("must not send")));
+      (transaction.contract.signer as unknown as Record<string, unknown>).populateTransaction = () =>
+        Promise.reject(error);
 
-      await expect(
-        new TransactionClient(spyLogger).submit(chainId, [makeTransaction(provider, () => Promise.reject(error))])
-      ).to.be.rejectedWith(DefinitiveTransactionFailure);
+      await expect(new TransactionClient(spyLogger).submit(chainId, [transaction])).to.be.rejectedWith(
+        DefinitiveTransactionFailure
+      );
     });
 
     it("marks TVM submission only when the raw send begins", async function () {
