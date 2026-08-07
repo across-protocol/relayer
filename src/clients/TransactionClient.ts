@@ -106,6 +106,17 @@ export class TransactionConfirmationPendingError extends Error {
   }
 }
 
+// A submission may have reached the node even when no transaction response was returned.
+export class TransactionSubmissionPendingError extends Error {
+  constructor(
+    cause: unknown,
+    readonly transactionHash?: string
+  ) {
+    const error = cause instanceof Error ? cause : new Error(stringifyThrownValue(cause));
+    super(`Transaction submission outcome is unknown: ${error.message}`, { cause: error });
+  }
+}
+
 export function isAugmentedTransaction(txn: unknown): txn is AugmentedTransaction {
   if (txn === null || typeof txn !== "object") {
     return false;
@@ -219,7 +230,11 @@ export class TransactionClient {
                   this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
                   throw new DefinitiveTransactionFailure("Transaction reverted after broadcast", error);
                 }
-                await txn.onBroadcast?.(error.replacement.hash);
+                try {
+                  await txn.onBroadcast?.(error.replacement.hash);
+                } catch (callbackError) {
+                  throw new TransactionSubmissionPendingError(callbackError, error.replacement.hash);
+                }
                 return error.replacement;
               }
               this.logger.warn({
@@ -344,7 +359,9 @@ export class TransactionClient {
           notificationPath: "across-error",
         });
         if (
-          (error instanceof DefinitiveTransactionFailure || error instanceof TransactionConfirmationPendingError) &&
+          (error instanceof DefinitiveTransactionFailure ||
+            error instanceof TransactionConfirmationPendingError ||
+            error instanceof TransactionSubmissionPendingError) &&
           txn.onBroadcast
         ) {
           throw error;
@@ -527,7 +544,11 @@ async function _runTransaction(
 
     return await retry(nonce, retries, retryScaler);
   }
-  await onBroadcast?.(response.hash);
+  try {
+    await onBroadcast?.(response.hash);
+  } catch (error) {
+    throw new TransactionSubmissionPendingError(error, response.hash);
+  }
   return response;
 }
 
@@ -573,6 +594,10 @@ async function _runTransactionTvm(
   try {
     result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
   } catch (error) {
+    // The TRON helper signs and broadcasts internally, so a thrown RPC response cannot prove that no funds moved.
+    if (onBroadcast) {
+      throw new TransactionSubmissionPendingError(error);
+    }
     if (--retries < 0) {
       throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);
     }
@@ -598,7 +623,11 @@ async function _runTransactionTvm(
     return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries, onBroadcast);
   }
 
-  await onBroadcast?.(result.txid);
+  try {
+    await onBroadcast?.(result.txid);
+  } catch (error) {
+    throw new TransactionSubmissionPendingError(error, result.txid);
+  }
   logger.debug({ at, message: "TVM transaction submitted.", chain, method, txid: result.txid });
 
   // Adapt TronTransactionResult to an ethers-compatible TransactionResponse. TVM doesn't use
