@@ -1417,35 +1417,10 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
         expect((await txnReceipts[destinationChainId]).length).to.equal(0);
       });
 
-      it("Drops non-origin repayment chains for an input token with no L1 token mapping", async function () {
-        // An unmapped input token has no limit to compare against, so there's no basis to call a non-origin refund
-        // fundable. filterDeposit() permits the unmapped token because a swap route covers it.
-        const getL1TokenAddress = sinon.stub(inventoryClient, "getL1TokenAddress").returns(undefined);
-        const isSwapSupported = sinon.stub(inventoryClient, "isSwapSupported").returns(true);
-        getLimit.throws(new Error("getLimit() must not be queried without an L1 token"));
-        determineRefundChainId.resolves([destinationChainId, originChainId]);
-
-        try {
-          await deposit();
-          await updateAllClients();
-
-          const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
-          expect((await txnReceipts[destinationChainId]).length).to.equal(1);
-          expect(logged(`with repayment on ${originChainId}`)).to.be.true;
-          expect(logged(`with repayment on ${destinationChainId}`)).to.be.false;
-        } finally {
-          getL1TokenAddress.restore();
-          isSwapSupported.restore();
-        }
-      });
-
       it("Doesn't constrain hub chain origins", async function () {
         // Funds can be JIT-bridged from the hub chain to anywhere, so a hub chain origin keeps its non-origin
-        // candidates. That has to hold even for an unmapped input token, which never reaches getLimit()'s own
-        // hub chain exemption.
+        // candidates - taking repayment out on a pool rebalance route is what keeps utilisation low.
         const chainId = sinon.stub(hubPoolClient, "chainId").value(originChainId);
-        const getL1TokenAddress = sinon.stub(inventoryClient, "getL1TokenAddress").returns(undefined);
-        const isSwapSupported = sinon.stub(inventoryClient, "isSwapSupported").returns(true);
         determineRefundChainId.resolves([destinationChainId, originChainId]);
 
         try {
@@ -1457,8 +1432,6 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
           expect(logged(`with repayment on ${destinationChainId}`)).to.be.true;
         } finally {
           chainId.restore();
-          getL1TokenAddress.restore();
-          isSwapSupported.restore();
         }
       });
     });

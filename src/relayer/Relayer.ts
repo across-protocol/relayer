@@ -539,7 +539,7 @@ export class Relayer {
    * @returns The subset of repaymentChainIds whose refund can be funded, preserving the input ordering.
    */
   protected filterRepaymentChains(deposit: DepositWithBlock, repaymentChainIds: number[]): number[] {
-    const { acrossApiClient, hubPoolClient, inventoryClient } = this.clients;
+    const { acrossApiClient, hubPoolClient } = this.clients;
     const { depositId, inputAmount, inputToken, originChainId, txnRef } = deposit;
 
     if (this.config.ignoreLimits || !acrossApiClient.updatedLimits) {
@@ -548,7 +548,7 @@ export class Relayer {
 
     // Funds can be JIT-bridged from the hub chain to anywhere, so a hub chain origin is never constrained; taking
     // repayment out on a pool rebalance route is what keeps utilisation low. getLimit() encodes the same exemption,
-    // but an unmapped input token never reaches it.
+    // but state it here too rather than resting on that internal detail.
     if (originChainId === hubPoolClient.chainId) {
       return repaymentChainIds;
     }
@@ -558,8 +558,14 @@ export class Relayer {
       return repaymentChainIds;
     }
 
-    // An unmapped input token has no limit to compare against, so treat it as no liquidity available.
-    const l1Token = inventoryClient.getL1TokenAddress(inputToken, originChainId);
+    // Key the limit on the PoolRebalanceRoute mapping, which is the token that actually funds the refund and is also
+    // how AcrossApiClient keys its limits. @dev An input token with no route forces origin chain repayment, so it has
+    // already returned above; the bnZero fallback is defensive and treats an unresolvable limit as no liquidity.
+    const l1Token = hubPoolClient.getL1TokenForL2TokenAtBlock(
+      inputToken,
+      originChainId,
+      hubPoolClient.latestHeightSearched
+    );
     const limit = isDefined(l1Token) ? acrossApiClient.getLimit(originChainId, l1Token) : bnZero;
     if (inputAmount.lte(limit)) {
       return repaymentChainIds;
