@@ -15,7 +15,6 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   renewLock(key: string, token: string, ttlMs: number): Promise<boolean>;
   incr(key: string): Promise<number>;
   incrBy(key: string, amount: number): Promise<number>;
-  moveSetMember(source: string, destination: string, value: string): Promise<unknown>;
   ttl(key: string): Promise<number | undefined>;
 }
 
