@@ -24,6 +24,7 @@ import {
   BinanceTransactionType,
   getBinanceWithdrawalType,
   isCompletedBinanceWithdrawal,
+  isTerminalFailedBinanceDeposit,
   getOutstandingBinanceDeposits,
   isDefined,
   paginatedEventQuery,
@@ -110,12 +111,16 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       getBinanceDeposits(binanceApiClient, fromTimestamp),
       getBinanceWithdrawals(binanceApiClient, this.l1TokenInfo.symbol, fromTimestamp),
     ]);
-    // Remove any deposits and withdrawals that are marked as related to a swap.
+    // Remove any deposits and withdrawals that are marked as related to a swap. Deposits in a terminal failure
+    // state are also dropped: Binance will never credit them, so they will never be withdrawn to L1, and counting
+    // them as pending L2 -> L1 capital would inflate the hub's virtual balance and suppress rebalances we need.
+    // The finalizer applies the same reasoning when it picks finalizable deposits.
     const depositHistory = await filterAsync(_depositHistory, async (deposit) => {
       const depositType = await getBinanceDepositType(deposit);
       return (
         deposit.network === this.depositNetwork &&
         deposit.coin === this.l1TokenInfo.symbol &&
+        !isTerminalFailedBinanceDeposit(deposit.status) &&
         depositType !== BinanceTransactionType.SWAP
       );
     });
@@ -180,9 +185,10 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
     // L2 deposit, and that dominates the round trip. Measured deposit -> withdrawable on ZKSYNCERA USDC: 34, 54
     // and 69 minutes across three deposits (2026-08-03 and 2026-08-07). A 1 hour lookback dropped in-flight
     // deposits out of the pending total before Binance released them, so the relayer stopped counting capital it
-    // still owned. 4 hours keeps them visible with headroom. The cost is one extra
-    // provider.getTransactionReceipt per deposit that the wider window admits, and deposits are sparse enough
-    // per (network, coin) that this is a handful of calls at most.
+    // still owned. 4 hours keeps them visible with headroom. Widening is cheap now that filterDepositsFromAddress
+    // attributes deposits with one getLogs over the whole window rather than a receipt per deposit: the extra cost
+    // is a wider block range on that single query. BinanceCEXNativeBridge still pays a receipt per deposit, but its
+    // deposit volume is low.
     return 4 * 60 * 60;
   }
 }

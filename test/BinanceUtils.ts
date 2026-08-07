@@ -1,6 +1,7 @@
 import { expect, sinon } from "./utils";
 import {
   type BinanceApi,
+  BINANCE_DEPOSIT_STATUS,
   BINANCE_ORDER_RECV_WINDOW_MS,
   BINANCE_READ_RECV_WINDOW_MS,
   BINANCE_WITHDRAW_RECV_WINDOW_MS,
@@ -23,6 +24,7 @@ import {
   isFailedBinanceWithdrawal,
   isSameBinanceCoin,
   isTerminalBinanceWithdrawal,
+  isTerminalFailedBinanceDeposit,
   supportsBinanceIntermediateBridgeToken,
   toBNWei,
   usesBinanceAtomicDepositorTransfer,
@@ -293,6 +295,19 @@ describe("BinanceUtils: isFailedBinanceWithdrawal / isTerminalBinanceWithdrawal"
     expect(isTerminalBinanceWithdrawal(2)).to.equal(false);
     expect(isTerminalBinanceWithdrawal(4)).to.equal(false);
     expect(isTerminalBinanceWithdrawal(undefined)).to.equal(false);
+  });
+});
+
+describe("BinanceUtils: isTerminalFailedBinanceDeposit", function () {
+  it("treats only dead-end Binance deposit states as terminal failures", function () {
+    expect(isTerminalFailedBinanceDeposit(BINANCE_DEPOSIT_STATUS.REJECTED)).to.equal(true);
+    expect(isTerminalFailedBinanceDeposit(BINANCE_DEPOSIT_STATUS.WRONG_DEPOSIT)).to.equal(true);
+    // Everything else is still in flight and must keep counting towards pending L2 -> L1 volume.
+    expect(isTerminalFailedBinanceDeposit(BINANCE_DEPOSIT_STATUS.PENDING)).to.equal(false);
+    expect(isTerminalFailedBinanceDeposit(BINANCE_DEPOSIT_STATUS.CONFIRMED)).to.equal(false);
+    expect(isTerminalFailedBinanceDeposit(BINANCE_DEPOSIT_STATUS.CREDITED)).to.equal(false);
+    expect(isTerminalFailedBinanceDeposit(BINANCE_DEPOSIT_STATUS.WAITING_USER_CONFIRM)).to.equal(false);
+    expect(isTerminalFailedBinanceDeposit(undefined)).to.equal(false);
   });
 });
 

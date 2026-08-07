@@ -30,20 +30,16 @@ import {
   resolveBinanceCoinSymbol,
   truncate,
   ethers,
+  BINANCE_DEPOSIT_STATUS,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
 import { constructAdapter } from "../../rebalancer/RebalancerClientHelper";
 
-// Alias for a Binance deposit/withdrawal status.
-enum Status {
-  Confirmed = 1,
-  Pending = 0,
-  Rejected = 2,
-  Credited = 6,
-  WrongDeposit = 7,
-  WaitingUserConfirm = 8,
-}
+// Alias for a Binance deposit status. Defined in `BinanceUtils` rather than here so that the inventory-side
+// accounting in `BinanceCEXBridge`, which must agree with this finalizer on which deposits can still progress to a
+// withdrawal, reads the same status values.
+const Status = BINANCE_DEPOSIT_STATUS;
 
 // The precision of a `DECIMAL` type in the Binance API.
 const DECIMAL_PRECISION = 1_000_000;
@@ -98,11 +94,11 @@ export async function binanceFinalizer(
 
   const statusesGrouped = groupObjectCountsByProp(_binanceBridgeDeposits, (deposit: { status: number }) => {
     switch (deposit.status) {
-      case Status.Confirmed:
+      case Status.CONFIRMED:
         return "ready-to-finalize";
-      case Status.Rejected:
+      case Status.REJECTED:
         return "deposit-rejected";
-      case Status.WrongDeposit:
+      case Status.WRONG_DEPOSIT:
         return "wrong-deposit";
       default:
         return "waiting-to-finalize";
@@ -114,8 +110,8 @@ export async function binanceFinalizer(
     statusesGrouped,
     fromTimestamp: fromTimestamp,
   });
-  const binanceDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Confirmed);
-  const creditedDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.Credited);
+  const binanceDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.CONFIRMED);
+  const creditedDeposits = _binanceBridgeDeposits.filter((deposit) => deposit.status === Status.CREDITED);
   const pendingBinanceRebalanceDeductions = await getPendingBinanceRebalanceDeductions(
     logger,
     hubSigner,

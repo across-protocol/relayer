@@ -134,6 +134,32 @@ export enum BINANCE_WITHDRAWAL_STATUS {
   COMPLETED = 6,
 }
 
+export enum BINANCE_DEPOSIT_STATUS {
+  PENDING = 0,
+  CONFIRMED = 1,
+  REJECTED = 2,
+  CREDITED = 6,
+  WRONG_DEPOSIT = 7,
+  WAITING_USER_CONFIRM = 8,
+}
+
+/**
+ * A deposit in a terminal failure state will never be credited to the Binance account, so it can never be withdrawn
+ * to L1 either. `PENDING`, `CREDITED` and `WAITING_USER_CONFIRM` are all still in flight from our perspective — only
+ * `REJECTED` and `WRONG_DEPOSIT` are dead ends. An undefined status is treated as in flight, since we cannot
+ * distinguish "not reported yet" from "failed".
+ * @returns Whether the deposit can no longer progress towards a withdrawal.
+ */
+export function isTerminalFailedBinanceDeposit(status?: number): boolean {
+  switch (status) {
+    case BINANCE_DEPOSIT_STATUS.REJECTED:
+    case BINANCE_DEPOSIT_STATUS.WRONG_DEPOSIT:
+      return true;
+    default:
+      return false;
+  }
+}
+
 export function readableBinanceWithdrawalStatus(status?: number): string {
   switch (status) {
     case BINANCE_WITHDRAWAL_STATUS.EMAIL_SENT:
