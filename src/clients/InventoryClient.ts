@@ -43,7 +43,7 @@ import {
   isUnmeteredFastRebalance,
 } from "../utils";
 import { getAcrossHost } from "./AcrossAPIClient";
-import { BinanceClient } from "./BinanceClient";
+import { BinanceClient, BinanceRoute } from "./BinanceClient";
 import { BundleDataApproxClient, BundleDataState } from "./BundleDataApproxClient";
 import { HubPoolClient, TokenClient, TransactionClient } from ".";
 import { Deposit, TokenInfo } from "../interfaces";
@@ -967,11 +967,22 @@ export class InventoryClient {
 
     const possibleRebalances: Rebalance[] = [];
     const unexecutedRebalances: Rebalance[] = [];
+    const unbridgeableRebalances: Rebalance[] = [];
     const executedTransactions: ExecutedRebalance[] = [];
 
     // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
     for (const rebalance of rebalancesRequired) {
       const { balance, amount, l1Token, l2Token, chainId } = rebalance;
+
+      // A token can be enabled for inventory management on a chain that has no L1 -> L2 bridge route
+      // (e.g. L2 -> L1 withdrawal-only tokens like Avalanche USDT). Sending would throw, so skip the
+      // rebalance and surface it as a warning below. Only skip when this client would execute the send
+      // itself: returnRebalancesOnly callers like the SameAssetRebalancerClient execute these rebalances
+      // through alternate routes (e.g. Binance), so they must still be returned.
+      if (!returnRebalancesOnly && !this.adapterManager.canSendTokenCrossChain(chainId, l1Token)) {
+        unbridgeableRebalances.push(rebalance);
+        continue;
+      }
 
       // This is the balance left after any assumed rebalances from earlier loop iterations.
       const unallocatedBalance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
@@ -1015,6 +1026,16 @@ export class InventoryClient {
         // Extract unexecutable rebalances for logging.
         unexecutedRebalances.push(rebalance);
       }
+    }
+
+    if (unbridgeableRebalances.length > 0) {
+      this.log(
+        "🚧 Skipping rebalances with no L1 -> L2 bridge configured for the token." +
+          " If a rebalancer bot doesn't already handle these routes (e.g. via Binance)," +
+          " remove the token's target allocation for these chains from the inventory config, or add a bridge route.",
+        { unbridgeableRebalances },
+        "warn"
+      );
     }
 
     // Extract unexecutable rebalances for logging.
@@ -1668,9 +1689,18 @@ export class InventoryClient {
     }
 
     if (isDefined(this.binanceClient)) {
-      await this.binanceClient.refresh();
+      await this.binanceClient.refresh(this.getBinanceRoutes());
       await this.updateTokenPrices();
     }
+  }
+
+  // The (chain, token) pairs we rely on Binance to service.
+  private getBinanceRoutes(): BinanceRoute[] {
+    return this.getL1Tokens().flatMap((l1Token) =>
+      this.getEnabledChains()
+        .filter((chainId) => hasBinanceRoute(chainId, l1Token))
+        .map((chainId) => ({ chainId, l1Token }))
+    );
   }
 
   // Strict-fail: any error clears the cache.
@@ -1755,7 +1785,11 @@ export class InventoryClient {
     const { chainId: hubChainId } = this.hubPoolClient;
     try {
       const l1Token = getInventoryEquivalentL1TokenAddress(repaymentToken, repaymentChainId, hubChainId);
-      return hasBinanceRoute(repaymentChainId, l1Token);
+      // A configured route isn't necessarily an open one; without a client we can't know, so assume open.
+      return (
+        hasBinanceRoute(repaymentChainId, l1Token) &&
+        (this.binanceClient?.canDrainToHubChain(repaymentChainId, l1Token) ?? true)
+      );
     } catch {
       return false;
     }

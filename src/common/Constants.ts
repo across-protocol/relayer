@@ -733,9 +733,8 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
  * Additionally gated on `binanceCredentialsConfigured()`, which mirrors the inputs `getBinanceApiClient()`
  * requires (API key plus either HMAC secret or GCKMS-backed secret via `--binanceSecretKey`). If the
  * operator has not configured complete Binance credentials, every route is treated as unavailable —
- * there is no point claiming a route we cannot use. This does NOT check real-time Binance API
- * reachability or per-coin withdrawal status; a future change may layer a `getAccountCoins()` snapshot
- * over this static check.
+ * there is no point claiming a route we cannot use. Structural only: it says a route is *configured*, not
+ * that Binance is currently accepting transfers on it — see `BinanceClient.canDrainToHubChain()` for that.
  */
 export function hasBinanceRoute(chainId: number, l1Token: Address): boolean {
   if (!binanceCredentialsConfigured()) {

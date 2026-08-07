@@ -25,6 +25,17 @@ export class MockAdapterManager extends AdapterManager {
   public withdrawalsRequired: L2Withdrawal[] = [];
 
   public mockedOutstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
+
+  public unbridgeableTokens: { [chainId: number]: string[] } = {};
+
+  override canSendTokenCrossChain(chainId: number, l1Token: EvmAddress): boolean {
+    return !(this.unbridgeableTokens[chainId] ?? []).includes(l1Token.toNative());
+  }
+
+  setUnbridgeableTokens(chainId: number, l1Tokens: EvmAddress[]): void {
+    this.unbridgeableTokens[chainId] = l1Tokens.map((l1Token) => l1Token.toNative());
+  }
+
   async sendTokenCrossChain(
     _address: Address,
     chainId: number,
