@@ -1352,33 +1352,42 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         error instanceof Error ? error : new Error(String(error))
       );
     });
-    const sourceProvider = await getProvider(sourceChain);
-    const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
-    const amountReadable = fromWei(amountToDeposit, sourceTokenInfo.decimals);
-    const connectedSigner = this.baseSigner.connect(sourceProvider);
     const onBroadcast = (transactionHash: string) =>
       this._persistDepositTransaction(cloid, sourceChain, transactionHash);
 
-    let txnHash: string;
-    if (usesBinanceAtomicDepositorTransfer(sourceToken, sourceChain)) {
-      txnHash = await this._depositNativeEthToBinanceViaAtomicDepositor(
-        sourceChain,
-        depositAddress.address,
-        amountToDeposit,
-        onBroadcast
-      );
-    } else {
-      const txn = this._buildDirectBinanceTokenDepositTransaction(
-        sourceToken,
-        sourceChain,
-        sourceTokenInfo.address.toNative(),
-        connectedSigner,
-        depositAddress.address,
-        amountToDeposit,
-        amountReadable
-      );
-      txnHash = await this._submitTransaction({ ...txn, onBroadcast });
+    // No transaction has been attempted until the submit call runs, so setup failures (provider
+    // resolution, token lookup, transaction construction) are also definitive for callers.
+    let submitDeposit: () => Promise<string>;
+    let amountReadable: string;
+    try {
+      const sourceProvider = await getProvider(sourceChain);
+      const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
+      amountReadable = fromWei(amountToDeposit, sourceTokenInfo.decimals);
+      const connectedSigner = this.baseSigner.connect(sourceProvider);
+      if (usesBinanceAtomicDepositorTransfer(sourceToken, sourceChain)) {
+        submitDeposit = () =>
+          this._depositNativeEthToBinanceViaAtomicDepositor(
+            sourceChain,
+            depositAddress.address,
+            amountToDeposit,
+            onBroadcast
+          );
+      } else {
+        const txn = this._buildDirectBinanceTokenDepositTransaction(
+          sourceToken,
+          sourceChain,
+          sourceTokenInfo.address.toNative(),
+          connectedSigner,
+          depositAddress.address,
+          amountToDeposit,
+          amountReadable
+        );
+        submitDeposit = () => this._submitTransaction({ ...txn, onBroadcast });
+      }
+    } catch (error) {
+      throw new DefinitiveTransactionFailure("Failed to prepare Binance deposit", error);
     }
+    const txnHash = await submitDeposit();
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._depositToBinance",
       message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,
@@ -1591,36 +1600,43 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     amountToDeposit: BigNumber,
     onBroadcast?: (transactionHash: string) => void | Promise<void>
   ): Promise<string> {
-    const sourceProvider = await getProvider(sourceChain);
-    const connectedSigner = this.baseSigner.connect(sourceProvider);
-    const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = getContractEntry(
-      sourceChain,
-      "atomicDepositor"
-    );
-    const { address: transferProxyAddress, abi: transferProxyAbi } = getContractEntry(
-      sourceChain,
-      "atomicDepositorTransferProxy"
-    );
-    const atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, connectedSigner);
-    const transferProxy = new Contract(transferProxyAddress, transferProxyAbi);
-    const bridgeCalldata = transferProxy.interface.encodeFunctionData("transfer", [depositAddress]);
-    // @dev The AtomicWethDepositor today is only deployed to Ethereum and the only way to use it to deposit ETH
-    // into Binance is to use the bridgeCalldata as the whitelisted function selector mapped to chain ID 56.
-    const transaction = {
-      contract: atomicDepositor,
-      method: "bridgeWeth",
-      args: [CHAIN_IDs.BSC, amountToDeposit, amountToDeposit, bnZero, bridgeCalldata],
-      chainId: sourceChain,
-      nonMulticall: true,
-      unpermissioned: false,
-      ensureConfirmation: true,
-      message: `Deposited ${fromWei(amountToDeposit, 18)} WETH to Binance via native ETH on chain ${getNetworkName(
-        sourceChain
-      )}`,
-      mrkdwn: `Deposited ${fromWei(amountToDeposit, 18)} WETH to Binance via native ETH on chain ${getNetworkName(
-        sourceChain
-      )}`,
-    };
+    // No transaction has been attempted until the submit call runs, so setup failures are
+    // definitive for recovery callers.
+    let transaction: Omit<AugmentedTransaction, "onBroadcast">;
+    try {
+      const sourceProvider = await getProvider(sourceChain);
+      const connectedSigner = this.baseSigner.connect(sourceProvider);
+      const { address: atomicDepositorAddress, abi: atomicDepositorAbi } = getContractEntry(
+        sourceChain,
+        "atomicDepositor"
+      );
+      const { address: transferProxyAddress, abi: transferProxyAbi } = getContractEntry(
+        sourceChain,
+        "atomicDepositorTransferProxy"
+      );
+      const atomicDepositor = new Contract(atomicDepositorAddress, atomicDepositorAbi, connectedSigner);
+      const transferProxy = new Contract(transferProxyAddress, transferProxyAbi);
+      const bridgeCalldata = transferProxy.interface.encodeFunctionData("transfer", [depositAddress]);
+      // @dev The AtomicWethDepositor today is only deployed to Ethereum and the only way to use it to deposit ETH
+      // into Binance is to use the bridgeCalldata as the whitelisted function selector mapped to chain ID 56.
+      transaction = {
+        contract: atomicDepositor,
+        method: "bridgeWeth",
+        args: [CHAIN_IDs.BSC, amountToDeposit, amountToDeposit, bnZero, bridgeCalldata],
+        chainId: sourceChain,
+        nonMulticall: true,
+        unpermissioned: false,
+        ensureConfirmation: true,
+        message: `Deposited ${fromWei(amountToDeposit, 18)} WETH to Binance via native ETH on chain ${getNetworkName(
+          sourceChain
+        )}`,
+        mrkdwn: `Deposited ${fromWei(amountToDeposit, 18)} WETH to Binance via native ETH on chain ${getNetworkName(
+          sourceChain
+        )}`,
+      };
+    } catch (error) {
+      throw new DefinitiveTransactionFailure("Failed to prepare Binance deposit", error);
+    }
     return this._submitTransaction({ ...transaction, onBroadcast });
   }
 

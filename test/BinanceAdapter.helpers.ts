@@ -613,6 +613,37 @@ describe("Binance adapter helpers", function () {
     expect(deleteOrder.called).to.equal(false);
   });
 
+  it("classifies deposit setup failures as definitive", async function () {
+    const adapter = await makeAdapter();
+    const [signer] = await ethers.getSigners();
+    const internals = adapter as unknown as {
+      baseSignerAddress: EvmAddress;
+      binanceApiClient: { depositAddress: sinon.SinonStub };
+      _getTokenInfo(): { symbol: string; decimals: number; address: EvmAddress };
+      _depositToBinance(cloid: string, token: string, chainId: number, amount: BigNumber): Promise<string>;
+    };
+    internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
+    internals.binanceApiClient = { depositAddress: sinon.stub().resolves({ address: await signer.getAddress() }) };
+    // A setup failure before any submission attempt must be definitive so the caller can restore
+    // the pre-deposit order instead of leaving it wedged behind an unfulfillable recovery marker.
+    sinon.stub(internals, "_getTokenInfo").throws(new Error("token registry unavailable"));
+    const rpcProviders = process.env.RPC_PROVIDERS_1;
+    const rpcProvider = process.env.RPC_PROVIDER_test_1;
+    process.env.RPC_PROVIDERS_1 = "test";
+    process.env.RPC_PROVIDER_test_1 = "http://localhost:8545";
+
+    try {
+      const error = await internals._depositToBinance("cloid", "USDT", CHAIN_IDs.MAINNET, toBNWei("100", 6)).then(
+        () => undefined,
+        (error) => error
+      );
+      expect(error).to.be.an.instanceof(DefinitiveTransactionFailure);
+    } finally {
+      rpcProviders ? (process.env.RPC_PROVIDERS_1 = rpcProviders) : delete process.env.RPC_PROVIDERS_1;
+      rpcProvider ? (process.env.RPC_PROVIDER_test_1 = rpcProvider) : delete process.env.RPC_PROVIDER_test_1;
+    }
+  });
+
   it("persists the direct deposit hash at the broadcast boundary", async function () {
     const adapter = await makeAdapter();
     const [signer] = await ethers.getSigners();
