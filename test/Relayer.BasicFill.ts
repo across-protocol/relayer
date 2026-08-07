@@ -1438,6 +1438,29 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
           isSwapSupported.restore();
         }
       });
+
+      it("Doesn't constrain hub chain origins", async function () {
+        // Funds can be JIT-bridged from the hub chain to anywhere, so a hub chain origin keeps its non-origin
+        // candidates. That has to hold even for an unmapped input token, which never reaches getLimit()'s own
+        // hub chain exemption.
+        const chainId = sinon.stub(hubPoolClient, "chainId").value(originChainId);
+        const getL1TokenAddress = sinon.stub(inventoryClient, "getL1TokenAddress").returns(undefined);
+        const isSwapSupported = sinon.stub(inventoryClient, "isSwapSupported").returns(true);
+        determineRefundChainId.resolves([destinationChainId, originChainId]);
+
+        try {
+          await deposit();
+          await updateAllClients();
+
+          const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+          expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+          expect(logged(`with repayment on ${destinationChainId}`)).to.be.true;
+        } finally {
+          chainId.restore();
+          getL1TokenAddress.restore();
+          isSwapSupported.restore();
+        }
+      });
     });
   });
 

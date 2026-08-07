@@ -539,10 +539,17 @@ export class Relayer {
    * @returns The subset of repaymentChainIds whose refund can be funded, preserving the input ordering.
    */
   protected filterRepaymentChains(deposit: DepositWithBlock, repaymentChainIds: number[]): number[] {
-    const { acrossApiClient, inventoryClient } = this.clients;
+    const { acrossApiClient, hubPoolClient, inventoryClient } = this.clients;
     const { depositId, inputAmount, inputToken, originChainId, txnRef } = deposit;
 
     if (this.config.ignoreLimits || !acrossApiClient.updatedLimits) {
+      return repaymentChainIds;
+    }
+
+    // Funds can be JIT-bridged from the hub chain to anywhere, so a hub chain origin is never constrained; taking
+    // repayment out on a pool rebalance route is what keeps utilisation low. getLimit() encodes the same exemption,
+    // but an unmapped input token never reaches it.
+    if (originChainId === hubPoolClient.chainId) {
       return repaymentChainIds;
     }
 

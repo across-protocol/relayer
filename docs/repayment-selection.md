@@ -77,9 +77,9 @@ For the full eligibility internals, see `docs/repayment-eligibility.md`.
 
 `filterRepaymentChains()` restricts repayment to the origin chain when `AcrossApiClient`'s `/liquid-reserves`
 limits show the HubPool can't fund a refund elsewhere. An origin chain refund is funded by the deposit itself, so it
-always survives; forced-origin deposits are therefore never refused for want of reserves. The filter is inert when
-`ignoreLimits` is set or limits have not been fetched. If nothing survives, the deposit follows the normal
-unprofitable-fill path.
+always survives; forced-origin deposits are therefore never refused for want of reserves. The filter is inert for hub
+chain origins (funds can be JIT-bridged from there to anywhere), when `ignoreLimits` is set, and until limits have been
+fetched. If nothing survives, the deposit follows the normal unprofitable-fill path.
 
 ## Step 3: Profitability pass
 
