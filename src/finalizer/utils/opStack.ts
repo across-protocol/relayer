@@ -198,9 +198,9 @@ export async function opStackFinalizer(
   const minimumFinalizationTime = getCurrentTime() - 7 * 3600 * 24;
   const latestBlockToProve = await getBlockForTimestamp(logger, chainId, minimumFinalizationTime, undefined, redis);
 
-  // OP Stack chains have several tokens that do not go through the standard ERC20 withdrawal process
-  // (e.g. DAI on Optimism via the Maker bridge, USDC.e on Worldchain, etc) so the easiest way to query
-  // for these events is to use the TokenBridged event emitted by the Across SpokePool on every withdrawal.
+  // OP Stack chains may have tokens that do not go through the standard ERC20 withdrawal process, so the
+  // easiest way to query for these events is to use the TokensBridged event emitted by the Across SpokePool
+  // on every withdrawal.
   // @dev EOA-initiated withdrawals of such tokens are NOT discovered here, because getOVMStdEvents() only
   // queries the OVM standard bridge; those need finalizing by hand.
   const usdc = EvmAddress.from(USDC.addresses[chainId] ?? ZERO_ADDRESS);
