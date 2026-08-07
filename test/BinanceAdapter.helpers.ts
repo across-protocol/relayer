@@ -504,7 +504,7 @@ describe("Binance adapter helpers", function () {
     await expect(adapter.initializeRebalanceWithTransaction(route, toBNWei("100", 6))).to.be.rejectedWith(
       "post-broadcast redis failure"
     );
-    expect(calls).to.deep.equal(["order", "recovery", "submission", "promote", "broadcast"]);
+    expect(calls).to.deep.equal(["order", "recovery", "submission", "broadcast"]);
     expect(deleteOrder.called).to.equal(false);
   });
 

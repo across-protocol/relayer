@@ -947,15 +947,15 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           if (submissionStarted) {
             return;
           }
-          await this._redisUpdateOrderStatus(
-            cloid,
-            STATUS.PENDING_DEPOSIT_SUBMISSION,
-            STATUS.PENDING_DEPOSIT,
-            this.baseSignerAddress
-          );
           submissionStarted = true;
           await onSubmission?.();
         });
+        await this._redisUpdateOrderStatus(
+          cloid,
+          STATUS.PENDING_DEPOSIT_SUBMISSION,
+          STATUS.PENDING_DEPOSIT,
+          this.baseSignerAddress
+        );
       } catch (error) {
         if (!submissionStarted || error instanceof DefinitiveTransactionFailure) {
           await Promise.all([
