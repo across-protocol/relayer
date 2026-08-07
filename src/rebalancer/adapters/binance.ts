@@ -1390,9 +1390,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       );
       txnHash = await this._submitTransaction({ ...txn, onBroadcast });
     }
-    // TTL must outlive the finalizer lookback so completed swaps are not re-counted as finalizable.
-    // The cloid -> deposit txn mapping lets the prune path find abandoned deposit tags.
-    await setBinanceDepositType(sourceChain, txnHash, BinanceTransactionType.SWAP, 2 * FINALIZER_TOKENBRIDGE_LOOKBACK);
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._depositToBinance",
       message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,
@@ -1402,6 +1399,13 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   private async _persistDepositTransaction(cloid: string, chainId: number, transactionHash: string): Promise<void> {
+    // Tag first so a crash cannot expose accepted source funds to the Binance finalizer.
+    await setBinanceDepositType(
+      chainId,
+      transactionHash,
+      BinanceTransactionType.SWAP,
+      2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+    );
     const key = getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, this.baseSignerAddress.toNative());
     for (let attempt = 0; ; attempt++) {
       try {

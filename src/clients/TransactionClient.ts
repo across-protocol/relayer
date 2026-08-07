@@ -634,7 +634,14 @@ async function _runTransactionTvm(
     return _runTransactionTvm(logger, contract, method, args, value, gasLimit, _nonce, retries, onBroadcast);
   }
 
-  await onBroadcast?.(result.txid);
+  try {
+    await onBroadcast?.(result.txid);
+  } catch (error) {
+    throw new TransactionSubmissionPendingError(
+      error instanceof Error ? error : new Error(stringifyThrownValue(error)),
+      result.txid
+    );
+  }
   logger.debug({ at, message: "TVM transaction submitted.", chain, method, txid: result.txid });
 
   // Adapt TronTransactionResult to an ethers-compatible TransactionResponse. TVM doesn't use
