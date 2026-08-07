@@ -435,6 +435,9 @@ export class BaseChainAdapter {
   ): Promise<TransactionResponse> {
     const bridge = this.bridges[l1Token.toNative()];
     assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
+    if (isDefined(bridge.sendL1ToL2Transfer)) {
+      return bridge.sendL1ToL2Transfer(address, l1Token, l2Token, amount, simMode);
+    }
     let bridgeTransactionDetails: BridgeTransactionDetails;
     try {
       bridgeTransactionDetails = await bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount, optionalParams);

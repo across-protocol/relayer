@@ -752,6 +752,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
+    return (await this.initializeRebalanceWithTransaction(rebalanceRoute, amountToTransfer)).amount;
+  }
+
+  /**
+   * Same as initializeRebalance, but also surfaces the Binance deposit transaction hash when the order was
+   * initiated with a direct deposit (i.e. no intermediate bridge leg). Used by the AdapterManager's Binance swap
+   * bridge, whose callers expect a transaction reference for the initiation.
+   */
+  async initializeRebalanceWithTransaction(
+    rebalanceRoute: RebalanceRoute,
+    amountToTransfer: BigNumber
+  ): Promise<{ amount: BigNumber; transactionHash?: string }> {
     this._assertInitialized();
     this._assertRouteIsSupported(rebalanceRoute);
     const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
@@ -782,7 +794,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         rebalanceRoute,
         destinationNetwork: BINANCE_NETWORKS[destinationEntrypointNetwork],
       });
-      return bnZero;
+      return { amount: bnZero };
     }
     const { withdrawMin, withdrawMax } = destinationBinanceNetwork;
 
@@ -812,7 +824,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `Expected amount to withdraw ${expectedAmountToWithdrawInDestinationUnits.toString()} is less than minimum withdrawal size ${withdrawMinWei.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
       });
-      return bnZero;
+      return { amount: bnZero };
     }
     const withdrawMaxWei = toBNWei(
       truncate(Number(withdrawMax), destinationTokenInfo.decimals),
@@ -823,7 +835,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `Expected amount to withdraw ${expectedAmountToWithdrawInDestinationUnits.toString()} is greater than maximum withdrawal size ${withdrawMaxWei.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
       });
-      return bnZero;
+      return { amount: bnZero };
     }
 
     // TODO: The amount transferred here might produce dust due to the rounding required to meet the minimum order
@@ -850,7 +862,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           at: "BinanceStablecoinSwapAdapter.initializeRebalance",
           message: `Amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${minimumOrderSize.toString()}`,
         });
-        return bnZero;
+        return { amount: bnZero };
       }
     }
 
@@ -879,7 +891,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           balance: balance.toString(),
           amountToTransfer: amountToTransfer.toString(),
         });
-        return bnZero;
+        return { amount: bnZero };
       }
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
@@ -907,14 +919,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         this.baseSignerAddress,
         preDepositTtlOverride
       );
-      return amountReceivedFromBridge;
+      return { amount: amountReceivedFromBridge };
     } else {
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
         expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
-      await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer);
+      const transactionHash = await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer);
       await this._redisCreateOrder(
         cloid,
         STATUS.PENDING_DEPOSIT,
@@ -922,7 +934,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         amountToTransfer,
         this.baseSignerAddress
       );
-      return amountToTransfer;
+      return { amount: amountToTransfer, transactionHash };
     }
   }
 
@@ -1162,7 +1174,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     sourceToken: string,
     sourceChain: number,
     amountToDeposit: BigNumber
-  ): Promise<void> {
+  ): Promise<string> {
     assert(isDefined(BINANCE_NETWORKS[sourceChain]), "Source chain should be a Binance network");
     assert(
       sourceToken !== "WETH" || isDefined(getAtomicDepositorContracts(sourceChain)),
@@ -1209,6 +1221,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,
       redisDepositTypeKey: getBinanceTransactionTypeKey(sourceChain, txnHash),
     });
+    return txnHash;
   }
 
   private _buildDirectBinanceTokenDepositTransaction(

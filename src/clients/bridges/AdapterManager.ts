@@ -30,8 +30,27 @@ import {
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
 import { BaseChainAdapter } from "../../adapter";
+import { BinanceStablecoinSwapAdapter as BinanceStablecoinSwapBridge } from "../../adapter/bridges/BinanceStablecoinSwapAdapter";
 import { TransferTokenParams } from "../../adapter/utils";
 import { CctpOftReadOnlyClient } from "../../rebalancer/clients/CctpOftReadOnlyClient";
+import { BinanceStablecoinSwapAdapter } from "../../rebalancer/adapters/binance";
+import { constructRebalancerDependencies } from "../../rebalancer/RebalancerClientHelper";
+import { RebalanceRoute } from "../../rebalancer/utils/interfaces";
+
+// The bridge-facing swap adapter delegates initiation to the rebalancer's Binance adapter, constructed lazily on
+// first use so relayer configurations without Binance credentials never touch the Binance API.
+async function createBinanceRebalancerAdapter(logger: winston.Logger, signer: Signer, route: RebalanceRoute) {
+  const {
+    adapters: { binance, cctp, oft },
+  } = constructRebalancerDependencies(logger, signer);
+  assert(
+    binance instanceof BinanceStablecoinSwapAdapter && isDefined(cctp) && isDefined(oft),
+    "Binance rebalancer adapters are unavailable for the configured hub chain"
+  );
+  await Promise.all([cctp.initialize([route]), oft.initialize([route])]);
+  await binance.initialize([route]);
+  return binance;
+}
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
@@ -109,18 +128,29 @@ export class AdapterManager {
             }
             const l1Token = resolveAcrossToken(symbol, hubChainId, true);
             const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
-            // Some tokens are L2→L1-only (e.g. Avalanche USDT via Binance) and have no L1→L2 bridge.
+            // Some tokens are L2→L1-only and have no L1→L2 bridge.
             if (!isDefined(bridgeConstructor)) {
               return undefined;
             }
-            const bridge = new bridgeConstructor(
-              chainId,
-              hubChainId,
-              l1Signer,
-              l2SignerOrProvider,
-              EvmAddress.from(l1Token),
-              logger
-            );
+            const bridge =
+              bridgeConstructor === BinanceStablecoinSwapBridge
+                ? new BinanceStablecoinSwapBridge(
+                    chainId,
+                    hubChainId,
+                    l1Signer,
+                    l2SignerOrProvider,
+                    EvmAddress.from(l1Token),
+                    logger,
+                    (route) => createBinanceRebalancerAdapter(logger, l1Signer, route)
+                  )
+                : new bridgeConstructor(
+                    chainId,
+                    hubChainId,
+                    l1Signer,
+                    l2SignerOrProvider,
+                    EvmAddress.from(l1Token),
+                    logger
+                  );
             return [l1Token, bridge];
           })
           .filter(isDefined) ?? []

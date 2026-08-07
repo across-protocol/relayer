@@ -10,6 +10,7 @@ import {
   Address,
   getHubPoolAddress,
   getSpokePoolAddress,
+  TransactionResponse,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
 import { CctpOftReadOnlyClient, PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
@@ -27,6 +28,10 @@ export type BridgeEvent = SortableEvent & {
 };
 
 export type BridgeEvents = { [l2Token: string]: BridgeEvent[] };
+
+// Thrown by bridges that can decline a transfer at submission time without moving any funds, so callers can
+// roll back balance accounting for the declined amount.
+export class BridgeTransferDeclinedError extends Error {}
 
 export abstract class BaseBridgeAdapter {
   protected l1Bridge?: Contract;
@@ -67,6 +72,16 @@ export abstract class BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents>;
+
+  // Bridges that submit through an external venue rather than an L1 contract call implement this instead of
+  // constructL1ToL2Txn. Throws BridgeTransferDeclinedError when the transfer is declined with no funds moved.
+  sendL1ToL2Transfer?(
+    toAddress: Address,
+    l1Token: EvmAddress,
+    l2Token: Address,
+    amount: BigNumber,
+    simMode: boolean
+  ): Promise<TransactionResponse>;
 
   setPendingBridgeRedisReader(pendingBridgeRedisReader?: CctpOftReadOnlyClient): void {
     this.pendingBridgeRedisReader = pendingBridgeRedisReader;

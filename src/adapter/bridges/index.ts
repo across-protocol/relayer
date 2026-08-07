@@ -1,6 +1,7 @@
 export * from "./BaseBridgeAdapter";
 export * from "./BinanceCEXBridge";
 export * from "./BinanceCEXNativeBridge";
+export * from "./BinanceStablecoinSwapAdapter";
 export * from "./UsdcTokenSplitterBridge";
 export * from "./OpStackWethBridge";
 export * from "./ArbitrumOrbitBridge";

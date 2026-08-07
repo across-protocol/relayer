@@ -58,6 +58,8 @@ The dedicated SameAsset mode has a separate route source in `src/rebalancer/buil
 
 SameAsset routes are directional. They move an unchanged asset from the hub chain to a configured destination chain through the selected swap-rebalancer adapter. Excess destination-chain inventory moving back to the hub chain remains an InventoryClient responsibility and is not emitted as a reverse SameAsset route.
 
+An AdapterManager path exists alongside the SameAsset mode: `src/adapter/bridges/BinanceStablecoinSwapAdapter.ts` is a bridge registered in `CUSTOM_BRIDGE` (currently Mainnet `USDT` to Avalanche) that delegates hub-to-L2 same-asset initiation to the rebalancer's Binance adapter via `initializeRebalanceWithTransaction`. InventoryClient drives it through the normal `sendTokenCrossChain` flow; a declined transfer surfaces as `BridgeTransferDeclinedError` and rolls back InventoryClient's balance accounting. The resulting Redis orders progress through the swap rebalancer's normal lifecycle: `buildAdapterManagerBinanceRoutes()` derives the bridge-registered routes from `CUSTOM_BRIDGE`/`CANONICAL_BRIDGE`, and `constructCumulativeBalanceRebalancerClient` initializes the Binance adapter with those routes (in addition to its own rebalance routes) so it can progress the orders without ever selecting the routes for cumulative rebalancing. Pending orders surface through `getPendingRebalances` as destination-chain virtual balances, which is what prevents InventoryClient from re-initiating an in-flight transfer.
+
 ### Rebalancer Adapter
 
 Adapters in `src/rebalancer/adapters/` initiate and progress multi-stage swap workflows. The interface currently is:

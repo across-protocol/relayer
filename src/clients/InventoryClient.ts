@@ -50,6 +50,7 @@ import { Deposit, TokenInfo } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import { hasBinanceRoute } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
+import { BridgeTransferDeclinedError } from "../adapter/bridges/BaseBridgeAdapter";
 import { TransferTokenParams } from "../adapter/utils";
 import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
@@ -1051,6 +1052,14 @@ export class InventoryClient {
         );
         executedTransactions.push({ ...rebalance, hash });
       } catch (error) {
+        if (error instanceof BridgeTransferDeclinedError) {
+          // The bridge declined without moving funds, so restore the balance accounting from
+          // trackCrossChainTransfer above.
+          this.tokenClient.incrementLocalBalance(this.hubPoolClient.chainId, l1Token, amount);
+          this.crossChainTransferClient.decreaseOutstandingTransfer(this.relayer, l1Token, l2Token, amount, chainId);
+          this.log("Cross-chain bridge declined inventory rebalance", { ...rebalance, reason: error.message }, "warn");
+          continue;
+        }
         this.log(
           "Something errored during inventory rebalance",
           { error, chainId, l1Token, l2Token, amount, optionalParams }, // include all info to help debugging.
