@@ -201,6 +201,18 @@ export class TransactionClient {
         txnResponse = await txnPromise;
       } catch (error) {
         if (isDefined(pendingTransaction) && !(error instanceof TransactionSubmissionPendingError)) {
+          // The replacement was rejected without dispatch, so the original submission remains the
+          // live candidate; restore its hash through the callback, which may still point at the
+          // rejected replacement.
+          try {
+            await txn.onBroadcast?.(pendingTransaction.hash);
+          } catch (callbackError) {
+            throw new TransactionSubmissionPendingError(
+              callbackError,
+              pendingTransaction.hash,
+              pendingTransaction.nonce
+            );
+          }
           throw new TransactionConfirmationPendingError(pendingTransaction.hash, pendingTransaction.nonce);
         }
         throw error;
