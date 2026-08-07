@@ -146,8 +146,13 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   }
 
   public pendingWithdrawalLookbackPeriodSeconds(): number {
-    // Binance withdrawals are fast, we can shorten the lookback period to also reduce the number
-    // of provider.getTransactionReceipt we have to make for each deposit event.
-    return 1 * 60 * 60;
+    // The Binance withdrawal itself is fast, but it can only be requested once Binance finishes confirming the
+    // L2 deposit, and that dominates the round trip. Measured deposit -> withdrawable on ZKSYNCERA USDC: 34, 54
+    // and 69 minutes across three deposits (2026-08-03 and 2026-08-07). A 1 hour lookback dropped in-flight
+    // deposits out of the pending total before Binance released them, so the relayer stopped counting capital it
+    // still owned. 4 hours keeps them visible with headroom. The cost is one extra
+    // provider.getTransactionReceipt per deposit that the wider window admits, and deposits are sparse enough
+    // per (network, coin) that this is a handful of calls at most.
+    return 4 * 60 * 60;
   }
 }
