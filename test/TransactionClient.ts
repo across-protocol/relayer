@@ -5,6 +5,7 @@ import {
 } from "../src/clients";
 import {
   BigNumber,
+  dispatchTransaction,
   ethers,
   isDefined,
   TransactionReceipt,
@@ -49,6 +50,18 @@ describe("TransactionClient", function () {
       expect(results.filter((txn) => txn.succeed).length).to.equal(fail ? 0 : txns.length);
       expect(results.filter((txn) => !txn.succeed).length).to.equal(fail ? txns.length : 0);
     }
+  });
+
+  it("classifies dispatcher simulation failures as definitive", async function () {
+    const chainId = chainIds[0];
+    const transaction = {
+      chainId,
+      contract: { address, signer } as Contract,
+      method,
+      args: [{ result: "Forced simulation failure" }],
+    } as AugmentedTransaction;
+
+    await expect(dispatchTransaction(transaction, txnClient)).to.be.rejectedWith(DefinitiveTransactionFailure);
   });
 
   it("Handles submission success & failure", async function () {

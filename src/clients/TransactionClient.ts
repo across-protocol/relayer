@@ -95,11 +95,8 @@ type OnBroadcast = AugmentedTransaction["onBroadcast"];
 
 // A transaction that terminally failed without moving funds: rejected before broadcast, or mined and reverted.
 export class DefinitiveTransactionFailure extends Error {
-  constructor(
-    message: string,
-    readonly cause: Error
-  ) {
-    super(`${message}: ${cause.message}`);
+  constructor(message: string, cause?: unknown) {
+    super(cause instanceof Error ? `${message}: ${cause.message}` : message, { cause });
   }
 }
 
@@ -283,10 +280,7 @@ export class TransactionClient {
       } else if (txnReceipt.status === 0) {
         // The TVM wait resolves reverted transactions rather than throwing CALL_EXCEPTION.
         this.logger.debug({ at, message: `Transaction on ${chain} failed during execution...`, txnRef });
-        throw new DefinitiveTransactionFailure(
-          "Transaction reverted after broadcast",
-          new Error(`${chain} transaction reverted (${txnResponse.hash})`)
-        );
+        throw new DefinitiveTransactionFailure(`${chain} transaction reverted after broadcast (${txnResponse.hash})`);
       }
     }
 
@@ -580,10 +574,7 @@ async function _runTransactionTvm(
     result = await submitTransactionTvm(tronWeb, populatedTransaction, feeLimit, value.toNumber());
   } catch (error) {
     if (--retries < 0) {
-      throw new DefinitiveTransactionFailure(
-        "Transaction rejected before broadcast",
-        error instanceof Error ? error : new Error(stringifyThrownValue(error))
-      );
+      throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);
     }
     logger.debug({
       at,
@@ -595,9 +586,8 @@ async function _runTransactionTvm(
   }
 
   if (!result.result) {
-    const error = new Error(`TVM transaction broadcast failed on ${chain}: ${result.txid}`);
     if (--retries < 0) {
-      throw new DefinitiveTransactionFailure("Transaction rejected before broadcast", error);
+      throw new DefinitiveTransactionFailure(`TVM transaction broadcast failed on ${chain}: ${result.txid}`);
     }
     logger.debug({
       at,

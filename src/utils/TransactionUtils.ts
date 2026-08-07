@@ -278,7 +278,7 @@ export async function submitTransaction(
       txnRequest.chainId
     }`;
     // Nothing was broadcast, so callers relying on DefinitiveTransactionFailure may safely roll back.
-    throw new DefinitiveTransactionFailure(message, new Error(reason));
+    throw new DefinitiveTransactionFailure(`${message} (${reason})`);
   }
 
   const response = await transactionClient.submit(transaction.chainId, [transaction]);
@@ -302,7 +302,7 @@ export async function dispatchTransaction(
     const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
       txnRequest.chainId
     }`;
-    throw new Error(`${message} (${reason})`);
+    throw new DefinitiveTransactionFailure(`${message} (${reason})`);
   }
 
   return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
