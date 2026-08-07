@@ -11,6 +11,10 @@ import {
   getTokenInfo,
   toBN,
   ZERO_ADDRESS,
+  BinanceDeposit,
+  EventSearchConfig,
+  compareAddressesSimple,
+  filterAsync,
 } from "../../utils";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 import WETH_ABI from "../../common/abi/Weth.json";
@@ -69,5 +73,20 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
       mrkdwn: `Withdrew ${formatter(amount.toString())} ${l2TokenInfo.symbol} from ${network} to L1`,
     };
     return [unwrapTxn, transferValueTxn];
+  }
+
+  /**
+   * @dev Deposits on this bridge are native-token value transfers, which emit no Transfer event, so the parent's
+   * getLogs-based attribution cannot see them. Fall back to reading the sender off each deposit transaction.
+   */
+  protected async filterDepositsFromAddress(
+    deposits: BinanceDeposit[],
+    fromAddress: EvmAddress,
+    _l2EventConfig: EventSearchConfig
+  ): Promise<BinanceDeposit[]> {
+    return filterAsync(deposits, async (deposit) => {
+      const txnReceipt = await this.getL2Bridge().provider.getTransactionReceipt(deposit.txId);
+      return isDefined(txnReceipt) && compareAddressesSimple(txnReceipt.from, fromAddress.toNative());
+    });
   }
 }

@@ -26,6 +26,8 @@ import {
   isCompletedBinanceWithdrawal,
   getOutstandingBinanceDeposits,
   isDefined,
+  paginatedEventQuery,
+  BinanceDeposit,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -127,11 +129,8 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       );
     });
 
-    // FilterMap to remove all deposits from this L2 which originated from another EOA.
-    const filteredDepositHistory = await filterAsync(depositHistory, async (deposit) => {
-      const txnReceipt = await this.getL2Bridge().provider.getTransactionReceipt(deposit.txId);
-      return isDefined(txnReceipt) && compareAddressesSimple(txnReceipt.from, fromAddress.toNative());
-    });
+    // Remove all deposits from this L2 which originated from another EOA.
+    const filteredDepositHistory = await this.filterDepositsFromAddress(depositHistory, fromAddress, l2EventConfig);
 
     const unmatchedDeposits = getOutstandingBinanceDeposits(
       filteredDepositHistory,
@@ -139,6 +138,37 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       this.depositNetwork
     );
     return unmatchedDeposits.reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l2TokenInfo.decimals)), bnZero);
+  }
+
+  /**
+   * Narrows Binance's deposit history to the deposits this relayer funded. The Binance account is shared, so a
+   * deposit on this network/coin is not necessarily ours.
+   * @dev One Transfer query covers the whole search window in a single (paginated) getLogs, so the cost is flat in
+   * the number of deposits. Reading `receipt.from` per deposit instead costs one getTransactionReceipt each and
+   * scales with deposit volume, which on a busy network is paid on every inventory refresh.
+   * @dev ERC20 deposits only — native-token transfers emit no Transfer event. BinanceCEXNativeBridge overrides this.
+   */
+  protected async filterDepositsFromAddress(
+    deposits: BinanceDeposit[],
+    fromAddress: EvmAddress,
+    l2EventConfig: EventSearchConfig
+  ): Promise<BinanceDeposit[]> {
+    if (deposits.length === 0) {
+      return [];
+    }
+    const binanceApiClient = await this.getBinanceClient();
+    const depositAddress = await getBinanceDepositAddress(binanceApiClient, {
+      coin: this.l1TokenInfo.symbol,
+      network: this.depositNetwork,
+    });
+    const l2Bridge = this.getL2Bridge();
+    const transfers = await paginatedEventQuery(
+      l2Bridge,
+      l2Bridge.filters.Transfer(fromAddress.toNative(), depositAddress.address),
+      l2EventConfig
+    );
+    const fundedTxnRefs = new Set(transfers.map(({ transactionHash }) => transactionHash.toLowerCase()));
+    return deposits.filter((deposit) => fundedTxnRefs.has(deposit.txId.toLowerCase()));
   }
 
   protected async getBinanceClient() {
