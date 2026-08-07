@@ -278,7 +278,7 @@ export async function submitTransaction(
       txnRequest.chainId
     }`;
     // Nothing was broadcast, so callers relying on DefinitiveTransactionFailure may safely roll back.
-    throw new DefinitiveTransactionFailure(message, new Error(reason));
+    throw new DefinitiveTransactionFailure(`${message} (${reason})`);
   }
 
   const response = await transactionClient.submit(transaction.chainId, [transaction]);
