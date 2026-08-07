@@ -205,7 +205,7 @@ export function binanceCredentialsConfigured(): boolean {
 /**
  * Returns an API client to interface with Binance
  * @param url The base HTTP url to use to connect to Binance.
- * @returns A Binance client from `binance-api-node`.
+ * @returns The official Binance connectors, bundled per product.
  */
 export async function getBinanceApiClient(url = "https://api.binance.com"): Promise<BinanceApi> {
   const apiKey = process.env["BINANCE_API_KEY"];
@@ -256,9 +256,8 @@ async function retrieveBinanceSecretKeyFromCLIArgs(): Promise<string | undefined
 
 /**
  * Retrieves the input client account's withdrawal quota.
- * @dev Uses the official `@binance/wallet` connector rather than `binance-api-node`, which neither wraps
- * this endpoint nor types it. Binance returns both fields as strings and may omit either, so the response
- * is deliberately returned unvalidated — `BinanceClient.getWithdrawalLimits` is the coercion boundary.
+ * @dev Binance returns both fields as strings and may omit either, so the response is deliberately
+ * returned unvalidated — `BinanceClient.getWithdrawalLimits` is the coercion boundary.
  * @returns The raw quota response: `wdQuota` is the total amount available to rebalance per day, and
  * `usedWdQuota` the amount already used.
  */
