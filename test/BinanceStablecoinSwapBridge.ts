@@ -206,7 +206,12 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     await second.releasePendingOrderSlot(nextReservation as string);
     const duplicate = await first.reservePendingOrderSlot(2, "same-route-and-amount");
     expect(await second.reservePendingOrderSlot(2, "same-route-and-amount")).to.equal(undefined);
+    const wait = sinon.stub(first as never, "_wait").callsFake(async () => {
+      locked = false;
+    });
+    locked = true;
     await first.releasePendingOrderSlot(duplicate as string);
+    expect(wait.calledOnce).to.equal(true);
     const pendingCandidate = getBinanceRebalanceCandidate(route);
     (second.getPendingOrders as sinon.SinonStub).resolves(["pending"]);
     sinon.stub(second as never, "_redisGetOrderDetails").resolves({ ...route, amountToTransfer: toBNWei("100", 6) });

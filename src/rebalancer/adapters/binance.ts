@@ -851,10 +851,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const account = this.baseSignerAddress.toNative();
     const lockKey = `${this.REDIS_PREFIX}initiation-lock:${account}`;
     const lockToken = randomUUID();
-    assert(
-      await this.redisCache.acquireLock(lockKey, lockToken, BinanceStablecoinSwapAdapter.INITIATION_LOCK_TTL_MS),
-      "Failed to acquire Binance initiation lock while releasing reservation"
-    );
+    let acquired = false;
+    for (let attempt = 0; attempt < 10 && !acquired; ++attempt) {
+      acquired = await this.redisCache.acquireLock(
+        lockKey,
+        lockToken,
+        BinanceStablecoinSwapAdapter.INITIATION_LOCK_TTL_MS
+      );
+      if (!acquired) {
+        await this._wait(0.1);
+      }
+    }
+    assert(acquired, "Failed to acquire Binance initiation lock while releasing reservation");
     try {
       await this.redisCache.sRem(`${this.REDIS_PREFIX}initiation-reservations:${account}`, reservation);
       await this.redisCache.del(reservation);
