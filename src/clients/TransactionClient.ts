@@ -758,6 +758,15 @@ async function _runTransactionTvm(
   }
 
   if (!result.result) {
+    // A duplicate response means the network already knows this exact signed transaction, so it
+    // may still confirm; recovery-enabled callers must retain their state, not roll back.
+    if (onBroadcast && result.code === "DUP_TRANSACTION_ERROR") {
+      throw new TransactionSubmissionPendingError(
+        new Error(`Duplicate TVM broadcast on ${chain}: ${result.txid}`),
+        result.txid,
+        0
+      );
+    }
     if (--retries < 0) {
       throw new DefinitiveTransactionFailure(`TVM transaction broadcast failed on ${chain}: ${result.txid}`);
     }
