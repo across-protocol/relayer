@@ -34,7 +34,6 @@ type AdapterInternals = {
   _redisGetNextCloid(): Promise<string>;
   _depositToBinance(cloid: string, token: string, chainId: number, amount: BigNumber): Promise<void>;
   _redisCreateOrder(...args: unknown[]): Promise<void>;
-  _redisGetOrderDetails(cloid: string, account: EvmAddress): Promise<unknown>;
 };
 
 // An in-memory Redis shared between adapter instances, with SET NX lock semantics.
@@ -71,7 +70,7 @@ describe("Binance adapter initiation collision guard", function () {
 
   let nextCloid = 0;
 
-  async function makeAdapter(redis: ReturnType<typeof makeRedis>, options: { pendingRoutes?: RebalanceRoute[] } = {}) {
+  async function makeAdapter(redis: ReturnType<typeof makeRedis>) {
     const [signer] = await ethers.getSigners();
     const adapter = new BinanceStablecoinSwapAdapter(
       TEST_LOGGER,
@@ -106,12 +105,6 @@ describe("Binance adapter initiation collision guard", function () {
     sinon.stub(internals, "_getBridgingFees").resolves(bnZero);
     sinon.stub(internals, "_convertSourceToDestination").callsFake(async (...args) => args[4] as BigNumber);
     sinon.stub(internals, "_redisGetNextCloid").callsFake(async () => `cloid-${nextCloid++}`);
-    const pendingRoutes = options.pendingRoutes ?? [];
-    sinon.stub(adapter, "getPendingOrders").resolves(pendingRoutes.map((_route, index) => `pending-${index}`));
-    sinon.stub(internals, "_redisGetOrderDetails").callsFake(async (cloid: string) => ({
-      ...pendingRoutes[Number(cloid.split("-")[1])],
-      amountToTransfer: toBNWei("100", 6),
-    }));
     const createOrder = sinon.stub(internals, "_redisCreateOrder").resolves();
     const deposit = sinon.stub(internals, "_depositToBinance").resolves();
     return { adapter, internals, createOrder, deposit };
@@ -140,25 +133,6 @@ describe("Binance adapter initiation collision guard", function () {
     // The guard is released after initiation completes, so a later run can initiate again.
     expect(redis.locks.size).to.equal(0);
     expect((await second.internals.initializeRebalance(ROUTE, amount)).eq(amount)).to.equal(true);
-  });
-
-  it("declines re-initiating a route that already has a pending order", async function () {
-    const redis = makeRedis();
-    const { internals, deposit } = await makeAdapter(redis, { pendingRoutes: [ROUTE] });
-
-    expect((await internals.initializeRebalance(ROUTE, toBNWei("6000", 6))).eq(bnZero)).to.equal(true);
-    expect(deposit.called).to.equal(false);
-    // The duplicate decline releases the guard for other routes and later runs.
-    expect(redis.locks.size).to.equal(0);
-  });
-
-  it("releases the guard when the pending-order lookup fails", async function () {
-    const redis = makeRedis();
-    const { internals, adapter } = await makeAdapter(redis);
-    (adapter.getPendingOrders as sinon.SinonStub).rejects(new Error("redis unavailable"));
-
-    await expect(internals.initializeRebalance(ROUTE, toBNWei("6000", 6))).to.be.rejectedWith("redis unavailable");
-    expect(redis.locks.size).to.equal(0);
   });
 
   it("releases the guard when initiation fails", async function () {

@@ -758,9 +758,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     this._assertRouteIsSupported(rebalanceRoute);
     const cloid = await this._redisGetNextCloid();
     // Guard the initiation critical section so overlapping runs (two rebalancer instances, or an
-    // inventory-rebalancer overlapping the swap rebalancer) cannot double-initiate a route: an atomic SET NX per
-    // account+route declines the second concurrent initiator, and an already-pending same-route order declines
-    // re-initiation outright. The cloid doubles as the guard's ownership token.
+    // inventory-rebalancer overlapping the swap rebalancer) cannot simultaneously double-initiate a route: an
+    // atomic SET NX per account+route declines the second concurrent initiator, whose next run sees the first
+    // initiator's pending order in its virtual balances. The cloid doubles as the guard's ownership token.
     if (!(await this._acquireInitiationGuard(rebalanceRoute, cloid))) {
       return bnZero;
     }
@@ -777,14 +777,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     amountToTransfer: BigNumber,
     cloid: string
   ): Promise<BigNumber> {
-    if (await this._hasPendingOrderForRoute(rebalanceRoute)) {
-      this.logger.debug({
-        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: "A pending Binance order already covers this route; declining duplicate rebalance",
-        rebalanceRoute,
-      });
-      return bnZero;
-    }
     const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
     const routeRequiresSwap = this._routeRequiresSwap(sourceToken, destinationToken);
 
@@ -978,23 +970,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
     }
     return acquired;
-  }
-
-  private async _hasPendingOrderForRoute(rebalanceRoute: RebalanceRoute): Promise<boolean> {
-    const pendingOrderDetails = await Promise.all(
-      (await this.getPendingOrders()).map((pendingCloid) =>
-        this._redisGetOrderDetails(pendingCloid, this.baseSignerAddress)
-      )
-    );
-    const { sourceChain, sourceToken, destinationChain, destinationToken } = rebalanceRoute;
-    return pendingOrderDetails.some(
-      (details) =>
-        isDefined(details) &&
-        details.sourceChain === sourceChain &&
-        details.sourceToken === sourceToken &&
-        details.destinationChain === destinationChain &&
-        details.destinationToken === destinationToken
-    );
   }
 
   private async _releaseInitiationGuard(rebalanceRoute: RebalanceRoute, cloid: string): Promise<void> {
