@@ -101,9 +101,23 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
     )
   );
   // Initialize the Binance adapter first (initialize() is idempotent) so it can carry lifecycle routes beyond the
-  // client's own rebalance routes, e.g. orders initiated by the AdapterManager's Binance swap bridge.
+  // client's own rebalance routes, e.g. orders initiated by the AdapterManager's Binance swap bridge. The extra
+  // routes are registry-derived rather than operator-configured, so a validation failure (initialize() checks each
+  // route against the live Binance API) must not take down the whole rebalancer: fall back to the client's own
+  // routes and progress the bridge-initiated orders on a later run.
   if (extraBinanceLifecycleRoutes.length > 0) {
-    await adapters.binance?.initialize([...rebalanceRoutes, ...extraBinanceLifecycleRoutes]);
+    try {
+      await adapters.binance?.initialize([...rebalanceRoutes, ...extraBinanceLifecycleRoutes]);
+    } catch (error) {
+      // initialize() only marks the adapter initialized on success, so the client init below re-runs it with
+      // the base routes.
+      logger.warn({
+        at: `RebalancerClientHelper.${logLabel}`,
+        message: "Failed to initialize Binance adapter with AdapterManager lifecycle routes; using base routes only",
+        extraBinanceLifecycleRoutes,
+        error,
+      });
+    }
   }
   await rebalancerClient.initialize(rebalanceRoutes);
   logger.debug({

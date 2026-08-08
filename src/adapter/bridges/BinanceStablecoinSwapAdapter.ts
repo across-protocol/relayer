@@ -35,7 +35,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     l1Signer: Signer,
     _l2SignerOrProvider: unknown,
     private readonly l1Token: EvmAddress,
-    _logger: winston.Logger,
+    private readonly logger: winston.Logger,
     // Optional only so the class fits the registry's L1BridgeConstructor shape; getAdapterAndRoute asserts it
     // was supplied.
     private readonly adapterFactory?: (route: RebalanceRoute) => Promise<RebalancerBinanceStablecoinSwapAdapter>
@@ -70,12 +70,24 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
         throw new BridgeTransferDeclinedError("Estimated Binance transfer cost exceeds the maximum fee");
       }
     } catch (error) {
-      throw error instanceof BridgeTransferDeclinedError
-        ? error
-        : new BridgeTransferDeclinedError(
-            `Binance transfer preflight failed before submission: ${error instanceof Error ? error.message : error}`,
-            { cause: error }
-          );
+      if (error instanceof BridgeTransferDeclinedError) {
+        throw error;
+      }
+      // An unexpected preflight failure (bad credentials, missing config, API outage) is safe to treat as a
+      // decline, but unlike an expected decline it must be operator-visible: a persistent one silently disables
+      // the route otherwise.
+      this.logger.error({
+        at: "BinanceStablecoinSwapAdapter.sendL1ToL2Transfer",
+        message: "Binance transfer preflight failed before submission; declining transfer",
+        l1Token: l1Token.toNative(),
+        l2Token: l2Token.toNative(),
+        amount: amount.toString(),
+        error,
+      });
+      throw new BridgeTransferDeclinedError(
+        `Binance transfer preflight failed before submission: ${error instanceof Error ? error.message : error}`,
+        { cause: error }
+      );
     }
     if (simMode) {
       return { hash: ZERO_BYTES } as TransactionResponse;
