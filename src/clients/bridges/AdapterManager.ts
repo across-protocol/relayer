@@ -39,9 +39,8 @@ import {
   constructRebalancerDependencies,
 } from "../../rebalancer/RebalancerClientHelper";
 
-// One rebalancer Binance adapter serves every registered Binance swap route: it is constructed lazily on first
-// use (so relayer configurations without Binance credentials never touch the Binance API) and initialized with
-// the full registry-derived route set.
+// One rebalancer Binance adapter, initialized with the full registry-derived route set, serves every Binance
+// swap bridge.
 async function createBinanceRebalancerAdapter(logger: winston.Logger, signer: Signer) {
   const {
     adapters: { binance, cctp, oft },
@@ -58,9 +57,6 @@ async function createBinanceRebalancerAdapter(logger: winston.Logger, signer: Si
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
-  // Shared across every Binance swap bridge this manager constructs; evaluated only inside the bridge's async
-  // methods (the BinanceCEXBridge pattern), so missing credentials or config reject the transfer that needs the
-  // adapter rather than the bot that doesn't.
   private binanceRebalancerAdapter?: Promise<BinanceStablecoinSwapAdapter>;
   protected readonly pendingBridgeRedisReader?: CctpOftReadOnlyClient;
 
@@ -143,8 +139,7 @@ export class AdapterManager {
             const args = [chainId, hubChainId, l1Signer, l2SignerOrProvider, EvmAddress.from(l1Token), logger] as const;
             if (bridgeConstructor === BinanceStablecoinSwapBridge && !isDefined(this.binanceRebalancerAdapter)) {
               this.binanceRebalancerAdapter = createBinanceRebalancerAdapter(logger, l1Signer);
-              // Swallow the rejection here so a bot that never initiates a Binance transfer cannot crash on an
-              // unhandled rejection; transfers that await the stored promise still see the original error.
+              // Guard against an unhandled rejection in bots that never await the promise (e.g. no Binance creds).
               this.binanceRebalancerAdapter.catch(() => {});
             }
             const bridge =

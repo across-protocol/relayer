@@ -35,12 +35,9 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
   }
 
   /**
-   * One-shot initiation: the returned promise either resolves with the Binance deposit transaction hash or
-   * rejects with no funds moved and no Redis state created. We deliberately treat every Binance-side failure —
-   * capacity, fee cap, withdrawal suspension, API outage, adapter preflight — exactly like a contract bridge
-   * whose submitted transaction failed to mine: the caller's generic failed-send handling applies, its balance
-   * accounting stays conservative for the remainder of the run, and the next inventory update self-corrects.
-   * No decline/rollback classification exists on purpose; the bridge behaves like an atomic contract call.
+   * One-shot initiation: resolves with the Binance deposit transaction hash or rejects with no funds moved and
+   * no Redis state created. Every Binance-side failure is deliberately treated like a contract-bridge transaction
+   * that failed to mine - no decline/rollback classification exists.
    */
   async sendL1ToL2Transfer(
     toAddress: Address,
@@ -51,8 +48,6 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
   ): Promise<TransactionResponse> {
     const [adapter, route] = await this.getAdapterAndRoute(l1Token, l2Token);
     assert(adapter.baseSignerAddress.eq(toAddress), "Binance withdrawal recipient must match signer");
-    // Fail fast rather than resize: AdapterManager callers assume a transfer either sends the requested amount
-    // or rejects, so a candidate above the configured Binance maximum is rejected outright.
     const maxAmount = adapter.config.maxAmountsToTransfer[route.sourceToken]?.[route.sourceChain];
     assert(
       !isDefined(maxAmount) || amount.lte(maxAmount),
@@ -70,8 +65,6 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     if (simMode) {
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
-    // Direct deposits only: an intermediate-bridge initiation would move funds without a returnable deposit
-    // transaction, so the adapter declines it before committing anything.
     const { amount: initializedAmount, transactionHash } = await adapter.initializeRebalanceWithTransaction(
       route,
       amount,
@@ -86,18 +79,12 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     throw new Error("BinanceStablecoinSwapBridge submits through sendL1ToL2Transfer");
   }
 
-  /**
-   * Binance swap deposits are tracked as Redis orders, not bridge events. InventoryClient consumes them through
-   * RebalancerClient.getPendingRebalances, so returning initiation events here would count the same transfer twice.
-   */
+  // Binance swap transfers are tracked as Redis orders consumed via RebalancerClient.getPendingRebalances;
+  // returning bridge events here would double-count them.
   queryL1BridgeInitiationEvents(): Promise<BridgeEvents> {
     return Promise.resolve({});
   }
 
-  /**
-   * Binance withdrawals likewise have no bridge-event accounting owner: the Redis order remains a pending virtual
-   * balance until the swap rebalancer finalizes it. Returning finalizations here would conflict with that lifecycle.
-   */
   queryL2BridgeFinalizationEvents(): Promise<BridgeEvents> {
     return Promise.resolve({});
   }

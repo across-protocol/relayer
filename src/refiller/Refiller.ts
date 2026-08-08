@@ -403,7 +403,6 @@ export class Refiller {
       this.logger
     );
     if (isDefined(tokenBridge.sendL1ToL2Transfer)) {
-      // Venue-backed bridges (e.g. Binance swaps) have no refillable L1 contract transaction.
       this.logger.warn({
         at: "Refiller#refillBalances",
         message: `Cannot refill ${l2TokenInfo.symbol} on ${getNetworkName(chainId)}: its bridge submits through an external venue`,

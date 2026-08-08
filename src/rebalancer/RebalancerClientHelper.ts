@@ -25,9 +25,7 @@ type RebalancerClientConstructor<T extends BaseRebalancerClient> = new (
   isReadonly: boolean
 ) => T;
 
-// Derive the L1 -> L2 same-asset routes owned by the AdapterManager's Binance swap bridge from the CUSTOM_BRIDGE
-// registry (the only registry that can carry this per-token bridge), so the swap rebalancer's Binance adapter can
-// progress those orders through their normal lifecycle.
+// Derive the L1 -> L2 same-asset routes owned by the AdapterManager's Binance swap bridge from CUSTOM_BRIDGE.
 export function buildAdapterManagerBinanceRoutes(): RebalanceRoute[] {
   return Object.entries(CUSTOM_BRIDGE).flatMap(([chainId, bridges]) =>
     Object.entries(bridges)
@@ -100,17 +98,13 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
       adapters[adapterName] ? [adapters[adapterName].initialize(bridgeSupportRoutes)] : []
     )
   );
-  // Initialize the Binance adapter first (initialize() is idempotent) so it can carry lifecycle routes beyond the
-  // client's own rebalance routes, e.g. orders initiated by the AdapterManager's Binance swap bridge. The extra
-  // routes are registry-derived rather than operator-configured, so a validation failure (initialize() checks each
-  // route against the live Binance API) must not take down the whole rebalancer: fall back to the client's own
-  // routes and progress the bridge-initiated orders on a later run.
+  // Initialize the Binance adapter first (initialize() is idempotent, first call wins) so it carries lifecycle
+  // routes beyond the client's own rebalance routes. A validation failure on these registry-derived routes must
+  // not take down the rebalancer: fall back to the client's own routes (the client init below re-runs it).
   if (extraBinanceLifecycleRoutes.length > 0) {
     try {
       await adapters.binance?.initialize([...rebalanceRoutes, ...extraBinanceLifecycleRoutes]);
     } catch (error) {
-      // initialize() only marks the adapter initialized on success, so the client init below re-runs it with
-      // the base routes.
       logger.warn({
         at: `RebalancerClientHelper.${logLabel}`,
         message: "Failed to initialize Binance adapter with AdapterManager lifecycle routes; using base routes only",

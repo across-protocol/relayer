@@ -436,8 +436,6 @@ export class BaseChainAdapter {
     const bridge = this.bridges[l1Token.toNative()];
     assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
     if (isDefined(bridge.sendL1ToL2Transfer)) {
-      // The contract path logs when it constructs its transaction; log here so venue-backed transfers stay
-      // equally visible to operators.
       this.log(
         `Bridging tokens from ${getNetworkName(this.hubChainId)} to ${getNetworkName(this.chainId)}`,
         { l1Token, l2Token, amount: amount.toString(), simMode },

@@ -886,8 +886,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
     const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
     if (requiresBridgeBeforeDeposit && directDepositOnly) {
-      // Callers that need a deposit transaction to return (e.g. the AdapterManager bridge) cannot consume an
-      // intermediate-bridge initiation; decline before any funds move.
       this.logger.warn({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `Declining rebalance: source chain ${getNetworkName(sourceChain)} requires an intermediate bridge into Binance but the caller requires a direct deposit`,

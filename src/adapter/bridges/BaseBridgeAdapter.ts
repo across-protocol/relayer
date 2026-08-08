@@ -70,8 +70,7 @@ export abstract class BaseBridgeAdapter {
   ): Promise<BridgeEvents>;
 
   // Bridges that submit through an external venue rather than an L1 contract call implement this instead of
-  // constructL1ToL2Txn. The promise is one-shot: it resolves with the venue's transaction reference or rejects
-  // with no funds moved, exactly like a contract transaction that failed to mine.
+  // constructL1ToL2Txn. One-shot: resolves with the venue's transaction reference or rejects with no funds moved.
   sendL1ToL2Transfer?(
     toAddress: Address,
     l1Token: EvmAddress,
