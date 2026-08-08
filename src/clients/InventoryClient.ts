@@ -968,6 +968,19 @@ export class InventoryClient {
       return [];
     }
 
+    // Redis-tracked pending rebalances are the ONLY in-flight accounting for venue bridges (their
+    // queryL1BridgeInitiationEvents deliberately returns nothing), so an incomplete pending read could
+    // double-initiate a transfer that is already in flight. Skip initiation for this run instead.
+    const failedAdapters = this.rebalancerClient.getAdaptersWithFailedPendingReads();
+    if (failedAdapters.length > 0) {
+      this.log(
+        "Skipping inventory rebalances because pending-rebalance state is incomplete",
+        { failedAdapters },
+        "warn"
+      );
+      return [];
+    }
+
     const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
     this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
 

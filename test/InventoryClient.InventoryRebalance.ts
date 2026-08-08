@@ -301,6 +301,19 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
   });
 
+  it("Skips initiation when pending-rebalance state is incomplete", async function () {
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+    const initialMainnetBalance = tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc));
+    mockRebalancerClient.setFailedPendingReads(["binance"]);
+
+    await inventoryClient.rebalanceInventoryIfNeeded();
+
+    // Redis-tracked pending rebalances are the only in-flight accounting for venue bridges, so an incomplete
+    // read must not initiate transfers that may already be in flight.
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
+    expect(tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc))).to.equal(initialMainnetBalance);
+  });
+
   it("Rolls back balance accounting for a rebalance declined by the bridge", async function () {
     tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
     const l1Token = EvmAddress.from(mainnetUsdc);

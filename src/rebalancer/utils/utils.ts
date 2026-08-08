@@ -11,9 +11,14 @@ import {
 import { getRedisCache, RedisCache } from "../../cache/Redis";
 import { ExcessOrDeficit, OrderDetails, RedisOrderDetailsPayload } from "./interfaces";
 
-// The maximum acceptable venue cost for a rebalance of `amount`, from the operator's MAX_FEE_PCT (default 2.5%).
+// The operator's maximum acceptable venue cost, in percentage points scaled to 18 decimals (default 2.5%).
+export function getMaxFeePct(): BigNumber {
+  return toBNWei(process.env.MAX_FEE_PCT ?? "2.5");
+}
+
+// The maximum acceptable venue cost for a rebalance of `amount`, from getMaxFeePct().
 export function getMaxFee(amount: BigNumber): BigNumber {
-  return amount.mul(toBNWei(process.env.MAX_FEE_PCT ?? "2.5")).div(toBNWei(100));
+  return amount.mul(getMaxFeePct()).div(toBNWei(100));
 }
 
 // @todo Default low for now, eventually change this to a very high default value.

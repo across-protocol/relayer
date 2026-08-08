@@ -80,9 +80,12 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     if (simMode) {
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
+    // Direct deposits only: an intermediate-bridge initiation would move funds without a returnable deposit
+    // transaction, so the adapter declines it before committing anything.
     const { amount: initializedAmount, transactionHash } = await adapter.initializeRebalanceWithTransaction(
       route,
-      amount
+      amount,
+      { directDepositOnly: true }
     );
     if (initializedAmount.eq(bnZero)) {
       throw new BridgeTransferDeclinedError("Binance stablecoin swap adapter declined transfer during initialization");
@@ -125,8 +128,12 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     };
     if (!isDefined(this.adapter)) {
       assert(isDefined(this.adapterFactory), "Binance stablecoin swap adapter factory is required");
-      // Memoize the promise, not the resolved adapter, so concurrent transfers share one construction.
-      this.adapter = this.adapterFactory(route);
+      // Memoize the promise, not the resolved adapter, so concurrent transfers share one construction; clear a
+      // rejected construction so a transient failure (e.g. Binance API outage) is retried on the next transfer.
+      this.adapter = this.adapterFactory(route).catch((error) => {
+        this.adapter = undefined;
+        throw error;
+      });
     }
     const adapter = await this.adapter;
     assert(adapter.supportsRoute(route), "Binance stablecoin swap adapter does not support this route");

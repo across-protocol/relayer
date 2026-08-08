@@ -2,16 +2,7 @@ import { InventoryClient, TokenClient } from "../clients";
 import { updateSpokePoolClients } from "../common";
 import { constructRelayerClients, RelayerClients } from "../relayer/RelayerClientHelper";
 import { RelayerConfig } from "../relayer/RelayerConfig";
-import {
-  assert,
-  BigNumber,
-  config,
-  disconnectRedisClients,
-  getTokenInfoFromSymbol,
-  Signer,
-  toBNWei,
-  winston,
-} from "../utils";
+import { assert, BigNumber, config, disconnectRedisClients, getTokenInfoFromSymbol, Signer, winston } from "../utils";
 import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRebalancerClient";
 import { SameAssetRebalancerClient } from "./clients/SameAssetRebalancerClient";
 
@@ -21,6 +12,7 @@ import {
 } from "./RebalancerClientHelper";
 import { RebalancerConfig } from "./RebalancerConfig";
 import { RebalancerClient } from "./utils/interfaces";
+import { getMaxFeePct } from "./utils/utils";
 config();
 let logger: winston.Logger;
 
@@ -220,7 +212,7 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
   try {
     if (process.env.SEND_REBALANCES === "true" && !shouldSkipNewRebalances(inventoryClient, logLabel)) {
       timerStart = performance.now();
-      const maxFeePct = toBNWei(process.env.MAX_FEE_PCT ?? "2.5", 18);
+      const maxFeePct = getMaxFeePct();
       await (rebalancerClient as CumulativeBalanceRebalancerClient).rebalanceInventory(
         cumulativeBalances,
         currentBalances,
@@ -258,7 +250,7 @@ export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner
   try {
     if (process.env.SEND_REBALANCES === "true" && !shouldSkipNewRebalances(inventoryClient, logLabel)) {
       timerStart = performance.now();
-      const maxFeePct = toBNWei(process.env.MAX_FEE_PCT ?? "2.5", 18);
+      const maxFeePct = getMaxFeePct();
       await (rebalancerClient as SameAssetRebalancerClient).rebalanceInventory(inventoryClient, maxFeePct);
       logger.debug({
         at: `index.ts:${logLabel}`,

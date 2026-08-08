@@ -762,7 +762,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
    */
   async initializeRebalanceWithTransaction(
     rebalanceRoute: RebalanceRoute,
-    amountToTransfer: BigNumber
+    amountToTransfer: BigNumber,
+    { directDepositOnly = false } = {}
   ): Promise<{ amount: BigNumber; transactionHash?: string }> {
     this._assertInitialized();
     this._assertRouteIsSupported(rebalanceRoute);
@@ -874,6 +875,16 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // Binance network with good stability.
     const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
     const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
+    if (requiresBridgeBeforeDeposit && directDepositOnly) {
+      // Callers that need a deposit transaction to return (e.g. the AdapterManager bridge) cannot consume an
+      // intermediate-bridge initiation; decline before any funds move.
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Declining rebalance: source chain ${getNetworkName(sourceChain)} requires an intermediate bridge into Binance but the caller requires a direct deposit`,
+        rebalanceRoute,
+      });
+      return { amount: bnZero };
+    }
     if (requiresBridgeBeforeDeposit) {
       assert(
         supportsBinanceIntermediateBridgeToken(sourceToken),

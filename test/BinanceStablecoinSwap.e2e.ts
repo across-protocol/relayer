@@ -205,6 +205,32 @@ describe("BinanceStablecoinSwapAdapter end-to-end", function () {
     expect(redis.sets.get(withdrawalSet)?.size).to.equal(1);
   });
 
+  it("declines routes that would need an intermediate bridge into Binance", async function () {
+    const { chainAdapter, internals, account, redis, submitted } = await makeStack();
+    // Binance drops the source-chain network entry, so the entrypoint falls back to an intermediate bridge leg.
+    (internals._getAccountCoins as sinon.SinonStub).resolves({
+      symbol: "USDT",
+      balance: "0",
+      networkList: [
+        {
+          name: BINANCE_NETWORKS[CHAIN_IDs.AVALANCHE],
+          coin: "USDT",
+          withdrawMin: "10",
+          withdrawMax: "1000000",
+          withdrawFee: "1",
+          withdrawEnable: true,
+          contractAddress: TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.AVALANCHE],
+        },
+      ],
+    });
+
+    await expect(chainAdapter.sendTokenToTargetChain(account, l1Usdt, l2Usdt, amount, false)).to.be.rejectedWith(
+      BridgeTransferDeclinedError
+    );
+    expect(submitted).to.be.empty;
+    expect(redis.sets.size).to.equal(0);
+  });
+
   it("declines when Binance has suspended withdrawals on the destination network", async function () {
     const { chainAdapter, account, redis, submitted } = await makeStack({ withdrawEnable: false });
 

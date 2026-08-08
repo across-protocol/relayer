@@ -188,6 +188,10 @@ function resolveInboundBridgeMatch(node: ManagedNodeContext, context: BridgeLook
         : undefined;
     case "BridgeApi":
       return node.symbol === "pathUSD" ? { family: "bridgeapi", effectiveBridgeName: "BridgeApi" } : undefined;
+    case "BinanceStablecoinSwapAdapter":
+      // This bridge delegates initiation to the swap rebalancer, so the edge is represented by the corresponding
+      // binance rebalance-route candidate (which carries rebalance_route metadata), not as a bridge edge.
+      return;
     default:
       return nodeAddress === context.canonicalRemoteToken
         ? { family: familyForBridgeName(context.adapterOrBridgeName), effectiveBridgeName: context.adapterOrBridgeName }
