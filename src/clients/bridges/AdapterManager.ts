@@ -58,9 +58,9 @@ async function createBinanceRebalancerAdapter(logger: winston.Logger, signer: Si
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
-  // Shared across every Binance swap bridge this manager constructs. Following the BinanceCEXBridge pattern:
-  // the promise is created at construction and only evaluated inside the bridge's async methods, so missing
-  // credentials or config reject the transfer that needs them rather than the bot that doesn't.
+  // Shared across every Binance swap bridge this manager constructs; evaluated only inside the bridge's async
+  // methods (the BinanceCEXBridge pattern), so missing credentials or config reject the transfer that needs the
+  // adapter rather than the bot that doesn't.
   private binanceRebalancerAdapter?: Promise<BinanceStablecoinSwapAdapter>;
   protected readonly pendingBridgeRedisReader?: CctpOftReadOnlyClient;
 

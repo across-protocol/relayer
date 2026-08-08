@@ -29,11 +29,6 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     _l2SignerOrProvider: unknown,
     private readonly l1Token: EvmAddress,
     _logger: winston.Logger,
-    // One rebalancer adapter, initialized with every registered Binance swap route, is shared across all bridge
-    // instances. Following the BinanceCEXBridge pattern for credentialed dependencies: only the promise is stored
-    // at construction and it is evaluated inside async methods, so missing Binance credentials or rebalancer
-    // config surface as a rejection when a transfer is attempted, never at construction. Absent (e.g. when the
-    // bridge is constructed generically from the registry), transfers reject early.
     private readonly adapterPromise?: Promise<RebalancerBinanceStablecoinSwapAdapter>
   ) {
     super(l2chainId, hubChainId, l1Signer, []);
@@ -123,8 +118,6 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     };
     assert(isDefined(this.adapterPromise), "Binance stablecoin swap rebalancer adapter is unavailable");
     const adapter = await this.adapterPromise;
-    // The adapter is the single source of truth for supported routes (it was initialized with the full
-    // registry-derived set).
     assert(adapter.supportsRoute(route), "Binance stablecoin swap adapter does not support this route");
     return [adapter, route];
   }
