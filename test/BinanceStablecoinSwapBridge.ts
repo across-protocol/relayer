@@ -91,6 +91,26 @@ describe("BinanceStablecoinSwapBridge", function () {
     }
   });
 
+  it("exposes the configured maximum transfer amount so callers can chunk over-cap deficits", async function () {
+    const { bridge } = await makeBridge({ maxAmount: "5" });
+    expect((await bridge.getMaxL1ToL2TransferAmount())?.eq(toBNWei("5", 6))).to.be.true;
+
+    // No configured cap and no adapter both mean "no cap".
+    const { bridge: uncapped } = await makeBridge();
+    expect(await uncapped.getMaxL1ToL2TransferAmount()).to.equal(undefined);
+    const { spyLogger } = createSpyLogger();
+    const [signer] = await ethers.getSigners();
+    const adapterless = new BinanceStablecoinSwapBridge(
+      CHAIN_IDs.AVALANCHE,
+      CHAIN_IDs.MAINNET,
+      signer,
+      signer,
+      EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]),
+      spyLogger
+    );
+    expect(await adapterless.getMaxL1ToL2TransferAmount()).to.equal(undefined);
+  });
+
   it("rejects routes the adapter does not support", async function () {
     const { bridge, signer, l1Token } = await makeBridge();
     const usdcL2Token = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.AVALANCHE]);

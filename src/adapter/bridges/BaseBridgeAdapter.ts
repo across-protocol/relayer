@@ -79,6 +79,10 @@ export abstract class BaseBridgeAdapter {
     simMode: boolean
   ): Promise<TransactionResponse>;
 
+  // Per-transfer maximum the bridge enforces on L1 -> L2 sends, if any. Callers should clamp the requested
+  // amount to this cap so a deficit above it is transferred in chunks across runs instead of never initiating.
+  getMaxL1ToL2TransferAmount?(): Promise<BigNumber | undefined>;
+
   setPendingBridgeRedisReader(pendingBridgeRedisReader?: CctpOftReadOnlyClient): void {
     this.pendingBridgeRedisReader = pendingBridgeRedisReader;
   }

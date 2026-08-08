@@ -249,6 +249,13 @@ export class AdapterManager {
     return this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
   }
 
+  /**
+   * @notice Returns the per-transfer maximum the chain's bridge enforces on L1 -> L2 sends of l1Token, if any.
+   */
+  async getMaxL1ToL2TransferAmount(chainId: number, l1Token: EvmAddress): Promise<BigNumber | undefined> {
+    return this.adapters[chainId]?.getMaxL1ToL2TransferAmount(l1Token);
+  }
+
   sendTokenCrossChain(
     address: Address,
     chainId: number,

@@ -425,6 +425,13 @@ export class BaseChainAdapter {
    * constructL1ToL2Txn method. Not all adapters support this.
    * @returns Transaction response.
    */
+  /**
+   * @notice Returns the per-transfer maximum the l1Token's bridge enforces on L1 -> L2 sends, if any.
+   */
+  async getMaxL1ToL2TransferAmount(l1Token: EvmAddress): Promise<BigNumber | undefined> {
+    return this.bridges[l1Token.toNative()]?.getMaxL1ToL2TransferAmount?.();
+  }
+
   async sendTokenToTargetChain(
     address: Address,
     l1Token: EvmAddress,

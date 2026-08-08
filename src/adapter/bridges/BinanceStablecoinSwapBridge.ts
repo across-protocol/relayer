@@ -48,7 +48,7 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
   ): Promise<TransactionResponse> {
     const [adapter, route] = await this.getAdapterAndRoute(l1Token, l2Token);
     assert(adapter.baseSignerAddress.eq(toAddress), "Binance withdrawal recipient must match signer");
-    const maxAmount = adapter.config.maxAmountsToTransfer[route.sourceToken]?.[route.sourceChain];
+    const maxAmount = await this.getMaxL1ToL2TransferAmount();
     assert(
       !isDefined(maxAmount) || amount.lte(maxAmount),
       "Transfer amount exceeds the configured Binance maximum transfer amount"
@@ -77,6 +77,14 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
 
   constructL1ToL2Txn(): Promise<BridgeTransactionDetails> {
     throw new Error("BinanceStablecoinSwapBridge submits through sendL1ToL2Transfer");
+  }
+
+  async getMaxL1ToL2TransferAmount(): Promise<BigNumber | undefined> {
+    if (!isDefined(this.adapterPromise)) {
+      return undefined;
+    }
+    const { config } = await this.adapterPromise;
+    return config.maxAmountsToTransfer[getTokenInfo(this.l1Token, this.hubChainId).symbol]?.[this.hubChainId];
   }
 
   // Binance swap transfers are tracked as Redis orders consumed via RebalancerClient.getPendingRebalances;
