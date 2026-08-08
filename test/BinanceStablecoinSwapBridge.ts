@@ -3,6 +3,14 @@ import { RebalanceRoute } from "../src/rebalancer/utils/interfaces";
 import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, ZERO_BYTES, bnZero } from "../src/utils";
 import { createSpyLogger, ethers, expect, toBNWei } from "./utils";
 
+const SUPPORTED_ROUTE = {
+  sourceChain: CHAIN_IDs.MAINNET,
+  sourceToken: "USDT",
+  destinationChain: CHAIN_IDs.AVALANCHE,
+  destinationToken: "USDT",
+  adapter: "binance",
+};
+
 describe("BinanceStablecoinSwapBridge", function () {
   type BridgeOptions = {
     pending?: number;
@@ -23,7 +31,6 @@ describe("BinanceStablecoinSwapBridge", function () {
         maxAmountsToTransfer: options.maxAmount ? { USDT: { [CHAIN_IDs.MAINNET]: toBNWei(options.maxAmount, 6) } } : {},
         maxPendingOrders: {},
       },
-      supportsRoute: () => true,
       getPendingOrders: async () => Array.from({ length: options.pending ?? 0 }, (_, index) => `order-${index}`),
       getEstimatedCost: async () => {
         if (options.costError) {
@@ -44,9 +51,10 @@ describe("BinanceStablecoinSwapBridge", function () {
       signer,
       signer,
       EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]),
-      spyLogger
+      spyLogger,
+      async () => adapter as never,
+      [SUPPORTED_ROUTE]
     );
-    Object.assign(bridge, { adapter });
     return {
       bridge,
       signer: baseSignerAddress,
@@ -80,6 +88,14 @@ describe("BinanceStablecoinSwapBridge", function () {
     for (const [options, message] of rejections) {
       await expect(send(await makeBridge(options))).to.be.rejectedWith(message);
     }
+  });
+
+  it("rejects routes outside its supported-route list before any Binance interaction", async function () {
+    const { bridge, signer, l1Token } = await makeBridge();
+    const usdcL2Token = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.AVALANCHE]);
+    await expect(bridge.sendL1ToL2Transfer(signer, l1Token, usdcL2Token, toBNWei("100", 6), false)).to.be.rejectedWith(
+      "does not support this route"
+    );
   });
 
   it("rejects a withdrawal recipient other than the signer", async function () {

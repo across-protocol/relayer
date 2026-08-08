@@ -22,8 +22,6 @@ import { BaseBridgeAdapter, BridgeEvents, BridgeTransactionDetails } from "./Bas
  * finalization) stays owned by the swap rebalancer's normal Redis order lifecycle.
  */
 export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
-  private adapter?: Promise<RebalancerBinanceStablecoinSwapAdapter>;
-
   constructor(
     l2chainId: number,
     hubChainId: number,
@@ -31,9 +29,13 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     _l2SignerOrProvider: unknown,
     private readonly l1Token: EvmAddress,
     _logger: winston.Logger,
-    // Optional only so the class fits the registry's L1BridgeConstructor shape; getAdapterAndRoute asserts it
-    // was supplied.
-    private readonly adapterFactory?: (route: RebalanceRoute) => Promise<RebalancerBinanceStablecoinSwapAdapter>
+    // One rebalancer adapter, initialized with every registered Binance swap route, is shared across all bridge
+    // instances; the factory memoizes it. Optional only so the class fits the registry's L1BridgeConstructor
+    // shape - getAdapterAndRoute asserts it was supplied.
+    private readonly adapterFactory?: () => Promise<RebalancerBinanceStablecoinSwapAdapter>,
+    // The registry-derived routes this bridge may initiate; requests outside this list are rejected before any
+    // Binance interaction.
+    private readonly supportedRoutes: RebalanceRoute[] = []
   ) {
     super(l2chainId, hubChainId, l1Signer, []);
   }
@@ -120,17 +122,17 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
       destinationToken: getTokenInfo(l2Token, this.l2chainId).symbol,
       adapter: "binance",
     };
-    if (!isDefined(this.adapter)) {
-      assert(isDefined(this.adapterFactory), "Binance stablecoin swap adapter factory is required");
-      // Memoize the promise, not the resolved adapter, so concurrent transfers share one construction; clear a
-      // rejected construction so a transient failure (e.g. Binance API outage) is retried on the next transfer.
-      this.adapter = this.adapterFactory(route).catch((error) => {
-        this.adapter = undefined;
-        throw error;
-      });
-    }
-    const adapter = await this.adapter;
-    assert(adapter.supportsRoute(route), "Binance stablecoin swap adapter does not support this route");
-    return [adapter, route];
+    assert(
+      this.supportedRoutes.some(
+        (supported) =>
+          supported.sourceChain === route.sourceChain &&
+          supported.sourceToken === route.sourceToken &&
+          supported.destinationChain === route.destinationChain &&
+          supported.destinationToken === route.destinationToken
+      ),
+      "Binance stablecoin swap bridge does not support this route"
+    );
+    assert(isDefined(this.adapterFactory), "Binance stablecoin swap adapter factory is required");
+    return [await this.adapterFactory(), route];
   }
 }

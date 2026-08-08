@@ -178,9 +178,10 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
       wallet,
       wallet,
       l1Token,
-      TEST_LOGGER
+      TEST_LOGGER,
+      async () => initiatingAdapter as never,
+      [route]
     );
-    Object.assign(bridge, { adapter: initiatingAdapter });
     await bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, toBNWei("100", 6), false);
 
     const adapter = new BinanceStablecoinSwapAdapter(

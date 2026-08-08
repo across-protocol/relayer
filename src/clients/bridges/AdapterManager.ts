@@ -34,12 +34,15 @@ import { BinanceStablecoinSwapBridge } from "../../adapter/bridges/BinanceStable
 import { TransferTokenParams } from "../../adapter/utils";
 import { CctpOftReadOnlyClient } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 import { BinanceStablecoinSwapAdapter } from "../../rebalancer/adapters/binance";
-import { constructRebalancerDependencies } from "../../rebalancer/RebalancerClientHelper";
-import { RebalanceRoute } from "../../rebalancer/utils/interfaces";
+import {
+  buildAdapterManagerBinanceRoutes,
+  constructRebalancerDependencies,
+} from "../../rebalancer/RebalancerClientHelper";
 
-// The bridge-facing swap adapter delegates initiation to the rebalancer's Binance adapter, constructed lazily on
-// first use so relayer configurations without Binance credentials never touch the Binance API.
-async function createBinanceRebalancerAdapter(logger: winston.Logger, signer: Signer, route: RebalanceRoute) {
+// One rebalancer Binance adapter serves every registered Binance swap route: it is constructed lazily on first
+// use (so relayer configurations without Binance credentials never touch the Binance API) and initialized with
+// the full registry-derived route set.
+async function createBinanceRebalancerAdapter(logger: winston.Logger, signer: Signer) {
   const {
     adapters: { binance, cctp, oft },
   } = constructRebalancerDependencies(logger, signer);
@@ -47,13 +50,17 @@ async function createBinanceRebalancerAdapter(logger: winston.Logger, signer: Si
     binance instanceof BinanceStablecoinSwapAdapter && isDefined(cctp) && isDefined(oft),
     "Binance rebalancer adapters are unavailable for the configured hub chain"
   );
-  await Promise.all([cctp.initialize([route]), oft.initialize([route])]);
-  await binance.initialize([route]);
+  const routes = buildAdapterManagerBinanceRoutes();
+  await Promise.all([cctp.initialize(routes), oft.initialize(routes)]);
+  await binance.initialize(routes);
   return binance;
 }
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
+  // Shared across every Binance swap bridge this manager constructs; cleared on failure so a transient Binance
+  // outage is retried on the next transfer.
+  private binanceRebalancerAdapter?: Promise<BinanceStablecoinSwapAdapter>;
   protected readonly pendingBridgeRedisReader?: CctpOftReadOnlyClient;
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
@@ -135,8 +142,16 @@ export class AdapterManager {
             const args = [chainId, hubChainId, l1Signer, l2SignerOrProvider, EvmAddress.from(l1Token), logger] as const;
             const bridge =
               bridgeConstructor === BinanceStablecoinSwapBridge
-                ? new BinanceStablecoinSwapBridge(...args, (route) =>
-                    createBinanceRebalancerAdapter(logger, l1Signer, route)
+                ? new BinanceStablecoinSwapBridge(
+                    ...args,
+                    () =>
+                      (this.binanceRebalancerAdapter ??= createBinanceRebalancerAdapter(logger, l1Signer).catch(
+                        (error) => {
+                          this.binanceRebalancerAdapter = undefined;
+                          throw error;
+                        }
+                      )),
+                    buildAdapterManagerBinanceRoutes()
                   )
                 : new bridgeConstructor(...args);
             return [l1Token, bridge];
