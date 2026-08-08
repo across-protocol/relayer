@@ -27,6 +27,8 @@ describe("BinanceStablecoinSwapBridge", function () {
     const baseSignerAddress = EvmAddress.from(signer.address);
     const adapter = {
       baseSignerAddress,
+      supportsRoute: (route: RebalanceRoute) =>
+        Object.entries(SUPPORTED_ROUTE).every(([key, value]) => route[key as keyof RebalanceRoute] === value),
       config: {
         maxAmountsToTransfer: options.maxAmount ? { USDT: { [CHAIN_IDs.MAINNET]: toBNWei(options.maxAmount, 6) } } : {},
         maxPendingOrders: {},
@@ -52,8 +54,7 @@ describe("BinanceStablecoinSwapBridge", function () {
       signer,
       EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]),
       spyLogger,
-      async () => adapter as never,
-      [SUPPORTED_ROUTE]
+      async () => adapter as never
     );
     return {
       bridge,
@@ -90,7 +91,7 @@ describe("BinanceStablecoinSwapBridge", function () {
     }
   });
 
-  it("rejects routes outside its supported-route list before any Binance interaction", async function () {
+  it("rejects routes the adapter does not support", async function () {
     const { bridge, signer, l1Token } = await makeBridge();
     const usdcL2Token = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.AVALANCHE]);
     await expect(bridge.sendL1ToL2Transfer(signer, l1Token, usdcL2Token, toBNWei("100", 6), false)).to.be.rejectedWith(

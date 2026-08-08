@@ -150,8 +150,7 @@ export class AdapterManager {
                           this.binanceRebalancerAdapter = undefined;
                           throw error;
                         }
-                      )),
-                    buildAdapterManagerBinanceRoutes()
+                      ))
                   )
                 : new bridgeConstructor(...args);
             return [l1Token, bridge];

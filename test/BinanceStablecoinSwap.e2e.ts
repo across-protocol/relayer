@@ -126,9 +126,8 @@ describe("BinanceStablecoinSwapBridge end-to-end", function () {
     });
 
     // The real registry wiring: BaseChainAdapter owns the bridge exactly as AdapterManager constructs it for
-    // CUSTOM_BRIDGE[AVALANCHE][USDT]: one shared rebalancer adapter carrying every registered route, plus the
-    // bridge's own supported-route list.
-    const supportedRoutes: RebalanceRoute[] = [
+    // CUSTOM_BRIDGE[AVALANCHE][USDT]: one shared rebalancer adapter carrying every registered route.
+    internals.availableRoutes = [
       {
         sourceChain: CHAIN_IDs.MAINNET,
         sourceToken: "USDT",
@@ -137,7 +136,6 @@ describe("BinanceStablecoinSwapBridge end-to-end", function () {
         adapter: "binance",
       },
     ];
-    internals.availableRoutes = supportedRoutes;
     const bridge = new BinanceStablecoinSwapBridge(
       CHAIN_IDs.AVALANCHE,
       CHAIN_IDs.MAINNET,
@@ -145,8 +143,7 @@ describe("BinanceStablecoinSwapBridge end-to-end", function () {
       signer,
       l1Usdt,
       TEST_LOGGER,
-      async () => rebalancerAdapter,
-      supportedRoutes
+      async () => rebalancerAdapter
     );
     const spokePoolClient = { eventSearchConfig: { from: 0, maxBlockLookBack: 5000 } };
     const chainAdapter = new BaseChainAdapter(

@@ -30,12 +30,11 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     private readonly l1Token: EvmAddress,
     _logger: winston.Logger,
     // One rebalancer adapter, initialized with every registered Binance swap route, is shared across all bridge
-    // instances; the factory memoizes it. Optional only so the class fits the registry's L1BridgeConstructor
-    // shape - getAdapterAndRoute asserts it was supplied.
-    private readonly adapterFactory?: () => Promise<RebalancerBinanceStablecoinSwapAdapter>,
-    // The registry-derived routes this bridge may initiate; requests outside this list are rejected before any
-    // Binance interaction.
-    private readonly supportedRoutes: RebalanceRoute[] = []
+    // instances; the factory memoizes it. A factory rather than an instance because adapter construction reads
+    // rebalancer env config and initialization talks to the Binance API - work that must not run in the many
+    // bots that construct an AdapterManager but never initiate a Binance transfer. Optional only so the class
+    // fits the registry's L1BridgeConstructor shape - getAdapterAndRoute asserts it was supplied.
+    private readonly adapterFactory?: () => Promise<RebalancerBinanceStablecoinSwapAdapter>
   ) {
     super(l2chainId, hubChainId, l1Signer, []);
   }
@@ -122,17 +121,11 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
       destinationToken: getTokenInfo(l2Token, this.l2chainId).symbol,
       adapter: "binance",
     };
-    assert(
-      this.supportedRoutes.some(
-        (supported) =>
-          supported.sourceChain === route.sourceChain &&
-          supported.sourceToken === route.sourceToken &&
-          supported.destinationChain === route.destinationChain &&
-          supported.destinationToken === route.destinationToken
-      ),
-      "Binance stablecoin swap bridge does not support this route"
-    );
     assert(isDefined(this.adapterFactory), "Binance stablecoin swap adapter factory is required");
-    return [await this.adapterFactory(), route];
+    const adapter = await this.adapterFactory();
+    // The adapter is the single source of truth for supported routes (it was initialized with the full
+    // registry-derived set).
+    assert(adapter.supportsRoute(route), "Binance stablecoin swap adapter does not support this route");
+    return [adapter, route];
   }
 }
