@@ -88,8 +88,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
   private static readonly ORDER_BOOK_CACHE_TTL_MS = 30_000;
-  // Long enough to cover an initiation's deposit transaction; a crashed initiator's guard expires on its own.
-  private static readonly INITIATION_GUARD_TTL_MS = 30 * 60 * 1000;
 
   REDIS_KEY_INITIATED_WITHDRAWALS = this.REDIS_PREFIX + "initiated-withdrawals";
   constructor(
@@ -756,27 +754,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
     this._assertInitialized();
     this._assertRouteIsSupported(rebalanceRoute);
-    const cloid = await this._redisGetNextCloid();
-    // Guard the initiation critical section so overlapping runs (two rebalancer instances, or an
-    // inventory-rebalancer overlapping the swap rebalancer) cannot simultaneously double-initiate a route: an
-    // atomic SET NX per account+route declines the second concurrent initiator, whose next run sees the first
-    // initiator's pending order in its virtual balances. The cloid doubles as the guard's ownership token.
-    if (!(await this._acquireInitiationGuard(rebalanceRoute, cloid))) {
-      return bnZero;
-    }
-    try {
-      return await this._initializeRebalanceUnderGuard(rebalanceRoute, amountToTransfer, cloid);
-    } finally {
-      await this._releaseInitiationGuard(rebalanceRoute, cloid);
-    }
-  }
-
-  // Runs with the per-route initiation guard held; the caller releases it on every exit path.
-  private async _initializeRebalanceUnderGuard(
-    rebalanceRoute: RebalanceRoute,
-    amountToTransfer: BigNumber,
-    cloid: string
-  ): Promise<BigNumber> {
     const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
     const routeRequiresSwap = this._routeRequiresSwap(sourceToken, destinationToken);
 
@@ -877,6 +854,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
     }
 
+    const cloid = await this._redisGetNextCloid();
+
     // Select which chain we will be depositing and withdrawing the source tokens in to and out of Binance from.
     // If the chains are Binance networks, then we use the chain itself. Otherwise, we use the default Binance network
     // of Arbitrum, which is selected for convenience because it is both a CCTP and OFT network as well as a
@@ -945,41 +924,6 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       );
       return amountToTransfer;
     }
-  }
-  private _initiationGuardKey({
-    sourceChain,
-    sourceToken,
-    destinationChain,
-    destinationToken,
-  }: RebalanceRoute): string {
-    const account = this.baseSignerAddress.toNative();
-    return `${this.REDIS_PREFIX}initiation-guard:${account}:${sourceChain}:${sourceToken}:${destinationChain}:${destinationToken}`;
-  }
-
-  private async _acquireInitiationGuard(rebalanceRoute: RebalanceRoute, cloid: string): Promise<boolean> {
-    const acquired = await this.redisCache.acquireLock(
-      this._initiationGuardKey(rebalanceRoute),
-      cloid,
-      BinanceStablecoinSwapAdapter.INITIATION_GUARD_TTL_MS
-    );
-    if (!acquired) {
-      this.logger.warn({
-        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: "Another initiator holds the Binance initiation guard for this route; declining rebalance",
-        rebalanceRoute,
-      });
-    }
-    return acquired;
-  }
-
-  private async _releaseInitiationGuard(rebalanceRoute: RebalanceRoute, cloid: string): Promise<void> {
-    await this.redisCache.releaseLock(this._initiationGuardKey(rebalanceRoute), cloid).catch((error) =>
-      this.logger.warn({
-        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
-        message: "Failed to release Binance initiation guard; waiting for its TTL",
-        error,
-      })
-    );
   }
 
   async getEstimatedCost(

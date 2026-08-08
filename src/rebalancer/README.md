@@ -339,11 +339,12 @@ wall clock: if an order is abandoned while still in `PENDING_DEPOSIT` (its `REBA
 prune path deletes the deposit's tag via `_onExpiredOrderPruned`, and the finalizer reclaims the funds on its next run.
 Orders pruned in later statuses keep the tag, since their deposit was already consumed by the spot order.
 
-Initiation is guarded against colliding runs: `initializeRebalance` takes an atomic per-account, per-route Redis
-`SET NX` guard (30-minute TTL) around the initiation critical section and declines when another initiator holds it.
-This stops overlapping rebalancer instances from simultaneously double-initiating a route; the declined initiator's
-next run sees the first initiator's pending order in its virtual balances. Multiple sequential same-route orders
-remain legitimate (e.g. `maxAmountsToTransfer`-capped chunks), bounded by `maxPendingOrders`.
+Sending runs are serialized per account: `withRebalancerInitiationLock` wraps each initiating entrypoint's whole
+plan-and-initiate phase (balance snapshot through initiation) in a per-account Redis `SET NX` lock (30-minute TTL),
+and an overlapping run is skipped rather than run from a snapshot that predates the lock holder's orders. This is
+what prevents two overlapping runs (two instances of one bot, or the inventory-rebalancer overlapping a swap
+rebalancer) from double-initiating the same transfer. A crashed holder's lock expires via TTL; read-only runs
+(`SEND_REBALANCES` unset) do not take the lock.
 
 When Binance reports `RW00441`, the account has recently credited deposit value that is not withdrawal-unlocked yet.
 The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads

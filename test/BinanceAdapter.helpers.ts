@@ -326,16 +326,6 @@ describe("Binance adapter helpers", function () {
       _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
       _getBridgingFees(route: unknown, amountToTransfer: BigNumber): Promise<BigNumber>;
     };
-    adapter.baseSignerAddress = EvmAddress.from(await signer.getAddress());
-    Object.assign(adapter, {
-      _redisCache: {
-        acquireLock: async () => true,
-        releaseLock: async () => true,
-        get: async () => undefined,
-        sMembers: async () => [],
-      },
-    });
-    sinon.stub(adapter, "getPendingOrders").resolves([]);
     sinon.stub(internals, "_assertInitialized");
     sinon.stub(internals, "_assertRouteIsSupported");
     sinon.stub(internals, "_routeRequiresSwap").returns(false);
@@ -398,16 +388,6 @@ describe("Binance adapter helpers", function () {
       _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
       _getBridgingFees(route: unknown, amountToTransfer: BigNumber): Promise<BigNumber>;
     };
-    adapter.baseSignerAddress = EvmAddress.from(await signer.getAddress());
-    Object.assign(adapter, {
-      _redisCache: {
-        acquireLock: async () => true,
-        releaseLock: async () => true,
-        get: async () => undefined,
-        sMembers: async () => [],
-      },
-    });
-    sinon.stub(adapter, "getPendingOrders").resolves([]);
     sinon.stub(internals, "_assertInitialized");
     sinon.stub(internals, "_assertRouteIsSupported");
     sinon.stub(internals, "_routeRequiresSwap").returns(false);

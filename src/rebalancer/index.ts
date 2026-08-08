@@ -21,6 +21,7 @@ import {
 } from "./RebalancerClientHelper";
 import { RebalancerConfig } from "./RebalancerConfig";
 import { RebalancerClient } from "./utils/interfaces";
+import { withRebalancerInitiationLock } from "./utils/utils";
 config();
 let logger: winston.Logger;
 
@@ -206,6 +207,22 @@ export function loadCumulativeModeBalances(
 }
 
 export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  try {
+    // A sending run's balance snapshot and the initiations planned from it must happen while no other run for
+    // this account can initiate, so an overlapping run cannot duplicate a transfer from a stale snapshot.
+    if (process.env.SEND_REBALANCES === "true") {
+      await withRebalancerInitiationLock(_logger, await baseSigner.getAddress(), () =>
+        cumulativeBalanceRebalancerRun(_logger, baseSigner)
+      );
+    } else {
+      await cumulativeBalanceRebalancerRun(_logger, baseSigner);
+    }
+  } finally {
+    await disconnectRedisClients(_logger);
+  }
+}
+
+async function cumulativeBalanceRebalancerRun(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const logLabel = "runCumulativeBalanceRebalancer";
   const { rebalancerConfig, inventoryClient, rebalancerClient } = await initializeRebalancerRun(
     _logger,
@@ -240,12 +257,24 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
     // eslint-disable-next-line no-console
     console.error("Error running rebalancer", error);
     throw error;
-  } finally {
-    await disconnectRedisClients(logger);
   }
 }
 
 export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  try {
+    if (process.env.SEND_REBALANCES === "true") {
+      await withRebalancerInitiationLock(_logger, await baseSigner.getAddress(), () =>
+        sameAssetRebalancerRun(_logger, baseSigner)
+      );
+    } else {
+      await sameAssetRebalancerRun(_logger, baseSigner);
+    }
+  } finally {
+    await disconnectRedisClients(_logger);
+  }
+}
+
+async function sameAssetRebalancerRun(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const logLabel = "runSameAssetRebalancer";
   const { rebalancerClient, inventoryClient } = await initializeRebalancerRun(
     _logger,
@@ -270,7 +299,5 @@ export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner
     // eslint-disable-next-line no-console
     console.error("Error running rebalancer", error);
     throw error;
-  } finally {
-    await disconnectRedisClients(logger);
   }
 }

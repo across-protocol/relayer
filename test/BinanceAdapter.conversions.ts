@@ -218,26 +218,6 @@ async function makeInitializedAdapter(
   internals.initialized = true;
   internals.availableRoutes = [route];
   internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
-  // The initiation collision guard runs directly against the Redis cache.
-  const locks = new Map<string, string>();
-  Object.assign(adapter, {
-    _redisCache: {
-      acquireLock: async (key: string, token: string) => {
-        if (locks.has(key)) {
-          return false;
-        }
-        locks.set(key, token);
-        return true;
-      },
-      releaseLock: async (key: string, token: string) => locks.get(key) === token && locks.delete(key),
-      get: async () => undefined,
-      set: async () => "OK",
-      del: async () => 1,
-      sMembers: async () => [],
-      sAdd: async () => 1,
-      sRem: async () => 1,
-    },
-  });
   return adapter;
 }
 
