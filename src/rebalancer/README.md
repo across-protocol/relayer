@@ -309,6 +309,25 @@ Runtime entrypoints in `src/rebalancer/`:
   duplicate-rebalance rationale above), and a route whose `getEstimatedCost` read fails is excluded from that
   round's route competition instead of aborting the pass.
 
+## Failure reporting
+
+When a rebalancer run throws, the error propagates through the entrypoint's `finally` (which disconnects the
+shared redis clients) to the top-level handler in the repo-root `index.ts`, which logs it once at ERROR
+(`"There was an execution error!"`, `across-error` notification path) and exits nonzero. The rebalancer
+entrypoints deliberately do not catch-and-log — the top-level handler is the single reporting path for all bot
+commands.
+
+That single report is only reliable if the logger cannot lose entries at process exit. During the 2026-07-24/25
+same-asset rebalancer crash-loop the top-level ERROR vanished from every sink: under `ENVIRONMENT=serverless`
+the logger writes to the Cloud Logging API over gRPC, and when those writes degrade (60s gax timeouts were
+observed), the transport's full write buffer backpressures the shared winston stream, pausing delivery to all
+transports — including stdout JSON. `waitForLogger` cannot flush that state (none of these transports expose
+`isFlushed`), so everything still buffered is discarded at `process.exit`. The fix is `ENVIRONMENT=serverless-gcp`
+(`@risk-labs/logger` >= 1.3.12, set on the spoke services in zion): it replaces the API transport with structured
+stdout logging ingested by the Cloud Run agent, leaving no network writes to hang or lose at exit. Logger 1.3.13
+additionally routes transport errors to the console when no PagerDuty transport is configured, so residual
+transport breakage is visible instead of silent.
+
 ## Interactions with Other Bots and Clients
 
 ### InventoryClient

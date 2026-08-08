@@ -236,10 +236,6 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
     // Maybe now enter a loop where we update rebalances continuously every X seconds until the next run where
     // we call rebalance inventory? The thinking is we should rebalance inventory once per "run" and then continually
     // update rebalance statuses/finalize pending rebalances.
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error("Error running rebalancer", error);
-    throw error;
   } finally {
     await disconnectRedisClients(logger);
   }
@@ -266,10 +262,6 @@ export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner
         duration: performance.now() - timerStart,
       });
     }
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error("Error running rebalancer", error);
-    throw error;
   } finally {
     await disconnectRedisClients(logger);
   }

@@ -2117,10 +2117,10 @@
   resolved "https://registry.yarnpkg.com/@redis/time-series/-/time-series-5.12.1.tgz#15b6deaaf3716bc2633311c0ed18201c9299392d"
   integrity sha512-c6JL6E3EcZJuNqKFz+KM+l9l5mpcQiKvTwgA3blt5glWJ8hjDk0yeHN3beE/MpqYIQ8UEX44ItQzgkE/gCBELQ==
 
-"@risk-labs/logger@^1.3.11":
-  version "1.3.11"
-  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.11.tgz#ff37a8199dfcd170450e8374e69717288733992d"
-  integrity sha512-WqTteLQA+ZMmblsbveHpBzwvCRUO5ir5kB3janSsqAu3jFYi0W6uOSdmb63ibbc7W8wylr2FD3UXXZaNgTs2cA==
+"@risk-labs/logger@^1.3.11", "@risk-labs/logger@^1.3.13":
+  version "1.3.13"
+  resolved "https://registry.yarnpkg.com/@risk-labs/logger/-/logger-1.3.13.tgz#2e78fc77ded8fe17985f81e5dd849a480123f2cf"
+  integrity sha512-wSb7jyTwmzQr6jRu8eOKbGG/oNr7fe0UtkCudj0iK4yYLiGayeYEjnE44pKpassgB/ANi3VjPaUd2OdXPy8ceQ==
   dependencies:
     "@discordjs/rest" "^2.6.1"
     "@google-cloud/logging-winston" "^6.0.1"
