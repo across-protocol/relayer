@@ -109,7 +109,17 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       return;
     }
     await super.initialize(_availableRoutes.filter((route) => route.adapter === "binance"));
+    try {
+      await this._initializeBinance();
+    } catch (error) {
+      // super.initialize() already marked the adapter initialized; reset so a failed API handshake or route
+      // validation leaves the adapter re-initializable instead of half-initialized.
+      this.initialized = false;
+      throw error;
+    }
+  }
 
+  private async _initializeBinance(): Promise<void> {
     this._binanceApiClient = await getBinanceApiClient(process.env.BINANCE_API_BASE);
 
     await forEachAsync(this.availableRoutes, async (route) => {

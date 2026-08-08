@@ -47,7 +47,7 @@ import {
   BridgeApi,
   TokenSplitterBridge,
   PaxosTransitBridge,
-  BinanceStablecoinSwapAdapter,
+  BinanceStablecoinSwapBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
@@ -483,7 +483,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
   [CHAIN_IDs.AVALANCHE]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
-    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: BinanceStablecoinSwapAdapter,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: BinanceStablecoinSwapBridge,
   },
   [CHAIN_IDs.BASE]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,

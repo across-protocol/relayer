@@ -968,13 +968,16 @@ export class InventoryClient {
       return [];
     }
 
-    // Redis-tracked pending rebalances are the ONLY in-flight accounting for venue bridges (their
-    // queryL1BridgeInitiationEvents deliberately returns nothing), so an incomplete pending read could
-    // double-initiate a transfer that is already in flight. Skip initiation for this run instead.
+    // Redis-tracked pending rebalances are the ONLY in-flight accounting for Binance swap transfers (the
+    // bridge's queryL1BridgeInitiationEvents deliberately returns nothing), so an incomplete Binance pending
+    // read could double-initiate a transfer that is already in flight. Skip initiation for this run instead.
+    // Other adapters' failed reads only affect virtual balances, which the rebalancer runtimes already guard
+    // via shouldSkipNewRebalances; halting contract-bridge rebalances for them here would be an outage, not a
+    // safety measure.
     const failedAdapters = this.rebalancerClient.getAdaptersWithFailedPendingReads();
-    if (failedAdapters.length > 0) {
+    if (failedAdapters.includes("binance")) {
       this.log(
-        "Skipping inventory rebalances because pending-rebalance state is incomplete",
+        "Skipping inventory rebalances because Binance pending-rebalance state is incomplete",
         { failedAdapters },
         "warn"
       );

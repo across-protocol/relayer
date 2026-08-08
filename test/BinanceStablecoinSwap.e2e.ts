@@ -1,10 +1,7 @@
 import { ethers, expect, sinon, toBNWei } from "./utils";
 import winston from "winston";
 import { BaseChainAdapter } from "../src/adapter";
-import {
-  BinanceStablecoinSwapAdapter as BinanceStablecoinSwapBridge,
-  BridgeTransferDeclinedError,
-} from "../src/adapter/bridges";
+import { BinanceStablecoinSwapBridge, BridgeTransferDeclinedError } from "../src/adapter/bridges";
 import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance";
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
@@ -51,7 +48,7 @@ function makeInMemoryRedis() {
  * fee estimation, deposit-transaction construction, order creation and progression, pending-rebalance accounting);
  * only the external boundaries are faked: the Binance HTTP API and on-chain transaction submission.
  */
-describe("BinanceStablecoinSwapAdapter end-to-end", function () {
+describe("BinanceStablecoinSwapBridge end-to-end", function () {
   // getProvider(MAINNET) must resolve so the adapter can build (never send - submission is stubbed) the deposit
   // transaction; point it at the local hardhat node.
   before(function () {

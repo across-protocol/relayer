@@ -1,9 +1,9 @@
-import { BinanceStablecoinSwapAdapter, BridgeTransferDeclinedError } from "../src/adapter/bridges";
+import { BinanceStablecoinSwapBridge, BridgeTransferDeclinedError } from "../src/adapter/bridges";
 import { RebalanceRoute } from "../src/rebalancer/utils/interfaces";
 import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, ZERO_BYTES, bnZero } from "../src/utils";
 import { createSpyLogger, ethers, expect, toBNWei } from "./utils";
 
-describe("BinanceStablecoinSwapAdapter bridge", function () {
+describe("BinanceStablecoinSwapBridge", function () {
   type BridgeOptions = {
     pending?: number;
     cost?: string;
@@ -34,7 +34,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
         return options.declineInitialize ? { amount: bnZero } : { amount, transactionHash: "0xdeposit" };
       },
     };
-    const bridge = new BinanceStablecoinSwapAdapter(
+    const bridge = new BinanceStablecoinSwapBridge(
       CHAIN_IDs.AVALANCHE,
       CHAIN_IDs.MAINNET,
       signer,

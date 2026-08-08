@@ -26,7 +26,7 @@ import {
  * adapter: deposit into Binance on L1, withdraw on the destination chain. Order progression (swap leg, withdrawal,
  * finalization) stays owned by the swap rebalancer's normal Redis order lifecycle.
  */
-export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
+export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
   private adapter?: Promise<RebalancerBinanceStablecoinSwapAdapter>;
 
   constructor(
@@ -77,7 +77,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
       // decline, but unlike an expected decline it must be operator-visible: a persistent one silently disables
       // the route otherwise.
       this.logger.error({
-        at: "BinanceStablecoinSwapAdapter.sendL1ToL2Transfer",
+        at: "BinanceStablecoinSwapBridge.sendL1ToL2Transfer",
         message: "Binance transfer preflight failed before submission; declining transfer",
         l1Token: l1Token.toNative(),
         l2Token: l2Token.toNative(),
@@ -107,7 +107,7 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
   }
 
   constructL1ToL2Txn(): Promise<BridgeTransactionDetails> {
-    throw new Error("BinanceStablecoinSwapAdapter submits through sendL1ToL2Transfer");
+    throw new Error("BinanceStablecoinSwapBridge submits through sendL1ToL2Transfer");
   }
 
   /**

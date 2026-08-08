@@ -30,7 +30,7 @@ import {
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
 import { BaseChainAdapter } from "../../adapter";
-import { BinanceStablecoinSwapAdapter as BinanceStablecoinSwapBridge } from "../../adapter/bridges/BinanceStablecoinSwapAdapter";
+import { BinanceStablecoinSwapBridge } from "../../adapter/bridges/BinanceStablecoinSwapBridge";
 import { TransferTokenParams } from "../../adapter/utils";
 import { CctpOftReadOnlyClient } from "../../rebalancer/clients/CctpOftReadOnlyClient";
 import { BinanceStablecoinSwapAdapter } from "../../rebalancer/adapters/binance";

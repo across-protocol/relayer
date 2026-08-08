@@ -1,6 +1,6 @@
 import { assert, CHAIN_IDs, EvmAddress, getTokenInfo, Signer, winston } from "../utils";
 import { CUSTOM_BRIDGE } from "../common";
-import { BinanceStablecoinSwapAdapter as BinanceStablecoinSwapBridge } from "../adapter/bridges";
+import { BinanceStablecoinSwapBridge } from "../adapter/bridges";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";

@@ -2,7 +2,7 @@ import { expect, ethers, sinon } from "./utils";
 import winston from "winston";
 import { HyperliquidStablecoinSwapAdapter } from "../src/rebalancer/adapters/hyperliquid";
 import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance";
-import { BinanceStablecoinSwapAdapter as BinanceStablecoinSwapBridge } from "../src/adapter/bridges";
+import { BinanceStablecoinSwapBridge } from "../src/adapter/bridges";
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
 import { buildAdapterManagerBinanceRoutes } from "../src/rebalancer/RebalancerClientHelper";
