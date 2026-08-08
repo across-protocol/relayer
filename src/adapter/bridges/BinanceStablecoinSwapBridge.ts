@@ -50,8 +50,6 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     simMode: boolean
   ): Promise<TransactionResponse> {
     const [adapter, route] = await this.getAdapterAndRoute(l1Token, l2Token);
-    // Binance withdrawals land on the exchange account's withdrawal address, so the only supported recipient is
-    // the signer itself.
     assert(adapter.baseSignerAddress.eq(toAddress), "Binance withdrawal recipient must match signer");
     // Fail fast rather than resize: AdapterManager callers assume a transfer either sends the requested amount
     // or rejects, so a candidate above the configured Binance maximum is rejected outright.
