@@ -301,42 +301,6 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
   });
 
-  it("Sizes the transfer from the amount accepted by the cross-chain bridge", async function () {
-    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
-    adapterManager.acceptedAmount = toMegaWei(100);
-
-    await inventoryClient.update();
-    const rebalances = await inventoryClient.rebalanceInventoryIfNeeded(true);
-
-    expect(rebalances).to.have.lengthOf(1);
-    expect(rebalances[0].amount).to.equal(toMegaWei(100));
-  });
-
-  it("Does not track a rebalance the bridge accepts none of", async function () {
-    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
-    const initialMainnetBalance = tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc));
-    adapterManager.acceptedAmount = bnZero;
-
-    await inventoryClient.update();
-    const rebalances = await inventoryClient.rebalanceInventoryIfNeeded(true);
-
-    expect(rebalances).to.be.empty;
-    expect(tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc))).to.equal(initialMainnetBalance);
-  });
-
-  it("Skips initiation when pending-rebalance state is incomplete", async function () {
-    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
-    const initialMainnetBalance = tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc));
-    mockRebalancerClient.setFailedPendingReads(["binance"]);
-
-    await inventoryClient.rebalanceInventoryIfNeeded();
-
-    // Redis-tracked pending rebalances are the only in-flight accounting for venue bridges, so an incomplete
-    // read must not initiate transfers that may already be in flight.
-    expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
-    expect(tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc))).to.equal(initialMainnetBalance);
-  });
-
   // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
   // alongside that logic.
   it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {

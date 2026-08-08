@@ -956,22 +956,6 @@ export class InventoryClient {
       return [];
     }
 
-    // Redis-tracked pending rebalances are the ONLY in-flight accounting for Binance swap transfers (the
-    // bridge's queryL1BridgeInitiationEvents deliberately returns nothing), so an incomplete Binance pending
-    // read could double-initiate a transfer that is already in flight. Skip initiation for this run instead.
-    // Other adapters' failed reads only affect virtual balances, which the rebalancer runtimes already guard
-    // via shouldSkipNewRebalances; halting contract-bridge rebalances for them here would be an outage, not a
-    // safety measure.
-    const failedAdapters = this.rebalancerClient.getAdaptersWithFailedPendingReads();
-    if (failedAdapters.includes("binance")) {
-      this.log(
-        "Skipping inventory rebalances because Binance pending-rebalance state is incomplete",
-        { failedAdapters },
-        "warn"
-      );
-      return [];
-    }
-
     const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
     this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
 
@@ -986,22 +970,8 @@ export class InventoryClient {
     const executedTransactions: ExecutedRebalance[] = [];
 
     // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
-    for (const _rebalance of rebalancesRequired) {
-      const { balance, l1Token, l2Token, chainId } = _rebalance;
-      // Ask the bridge how much of the candidate it will accept (venue bridges cap transfer sizes) and size the
-      // transfer and all balance accounting from that amount. This is stateless: nothing is reserved by asking.
-      let amount: BigNumber;
-      try {
-        amount = await this.adapterManager.getAcceptedTransferAmount(chainId, l1Token, _rebalance.amount, l2Token);
-      } catch (error) {
-        this.log("Failed to size inventory rebalance; skipping candidate", { ..._rebalance, error }, "warn");
-        continue;
-      }
-      if (amount.eq(bnZero)) {
-        this.log("Cross-chain bridge accepted none of the inventory rebalance", { ..._rebalance });
-        continue;
-      }
-      const rebalance = { ..._rebalance, amount };
+    for (const rebalance of rebalancesRequired) {
+      const { balance, amount, l1Token, l2Token, chainId } = rebalance;
 
       // This is the balance left after any assumed rebalances from earlier loop iterations.
       const unallocatedBalance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);

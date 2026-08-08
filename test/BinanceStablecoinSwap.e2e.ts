@@ -62,7 +62,7 @@ describe("BinanceStablecoinSwapBridge end-to-end", function () {
 
   const l1Usdt = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]);
   const l2Usdt = toAddressType(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.AVALANCHE], CHAIN_IDs.AVALANCHE);
-  const amount = toBNWei("6000", 6);
+  const amount = toBNWei("5.1", 6);
 
   afterEach(function () {
     sinon.restore();
@@ -158,19 +158,21 @@ describe("BinanceStablecoinSwapBridge end-to-end", function () {
     const { chainAdapter, rebalancerAdapter, internals, account, redis, submitted, binanceBalance, withdraw } =
       await makeStack();
 
-    // 1. InventoryClient's sizing: the bridge caps the candidate at the rebalancer config's transfer cap
-    // (5.1 USDT here, mirroring the dev smoke), and the capped amount sizes the whole transfer.
-    const accepted = await chainAdapter.getAcceptedTransferAmount(l1Usdt, l2Usdt, amount);
-    expect(accepted).to.equal(toBNWei("5.1", 6));
+    // 1. Amounts above the rebalancer config's transfer cap (5.1 USDT here, mirroring the dev smoke) reject
+    // one-shot: the bridge either sends the requested amount or reverts, never a resized one.
+    await expect(
+      chainAdapter.sendTokenToTargetChain(account, l1Usdt, l2Usdt, toBNWei("6000", 6), false)
+    ).to.be.rejectedWith("exceeds the configured Binance maximum");
+    expect(submitted).to.be.empty;
 
     // 2. InventoryClient's entrypoint: sendTokenToTargetChain delegates to the bridge's sendL1ToL2Transfer.
-    const response = await chainAdapter.sendTokenToTargetChain(account, l1Usdt, l2Usdt, accepted, false);
+    const response = await chainAdapter.sendTokenToTargetChain(account, l1Usdt, l2Usdt, amount, false);
     expect(response.hash).to.equal("0xdeposit");
 
-    // The initiation built a real direct ERC20 transfer of the capped amount to the Binance deposit address.
+    // The initiation built a real direct ERC20 transfer of the requested amount to the Binance deposit address.
     expect(submitted).to.have.lengthOf(1);
     expect(submitted[0].method).to.equal("transfer");
-    expect(submitted[0].args[1]).to.equal(accepted);
+    expect(submitted[0].args[1]).to.equal(amount);
 
     // 3. The transfer exists as a PENDING_DEPOSIT Redis order carrying the bridge-derived route.
     const depositSet = getPendingBridgeStatusSetKey(internals.REDIS_PREFIX, STATUS.PENDING_DEPOSIT, account.toNative());
@@ -184,13 +186,13 @@ describe("BinanceStablecoinSwapBridge end-to-end", function () {
       sourceToken: "USDT",
       destinationChain: CHAIN_IDs.AVALANCHE,
       destinationToken: "USDT",
-      amountToTransfer: accepted.toString(),
+      amountToTransfer: amount.toString(),
     });
 
     // 4. The pending order surfaces as an Avalanche virtual-balance credit, which is what stops InventoryClient
     // from re-initiating the same transfer on the next run.
     const pending = await rebalancerAdapter.getPendingRebalances(account);
-    expect(pending[CHAIN_IDs.AVALANCHE]?.USDT).to.equal(accepted);
+    expect(pending[CHAIN_IDs.AVALANCHE]?.USDT).to.equal(amount);
 
     // 5. The swap rebalancer's normal lifecycle progresses the order: once the deposit is credited on Binance,
     // the withdrawal to Avalanche is initiated and the order moves to PENDING_WITHDRAWAL.

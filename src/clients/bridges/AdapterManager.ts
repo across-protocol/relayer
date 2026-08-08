@@ -262,16 +262,6 @@ export class AdapterManager {
     return this.adapters[chainId].sendTokenToTargetChain(address, l1Token, l2Token, amount, simMode, optionalParams);
   }
 
-  getAcceptedTransferAmount(
-    chainId: number,
-    l1Token: EvmAddress,
-    amount: BigNumber,
-    l2Token?: Address
-  ): Promise<BigNumber> {
-    l2Token ??= this.l2TokenForL1Token(l1Token, chainId);
-    return this.adapters[chainId].getAcceptedTransferAmount(l1Token, l2Token, amount);
-  }
-
   withdrawTokenFromL2(
     address: EvmAddress,
     chainId: number | string,

@@ -38,14 +38,6 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     super(l2chainId, hubChainId, l1Signer, []);
   }
 
-  // Cap the transfer at the rebalancer config's per-token, per-source-chain maximum, mirroring the same-asset
-  // rebalancer's sizing. InventoryClient calls this before tracking any balances.
-  async getAcceptedL1ToL2TransferAmount(l1Token: EvmAddress, l2Token: Address, amount: BigNumber): Promise<BigNumber> {
-    const [adapter, route] = await this.getAdapterAndRoute(l1Token, l2Token);
-    const maxAmount = adapter.config.maxAmountsToTransfer[route.sourceToken]?.[route.sourceChain];
-    return isDefined(maxAmount) && amount.gt(maxAmount) ? maxAmount : amount;
-  }
-
   /**
    * One-shot initiation: the returned promise either resolves with the Binance deposit transaction hash or
    * rejects with no funds moved and no Redis state created. We deliberately treat every Binance-side failure —
@@ -65,6 +57,13 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     // Binance withdrawals land on the exchange account's withdrawal address, so the only supported recipient is
     // the signer itself.
     assert(adapter.baseSignerAddress.eq(toAddress), "Binance withdrawal recipient must match signer");
+    // Fail fast rather than resize: AdapterManager callers assume a transfer either sends the requested amount
+    // or rejects, so a candidate above the configured Binance maximum is rejected outright.
+    const maxAmount = adapter.config.maxAmountsToTransfer[route.sourceToken]?.[route.sourceChain];
+    assert(
+      !isDefined(maxAmount) || amount.lte(maxAmount),
+      "Transfer amount exceeds the configured Binance maximum transfer amount"
+    );
     const [pendingOrders, estimatedCost] = await Promise.all([
       adapter.getPendingOrders(),
       adapter.getEstimatedCost(route, amount, false),

@@ -425,12 +425,6 @@ export class BaseChainAdapter {
    * constructL1ToL2Txn method. Not all adapters support this.
    * @returns Transaction response.
    */
-  getAcceptedTransferAmount(l1Token: EvmAddress, l2Token: Address, amount: BigNumber): Promise<BigNumber> {
-    const bridge = this.bridges[l1Token.toNative()];
-    assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
-    return bridge.getAcceptedL1ToL2TransferAmount?.(l1Token, l2Token, amount) ?? Promise.resolve(amount);
-  }
-
   async sendTokenToTargetChain(
     address: Address,
     l1Token: EvmAddress,

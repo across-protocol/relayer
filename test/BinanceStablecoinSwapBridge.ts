@@ -10,6 +10,7 @@ describe("BinanceStablecoinSwapBridge", function () {
     costError?: Error;
     declineInitialize?: boolean;
     error?: Error;
+    maxAmount?: string;
   };
 
   async function makeBridge(options: BridgeOptions = {}) {
@@ -18,7 +19,10 @@ describe("BinanceStablecoinSwapBridge", function () {
     const baseSignerAddress = EvmAddress.from(signer.address);
     const adapter = {
       baseSignerAddress,
-      config: { maxAmountsToTransfer: {}, maxPendingOrders: {} },
+      config: {
+        maxAmountsToTransfer: options.maxAmount ? { USDT: { [CHAIN_IDs.MAINNET]: toBNWei(options.maxAmount, 6) } } : {},
+        maxPendingOrders: {},
+      },
       supportsRoute: () => true,
       getPendingOrders: async () => Array.from({ length: options.pending ?? 0 }, (_, index) => `order-${index}`),
       getEstimatedCost: async () => {
@@ -66,6 +70,7 @@ describe("BinanceStablecoinSwapBridge", function () {
     // Every Binance-side failure rejects the single initiation promise with no funds moved - the same contract
     // callers already have with a bridge transaction that failed to mine.
     const rejections: [BridgeOptions, string][] = [
+      [{ maxAmount: "5" }, "exceeds the configured Binance maximum"], // Fail fast instead of resizing the transfer.
       [{ cost: "3" }, "cost exceeds the maximum fee"],
       [{ pending: 2 }, "Too many pending Binance orders"],
       [{ declineInitialize: true }, "declined transfer during initialization"],

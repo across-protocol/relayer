@@ -30,10 +30,6 @@ export class MockRebalancerClient extends BaseRebalancerClient {
     this.mockedPendingRebalances = {};
   }
 
-  setFailedPendingReads(adapters: string[]): void {
-    this.adaptersWithFailedPendingReads = new Set(adapters);
-  }
-
   getPendingRebalances(): ReturnType<BaseRebalancerClient["getPendingRebalances"]> {
     return Promise.resolve(this.mockedPendingRebalances);
   }
