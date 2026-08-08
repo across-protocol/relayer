@@ -132,25 +132,13 @@ export class AdapterManager {
             if (!isDefined(bridgeConstructor)) {
               return undefined;
             }
+            const args = [chainId, hubChainId, l1Signer, l2SignerOrProvider, EvmAddress.from(l1Token), logger] as const;
             const bridge =
               bridgeConstructor === BinanceStablecoinSwapBridge
-                ? new BinanceStablecoinSwapBridge(
-                    chainId,
-                    hubChainId,
-                    l1Signer,
-                    l2SignerOrProvider,
-                    EvmAddress.from(l1Token),
-                    logger,
-                    (route) => createBinanceRebalancerAdapter(logger, l1Signer, route)
+                ? new BinanceStablecoinSwapBridge(...args, (route) =>
+                    createBinanceRebalancerAdapter(logger, l1Signer, route)
                   )
-                : new bridgeConstructor(
-                    chainId,
-                    hubChainId,
-                    l1Signer,
-                    l2SignerOrProvider,
-                    EvmAddress.from(l1Token),
-                    logger
-                  );
+                : new bridgeConstructor(...args);
             return [l1Token, bridge];
           })
           .filter(isDefined) ?? []

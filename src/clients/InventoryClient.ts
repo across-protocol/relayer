@@ -491,6 +491,17 @@ export class InventoryClient {
     this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, l2Token, rebalance, chainId);
   }
 
+  // Exact inverse of trackCrossChainTransfer, for transfers that were tracked but then declined with no funds moved.
+  private untrackCrossChainTransfer(
+    l1Token: EvmAddress,
+    l2Token: Address,
+    rebalance: BigNumber,
+    chainId: number
+  ): void {
+    this.tokenClient.incrementLocalBalance(this.hubPoolClient.chainId, l1Token, rebalance);
+    this.crossChainTransferClient.decreaseOutstandingTransfer(this.relayer, l1Token, l2Token, rebalance, chainId);
+  }
+
   setBundleData(): void {
     this.bundleDataApproxClient.initialize();
   }
@@ -1053,10 +1064,8 @@ export class InventoryClient {
         executedTransactions.push({ ...rebalance, hash });
       } catch (error) {
         if (error instanceof BridgeTransferDeclinedError) {
-          // The bridge declined without moving funds, so restore the balance accounting from
-          // trackCrossChainTransfer above.
-          this.tokenClient.incrementLocalBalance(this.hubPoolClient.chainId, l1Token, amount);
-          this.crossChainTransferClient.decreaseOutstandingTransfer(this.relayer, l1Token, l2Token, amount, chainId);
+          // The bridge declined without moving funds, so restore the balance accounting.
+          this.untrackCrossChainTransfer(l1Token, l2Token, amount, chainId);
           this.log("Cross-chain bridge declined inventory rebalance", { ...rebalance, reason: error.message }, "warn");
           continue;
         }

@@ -1,5 +1,5 @@
 import { assert, CHAIN_IDs, EvmAddress, getTokenInfo, Signer, winston } from "../utils";
-import { CANONICAL_BRIDGE, CUSTOM_BRIDGE, SUPPORTED_TOKENS } from "../common";
+import { CUSTOM_BRIDGE } from "../common";
 import { BinanceStablecoinSwapAdapter as BinanceStablecoinSwapBridge } from "../adapter/bridges";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
@@ -25,27 +25,24 @@ type RebalancerClientConstructor<T extends BaseRebalancerClient> = new (
   isReadonly: boolean
 ) => T;
 
-// Derive the L1 -> L2 same-asset routes owned by the AdapterManager's Binance swap bridge from the bridge
-// registry so the swap rebalancer's Binance adapter can progress those orders through their normal lifecycle.
-export function buildAdapterManagerBinanceRoutes(hubChainId = CHAIN_IDs.MAINNET): RebalanceRoute[] {
-  const route = (destinationChain: number, sourceToken: string): RebalanceRoute => ({
-    sourceChain: hubChainId,
-    sourceToken,
-    destinationChain,
-    destinationToken: sourceToken,
-    adapter: "binance",
-  });
-  const customRoutes = Object.entries(CUSTOM_BRIDGE).flatMap(([chainId, bridges]) =>
+// Derive the L1 -> L2 same-asset routes owned by the AdapterManager's Binance swap bridge from the CUSTOM_BRIDGE
+// registry (the only registry that can carry this per-token bridge), so the swap rebalancer's Binance adapter can
+// progress those orders through their normal lifecycle.
+export function buildAdapterManagerBinanceRoutes(): RebalanceRoute[] {
+  return Object.entries(CUSTOM_BRIDGE).flatMap(([chainId, bridges]) =>
     Object.entries(bridges)
       .filter(([, Bridge]) => Bridge === BinanceStablecoinSwapBridge)
-      .map(([l1Token]) => route(Number(chainId), getTokenInfo(EvmAddress.from(l1Token), hubChainId).symbol))
+      .map(([l1Token]) => {
+        const { symbol } = getTokenInfo(EvmAddress.from(l1Token), CHAIN_IDs.MAINNET);
+        return {
+          sourceChain: CHAIN_IDs.MAINNET,
+          sourceToken: symbol,
+          destinationChain: Number(chainId),
+          destinationToken: symbol,
+          adapter: "binance",
+        };
+      })
   );
-  const canonicalRoutes = Object.entries(CANONICAL_BRIDGE).flatMap(([chainId, Bridge]) =>
-    Bridge === BinanceStablecoinSwapBridge
-      ? (SUPPORTED_TOKENS[Number(chainId)] ?? []).map((symbol) => route(Number(chainId), symbol))
-      : []
-  );
-  return [...customRoutes, ...canonicalRoutes];
 }
 
 export function constructRebalancerDependencies(
@@ -91,7 +88,7 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
   isReadonly: boolean,
   logLabel: string,
   message: string,
-  getBinanceAdapterRoutes: (rebalanceRoutes: RebalanceRoute[]) => RebalanceRoute[] = (routes) => routes
+  extraBinanceLifecycleRoutes: RebalanceRoute[] = []
 ): Promise<T> {
   const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
   const rebalanceRoutes = getRebalanceRoutes(rebalancerConfig);
@@ -105,7 +102,9 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
   );
   // Initialize the Binance adapter first (initialize() is idempotent) so it can carry lifecycle routes beyond the
   // client's own rebalance routes, e.g. orders initiated by the AdapterManager's Binance swap bridge.
-  await adapters.binance?.initialize(getBinanceAdapterRoutes(rebalanceRoutes));
+  if (extraBinanceLifecycleRoutes.length > 0) {
+    await adapters.binance?.initialize([...rebalanceRoutes, ...extraBinanceLifecycleRoutes]);
+  }
   await rebalancerClient.initialize(rebalanceRoutes);
   logger.debug({
     at: `RebalancerClientHelper.${logLabel}`,
@@ -129,7 +128,7 @@ export async function constructCumulativeBalanceRebalancerClient(
     false,
     "constructCumulativeBalanceRebalancerClient",
     "CumulativeBalanceRebalancerClient initialized",
-    (routes) => [...routes, ...buildAdapterManagerBinanceRoutes()]
+    buildAdapterManagerBinanceRoutes()
   );
 }
 

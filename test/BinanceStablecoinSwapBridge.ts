@@ -1,36 +1,24 @@
 import { BinanceStablecoinSwapAdapter, BridgeTransferDeclinedError } from "../src/adapter/bridges";
 import { RebalanceRoute } from "../src/rebalancer/utils/interfaces";
-import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, ZERO_BYTES } from "../src/utils";
+import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, ZERO_BYTES, bnZero } from "../src/utils";
 import { createSpyLogger, ethers, expect, toBNWei } from "./utils";
 
 describe("BinanceStablecoinSwapAdapter bridge", function () {
-  const route: RebalanceRoute = {
-    sourceChain: CHAIN_IDs.MAINNET,
-    sourceToken: "USDT",
-    destinationChain: CHAIN_IDs.AVALANCHE,
-    destinationToken: "USDT",
-    adapter: "binance",
+  type BridgeOptions = {
+    pending?: number;
+    cost?: string;
+    costError?: Error;
+    declineInitialize?: boolean;
+    error?: Error;
   };
 
-  async function makeBridge(
-    options: {
-      pending?: number;
-      cost?: string;
-      costError?: Error;
-      initialize?: boolean;
-      error?: Error;
-      maxPendingOrders?: number;
-    } = {}
-  ) {
+  async function makeBridge(options: BridgeOptions = {}) {
     const [signer, other] = await ethers.getSigners();
     const { spyLogger } = createSpyLogger();
     const baseSignerAddress = EvmAddress.from(signer.address);
     const adapter = {
       baseSignerAddress,
-      config: {
-        maxAmountsToTransfer: {},
-        maxPendingOrders: { binance: options.maxPendingOrders ?? 2 },
-      },
+      config: { maxAmountsToTransfer: {}, maxPendingOrders: {} },
       supportsRoute: () => true,
       getPendingOrders: async () => Array.from({ length: options.pending ?? 0 }, (_, index) => `order-${index}`),
       getEstimatedCost: async () => {
@@ -43,10 +31,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
         if (options.error) {
           throw options.error;
         }
-        return {
-          amount: options.initialize === false ? toBNWei("0", 6) : amount,
-          transactionHash: options.initialize === false ? undefined : "0xdeposit",
-        };
+        return options.declineInitialize ? { amount: bnZero } : { amount, transactionHash: "0xdeposit" };
       },
     };
     const bridge = new BinanceStablecoinSwapAdapter(
@@ -57,7 +42,7 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
       EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]),
       spyLogger
     );
-    Object.assign(bridge, { adapter, route });
+    Object.assign(bridge, { adapter });
     return {
       bridge,
       signer: baseSignerAddress,
@@ -67,49 +52,31 @@ describe("BinanceStablecoinSwapAdapter bridge", function () {
     };
   }
 
-  it("returns the Binance deposit transaction hash", async function () {
-    const { bridge, signer, l1Token, l2Token } = await makeBridge();
-    const amount = toBNWei("100", 6);
+  const send = ({ bridge, signer, l1Token, l2Token }: Awaited<ReturnType<typeof makeBridge>>, simMode = false) =>
+    bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, toBNWei("100", 6), simMode);
 
-    expect((await bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, amount, false)).hash).to.equal("0xdeposit");
-    expect((await bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, amount, true)).hash).to.equal(ZERO_BYTES);
+  it("returns the Binance deposit transaction hash", async function () {
+    const stack = await makeBridge();
+
+    expect((await send(stack)).hash).to.equal("0xdeposit");
+    expect((await send(stack, true)).hash).to.equal(ZERO_BYTES);
   });
 
   it("declines expensive or capacity-limited transfers without moving funds", async function () {
-    const amount = toBNWei("100", 6);
-
-    const expensive = await makeBridge({ cost: "3" });
-    await expect(
-      expensive.bridge.sendL1ToL2Transfer(expensive.signer, expensive.l1Token, expensive.l2Token, amount, false)
-    ).to.be.rejectedWith(BridgeTransferDeclinedError);
-
-    const full = await makeBridge({ pending: 2 });
-    await expect(
-      full.bridge.sendL1ToL2Transfer(full.signer, full.l1Token, full.l2Token, amount, false)
-    ).to.be.rejectedWith(BridgeTransferDeclinedError);
-
-    const declined = await makeBridge({ initialize: false });
-    await expect(
-      declined.bridge.sendL1ToL2Transfer(declined.signer, declined.l1Token, declined.l2Token, amount, false)
-    ).to.be.rejectedWith(BridgeTransferDeclinedError);
-
-    // A preflight dependency failure happens before anything can be submitted, so it is also a decline.
-    const preflightFailed = await makeBridge({ costError: new Error("Binance API unavailable") });
-    await expect(
-      preflightFailed.bridge.sendL1ToL2Transfer(
-        preflightFailed.signer,
-        preflightFailed.l1Token,
-        preflightFailed.l2Token,
-        amount,
-        false
-      )
-    ).to.be.rejectedWith(BridgeTransferDeclinedError);
+    const declines: BridgeOptions[] = [
+      { cost: "3" }, // Estimated cost above the max fee.
+      { pending: 2 }, // Pending-order capacity exhausted.
+      { declineInitialize: true }, // The adapter's own preflight declined during initialization.
+      { costError: new Error("Binance API unavailable") }, // Preflight dependency failure: nothing submitted yet.
+    ];
+    for (const options of declines) {
+      await expect(send(await makeBridge(options))).to.be.rejectedWith(BridgeTransferDeclinedError);
+    }
 
     // A submission error is not a decline: funds may have moved, so callers must not roll back accounting.
-    const failed = await makeBridge({ error: new Error("confirmation unavailable") });
-    await expect(
-      failed.bridge.sendL1ToL2Transfer(failed.signer, failed.l1Token, failed.l2Token, amount, false)
-    ).to.be.rejectedWith("confirmation unavailable");
+    await expect(send(await makeBridge({ error: new Error("confirmation unavailable") }))).to.be.rejectedWith(
+      "confirmation unavailable"
+    );
   });
 
   it("rejects a withdrawal recipient other than the signer", async function () {

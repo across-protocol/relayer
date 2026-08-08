@@ -435,6 +435,13 @@ export class BaseChainAdapter {
   ): Promise<TransactionResponse> {
     const bridge = this.bridges[l1Token.toNative()];
     assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
+    // Log ahead of the venue-specific branch so transfers through non-contract bridges stay visible to operators.
+    this.log(
+      `Bridging tokens from ${getNetworkName(this.hubChainId)} to ${getNetworkName(this.chainId)}`,
+      { l1Token, l2Token, amount: amount.toString(), simMode },
+      "debug",
+      "sendTokenToTargetChain"
+    );
     if (isDefined(bridge.sendL1ToL2Transfer)) {
       return bridge.sendL1ToL2Transfer(address, l1Token, l2Token, amount, simMode);
     }

@@ -1,6 +1,7 @@
 import { RebalancerConfig } from "../RebalancerConfig";
 import { assert, BigNumber, bnZero, EvmAddress, forEachAsync, Signer, winston, ZERO_ADDRESS } from "../../utils";
 import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "../utils/interfaces";
+import { getMaxPendingOrders } from "../utils/utils";
 
 /**
  * @notice This class is a successor to the InventoryClient. It is in charge of rebalancing inventory of the user
@@ -93,8 +94,7 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
     const availableAdapters: Set<string> = new Set();
     for (const adapter of Object.keys(this.adapters)) {
       const pendingOrders = await this.adapters[adapter].getPendingOrders();
-      const maxPendingOrdersForAdapter = this.config.maxPendingOrders[adapter] ?? 2; // @todo Default low for now,
-      // eventually change this to a very high default value.
+      const maxPendingOrdersForAdapter = getMaxPendingOrders(this.config, adapter);
       if (pendingOrders.length < maxPendingOrdersForAdapter) {
         availableAdapters.add(adapter);
       } else {

@@ -5,10 +5,24 @@ import {
   ethers,
   getTokenInfoFromSymbol,
   isDefined,
+  toBNWei,
   winston,
 } from "../../utils";
 import { getRedisCache, RedisCache } from "../../cache/Redis";
 import { ExcessOrDeficit, OrderDetails, RedisOrderDetailsPayload } from "./interfaces";
+
+// The maximum acceptable venue cost for a rebalance of `amount`, from the operator's MAX_FEE_PCT (default 2.5%).
+export function getMaxFee(amount: BigNumber): BigNumber {
+  return amount.mul(toBNWei(process.env.MAX_FEE_PCT ?? "2.5")).div(toBNWei(100));
+}
+
+// @todo Default low for now, eventually change this to a very high default value.
+export function getMaxPendingOrders(
+  config: { maxPendingOrders: { [adapter: string]: number | undefined } },
+  adapterName: string
+): number {
+  return config.maxPendingOrders[adapterName] ?? 2;
+}
 
 // Optional namespace that lets different rebalancer deployments keep their status-tracking data isolated
 // even if they share the same Redis instance.

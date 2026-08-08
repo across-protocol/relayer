@@ -85,12 +85,11 @@ export class CrossChainTransferClient {
     rebalance: BigNumber,
     chainId: number
   ): void {
-    const transfer =
-      this.outstandingCrossChainTransfers[chainId]?.[address.toNative()]?.[l1Token.toEvmAddress()]?.[
-        l2Token.toNative()
-      ];
-    assert(transfer?.totalAmount.gte(rebalance));
-    transfer.totalAmount = transfer.totalAmount.sub(rebalance);
+    assert(
+      this.getOutstandingCrossChainTransferAmount(address, chainId, l1Token, l2Token).gte(rebalance),
+      "Cannot decrease an outstanding cross-chain transfer below zero"
+    );
+    this.increaseOutstandingTransfer(address, l1Token, l2Token, bnZero.sub(rebalance), chainId);
   }
 
   async update(l1Tokens: EvmAddress[], chainIds = this.getEnabledL2Chains()): Promise<void> {

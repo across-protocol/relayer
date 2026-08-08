@@ -7,13 +7,13 @@ import {
   getTokenInfo,
   isDefined,
   Signer,
-  toBNWei,
   TransactionResponse,
   winston,
   ZERO_BYTES,
 } from "../../utils";
 import type { BinanceStablecoinSwapAdapter as RebalancerBinanceStablecoinSwapAdapter } from "../../rebalancer/adapters/binance";
 import type { RebalanceRoute } from "../../rebalancer/utils/interfaces";
+import { getMaxFee, getMaxPendingOrders } from "../../rebalancer/utils/utils";
 import {
   BaseBridgeAdapter,
   BridgeEvents,
@@ -27,8 +27,7 @@ import {
  * finalization) stays owned by the swap rebalancer's normal Redis order lifecycle.
  */
 export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
-  private adapter?: RebalancerBinanceStablecoinSwapAdapter;
-  private route?: RebalanceRoute;
+  private adapter?: Promise<RebalancerBinanceStablecoinSwapAdapter>;
 
   constructor(
     l2chainId: number,
@@ -37,7 +36,8 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     _l2SignerOrProvider: unknown,
     private readonly l1Token: EvmAddress,
     _logger: winston.Logger,
-    // Optional only so the class fits the registry's L1BridgeConstructor shape; getAdapter asserts it was supplied.
+    // Optional only so the class fits the registry's L1BridgeConstructor shape; getAdapterAndRoute asserts it
+    // was supplied.
     private readonly adapterFactory?: (route: RebalanceRoute) => Promise<RebalancerBinanceStablecoinSwapAdapter>
   ) {
     super(l2chainId, hubChainId, l1Signer, []);
@@ -50,33 +50,33 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     amount: BigNumber,
     simMode: boolean
   ): Promise<TransactionResponse> {
+    let adapter: RebalancerBinanceStablecoinSwapAdapter;
+    let route: RebalanceRoute;
     // Everything up to the initiation call is preflight: no funds can have moved, so any failure here (an
     // unreachable Binance API included) is a decline that lets InventoryClient roll back its balance accounting.
-    const [adapter, route] = await (async (): Promise<[RebalancerBinanceStablecoinSwapAdapter, RebalanceRoute]> => {
-      const adapter = await this.getAdapter(l1Token, l2Token);
-      const route = this.getRoute();
+    try {
+      [adapter, route] = await this.getAdapterAndRoute(l1Token, l2Token);
       // Binance withdrawals land on the exchange account's withdrawal address, so the only supported recipient is
       // the signer itself.
-      assert(
-        adapter.baseSignerAddress.eq(EvmAddress.from(toAddress.toNative())),
-        "Binance withdrawal recipient must match signer"
-      );
-      const maxPendingOrders = adapter.config.maxPendingOrders.binance ?? 2;
-      if ((await adapter.getPendingOrders()).length >= maxPendingOrders) {
+      assert(adapter.baseSignerAddress.eq(toAddress), "Binance withdrawal recipient must match signer");
+      const [pendingOrders, estimatedCost] = await Promise.all([
+        adapter.getPendingOrders(),
+        adapter.getEstimatedCost(route, amount, false),
+      ]);
+      if (pendingOrders.length >= getMaxPendingOrders(adapter.config, "binance")) {
         throw new BridgeTransferDeclinedError("Too many pending Binance orders to initiate a new transfer");
       }
-      const maxFee = amount.mul(toBNWei(process.env.MAX_FEE_PCT ?? "2.5")).div(toBNWei(100));
-      if ((await adapter.getEstimatedCost(route, amount, false)).gt(maxFee)) {
+      if (estimatedCost.gt(getMaxFee(amount))) {
         throw new BridgeTransferDeclinedError("Estimated Binance transfer cost exceeds the maximum fee");
       }
-      return [adapter, route];
-    })().catch((error) => {
+    } catch (error) {
       throw error instanceof BridgeTransferDeclinedError
         ? error
-        : new BridgeTransferDeclinedError(`Binance transfer preflight failed before submission: ${error.message}`, {
-            cause: error,
-          });
-    });
+        : new BridgeTransferDeclinedError(
+            `Binance transfer preflight failed before submission: ${error instanceof Error ? error.message : error}`,
+            { cause: error }
+          );
+    }
     if (simMode) {
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
@@ -111,7 +111,10 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
     return Promise.resolve({});
   }
 
-  private async getAdapter(l1Token: EvmAddress, l2Token: Address): Promise<RebalancerBinanceStablecoinSwapAdapter> {
+  private async getAdapterAndRoute(
+    l1Token: EvmAddress,
+    l2Token: Address
+  ): Promise<[RebalancerBinanceStablecoinSwapAdapter, RebalanceRoute]> {
     assert(l1Token.eq(this.l1Token), `Unexpected L1 token ${l1Token}`);
     const route: RebalanceRoute = {
       sourceChain: this.hubChainId,
@@ -120,18 +123,13 @@ export class BinanceStablecoinSwapAdapter extends BaseBridgeAdapter {
       destinationToken: getTokenInfo(l2Token, this.l2chainId).symbol,
       adapter: "binance",
     };
-    if (isDefined(this.adapter)) {
-      assert(this.adapter.supportsRoute(route), "Binance stablecoin swap adapter route changed after initialization");
-      return this.adapter;
+    if (!isDefined(this.adapter)) {
+      assert(isDefined(this.adapterFactory), "Binance stablecoin swap adapter factory is required");
+      // Memoize the promise, not the resolved adapter, so concurrent transfers share one construction.
+      this.adapter = this.adapterFactory(route);
     }
-    assert(isDefined(this.adapterFactory), "Binance stablecoin swap adapter factory is required");
-    const adapter = await this.adapterFactory(route);
-    this.route = route;
-    return (this.adapter = adapter);
-  }
-
-  private getRoute(): RebalanceRoute {
-    assert(isDefined(this.route));
-    return this.route;
+    const adapter = await this.adapter;
+    assert(adapter.supportsRoute(route), "Binance stablecoin swap adapter does not support this route");
+    return [adapter, route];
   }
 }
