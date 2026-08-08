@@ -91,8 +91,7 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
   getRebalanceRoutes: (rebalancerConfig: RebalancerConfig) => RebalanceRoute[],
   isReadonly: boolean,
   logLabel: string,
-  message: string,
-  includeAdapterManagerBinanceRoutes = false
+  message: string
 ): Promise<T> {
   const { rebalancerConfig, adapters } = constructRebalancerDependencies(logger, baseSigner);
   const rebalanceRoutes = getRebalanceRoutes(rebalancerConfig);
@@ -107,9 +106,7 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
   // Initialize the Binance adapter first (initialize() is idempotent, first call wins) so it carries lifecycle
   // routes beyond the client's own rebalance routes, e.g. orders initiated by the AdapterManager's Binance swap
   // bridge. Routes are operator-configured, so a validation failure crashes the run like any other route.
-  if (includeAdapterManagerBinanceRoutes) {
-    await adapters.binance?.initialize([...rebalanceRoutes, ...buildAdapterManagerBinanceRoutes(rebalancerConfig)]);
-  }
+  await adapters.binance?.initialize([...rebalanceRoutes, ...buildAdapterManagerBinanceRoutes(rebalancerConfig)]);
   await rebalancerClient.initialize(rebalanceRoutes);
   logger.debug({
     at: `RebalancerClientHelper.${logLabel}`,
@@ -132,8 +129,7 @@ export async function constructCumulativeBalanceRebalancerClient(
     (rebalancerConfig) => rebalanceRoutesOverride ?? buildRebalanceRoutes(rebalancerConfig),
     false,
     "constructCumulativeBalanceRebalancerClient",
-    "CumulativeBalanceRebalancerClient initialized",
-    true
+    "CumulativeBalanceRebalancerClient initialized"
   );
 }
 
