@@ -52,7 +52,6 @@ export class CCTPService {
         attestation: cctpAttestationUnion,
         destinationChainId: providedDestinationChainIdUnion,
         signature: signatureUnion,
-        quoteDeadline: quoteDeadlineUnion,
       } = message;
 
       this.evmPrivateKey = await this.getPrivateKey("evm");
@@ -62,7 +61,6 @@ export class CCTPService {
       const cctpAttestation = cctpAttestationUnion?.string;
       const providedDestinationChainId = providedDestinationChainIdUnion?.long;
       const signature = signatureUnion?.string;
-      const quoteDeadline = quoteDeadlineUnion?.long;
 
       this.logger.info({
         at: "CCTPService#processBurnTransaction",
@@ -177,7 +175,7 @@ export class CCTPService {
       }
 
       // Process the mint
-      return await this.processMint(destinationChainId, sourceChainId, attestation, signature, quoteDeadline);
+      return await this.processMint(destinationChainId, sourceChainId, attestation, signature);
     } catch (error) {
       if (isCCTPError(error)) {
         if (error instanceof AlreadyProcessedError) {
@@ -260,8 +258,7 @@ export class CCTPService {
     originChainId: number,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     attestation: any,
-    signature?: string,
-    quoteDeadline?: number
+    signature?: string
   ): Promise<ProcessBurnTransactionResponse> {
     const chainName = PUBLIC_NETWORKS[destinationChainId]?.name || `Chain ${destinationChainId}`;
     this.logger.info({
@@ -302,8 +299,7 @@ export class CCTPService {
           provider,
           this.evmPrivateKey,
           this.logger,
-          signature,
-          quoteDeadline
+          signature
         );
         return {
           success: true,

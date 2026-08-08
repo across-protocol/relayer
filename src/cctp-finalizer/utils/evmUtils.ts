@@ -128,6 +128,31 @@ function getDestination(chainId: number, messageBytes: string, signature?: strin
 }
 
 /**
+ * Whether a sponsored CCTP mint should call emergencyReceiveMessage.
+ * Must use the quote deadline encoded in the CCTP message hookData — never an
+ * untrusted Pub/Sub envelope field. A forged past quoteDeadline would otherwise
+ * force emergencyReceiveMessage and skip sponsorship / custom execution.
+ */
+export function shouldUseEmergencyReceiveMessage(
+  message: string,
+  requiresSignature: boolean,
+  nowSeconds: number = Date.now() / 1000
+): boolean {
+  if (!requiresSignature) {
+    return false;
+  }
+  const hookData = decodeCctpV2HookData(message);
+  if (!isDefined(hookData?.deadline)) {
+    return false;
+  }
+  const deadline = Number(hookData.deadline);
+  if (!Number.isFinite(deadline)) {
+    return false;
+  }
+  return deadline < nowSeconds;
+}
+
+/**
  * Processes a CCTP mint transaction on EVM chain (CCTP V2)
  */
 export async function processMintEvm(
@@ -136,8 +161,7 @@ export async function processMintEvm(
   provider: ethers.providers.JsonRpcProvider,
   privateKey: string,
   logger: winston.Logger,
-  signature?: string,
-  quoteDeadline?: number
+  signature?: string
 ): Promise<{ txHash: string }> {
   const signer = new ethers.Wallet(privateKey, provider);
 
@@ -152,9 +176,9 @@ export async function processMintEvm(
     ? [attestation.message, attestation.attestation, signature]
     : [attestation.message, attestation.attestation];
 
-  // if the quote deadline has expired, we don't need to pass the signature
+  // if the on-message quote deadline has expired, we don't need to pass the signature
   let method = "receiveMessage";
-  if (destination.requiresSignature && isDefined(quoteDeadline) && quoteDeadline < Date.now() / 1000) {
+  if (shouldUseEmergencyReceiveMessage(attestation.message, destination.requiresSignature)) {
     receiveMessageArgs = [attestation.message, attestation.attestation];
     method = "emergencyReceiveMessage";
   }
