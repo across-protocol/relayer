@@ -143,8 +143,14 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
     expect(adapter.supportsRoute(SWAP_ORDER_DETAILS)).to.equal(true);
   });
 
-  it("derives AdapterManager Binance lifecycle routes from the bridge registry", function () {
-    const routes = buildAdapterManagerBinanceRoutes();
+  const REBALANCER_CONFIG = {
+    sameAssetBalances: { USDT: { [CHAIN_IDs.AVALANCHE]: {} } },
+  } as unknown as RebalancerConfig;
+
+  it("derives AdapterManager Binance lifecycle routes from the registry and operator config", function () {
+    // A route requires both a CUSTOM_BRIDGE registration and operator enablement in the rebalancer config.
+    expect(buildAdapterManagerBinanceRoutes({ sameAssetBalances: {} } as unknown as RebalancerConfig)).to.be.empty;
+    const routes = buildAdapterManagerBinanceRoutes(REBALANCER_CONFIG);
     expect(routes).to.deep.include({
       sourceChain: CHAIN_IDs.MAINNET,
       sourceToken: "USDT",
@@ -157,7 +163,7 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
   it("progresses AdapterManager Binance orders using bridge-derived lifecycle routes", async function () {
     const wallet = ethers.Wallet.createRandom();
     const signer = EvmAddress.from(await wallet.getAddress());
-    const route = buildAdapterManagerBinanceRoutes()[0];
+    const route = buildAdapterManagerBinanceRoutes(REBALANCER_CONFIG)[0];
     const l1Token = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]);
     const l2Token = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.AVALANCHE]);
     let order!: OrderDetails;

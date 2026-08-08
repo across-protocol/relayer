@@ -43,13 +43,14 @@ import {
 // swap bridge.
 async function createBinanceRebalancerAdapter(logger: winston.Logger, signer: Signer) {
   const {
+    rebalancerConfig,
     adapters: { binance, cctp, oft },
   } = constructRebalancerDependencies(logger, signer);
   assert(
     binance instanceof BinanceStablecoinSwapAdapter && isDefined(cctp) && isDefined(oft),
     "Binance rebalancer adapters are unavailable for the configured hub chain"
   );
-  const routes = buildAdapterManagerBinanceRoutes();
+  const routes = buildAdapterManagerBinanceRoutes(rebalancerConfig);
   await Promise.all([cctp.initialize(routes), oft.initialize(routes)]);
   await binance.initialize(routes);
   return binance;
