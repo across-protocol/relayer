@@ -998,8 +998,22 @@ export class InventoryClient {
     const executedTransactions: ExecutedRebalance[] = [];
 
     // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
-    for (const rebalance of rebalancesRequired) {
-      const { balance, amount, l1Token, l2Token, chainId } = rebalance;
+    for (const _rebalance of rebalancesRequired) {
+      const { balance, l1Token, l2Token, chainId } = _rebalance;
+      // Ask the bridge how much of the candidate it will accept (venue bridges cap transfer sizes) and size the
+      // transfer and all balance accounting from that amount. This is stateless: nothing is reserved by asking.
+      let amount: BigNumber;
+      try {
+        amount = await this.adapterManager.getAcceptedTransferAmount(chainId, l1Token, _rebalance.amount, l2Token);
+      } catch (error) {
+        this.log("Failed to size inventory rebalance; skipping candidate", { ..._rebalance, error }, "warn");
+        continue;
+      }
+      if (amount.eq(bnZero)) {
+        this.log("Cross-chain bridge accepted none of the inventory rebalance", { ..._rebalance });
+        continue;
+      }
+      const rebalance = { ..._rebalance, amount };
 
       // This is the balance left after any assumed rebalances from earlier loop iterations.
       const unallocatedBalance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);

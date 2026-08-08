@@ -73,6 +73,10 @@ export abstract class BaseBridgeAdapter {
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents>;
 
+  // Bridges that cap transfer sizes implement this to return the amount they will accept for `amount` (possibly
+  // zero). Stateless: callers size the transfer with it before any balance accounting.
+  getAcceptedL1ToL2TransferAmount?(l1Token: EvmAddress, l2Token: Address, amount: BigNumber): Promise<BigNumber>;
+
   // Bridges that submit through an external venue rather than an L1 contract call implement this instead of
   // constructL1ToL2Txn. Throws BridgeTransferDeclinedError when the transfer is declined with no funds moved.
   sendL1ToL2Transfer?(

@@ -43,6 +43,14 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     super(l2chainId, hubChainId, l1Signer, []);
   }
 
+  // Cap the transfer at the rebalancer config's per-token, per-source-chain maximum, mirroring the same-asset
+  // rebalancer's sizing. InventoryClient calls this before tracking any balances.
+  async getAcceptedL1ToL2TransferAmount(l1Token: EvmAddress, l2Token: Address, amount: BigNumber): Promise<BigNumber> {
+    const [adapter, route] = await this.getAdapterAndRoute(l1Token, l2Token);
+    const maxAmount = adapter.config.maxAmountsToTransfer[route.sourceToken]?.[route.sourceChain];
+    return isDefined(maxAmount) && amount.gt(maxAmount) ? maxAmount : amount;
+  }
+
   async sendL1ToL2Transfer(
     toAddress: Address,
     l1Token: EvmAddress,
