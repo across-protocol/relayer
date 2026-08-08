@@ -19,7 +19,7 @@ import { ZERO_ADDRESS } from "../constants";
 import * as zksync from "zksync-ethers";
 
 const { LENS, MAINNET, ZK_SYNC } = CHAIN_IDs;
-const { DAI, USDC, WETH } = TOKEN_SYMBOLS_MAP;
+const { WBTC, USDC, WETH } = TOKEN_SYMBOLS_MAP;
 const l1Weth = WETH.addresses[MAINNET];
 const l2WethAddress = WETH.addresses[ZK_SYNC];
 
@@ -113,7 +113,7 @@ describe("Cross Chain Adapter: zkSync", function () {
   const logger = createSpyLogger().spyLogger;
   const l2TxGasLimit = bnZero;
   const l2TxGasPerPubdataByte = bnZero;
-  const l1Token = DAI.addresses[MAINNET];
+  const l1Token = WBTC.addresses[MAINNET];
   let atomicDepositor;
 
   let adapter: TestBaseChainAdapter;
@@ -150,7 +150,7 @@ describe("Cross Chain Adapter: zkSync", function () {
 
     const bridges = {
       [WETH.addresses[MAINNET]]: new TestZkSyncWethBridge(ZK_SYNC, MAINNET, l1Signer, l2Signer, undefined),
-      [DAI.addresses[MAINNET]]: new TestZkSyncBridge(ZK_SYNC, MAINNET, l1Signer, l2Signer, undefined),
+      [WBTC.addresses[MAINNET]]: new TestZkSyncBridge(ZK_SYNC, MAINNET, l1Signer, l2Signer, undefined),
     };
     bridges[WETH.addresses[MAINNET]].setHubPool(hubPool);
 
@@ -163,10 +163,10 @@ describe("Cross Chain Adapter: zkSync", function () {
       MAINNET,
       {
         [WETH.addresses[MAINNET]]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)],
-        [DAI.addresses[MAINNET]]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)],
+        [WBTC.addresses[MAINNET]]: [toAddress(monitoredEoa), toAddress(hubPool.address), toAddress(spokePool.address)],
       },
       logger,
-      ["DAI", "WETH"],
+      ["WBTC", "WETH"],
       bridges,
       1
     );

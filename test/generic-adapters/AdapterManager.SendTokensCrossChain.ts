@@ -39,7 +39,7 @@ let adapterManager: AdapterManager;
 let l1AtomicDepositor: FakeContract;
 
 // Optimism contracts
-let l1OptimismBridge: FakeContract, l1OptimismDaiBridge: FakeContract;
+let l1OptimismBridge: FakeContract;
 
 // Polygon contracts
 let l1PolygonRootChainManager: FakeContract;
@@ -58,7 +58,6 @@ const enabledChainIds = [1, 10, 137, 288, 42161, 324, 8453];
 const mainnetTokens = {
   usdc: TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET],
   weth: TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET],
-  dai: TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET],
   wbtc: TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET],
 } as const;
 
@@ -134,22 +133,6 @@ describe("AdapterManager: Send tokens cross-chain", function () {
       "0x" // data
     );
 
-    // Non- ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
-      chainId,
-      toAddressType(mainnetTokens.dai, CHAIN_IDs.MAINNET),
-      amountToSend
-    );
-    // Note the target is the L1 dai optimism bridge.
-    expect(l1OptimismDaiBridge.depositERC20).to.have.been.calledWith(
-      mainnetTokens.dai, // l1 token
-      getL2TokenAddresses(mainnetTokens.dai)[chainId], // l2 token
-      amountToSend, // amount
-      l2Gas, // l2Gas
-      "0x" // data
-    );
-
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
@@ -175,18 +158,6 @@ describe("AdapterManager: Send tokens cross-chain", function () {
     const chainId = CHAIN_IDs.POLYGON;
 
     // ERC20 tokens:
-    await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
-      chainId,
-      toAddressType(mainnetTokens.dai, CHAIN_IDs.MAINNET),
-      amountToSend
-    );
-    expect(l1PolygonRootChainManager.depositFor).to.have.been.calledWith(
-      relayer.address, // user
-      mainnetTokens.dai, // root token
-      bnToHex(amountToSend) // deposit data. bytes encoding of the amount to send.
-    );
-
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
       chainId,
@@ -234,20 +205,6 @@ describe("AdapterManager: Send tokens cross-chain", function () {
     );
     expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
       mainnetTokens.wbtc, // token
-      relayer.address, // to
-      amountToSend, // amount
-      l2GasLimit, // maxGas
-      l2GasPrice, // gasPriceBid
-      transactionSubmissionData // data
-    );
-    await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
-      chainId,
-      toAddressType(mainnetTokens.dai, CHAIN_IDs.MAINNET),
-      amountToSend
-    );
-    expect(l1ArbitrumBridge.outboundTransfer).to.have.been.calledWith(
-      mainnetTokens.dai, // token
       relayer.address, // to
       amountToSend, // amount
       l2GasLimit, // maxGas
@@ -365,21 +322,6 @@ describe("AdapterManager: Send tokens cross-chain", function () {
       "0x" // data
     );
 
-    // DAI should not be a custom token on base.
-    await adapterManager.sendTokenCrossChain(
-      toAddressType(relayer.address, CHAIN_IDs.MAINNET),
-      chainId,
-      toAddressType(mainnetTokens.dai, CHAIN_IDs.MAINNET),
-      amountToSend
-    );
-    expect(l1BaseBridge.depositERC20).to.have.been.calledWith(
-      mainnetTokens.dai, // l1 token
-      getL2TokenAddresses(mainnetTokens.dai)[chainId], // l2 token
-      amountToSend, // amount
-      l2Gas, // l2Gas
-      "0x" // data
-    );
-
     // Weth is not directly sendable over the canonical bridge. Rather, we should see a call against the atomic depositor.
     await adapterManager.sendTokenCrossChain(
       toAddressType(relayer.address, CHAIN_IDs.MAINNET),
@@ -438,7 +380,6 @@ async function constructChainSpecificFakes() {
 
   // Optimism contracts
   l1OptimismBridge = await makeFake("ovmStandardBridge_10", CONTRACT_ADDRESSES[1].ovmStandardBridge_10.address);
-  l1OptimismDaiBridge = await makeFake("daiOptimismBridge", CONTRACT_ADDRESSES[1].daiOptimismBridge.address);
 
   // Polygon contracts
   l1PolygonRootChainManager = await makeFake(

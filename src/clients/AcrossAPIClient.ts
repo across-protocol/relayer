@@ -134,6 +134,10 @@ export class AcrossApiClient {
     return `limits_api_${l1Tokens.map((token) => token.toEvmAddress()).join(",")}`;
   }
 
+  /**
+   * Query the API for the HubPool liquid reserves backing each of `l1Tokens`.
+   * @returns An array of liquid reserves, ordered as per `l1Tokens`, or undefined if the query failed.
+   */
   protected async callLimits(l1Tokens: EvmAddress[], timeout = this.timeout): Promise<BigNumber[] | undefined> {
     const path = "liquid-reserves";
     const url = `${this.endpoint}/${path}`;
@@ -159,7 +163,7 @@ export class AcrossApiClient {
       if (!result) {
         this.logger.error({
           at: "AcrossAPIClient",
-          message: `Invalid response from /${path}, expected maxDeposit field.`,
+          message: `Invalid response from /${path}, expected one reserves entry per l1Token.`,
           url,
           params,
           result,
