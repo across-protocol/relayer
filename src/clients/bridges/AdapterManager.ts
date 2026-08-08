@@ -58,8 +58,9 @@ async function createBinanceRebalancerAdapter(logger: winston.Logger, signer: Si
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
-  // Shared across every Binance swap bridge this manager constructs; cleared on failure so a transient Binance
-  // outage is retried on the next transfer.
+  // Shared across every Binance swap bridge this manager constructs. Following the BinanceCEXBridge pattern:
+  // the promise is created at construction and only evaluated inside the bridge's async methods, so missing
+  // credentials or config reject the transfer that needs them rather than the bot that doesn't.
   private binanceRebalancerAdapter?: Promise<BinanceStablecoinSwapAdapter>;
   protected readonly pendingBridgeRedisReader?: CctpOftReadOnlyClient;
 
@@ -140,18 +141,15 @@ export class AdapterManager {
               return undefined;
             }
             const args = [chainId, hubChainId, l1Signer, l2SignerOrProvider, EvmAddress.from(l1Token), logger] as const;
+            if (bridgeConstructor === BinanceStablecoinSwapBridge && !isDefined(this.binanceRebalancerAdapter)) {
+              this.binanceRebalancerAdapter = createBinanceRebalancerAdapter(logger, l1Signer);
+              // Swallow the rejection here so a bot that never initiates a Binance transfer cannot crash on an
+              // unhandled rejection; transfers that await the stored promise still see the original error.
+              this.binanceRebalancerAdapter.catch(() => {});
+            }
             const bridge =
               bridgeConstructor === BinanceStablecoinSwapBridge
-                ? new BinanceStablecoinSwapBridge(
-                    ...args,
-                    () =>
-                      (this.binanceRebalancerAdapter ??= createBinanceRebalancerAdapter(logger, l1Signer).catch(
-                        (error) => {
-                          this.binanceRebalancerAdapter = undefined;
-                          throw error;
-                        }
-                      ))
-                  )
+                ? new BinanceStablecoinSwapBridge(...args, this.binanceRebalancerAdapter)
                 : new bridgeConstructor(...args);
             return [l1Token, bridge];
           })

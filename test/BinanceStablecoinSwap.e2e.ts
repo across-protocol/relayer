@@ -143,7 +143,7 @@ describe("BinanceStablecoinSwapBridge end-to-end", function () {
       signer,
       l1Usdt,
       TEST_LOGGER,
-      async () => rebalancerAdapter
+      Promise.resolve(rebalancerAdapter)
     );
     const spokePoolClient = { eventSearchConfig: { from: 0, maxBlockLookBack: 5000 } };
     const chainAdapter = new BaseChainAdapter(

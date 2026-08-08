@@ -54,7 +54,7 @@ describe("BinanceStablecoinSwapBridge", function () {
       signer,
       EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]),
       spyLogger,
-      async () => adapter as never
+      Promise.resolve(adapter as never)
     );
     return {
       bridge,
