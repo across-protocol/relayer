@@ -50,7 +50,6 @@ import { Deposit, TokenInfo } from "../interfaces";
 import { InventoryConfig, isAliasConfig, TokenBalanceConfig } from "../interfaces/InventoryManagement";
 import { hasBinanceRoute } from "../common";
 import { AdapterManager, CrossChainTransferClient } from "./bridges";
-import { BridgeTransferDeclinedError } from "../adapter/bridges/BaseBridgeAdapter";
 import { TransferTokenParams } from "../adapter/utils";
 import { RebalancerClient } from "../rebalancer/utils/interfaces";
 
@@ -489,17 +488,6 @@ export class InventoryClient {
   trackCrossChainTransfer(l1Token: EvmAddress, l2Token: Address, rebalance: BigNumber, chainId: number): void {
     this.tokenClient.decrementLocalBalance(this.hubPoolClient.chainId, l1Token, rebalance);
     this.crossChainTransferClient.increaseOutstandingTransfer(this.relayer, l1Token, l2Token, rebalance, chainId);
-  }
-
-  // Exact inverse of trackCrossChainTransfer, for transfers that were tracked but then declined with no funds moved.
-  private untrackCrossChainTransfer(
-    l1Token: EvmAddress,
-    l2Token: Address,
-    rebalance: BigNumber,
-    chainId: number
-  ): void {
-    this.tokenClient.incrementLocalBalance(this.hubPoolClient.chainId, l1Token, rebalance);
-    this.crossChainTransferClient.decreaseOutstandingTransfer(this.relayer, l1Token, l2Token, rebalance, chainId);
   }
 
   setBundleData(): void {
@@ -1093,12 +1081,6 @@ export class InventoryClient {
         );
         executedTransactions.push({ ...rebalance, hash });
       } catch (error) {
-        if (error instanceof BridgeTransferDeclinedError) {
-          // The bridge declined without moving funds, so restore the balance accounting.
-          this.untrackCrossChainTransfer(l1Token, l2Token, amount, chainId);
-          this.log("Cross-chain bridge declined inventory rebalance", { ...rebalance, reason: error.message }, "warn");
-          continue;
-        }
         this.log(
           "Something errored during inventory rebalance",
           { error, chainId, l1Token, l2Token, amount, optionalParams }, // include all info to help debugging.

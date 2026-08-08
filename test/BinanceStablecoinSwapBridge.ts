@@ -1,4 +1,4 @@
-import { BinanceStablecoinSwapBridge, BridgeTransferDeclinedError } from "../src/adapter/bridges";
+import { BinanceStablecoinSwapBridge } from "../src/adapter/bridges";
 import { RebalanceRoute } from "../src/rebalancer/utils/interfaces";
 import { CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, ZERO_BYTES, bnZero } from "../src/utils";
 import { createSpyLogger, ethers, expect, toBNWei } from "./utils";
@@ -62,21 +62,19 @@ describe("BinanceStablecoinSwapBridge", function () {
     expect((await send(stack, true)).hash).to.equal(ZERO_BYTES);
   });
 
-  it("declines expensive or capacity-limited transfers without moving funds", async function () {
-    const declines: BridgeOptions[] = [
-      { cost: "3" }, // Estimated cost above the max fee.
-      { pending: 2 }, // Pending-order capacity exhausted.
-      { declineInitialize: true }, // The adapter's own preflight declined during initialization.
-      { costError: new Error("Binance API unavailable") }, // Preflight dependency failure: nothing submitted yet.
+  it("rejects one-shot on expensive, capacity-limited, or failed transfers", async function () {
+    // Every Binance-side failure rejects the single initiation promise with no funds moved - the same contract
+    // callers already have with a bridge transaction that failed to mine.
+    const rejections: [BridgeOptions, string][] = [
+      [{ cost: "3" }, "cost exceeds the maximum fee"],
+      [{ pending: 2 }, "Too many pending Binance orders"],
+      [{ declineInitialize: true }, "declined transfer during initialization"],
+      [{ costError: new Error("Binance API unavailable") }, "Binance API unavailable"],
+      [{ error: new Error("confirmation unavailable") }, "confirmation unavailable"],
     ];
-    for (const options of declines) {
-      await expect(send(await makeBridge(options))).to.be.rejectedWith(BridgeTransferDeclinedError);
+    for (const [options, message] of rejections) {
+      await expect(send(await makeBridge(options))).to.be.rejectedWith(message);
     }
-
-    // A submission error is not a decline: funds may have moved, so callers must not roll back accounting.
-    await expect(send(await makeBridge({ error: new Error("confirmation unavailable") }))).to.be.rejectedWith(
-      "confirmation unavailable"
-    );
   });
 
   it("rejects a withdrawal recipient other than the signer", async function () {

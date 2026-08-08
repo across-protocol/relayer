@@ -1,7 +1,7 @@
 import { ethers, expect, sinon, toBNWei } from "./utils";
 import winston from "winston";
 import { BaseChainAdapter } from "../src/adapter";
-import { BinanceStablecoinSwapBridge, BridgeTransferDeclinedError } from "../src/adapter/bridges";
+import { BinanceStablecoinSwapBridge } from "../src/adapter/bridges";
 import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance";
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
@@ -229,9 +229,7 @@ describe("BinanceStablecoinSwapBridge end-to-end", function () {
       ],
     });
 
-    await expect(chainAdapter.sendTokenToTargetChain(account, l1Usdt, l2Usdt, amount, false)).to.be.rejectedWith(
-      BridgeTransferDeclinedError
-    );
+    await expect(chainAdapter.sendTokenToTargetChain(account, l1Usdt, l2Usdt, amount, false)).to.be.rejected;
     expect(submitted).to.be.empty;
     expect(redis.sets.size).to.equal(0);
   });
@@ -240,9 +238,7 @@ describe("BinanceStablecoinSwapBridge end-to-end", function () {
     const { chainAdapter, account, redis, submitted } = await makeStack({ withdrawEnable: false });
 
     // The preflight gate rejects before any funds move, and the decline is typed so InventoryClient rolls back.
-    await expect(chainAdapter.sendTokenToTargetChain(account, l1Usdt, l2Usdt, amount, false)).to.be.rejectedWith(
-      BridgeTransferDeclinedError
-    );
+    await expect(chainAdapter.sendTokenToTargetChain(account, l1Usdt, l2Usdt, amount, false)).to.be.rejected;
     expect(submitted).to.be.empty;
     expect(redis.sets.size).to.equal(0);
   });

@@ -14,12 +14,7 @@ import {
 import type { BinanceStablecoinSwapAdapter as RebalancerBinanceStablecoinSwapAdapter } from "../../rebalancer/adapters/binance";
 import type { RebalanceRoute } from "../../rebalancer/utils/interfaces";
 import { getMaxFee, getMaxPendingOrders } from "../../rebalancer/utils/utils";
-import {
-  BaseBridgeAdapter,
-  BridgeEvents,
-  BridgeTransactionDetails,
-  BridgeTransferDeclinedError,
-} from "./BaseBridgeAdapter";
+import { BaseBridgeAdapter, BridgeEvents, BridgeTransactionDetails } from "./BaseBridgeAdapter";
 
 /**
  * AdapterManager-facing bridge that initiates same-asset L1 -> L2 transfers through the rebalancer's Binance
@@ -35,7 +30,7 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     l1Signer: Signer,
     _l2SignerOrProvider: unknown,
     private readonly l1Token: EvmAddress,
-    private readonly logger: winston.Logger,
+    _logger: winston.Logger,
     // Optional only so the class fits the registry's L1BridgeConstructor shape; getAdapterAndRoute asserts it
     // was supplied.
     private readonly adapterFactory?: (route: RebalanceRoute) => Promise<RebalancerBinanceStablecoinSwapAdapter>
@@ -51,6 +46,14 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     return isDefined(maxAmount) && amount.gt(maxAmount) ? maxAmount : amount;
   }
 
+  /**
+   * One-shot initiation: the returned promise either resolves with the Binance deposit transaction hash or
+   * rejects with no funds moved and no Redis state created. We deliberately treat every Binance-side failure —
+   * capacity, fee cap, withdrawal suspension, API outage, adapter preflight — exactly like a contract bridge
+   * whose submitted transaction failed to mine: the caller's generic failed-send handling applies, its balance
+   * accounting stays conservative for the remainder of the run, and the next inventory update self-corrects.
+   * No decline/rollback classification exists on purpose; the bridge behaves like an atomic contract call.
+   */
   async sendL1ToL2Transfer(
     toAddress: Address,
     l1Token: EvmAddress,
@@ -58,45 +61,19 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
     amount: BigNumber,
     simMode: boolean
   ): Promise<TransactionResponse> {
-    let adapter: RebalancerBinanceStablecoinSwapAdapter;
-    let route: RebalanceRoute;
-    // Everything up to the initiation call is preflight: no funds can have moved, so any failure here (an
-    // unreachable Binance API included) is a decline that lets InventoryClient roll back its balance accounting.
-    try {
-      [adapter, route] = await this.getAdapterAndRoute(l1Token, l2Token);
-      // Binance withdrawals land on the exchange account's withdrawal address, so the only supported recipient is
-      // the signer itself.
-      assert(adapter.baseSignerAddress.eq(toAddress), "Binance withdrawal recipient must match signer");
-      const [pendingOrders, estimatedCost] = await Promise.all([
-        adapter.getPendingOrders(),
-        adapter.getEstimatedCost(route, amount, false),
-      ]);
-      if (pendingOrders.length >= getMaxPendingOrders(adapter.config, "binance")) {
-        throw new BridgeTransferDeclinedError("Too many pending Binance orders to initiate a new transfer");
-      }
-      if (estimatedCost.gt(getMaxFee(amount))) {
-        throw new BridgeTransferDeclinedError("Estimated Binance transfer cost exceeds the maximum fee");
-      }
-    } catch (error) {
-      if (error instanceof BridgeTransferDeclinedError) {
-        throw error;
-      }
-      // An unexpected preflight failure (bad credentials, missing config, API outage) is safe to treat as a
-      // decline, but unlike an expected decline it must be operator-visible: a persistent one silently disables
-      // the route otherwise.
-      this.logger.error({
-        at: "BinanceStablecoinSwapBridge.sendL1ToL2Transfer",
-        message: "Binance transfer preflight failed before submission; declining transfer",
-        l1Token: l1Token.toNative(),
-        l2Token: l2Token.toNative(),
-        amount: amount.toString(),
-        error,
-      });
-      throw new BridgeTransferDeclinedError(
-        `Binance transfer preflight failed before submission: ${error instanceof Error ? error.message : error}`,
-        { cause: error }
-      );
-    }
+    const [adapter, route] = await this.getAdapterAndRoute(l1Token, l2Token);
+    // Binance withdrawals land on the exchange account's withdrawal address, so the only supported recipient is
+    // the signer itself.
+    assert(adapter.baseSignerAddress.eq(toAddress), "Binance withdrawal recipient must match signer");
+    const [pendingOrders, estimatedCost] = await Promise.all([
+      adapter.getPendingOrders(),
+      adapter.getEstimatedCost(route, amount, false),
+    ]);
+    assert(
+      pendingOrders.length < getMaxPendingOrders(adapter.config, "binance"),
+      "Too many pending Binance orders to initiate a new transfer"
+    );
+    assert(estimatedCost.lte(getMaxFee(amount)), "Estimated Binance transfer cost exceeds the maximum fee");
     if (simMode) {
       return { hash: ZERO_BYTES } as TransactionResponse;
     }
@@ -107,9 +84,7 @@ export class BinanceStablecoinSwapBridge extends BaseBridgeAdapter {
       amount,
       { directDepositOnly: true }
     );
-    if (initializedAmount.eq(bnZero)) {
-      throw new BridgeTransferDeclinedError("Binance stablecoin swap adapter declined transfer during initialization");
-    }
+    assert(!initializedAmount.eq(bnZero), "Binance stablecoin swap adapter declined transfer during initialization");
     assert(isDefined(transactionHash), "Binance stablecoin swap adapter did not submit a direct deposit");
     return { hash: transactionHash } as TransactionResponse;
   }

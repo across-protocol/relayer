@@ -337,27 +337,6 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc))).to.equal(initialMainnetBalance);
   });
 
-  it("Rolls back balance accounting for a rebalance declined by the bridge", async function () {
-    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
-    const l1Token = EvmAddress.from(mainnetUsdc);
-    const l2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
-    const initialMainnetBalance = tokenClient.getBalance(CHAIN_IDs.MAINNET, l1Token);
-    adapterManager.declineSend = true;
-
-    await inventoryClient.update();
-    await inventoryClient.rebalanceInventoryIfNeeded();
-
-    expect(tokenClient.getBalance(CHAIN_IDs.MAINNET, l1Token)).to.equal(initialMainnetBalance);
-    expect(
-      crossChainTransferClient.getOutstandingCrossChainTransferAmount(
-        EvmAddress.from(owner.address),
-        ARBITRUM,
-        l1Token,
-        l2Token
-      )
-    ).to.equal(bnZero);
-  });
-
   // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
   // alongside that logic.
   it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {

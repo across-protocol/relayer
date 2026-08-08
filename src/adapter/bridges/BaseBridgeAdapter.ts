@@ -29,10 +29,6 @@ export type BridgeEvent = SortableEvent & {
 
 export type BridgeEvents = { [l2Token: string]: BridgeEvent[] };
 
-// Thrown by bridges that can decline a transfer at submission time without moving any funds, so callers can
-// roll back balance accounting for the declined amount.
-export class BridgeTransferDeclinedError extends Error {}
-
 export abstract class BaseBridgeAdapter {
   protected l1Bridge?: Contract;
   protected l2Bridge?: Contract;
@@ -78,7 +74,8 @@ export abstract class BaseBridgeAdapter {
   getAcceptedL1ToL2TransferAmount?(l1Token: EvmAddress, l2Token: Address, amount: BigNumber): Promise<BigNumber>;
 
   // Bridges that submit through an external venue rather than an L1 contract call implement this instead of
-  // constructL1ToL2Txn. Throws BridgeTransferDeclinedError when the transfer is declined with no funds moved.
+  // constructL1ToL2Txn. The promise is one-shot: it resolves with the venue's transaction reference or rejects
+  // with no funds moved, exactly like a contract transaction that failed to mine.
   sendL1ToL2Transfer?(
     toAddress: Address,
     l1Token: EvmAddress,
