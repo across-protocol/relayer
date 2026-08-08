@@ -324,7 +324,6 @@ describe("Cross Chain Adapter: ZK Stack L2 bridge configuration", function () {
     [CHAIN_IDs.ZK_SYNC]: {
       USDT: ZKStackBridge,
       WBTC: ZKStackBridge,
-      DAI: ZKStackBridge,
       // The native token vault refuses to burn its own WETH_TOKEN, so WETH exits as unwrapped ETH.
       WETH: ZKStackNativeBridge,
       // Left on Binance so that hasBinanceRoute() is unchanged.
