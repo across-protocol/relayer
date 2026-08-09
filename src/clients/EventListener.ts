@@ -131,8 +131,10 @@ export class EventListener extends EventEmitter {
               return;
             }
 
-            if (eventMgr.add(event, provider.name)) {
-              handler(event);
+            // Relay the quorum-validated event, not this provider's copy of it.
+            const quorumEvent = eventMgr.add(event, provider.name);
+            if (isDefined(quorumEvent)) {
+              handler(quorumEvent);
             }
           });
         };

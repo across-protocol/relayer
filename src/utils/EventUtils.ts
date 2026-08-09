@@ -1,5 +1,6 @@
 import assert from "assert";
 import winston from "winston";
+import { BigNumber } from "ethers";
 import { Log as viemLog } from "viem";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { Log } from "../interfaces";
@@ -76,6 +77,9 @@ export function getUniqueLogIndex(events: { txnRef: string }[]): number[] {
 
 type QuorumEvent = Log & { providers: string[] };
 
+// Bound the size of args logged on a quorum conflict; event args (i.e. message) are unbounded.
+const MAX_LOGGED_ARGS_LEN = 1024;
+
 /**
  * EventManager can be used to obtain basic quorum validation of events emitted by multiple providers.
  * This can be useful with WebSockets, where events are emitted asynchronously.
@@ -132,9 +136,9 @@ export class EventManager {
    * rudimentary quorum system to the event and ensures that providers agree on the events being transmitted.
    * @param event Event to be recorded.
    * @param provider A string uniquely identifying the provider that supplied the event.
-   * @returns True when the event reaches quorum.
+   * @returns The quorum-validated event when the event reaches quorum, otherwise undefined.
    */
-  add(event: Log, provider: string): boolean {
+  add(event: Log, provider: string): Log | undefined {
     assert(!event.removed);
 
     const eventKey = this.getEventKey(event);
@@ -146,19 +150,41 @@ export class EventManager {
     // Store or update the set of events for this block number.
     if (!isDefined(storedEvent)) {
       // Event hasn't been seen before, so store it.
-      this._addEvent(eventKey, { ...event, providers: [provider] });
-      return this.quorum === 1;
+      const newEvent = { ...event, providers: [provider] };
+      this._addEvent(eventKey, newEvent);
+      return this.quorum === 1 ? this.quorumEvent(newEvent) : undefined;
     }
 
     if (storedEvent.providers.includes(provider)) {
-      return false;
+      return undefined;
+    }
+
+    // The event key covers on-chain identity only, so a provider can supply a known-good identity alongside
+    // fabricated event arguments. Require the provider to agree on the arguments of the first-seen event
+    // before crediting it towards quorum. Identity fields that providers legitimately disagree on
+    // (blockNumber, transactionIndex) remain excluded - see getEventKey().
+    const [storedArgs, rejectedArgs] = [this.argsKey(storedEvent.args), this.argsKey(event.args)];
+    if (storedArgs !== rejectedArgs) {
+      this.logger.error({
+        at: "EventManager::add",
+        message: `Rejected conflicting ${this.chain} ${event.event} event arguments from ${provider}.`,
+        notificationPath: "across-error",
+        eventKey,
+        provider,
+        quorumProviders: storedEvent.providers,
+        // Truncated; a lying provider controls the size of its own args.
+        storedArgs: storedArgs.slice(0, MAX_LOGGED_ARGS_LEN),
+        rejectedArgs: rejectedArgs.slice(0, MAX_LOGGED_ARGS_LEN),
+      });
+      return undefined;
     }
 
     // Event has been seen before, but not from this provider. Store it.
     storedEvent.providers.push(provider);
 
-    // If the event just hit quorum, notify the caller.
-    return storedEvent.providers.length === this.quorum;
+    // If the event just hit quorum, notify the caller. Always relay the first-seen event, never the caller's
+    // copy; the latter is supplied by whichever provider happened to complete quorum.
+    return storedEvent.providers.length === this.quorum ? this.quorumEvent(storedEvent) : undefined;
   }
 
   /**
@@ -186,5 +212,49 @@ export class EventManager {
   getEventKey(event: Log): string {
     const { event: eventName, blockHash, transactionHash, logIndex } = event;
     return `${eventName}-${blockHash}-${transactionHash}-${logIndex}`;
+  }
+
+  /**
+   * Produce a stable, order-independent representation of a decoded event's arguments. Values are normalised
+   * so that providers disagreeing only on representation (bigint vs. BigNumber vs. number, hex casing) are not
+   * mistaken for providers disagreeing on content. Only hex strings are case-folded; other strings (i.e. base58
+   * addresses on SVM) are case-sensitive.
+   * @param args Decoded event arguments.
+   * @returns A deterministic string representation of args.
+   */
+  argsKey(args: Log["args"]): string {
+    return JSON.stringify(this.normaliseArg(args));
+  }
+
+  private normaliseArg(value: unknown): unknown {
+    if (!isDefined(value)) {
+      return null;
+    }
+    if (BigNumber.isBigNumber(value)) {
+      return value.toString();
+    }
+    // Note: ethers Result instances are arrays with additional named properties duplicating the indexed ones.
+    if (Array.isArray(value)) {
+      return value.map((v) => this.normaliseArg(v));
+    }
+    if (typeof value === "object") {
+      const obj = value as Record<string, unknown>;
+      return Object.fromEntries(
+        Object.keys(obj)
+          .sort()
+          .map((key) => [key, this.normaliseArg(obj[key])])
+      );
+    }
+    if (typeof value === "string") {
+      return /^0x[0-9a-f]*$/i.test(value) ? value.toLowerCase() : value;
+    }
+    return String(value); // bigint, number, boolean.
+  }
+
+  // Strip EventManager-internal bookkeeping before relaying a quorum-validated event to the caller.
+  private quorumEvent(storedEvent: QuorumEvent): Log {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { providers, ...event } = storedEvent;
+    return event;
   }
 }

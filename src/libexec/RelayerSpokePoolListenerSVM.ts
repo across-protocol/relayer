@@ -193,7 +193,8 @@ async function listen(
             .filter(({ name }) => eventNames.includes(name))
             .map((event) => logFromEvent({ ...event, signature, slot: log.context.slot }));
 
-          const quorumEvents = events.filter((event) => eventMgr.add(event, providerName));
+          // Relay the quorum-validated events, not this provider's copies of them.
+          const quorumEvents = events.map((event) => eventMgr.add(event, providerName)).filter(isDefined);
           if (quorumEvents.length > 0 && !postEvents(quorumEvents)) {
             abortController.abort();
           }

@@ -1,4 +1,4 @@
-import { utils as ethersUtils } from "ethers";
+import { BigNumber, utils as ethersUtils } from "ethers";
 import winston from "winston";
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { Log } from "../src/interfaces";
@@ -23,7 +23,13 @@ describe("EventManager: Event Handling ", function () {
     address: randomAddress(),
     data: ethersUtils.id(`EventManager-random-txndata-${randomNumber()}`),
     topics: [makeTopic()],
-    args: {},
+    args: {
+      depositor: randomAddress(),
+      recipient: randomAddress(),
+      inputAmount: BigNumber.from(1_000),
+      outputAmount: BigNumber.from(999),
+      nested: { deadline: 1234, relayers: [randomAddress()] },
+    },
     blockHash: makeHash(),
     event: "randomEvent",
   };
@@ -63,15 +69,15 @@ describe("EventManager: Event Handling ", function () {
     expect(quorum).to.equal(2);
 
     let metQuorum = eventMgr.add(eventTemplate, provider1);
-    expect(metQuorum).to.be.false;
+    expect(metQuorum).to.be.undefined;
 
     // The added event should not be returned despite re-adding the same event.
     metQuorum = eventMgr.add(eventTemplate, provider1);
-    expect(metQuorum).to.be.false;
+    expect(metQuorum).to.be.undefined;
 
     // Add same event from another provider; should have quorum now.
     metQuorum = eventMgr.add(eventTemplate, provider2);
-    expect(metQuorum).to.be.true;
+    expect(metQuorum).to.deep.equal(eventTemplate);
   });
 
   it("Drops removed events before quorum", async function () {
@@ -82,7 +88,7 @@ describe("EventManager: Event Handling ", function () {
 
     // Add the event once (not finalised).
     let metQuorum = eventMgr.add(eventTemplate, provider1);
-    expect(metQuorum).to.be.false;
+    expect(metQuorum).to.be.undefined;
 
     let eventQuorum = eventMgr.getEventQuorum(eventKey);
     expect(eventQuorum).to.equal(1);
@@ -94,7 +100,7 @@ describe("EventManager: Event Handling ", function () {
 
     // Re-add the same event.
     metQuorum = eventMgr.add(eventTemplate, provider1);
-    expect(metQuorum).to.be.false;
+    expect(metQuorum).to.be.undefined;
     eventQuorum = eventMgr.getEventQuorum(eventKey);
     expect(eventQuorum).to.equal(1);
 
@@ -129,18 +135,63 @@ describe("EventManager: Event Handling ", function () {
 
     // Add the event once (not finalised).
     let metQuorum = eventMgr.add(eventTemplate, provider1);
-    expect(metQuorum).to.be.false;
+    expect(metQuorum).to.be.undefined;
 
     // Add the same event from a different provider. Should now meet quorum.
     metQuorum = eventMgr.add(eventTemplate, provider2);
-    expect(metQuorum).to.be.true;
+    expect(metQuorum).to.deep.equal(eventTemplate);
 
     // Re-add the same event again, from two new providers. Does not re-trigger quorum.
     // Verify that the same event was not replayed.
     metQuorum = eventMgr.add(eventTemplate, provider3);
-    expect(metQuorum).to.be.false;
+    expect(metQuorum).to.be.undefined;
 
     metQuorum = eventMgr.add(eventTemplate, provider4);
-    expect(metQuorum).to.be.false;
+    expect(metQuorum).to.be.undefined;
+  });
+
+  it("Rejects providers that disagree on event arguments", async function () {
+    const [provider1, provider2, provider3] = providers;
+    expect(quorum).to.equal(2);
+
+    // An event whose on-chain identity is identical, but whose args were tampered with.
+    const forgedEvent = {
+      ...eventTemplate,
+      args: { ...eventTemplate.args, outputAmount: BigNumber.from(1) },
+    };
+    expect(eventMgr.getEventKey(forgedEvent)).to.equal(eventKey);
+
+    expect(eventMgr.add(eventTemplate, provider1)).to.be.undefined;
+
+    // The forged event matches on identity but not on args, so it must not count towards quorum.
+    expect(eventMgr.add(forgedEvent, provider2)).to.be.undefined;
+    expect(eventMgr.getEventQuorum(eventKey)).to.equal(1);
+
+    // An honest provider still completes quorum, and the first-seen (untampered) event is relayed.
+    expect(eventMgr.add(eventTemplate, provider3)).to.deep.equal(eventTemplate);
+  });
+
+  it("Tolerates provider disagreement on non-arg fields and representation", async function () {
+    const [provider1, provider2] = providers;
+    expect(quorum).to.equal(2);
+
+    // HyperEVM: providers disagree on blockNumber/transactionIndex due to system transactions. They also may
+    // present equivalent args differently (bigint vs. BigNumber, hex casing).
+    const quirkyEvent = {
+      ...eventTemplate,
+      blockNumber: blockNumber + 1,
+      transactionIndex: eventTemplate.transactionIndex + 1,
+      args: {
+        ...eventTemplate.args,
+        depositor: eventTemplate.args.depositor.toLowerCase(),
+        inputAmount: BigInt(eventTemplate.args.inputAmount.toString()),
+      },
+    };
+    expect(eventMgr.getEventKey(quirkyEvent)).to.equal(eventKey);
+
+    expect(eventMgr.add(eventTemplate, provider1)).to.be.undefined;
+
+    // Quorum is met, and the first-seen event (not the last-arriving one) is relayed.
+    expect(eventMgr.add(quirkyEvent, provider2)).to.deep.equal(eventTemplate);
   });
 });
