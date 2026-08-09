@@ -878,7 +878,10 @@ export class InventoryClient {
                   amount = combined;
                 }
               }
-              rebalancesRequired.push({ ...firstShortfall, amount: amount.gt(bnZero) ? amount : firstShortfall.amount });
+              rebalancesRequired.push({
+                ...firstShortfall,
+                amount: amount.gt(bnZero) ? amount : firstShortfall.amount,
+              });
             }
           }
           const inventoryRebalance = this._getPossibleInventoryRebalances(cumulativeBalance, l1Token, chainId, l2Token);
