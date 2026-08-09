@@ -363,6 +363,41 @@ describe("InventoryClient: Rebalancing inventory", function () {
     }
   });
 
+  it("Covers a fundable shortfall when a larger one exceeds the L1 balance", async function () {
+    const l1Token = EvmAddress.from(mainnetUsdc);
+    const l2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
+    inventoryConfig.rebalanceShortfalls = true;
+
+    try {
+      await inventoryClient.update();
+      const l1Balance = tokenClient.getBalance(CHAIN_IDs.MAINNET, l1Token);
+      // The largest shortfall alone exceeds the balance; skipping it must not strand the fundable smaller one.
+      const shortfalls = [l1Balance.mul(2), l1Balance.div(2)];
+      tokenClient.setTokenShortFallData(ARBITRUM, l2Token, [BigNumber.from(1), BigNumber.from(2)], shortfalls);
+
+      const shortfallRebalancesFor = () =>
+        inventoryClient
+          .getPossibleRebalances()
+          .filter(
+            ({ chainId, l2Token: token, isShortfallRebalance }) =>
+              chainId === ARBITRUM && token.eq(l2Token) && isShortfallRebalance
+          );
+
+      let rebalances = shortfallRebalancesFor();
+      expect(rebalances).to.have.lengthOf(1);
+      expect(rebalances[0].amount).to.equal(shortfalls[1]);
+
+      // When no shortfall fits, the largest is emitted so the downstream balance guard rejects and logs it
+      // (never a zero-amount transfer).
+      tokenClient.setTokenShortFallData(ARBITRUM, l2Token, [BigNumber.from(1)], [l1Balance.mul(2)]);
+      rebalances = shortfallRebalancesFor();
+      expect(rebalances).to.have.lengthOf(1);
+      expect(rebalances[0].amount).to.equal(l1Balance.mul(2));
+    } finally {
+      delete inventoryConfig.rebalanceShortfalls;
+    }
+  });
+
   // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
   // alongside that logic.
   it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {
