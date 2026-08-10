@@ -54,7 +54,7 @@ Operational note:
 - Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; current `WETH` routes therefore source or settle through mainnet rather than bridging WETH into another Binance ETH network.
 - Hyperliquid routes intentionally exclude Avalanche, BSC, and Tron USDT endpoints and BSC USDC endpoints because those token/chain combinations cannot bridge through HyperEVM. Same-asset routes involving those endpoints do not use OFT or CCTP.
 
-Same-asset routes have a separate route source in `src/rebalancer/buildSameAssetRebalanceRoutes.ts`. Its read-only `SAME_ASSET_REBALANCE_ROUTE_SUPPORT` catalog is the source of truth for token, destination-chain, and adapter combinations. `buildSameAssetRebalanceRoutes(rebalancerConfig)` returns only the intersection of that catalog and `sameAssetBalances`; adding configuration alone does not enable an unsupported route. Jussi topology preparation consumes this builder so graph edges stay aligned with supported routes.
+Same-asset routes have a separate route source in `src/rebalancer/buildSameAssetRebalanceRoutes.ts`. Its read-only `SAME_ASSET_REBALANCE_ROUTE_SUPPORT` catalog is the source of truth for token, destination-chain, and adapter combinations. `buildSameAssetRebalanceRoutes(rebalancerConfig)` returns only the intersection of that catalog and `sameAssetBalances`; adding configuration alone does not enable an unsupported route.
 
 Same-asset routes are directional. They move an unchanged asset from the hub chain to a configured destination chain through the selected swap-rebalancer adapter. Excess destination-chain inventory moving back to the hub chain remains an InventoryClient responsibility and is not emitted as a reverse same-asset route.
 
@@ -216,7 +216,7 @@ Notes:
 - `cumulativeTargetBalances` define per-token aggregate objectives plus allowed source/destination chain sets for `CumulativeBalanceRebalancerClient.rebalanceInventory()`.
 - `cumulativeTargetBalances[token].chains[chainId]` is a chain priority tier used when selecting where to source excess inventory from and where to land deficit inventory. Lower tiers are preferred for sourcing; higher tiers are preferred for destinations.
 - `sameAssetBalances[token].chains` enables destination chains for the AdapterManager's Binance swap bridge routes (`buildAdapterManagerBinanceRoutes`); InventoryConfig supplies the per-chain target and threshold used to decide whether a transfer is needed. Values in this chain map are enablement markers after parsing, not route-ranking inputs.
-- A same-asset entry becomes executable only when it is also registered in `CUSTOM_BRIDGE` (for runtime initiation) or the support catalog (for Jussi graph edges). The configured source and destination must also be present for that token in InventoryConfig when the route is included in a Jussi graph.
+- A same-asset entry becomes executable only when it is also registered in `CUSTOM_BRIDGE` (for runtime initiation).
 - `chainIds` are derived from the union of chains found in `cumulativeTargetBalances` and `sameAssetBalances`, with the hub chain included when `sameAssetBalances` is configured.
 
 For an operator playbook on sizing these values from expected deposit fills, see
