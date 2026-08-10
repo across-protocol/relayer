@@ -25,7 +25,7 @@ All modes start with `prepareGraphTopology`, a pure step that parses relayer/reb
 The prepared route set has three sources:
 
 - cumulative-mode swap and same-asset routes from `buildRebalanceRoutes(rebalancerConfig)`;
-- dedicated SameAsset-mode routes from `buildSameAssetRebalanceRoutes(rebalancerConfig)`, filtered by the supported-route catalog and `sameAssetBalances` configuration;
+- same-asset routes from `buildSameAssetRebalanceRoutes(rebalancerConfig)`, filtered by the supported-route catalog and `sameAssetBalances` configuration (runtime initiation is owned by the AdapterManager's Binance swap bridge, not a dedicated rebalancer mode);
 - bridge-derived routes discovered from the InventoryConfig-backed graph nodes by `buildBridgeAdapterRoutes(...)`.
 
 Every endpoint of a configured SameAsset route must already be materialized in the graph node set. The hub source may use the neutral logical-asset node that Jussi always materializes; every non-hub endpoint must be explicitly managed by InventoryConfig. Topology preparation fails with route, token, and chain context when a required node is missing; it does not synthesize an unconfigured destination or silently omit the route. This keeps the graph aligned with both operator intent in RebalancerConfig and the inventory locations that the relayer actually manages.
