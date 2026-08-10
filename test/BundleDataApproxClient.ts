@@ -54,8 +54,10 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
     });
 
   let l1Weth: EvmAddress, relayer: EvmAddress, l1Usdc: EvmAddress;
+  let depositIdCounter = 0;
 
   beforeEach(async function () {
+    depositIdCounter = 0;
     [owner] = await ethers.getSigners();
     ({ spyLogger } = createSpyLogger());
     l1Weth = toAddressType(mainnetWeth, MAINNET);
@@ -128,6 +130,36 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
     }
   });
 
+  /**
+   * Emit the deposit that `fill` claims to fill, on the fill's origin chain. A fill is only counted as an
+   * upcoming refund if it can be matched to a real deposit, so any test that expects a fill to be counted has
+   * to emit its deposit too. Every RelayData field must match for the relay hashes to agree.
+   */
+  async function emitMatchingDeposit(fill: interfaces.FillWithBlock): Promise<void> {
+    const originSpokePoolClient = spokePoolClients[fill.originChainId] as unknown as MockSpokePoolClient;
+    originSpokePoolClient.deposit({
+      depositId: fill.depositId,
+      originChainId: fill.originChainId,
+      destinationChainId: fill.destinationChainId,
+      depositor: fill.depositor,
+      recipient: fill.recipient,
+      inputToken: fill.inputToken,
+      inputAmount: fill.inputAmount,
+      outputToken: fill.outputToken,
+      outputAmount: fill.outputAmount,
+      fillDeadline: fill.fillDeadline,
+      exclusivityDeadline: fill.exclusivityDeadline,
+      exclusiveRelayer: fill.exclusiveRelayer,
+      message: "0x",
+      messageHash: fill.messageHash,
+      quoteTimestamp: getCurrentTime(),
+      blockNumber: originSpokePoolClient.latestHeightSearched,
+      txnIndex: 0,
+      logIndex: 0,
+    } as interfaces.DepositWithBlock);
+    await originSpokePoolClient.update(["FundsDeposited"]);
+  }
+
   async function generateFill(
     inputTokenSymbol: "USDC" | "WETH",
     originChainId: number,
@@ -137,7 +169,7 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
   ): Promise<interfaces.Log> {
     const destinationChainId = repaymentChainId;
     const spokePoolClient = spokePoolClients[repaymentChainId];
-    const newEvent = (spokePoolClient as unknown as MockSpokePoolClient).fillRelay({
+    const fill = {
       message: "0x",
       messageHash: ZERO_BYTES,
       inputToken: toAddressType(
@@ -152,7 +184,8 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       depositor: toAddressType(owner.address, originChainId),
       recipient: toAddressType(owner.address, destinationChainId),
       exclusivityDeadline: getCurrentTime() + 14400,
-      depositId: bnZero,
+      // Unique per fill so that each fill matches its own deposit rather than sharing a relay hash.
+      depositId: toBN(depositIdCounter++),
       exclusiveRelayer: toAddressType(relayer, originChainId),
       inputAmount,
       outputAmount: inputAmount,
@@ -171,7 +204,9 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
         updatedOutputAmount: toWei(1),
         fillType: interfaces.FillType.FastFill,
       },
-    } as interfaces.FillWithBlock);
+    } as interfaces.FillWithBlock;
+    await emitMatchingDeposit(fill);
+    const newEvent = (spokePoolClient as unknown as MockSpokePoolClient).fillRelay(fill);
     await spokePoolClient.update(["FilledRelay"]);
     return newEvent;
   }
@@ -236,6 +271,56 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       expect(wethRefunds3[MAINNET][owner.address]).to.be.undefined;
       expect(wethRefunds3[OPTIMISM][owner.address]).to.be.undefined;
       expect(wethRefunds3[BSC][owner.address]).to.be.undefined;
+    });
+
+    it("Ignores fills that cannot be matched to a deposit on the origin chain", async function () {
+      const fromBlocks = uniformFromBlocks([MAINNET, OPTIMISM, BSC, POLYGON], 1);
+
+      // `fillRelay` accepts arbitrary relayData — the destination SpokePool never checks it against an
+      // origin-chain deposit — and the `relayer` it emits is the caller-supplied repaymentAddress. So anyone
+      // can emit a FilledRelay naming someone else's relayer address with an arbitrary inputAmount, for the
+      // price of gas. Such a fill is never refunded by the dataworker, so it must not be counted here.
+      const spokePoolClient = spokePoolClients[MAINNET];
+      const phantomFill = {
+        message: "0x",
+        messageHash: ZERO_BYTES,
+        inputToken: toAddressType(mainnetWeth, MAINNET),
+        outputToken: toAddressType(mainnetWeth, MAINNET),
+        destinationChainId: MAINNET,
+        depositor: toAddressType(randomAddress(), MAINNET),
+        recipient: toAddressType(randomAddress(), MAINNET),
+        exclusivityDeadline: getCurrentTime() + 14400,
+        depositId: toBN(depositIdCounter++),
+        exclusiveRelayer: toAddressType(owner.address, MAINNET),
+        inputAmount: toWei(1_000_000),
+        // The attacker parts with dust; only inputAmount is credited.
+        outputAmount: bnZero,
+        fillDeadline: getCurrentTime() + 14400,
+        blockNumber: spokePoolClient.latestHeightSearched,
+        txnIndex: 0,
+        logIndex: 0,
+        txnRef: "0x",
+        // Spoofed: the victim relayer's address.
+        relayer,
+        originChainId: MAINNET,
+        repaymentChainId: MAINNET,
+        relayExecutionInfo: {
+          updatedRecipient: toAddressType(owner.address, MAINNET),
+          updatedMessage: "0x",
+          updatedMessageHash: ZERO_BYTES,
+          updatedOutputAmount: bnZero,
+          fillType: interfaces.FillType.FastFill,
+        },
+      } as interfaces.FillWithBlock;
+      // Deliberately no matching deposit.
+      (spokePoolClient as unknown as MockSpokePoolClient).fillRelay(phantomFill);
+      await spokePoolClient.update(["FilledRelay"]);
+
+      const wethRefunds = bundleDataClient.getApproximateRefundsForToken(
+        toAddressType(mainnetWeth, MAINNET),
+        fromBlocks
+      );
+      expect(wethRefunds[MAINNET][relayer.toNative()]).to.be.undefined;
     });
   });
 
@@ -321,7 +406,7 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       // Fill with the second contributor token on Optimism, repaid on Optimism.
       // Use the raw MockSpokePoolClient.fillRelay to specify a custom inputToken.
       const spokePoolClient = spokePoolClients[OPTIMISM];
-      (spokePoolClient as unknown as MockSpokePoolClient).fillRelay({
+      const fill = {
         message: "0x",
         messageHash: ZERO_BYTES,
         inputToken: toAddressType(nativeUsdcOnOptimism, OPTIMISM),
@@ -330,7 +415,7 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
         depositor: toAddressType(owner.address, OPTIMISM),
         recipient: toAddressType(owner.address, OPTIMISM),
         exclusivityDeadline: getCurrentTime() + 14400,
-        depositId: bnZero,
+        depositId: toBN(depositIdCounter++),
         exclusiveRelayer: toAddressType(owner.address, OPTIMISM),
         inputAmount: fillAmount2,
         outputAmount: fillAmount2,
@@ -349,7 +434,9 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
           updatedOutputAmount: fillAmount2,
           fillType: interfaces.FillType.FastFill,
         },
-      } as interfaces.FillWithBlock);
+      } as interfaces.FillWithBlock;
+      await emitMatchingDeposit(fill);
+      (spokePoolClient as unknown as MockSpokePoolClient).fillRelay(fill);
       await spokePoolClient.update(["FilledRelay"]);
 
       bundleDataClient.initialize();
@@ -455,7 +542,7 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
       // This simulates a fill like the 100K USDT deposits from BSC→Ethereum with BSC repayment.
       const fillAmount = toWei(1);
       const mainnetSpokePoolClient = spokePoolClients[MAINNET] as unknown as MockSpokePoolClient;
-      mainnetSpokePoolClient.fillRelay({
+      const fill = {
         message: "0x",
         messageHash: ZERO_BYTES,
         inputToken: toAddressType(l2TokensForWeth[BSC], BSC),
@@ -464,7 +551,7 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
         depositor: toAddressType(owner.address, BSC),
         recipient: toAddressType(owner.address, MAINNET),
         exclusivityDeadline: getCurrentTime() + 14400,
-        depositId: bnZero,
+        depositId: toBN(depositIdCounter++),
         exclusiveRelayer: toAddressType(owner.address, BSC),
         inputAmount: fillAmount,
         outputAmount: fillAmount,
@@ -483,7 +570,10 @@ describe("BundleDataApproxClient: Accounting for unexecuted, upcoming relayer re
           updatedOutputAmount: fillAmount,
           fillType: interfaces.FillType.FastFill,
         },
-      } as interfaces.FillWithBlock);
+      } as interfaces.FillWithBlock;
+      // The deposit lives on BSC, the fill's origin chain.
+      await emitMatchingDeposit(fill);
+      mainnetSpokePoolClient.fillRelay(fill);
       await spokePoolClients[MAINNET].update(["FilledRelay"]);
 
       bundleDataClient.initialize();

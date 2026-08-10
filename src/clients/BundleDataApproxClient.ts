@@ -4,7 +4,7 @@
  */
 
 import { SpokePoolManager } from ".";
-import { SpokePoolClientsByChain } from "../interfaces";
+import { DepositWithBlock, FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import {
   assert,
   BigNumber,
@@ -85,6 +85,7 @@ export class BundleDataApproxClient {
     fromBlocks: { [chainId: number]: { [chainId: number]: number } }
   ): { [repaymentChainId: number]: { [relayer: string]: BigNumber } } {
     const refundsForChain: { [repaymentChainId: number]: { [relayer: string]: BigNumber } } = {};
+    let unmatchedFills = 0;
     for (const chainId of this.chainIdList) {
       refundsForChain[chainId] ??= {};
       const spokePoolClient = this.spokePoolManager.getClient(chainId);
@@ -96,6 +97,16 @@ export class BundleDataApproxClient {
         // Filter based on the repayment chain's execution state: a fill on chain X with repayment on
         // chain Y should only be excluded when chain Y's refund leaf has been executed.
         if (blockNumber < (fromBlocks[repaymentChainId]?.[chainId] ?? 0)) {
+          return;
+        }
+
+        // A FilledRelay event on its own is not evidence of an upcoming refund. `fillRelay` accepts arbitrary
+        // relayData and never checks it against an origin-chain deposit, and the `relayer` it emits is the
+        // caller-supplied `repaymentAddress` rather than msg.sender. A refund is only ever paid out if the
+        // dataworker can match the fill to a real deposit, so apply that same rule here. Without it, anyone
+        // can book an arbitrary `inputAmount` against any relayer address for the price of gas.
+        if (!isDefined(this.getMatchingDeposit(fill))) {
+          unmatchedFills++;
           return;
         }
 
@@ -120,7 +131,29 @@ export class BundleDataApproxClient {
           refundsForChain[repaymentChainId][relayer.toNative()].add(refundAmount);
       });
     }
+    if (unmatchedFills > 0) {
+      // Expected in normal operation for fills whose deposit predates the origin SpokePoolClient's lookback,
+      // which makes this client under-count rather than over-count. Logged so that a sustained rise — either
+      // too short a lookback or someone spamming unmatchable fills — is visible.
+      this.logger.debug({
+        at: "BundleDataApproxClient#getApproximateRefundsForToken",
+        message: "Ignored fills that could not be matched to a deposit on their origin chain",
+        l1Token: l1Token.toNative(),
+        unmatchedFills,
+      });
+    }
     return refundsForChain;
+  }
+
+  /**
+   * Match a fill to the deposit it claims to fill, mirroring the matching that the dataworker's
+   * BundleDataClient performs when constructing the refunds that actually get paid. `getDepositForFill` is an
+   * in-memory lookup keyed by the full relay hash, followed by `validateFillForDeposit`, so this adds no RPC.
+   * @param fill Fill to match.
+   * @returns The matching deposit, or undefined if the fill does not correspond to a known deposit.
+   */
+  protected getMatchingDeposit(fill: FillWithBlock): DepositWithBlock | undefined {
+    return this.spokePoolManager.getClient(fill.originChainId)?.getDepositForFill(fill);
   }
 
   // For each chain, find the last executed (or relayed) bundle and return a 2D mapping of start blocks:
