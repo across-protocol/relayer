@@ -5,7 +5,7 @@ and executes them, replacing the polling bot in [`../deposit-address`](../deposi
 left untouched until cutover. Why a service rather than a poller:
 [#3663](https://github.com/across-protocol/relayer/issues/3663).
 
-> **Shell only.** Validation, routing, the Redis lock, durable state and execution land in later PRs.
+> **Shell only.** The Redis lock, durable state and execution land in later PRs.
 > With no handler configured, or `EXECUTION_ENABLED` unset, the service **NACKs every delivery** and
 > `/ready` stays `503`, so nothing is discarded if a subscription is attached early.
 
@@ -13,7 +13,11 @@ left untouched until cutover. Why a service rather than a poller:
 
 `decodePushDelivery` validates the Pub/Sub transport contract once and yields a `PushDelivery` — decoded
 `payload`, required `messageId`, always-present `attributes` — so nothing downstream optional-chains
-transport fields. Payload validation is PR 2's job.
+transport fields.
+
+`parseTransfer` in [`message.ts`](./message.ts) then validates the **payload** and returns its
+`transferId` and route. Pure, no I/O. Not yet wired into a handler — there is nothing to do with the
+result until the execution paths land, and a handler that ACKed without executing would discard work.
 
 Handlers take one `RequestContext` (`delivery`, `startedAtMs`, `deadlineAtMs`, `signal`) and are
 **constructed once** with logger, config and shared clients closed over. Deliberate: the nonce cache
