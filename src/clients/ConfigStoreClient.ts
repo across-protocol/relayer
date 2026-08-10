@@ -11,6 +11,10 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
       }
     | undefined;
 
+  // Set once an on-chain CHAIN_ID_INDICES update supersedes the injected chain, so that the
+  // override is logged loudly but only once per process rather than on every update cycle.
+  private injectionSuperseded = false;
+
   constructor(
     readonly logger: winston.Logger,
     readonly configStore: Contract,
@@ -48,11 +52,13 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
     if (isDefined(injectedChain)) {
       // Track the initial length of the chain id indices updates
       const initialLength = this.chainIdIndicesUpdates.length;
-      // Because this chain is `injected` we know that it doesn't occur
-      // on-chain, and therefore we just need to remove it altogether
-      // wherever an instance of it appears.
+      // Identify the synthetic entry by the marker this class stamps on it below (an empty txnRef at
+      // the injected block number), not by chain ID membership. CHAIN_ID_INDICES is append-only, so
+      // once the chain is genuinely onboarded a real on-chain update will also contain
+      // injectedChain.chainId; a membership test would delete that real event, and super.update()
+      // cannot restore it because its search window has already advanced past that block.
       this.chainIdIndicesUpdates = this.chainIdIndicesUpdates.filter(
-        ({ value }) => !value.includes(injectedChain.chainId)
+        ({ txnRef, blockNumber }) => !(txnRef === "" && blockNumber === injectedChain.blockNumber)
       );
       if (this.chainIdIndicesUpdates.length !== initialLength) {
         this.logger.debug({
@@ -74,12 +80,22 @@ export class ConfigStoreClient extends clients.AcrossConfigStoreClient {
         });
         return;
       }
-      // Sanity check to ensure that the injected chain id is not already included
+      // The injected chain is already present in an on-chain CHAIN_ID_INDICES update. That key is
+      // append-only, so a chain can never be appended to it twice: the on-chain event is authoritative
+      // and supersedes the locally-configured injection. Leave the real update in place and stop
+      // injecting. Log this loudly (once) because it means INJECT_CHAIN_ID_INCLUSION is now stale.
       if (this.chainIdIndicesUpdates.some(({ value }) => value.includes(injectedChainId))) {
-        this.logger.debug({
-          at: "ConfigStore[Relayer]#update",
-          message: `Injected chain id ${injectedChainId} is already included`,
-        });
+        if (!this.injectionSuperseded) {
+          this.injectionSuperseded = true;
+          this.logger.warn({
+            at: "ConfigStore[Relayer]#update",
+            message:
+              `On-chain CHAIN_ID_INDICES update already includes injected chain ${injectedChainId}; ` +
+              "the on-chain config overrides INJECT_CHAIN_ID_INCLUSION, which should now be unset. " +
+              "This variable is for testing only and must not be set in production.",
+            injectedChain: this.injectedChain,
+          });
+        }
         return;
       }
 
