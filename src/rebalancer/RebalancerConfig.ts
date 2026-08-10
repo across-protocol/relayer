@@ -24,7 +24,8 @@ import { assert, BigNumber, isDefined, readFileSync, toBNWei, getTokenInfoFromSy
  *
  * - cumulativeTargetBalance values are human-readable amounts (e.g. "100" for 100 USDT) and will be
  *   converted to the token's native decimals on the respective chain.
- * - sameAssetBalances chains enable each chain + token combination we want to support in the same asset rebalancer.
+ * - sameAssetBalances chains enable each chain + token combination we want to support for same-asset transfers
+ *   through the AdapterManager's Binance swap bridge routes (and the corresponding Jussi graph edges).
  *   Target and threshold amounts are implied by the inventory config used by the InventoryClient. Chains listed
  *   should only be L2 chains that we want to rebalance from L1 to. L2->L1 is delegated to the InventoryClient.
  * - priorityTiers are essentially numbers that you assign to a chain based on how important it is to hold
