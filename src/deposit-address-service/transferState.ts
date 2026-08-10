@@ -3,7 +3,12 @@ import { Infer, create, enums, integer, literal, min, string, type, union } from
 import { RedisCacheInterface } from "../cache/Redis";
 import { TransactionReceipt } from "../utils";
 import { isDefined } from "../utils/TypeGuards";
-import { CorruptTransferStateError, IllegalStateTransitionError, StatePersistenceError } from "./errors";
+import {
+  CorruptTransferStateError,
+  IllegalStateTransitionError,
+  StatePersistenceError,
+  TransientDependencyError,
+} from "./errors";
 
 /** Long enough that a dead consumer's lock lapses, short enough that the transfer is not stuck for long. */
 const LOCK_TTL_MS = 600_000;
@@ -59,6 +64,25 @@ export function isTerminal(state: TransferState): state is TerminalState {
 }
 
 /**
+ * Whether `terminal` may replace what is already recorded.
+ *
+ * A pending record may only be replaced by the outcome of **its own** transaction. The hash comes from
+ * the terminal record rather than a parameter, so a mismatched one cannot be passed in. `withdraw_failed`
+ * carries no hash and therefore can never replace a pending broadcast — that transaction may still land.
+ * An identical outcome is idempotent; a different one is refused.
+ *
+ * This matters because a worker can outlive its lock: nothing threads the application deadline into
+ * `TransactionClient`, whose confirmation wait resubmits with a decrementing `maxTries`, so on mainnet it
+ * can occupy a worker for far longer than the 600s lock TTL.
+ */
+function canReplace(current: TransferState, terminal: TerminalState): boolean {
+  if (isTerminal(current)) {
+    return current.status === terminal.status;
+  }
+  return "txHash" in terminal && current.txHash === terminal.txHash;
+}
+
+/**
  * What a receipt says about a broadcast transaction. Facts only — whether each means ACK, NACK, clear or
  * persist is retry policy, and belongs with the orchestration that also holds the lock.
  *
@@ -108,13 +132,19 @@ export class TransferStore {
    */
   async acquireLock(transferId: string): Promise<TransferLock | undefined> {
     const token = randomUUID();
-    const acquired = await this.redis.acquireLock(this.lockKey(transferId), token, LOCK_TTL_MS);
+    const key = this.lockKey(transferId);
+    const acquired = await this.command("acquireLock", transferId, () =>
+      this.redis.acquireLock(key, token, LOCK_TTL_MS)
+    );
     if (!acquired) {
       return undefined;
     }
 
     // Token-checked, so a lapsed attempt cannot delete the lock a later one now holds.
-    return { transferId, release: () => this.redis.releaseLock(this.lockKey(transferId), token) };
+    return {
+      transferId,
+      release: () => this.command("releaseLock", transferId, () => this.redis.releaseLock(key, token)),
+    };
   }
 
   /**
@@ -122,7 +152,7 @@ export class TransferStore {
    * describe a transfer already swept, so the transfer stays blocked until someone looks.
    */
   async read(transferId: string): Promise<TransferState | undefined> {
-    const raw = await this.redis.get<string>(this.stateKey(transferId));
+    const raw = await this.command("get", transferId, () => this.redis.get<string>(this.stateKey(transferId)));
     if (!isDefined(raw)) {
       return undefined;
     }
@@ -153,8 +183,21 @@ export class TransferStore {
     await this.write(transferId, { status: "broadcast_pending", ...pending }, Number.POSITIVE_INFINITY);
   }
 
-  /** Written once the outcome is known. The polling bot's executed set, per transfer. */
+  /**
+   * Written once the outcome is known. The polling bot's executed set, per transfer.
+   *
+   * Refuses anything {@link canReplace} rejects: a worker whose lock lapsed must not write its own
+   * transaction's outcome over a newer pending one, and `withdraw_failed` must not erase a broadcast that
+   * may still land.
+   */
   async recordTerminal(transferId: string, terminal: TerminalState): Promise<void> {
+    const current = await this.read(transferId);
+    if (isDefined(current) && !canReplace(current, terminal)) {
+      throw new IllegalStateTransitionError(
+        `refusing to write ${terminal.status} over ${current.status} for ${transferId}`
+      );
+    }
+
     await this.write(transferId, terminal, TERMINAL_TTL_SECONDS);
   }
 
@@ -175,7 +218,7 @@ export class TransferStore {
       return false;
     }
 
-    await this.redis.del(this.stateKey(transferId));
+    await this.command("del", transferId, () => this.redis.del(this.stateKey(transferId)));
     return true;
   }
 
@@ -184,10 +227,28 @@ export class TransferStore {
    * and a caller that proceeded to await confirmation would believe a hash was durable when it was not.
    */
   private async write(transferId: string, state: TransferState, expirySeconds: number): Promise<void> {
-    const reply = await this.redis.set(this.stateKey(transferId), JSON.stringify(state), expirySeconds);
+    const reply = await this.command("set", transferId, () =>
+      this.redis.set(this.stateKey(transferId), JSON.stringify(state), expirySeconds)
+    );
     if (reply !== "OK") {
       throw new StatePersistenceError(
         `redis did not acknowledge ${state.status} for ${transferId} (replied ${JSON.stringify(reply)})`
+      );
+    }
+  }
+
+  /**
+   * Rejections from Redis become {@link TransientDependencyError}. Without this the raw client error
+   * escapes, and since an unrecognised throw is treated as alerting, an ordinary Redis outage would page
+   * on every delivery instead of taking the debug-level retry path it belongs on.
+   */
+  private async command<T>(name: string, transferId: string, op: () => Promise<T>): Promise<T> {
+    try {
+      return await op();
+    } catch (err) {
+      throw new TransientDependencyError(
+        `redis ${name} failed for ${transferId}: ${err instanceof Error ? err.message : String(err)}`,
+        err
       );
     }
   }

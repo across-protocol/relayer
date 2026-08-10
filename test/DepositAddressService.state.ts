@@ -22,7 +22,7 @@ const EXECUTED: TerminalState = {
 };
 
 /** Only the commands the store issues. `satisfies` keeps it honest without a cast. */
-function fakeRedis(seed: Array<[string, string]> = [], opts: { setFails?: boolean } = {}) {
+function fakeRedis(seed: Array<[string, string]> = [], opts: { setFails?: boolean; rejects?: boolean } = {}) {
   const store = new Map<string, string>(seed);
   const ttls = new Map<string, number>();
   const redis = {
@@ -42,6 +42,9 @@ function fakeRedis(seed: Array<[string, string]> = [], opts: { setFails?: boolea
       return true;
     },
     async get<T>(key?: string) {
+      if (opts.rejects) {
+        throw new Error("READONLY You can't write against a read only replica");
+      }
       return (store.get(key ?? "") ?? null) as T | null;
     },
     async set<T>(key: string, val: T, expirySeconds?: number) {
@@ -216,6 +219,86 @@ describe("TransferStore state", function () {
     await store.recordBroadcast(TRANSFER, PENDING);
 
     expect([...backing.keys()].sort()).to.deep.equal([LOCK_KEY, STATE_KEY].sort());
+  });
+});
+
+describe("TransferStore terminal guards", function () {
+  it("records a terminal outcome over the pending record it belongs to", async function () {
+    const store = new TransferStore(fakeRedis().redis);
+    await store.recordBroadcast(TRANSFER, PENDING);
+
+    await store.recordTerminal(TRANSFER, EXECUTED);
+    expect((await store.read(TRANSFER))?.status).to.equal("deposit_executed");
+  });
+
+  it("refuses a terminal outcome for a different transaction than the pending one", async function () {
+    // A worker whose lock lapsed must not write h1's outcome over a newer pending h2.
+    const store = new TransferStore(fakeRedis().redis);
+    await store.recordBroadcast(TRANSFER, { ...PENDING, txHash: "0xh2" });
+
+    await store.recordTerminal(TRANSFER, EXECUTED).then(
+      () => expect.fail("expected a refusal"),
+      (err: Error) => expect(err.message).to.contain("refusing to write deposit_executed over broadcast_pending")
+    );
+    const state = await store.read(TRANSFER);
+    expect(state?.status).to.equal("broadcast_pending");
+    expect(state && "txHash" in state && state.txHash).to.equal("0xh2");
+  });
+
+  it("refuses withdraw_failed over a pending broadcast that may still land", async function () {
+    // It carries no hash, so it can never be the outcome of the transaction on the wire.
+    const store = new TransferStore(fakeRedis().redis);
+    await store.recordBroadcast(TRANSFER, { ...PENDING, operation: "withdraw" });
+
+    await store
+      .recordTerminal(TRANSFER, {
+        status: "withdraw_failed",
+        code: "GAS_EXCEEDS_REFUND",
+        reason: "dust",
+        recordedAtMs: 1,
+      })
+      .then(
+        () => expect.fail("expected a refusal"),
+        (err: Error) => expect(err.message).to.contain("refusing to write withdraw_failed over broadcast_pending")
+      );
+    expect((await store.read(TRANSFER))?.status).to.equal("broadcast_pending");
+  });
+
+  it("refuses to replace one terminal outcome with a different one", async function () {
+    const store = new TransferStore(fakeRedis().redis);
+    await store.recordTerminal(TRANSFER, EXECUTED);
+
+    await store.recordTerminal(TRANSFER, { ...EXECUTED, status: "withdraw_executed" }).then(
+      () => expect.fail("expected a refusal"),
+      (err: Error) => expect(err.message).to.contain("refusing to write withdraw_executed over deposit_executed")
+    );
+  });
+
+  it("records withdraw_failed when nothing was broadcast", async function () {
+    const store = new TransferStore(fakeRedis().redis);
+    await store.recordTerminal(TRANSFER, {
+      status: "withdraw_failed",
+      code: "UNPRICEABLE_REFUND_TOKEN",
+      reason: "no price",
+      recordedAtMs: 1,
+    });
+    expect((await store.read(TRANSFER))?.status).to.equal("withdraw_failed");
+  });
+});
+
+describe("TransferStore redis failures", function () {
+  it("reports a rejected redis command as a transient dependency failure", async function () {
+    // Otherwise the raw client error escapes, and an unrecognised throw alerts — so an ordinary Redis
+    // outage would page on every delivery instead of taking the debug-level retry path.
+    const store = new TransferStore(fakeRedis([], { rejects: true }).redis);
+    await store.read(TRANSFER).then(
+      () => expect.fail("expected a failure"),
+      (err: Error & { code?: string; retriable?: boolean }) => {
+        expect(err.code).to.equal("TRANSIENT_DEPENDENCY_FAILURE");
+        expect(err.retriable).to.equal(true);
+        expect(err.message).to.contain("redis get failed");
+      }
+    );
   });
 });
 
