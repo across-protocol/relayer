@@ -23,24 +23,6 @@ they fill via `fillRelayWithUpdatedDeposit` — so a speed-up can't redirect fun
 consulted; it's user-set on the origin chain and spoofable. Message deposits are gated by recipient like any other:
 allow-list the executing contract (e.g. `MulticallHandler`) to accept them, or leave it off the list to drop them.
 
-### Address denylist
-
-`CommonConfig::update` aggregates a denylist of addresses the bots refuse to serve from two sources:
-
-- a local JSON file at `ADDRESS_FILTER_PATH` (default `./addresses.json`), and
-- the remote Risk Labs list (5s timeout).
-
-`Relayer::filterDeposit` drops any deposit whose depositor or recipient is on the list, and the dataworker
-applies the same check before executing a slow fill leaf. `DISABLE_ADDRESS_FILTER=true` skips the update
-entirely and leaves the bot unfiltered.
-
-The relayer loads the list during init and refreshes it every 30s; the dataworker loads it once at startup.
-A failed update retains the previous list, falling back to the local file alone when there is nothing to
-retain (i.e. on a fresh start).
-
-`OSTIUM_ADDRESS_FILTER_URL` is no longer read. The Ostium list was dropped along with the generic HTTP
-adapter it required, so the variable can be removed from deployment environments.
-
 ### Allowed swap routes (in-protocol swaps)
 
 Inventory JSON lists fillable cross-asset routes in `allowedSwapRoutes` (v1) or `allowedSwapRoutes2` (v2), selected
