@@ -108,8 +108,9 @@ async function processUnderLock(
   lock: TransferLock
 ): Promise<HandlerResult> {
   const { store } = deps;
-  const { transferId, route, message } = parsed;
-  const originChainId = Number(message.erc20Transfer.chainId);
+  const { transferId, message } = parsed;
+  const { chainId, transferClassification } = message.erc20Transfer;
+  const originChainId = Number(chainId);
   const provider = await (deps.getProvider ?? getProviderDefault)(originChainId);
 
   const current = await store.read(transferId);
@@ -121,9 +122,13 @@ async function processUnderLock(
     return reconcileBroadcast({ logger: deps.logger, store, provider }, transferId, current);
   }
 
-  if (route !== "deposit") {
+  // Switched on the indexer's own classification rather than a deposit/withdraw label decided at parse time:
+  // a `correct_transfer` the execute endpoint rejects as below the minimum becomes a refund withdraw too, so
+  // the action is not knowable here. `intent_refund` was already rejected by `parseTransfer`.
+  if (transferClassification === "mis_route") {
     throw new WithdrawRouteNotImplementedError(
-      `transfer ${transferId} routes to ${route}, which is not implemented in this build`
+      `transfer ${transferId} is a ${transferClassification} and needs a refund withdraw, which is not ` +
+        "implemented in this build"
     );
   }
 
