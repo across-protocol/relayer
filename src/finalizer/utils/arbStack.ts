@@ -27,6 +27,7 @@ import {
   assert,
   isDefined,
   isEVMSpokePoolClient,
+  Address,
   EvmAddress,
 } from "../../utils";
 import { getRedisCache } from "../../cache/Redis";
@@ -146,14 +147,27 @@ export async function arbStackFinalizer(
       to: latestBlockToFinalize,
     }
   );
+  // @dev Anyone can withdraw an arbitrary token to an address we finalize for, so an unrecognised token must not
+  // stall the queue. The token is only used to label the finalization; it is not an input to the Outbox proof.
+  const unknownTokenWithdrawals: { l1Token: string; to: string; amount: string; txnRef: string }[] = [];
   const _withdrawalEvents = [
     ...withdrawalErc20Events.map((e) => {
+      const l1Token = EvmAddress.from(e.args.l1Token);
       const l2Token = getL2TokenAddresses(e.args.l1Token)?.[chainId];
-      assert(isDefined(l2Token), `Missing L2 token mapping for L1 token ${e.args.l1Token} on chain ${chainId}`);
+      if (!isDefined(l2Token)) {
+        unknownTokenWithdrawals.push({
+          l1Token: e.args.l1Token,
+          to: e.args._to,
+          amount: e.args._amount.toString(),
+          txnRef: e.transactionHash,
+        });
+      }
       return {
         ...e,
         amount: e.args._amount,
-        l2TokenAddress: EvmAddress.from(l2Token),
+        // @dev An unmapped token has no known L2 address, so fall back to the L1 address to keep the withdrawal
+        // identifiable in logs. Nothing downstream reads this to build the finalization.
+        l2TokenAddress: isDefined(l2Token) ? EvmAddress.from(l2Token) : l1Token,
       };
     }),
     ...withdrawalNativeEvents.map((e) => {
@@ -166,30 +180,45 @@ export async function arbStackFinalizer(
       };
     }),
   ];
+  // @dev Deliberately not routed to across-error: anyone can mint this condition on demand, so paging on it would
+  // hand out a notification-spam primitive. It stays a warn so log-based alerting can still key off it if wanted.
+  if (unknownTokenWithdrawals.length > 0) {
+    logger.warn({
+      at: `Finalizer#${networkName}Finalizer`,
+      message: `Finalizing ${unknownTokenWithdrawals.length} ${networkName} withdrawal(s) of unrecognised token(s) 🚩`,
+      unknownTokenWithdrawals,
+    });
+  }
+
   // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
   // submit proofs and finalizations for.
   _withdrawalEvents.forEach(({ transactionHash, transactionIndex, ...event }) => {
-    try {
-      const tokenBridgedEvent: TokensBridged = {
-        ...event,
-        amountToReturn: event.amount,
-        chainId,
-        leafId: 0,
-        l2TokenAddress: event.l2TokenAddress,
-        txnRef: transactionHash,
-        txnIndex: transactionIndex,
-      };
-      withdrawalEvents.push(tokenBridgedEvent);
-    } catch {
-      logger.debug({
-        at: `Finalizer#${networkName}Finalizer`,
-        message: `Skipping ERC20 withdrawal event for unknown token ${event.l2TokenAddress} on chain ${networkName}`,
-        event: event,
-      });
-    }
+    const tokenBridgedEvent: TokensBridged = {
+      ...event,
+      amountToReturn: event.amount,
+      chainId,
+      leafId: 0,
+      l2TokenAddress: event.l2TokenAddress,
+      txnRef: transactionHash,
+      txnIndex: transactionIndex,
+    };
+    withdrawalEvents.push(tokenBridgedEvent);
   });
 
   return await multicallArbitrumFinalizations(withdrawalEvents, signer, hubPoolClient, logger, chainId);
+}
+
+/**
+ * Resolve token metadata for the finalization log line. The Outbox proof is built from the L2 message alone, so a
+ * token we can't describe must degrade the label rather than abort the batch. The fallback decimals only keep the
+ * logged amount readable; treat it as indicative for an unrecognised token.
+ */
+function describeToken(l2TokenAddress: Address, chainId: number): { symbol: string; decimals: number } {
+  try {
+    return getTokenInfo(l2TokenAddress, chainId);
+  } catch {
+    return { symbol: "UNKNOWN", decimals: 18 };
+  }
 }
 
 async function multicallArbitrumFinalizations(
@@ -202,7 +231,7 @@ async function multicallArbitrumFinalizations(
   const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner, chainId);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message, chainId)));
   const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
-    const { symbol, decimals } = getTokenInfo(l2TokenAddress, chainId);
+    const { symbol, decimals } = describeToken(l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: chainId,
