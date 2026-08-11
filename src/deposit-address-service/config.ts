@@ -1,4 +1,7 @@
 import { ProcessEnv } from "../common";
+import { DEFAULT_CONFIRMATION_TRIES as CLIENT_CONFIRMATION_TRIES } from "../clients/TransactionClient";
+import { parseJson } from "../utils";
+import { LOCK_TTL_MS } from "./transferState";
 
 /**
  * The Cloud Run request timeout this service is **provisioned with**, not a platform default — Cloud Run
@@ -15,6 +18,23 @@ const DEFAULT_APPLICATION_DEADLINE_MS = 480_000;
 const DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS = 8_000;
 const DEFAULT_PORT = 8080;
 const MAX_PORT = 65_535;
+
+/**
+ * How many confirmation attempts a broadcast gets. Not a wait count: each timeout that resubmits recurses with
+ * one fewer try, so the worst case is `M(M+1)/2` waits of the chain's confirmation cadence (24s on mainnet).
+ *
+ * 4 ⇒ ≤10 waits ⇒ ~240s, which fits inside {@link DEFAULT_CONFIRM_BUDGET_MS}. `TransactionClient`'s own
+ * default of 10 would be 55 waits — ~22 minutes — outliving both the application deadline and the lock, which
+ * is why raising this past the client's default is refused.
+ */
+const DEFAULT_CONFIRMATION_TRIES = 4;
+
+/**
+ * Time to reserve for the confirmation that runs *after* the deadline check, plus gas re-estimation on each
+ * resubmit. Its only job is to keep the lock TTL wide enough to cover a broadcast that starts just inside the
+ * deadline; see the invariant in the constructor.
+ */
+const DEFAULT_CONFIRM_BUDGET_MS = 300_000;
 
 function readBoolean(value: string | undefined): boolean {
   return value === "true";
@@ -61,9 +81,22 @@ export class DepositAddressServiceConfig {
 
   readonly shutdownDrainTimeoutMs: number;
 
+  /**
+   * Origin chains this service will execute on. Reuses `RELAYER_ORIGIN_CHAINS`, the same variable the polling
+   * bot reads, so no new configuration is needed to run both during migration — and so a chain can be turned
+   * off without redeploying the indexer.
+   */
+  readonly originChains: number[];
+
+  /** Passed to `AugmentedTransaction.maxTries`. See {@link DEFAULT_CONFIRMATION_TRIES}. */
+  readonly confirmationTries: number;
+
+  readonly confirmBudgetMs: number;
+
   constructor(env: ProcessEnv) {
     this.port = readInteger("PORT", env.PORT, DEFAULT_PORT, MAX_PORT);
     this.executionEnabled = readBoolean(env.EXECUTION_ENABLED);
+    this.originChains = parseJson.numberArray(env.RELAYER_ORIGIN_CHAINS);
 
     this.applicationDeadlineMs = readInteger(
       "APPLICATION_DEADLINE_MS",
@@ -80,5 +113,33 @@ export class DepositAddressServiceConfig {
       DEFAULT_SHUTDOWN_DRAIN_TIMEOUT_MS,
       CLOUD_RUN_SIGTERM_GRACE_MS - 1
     );
+
+    this.confirmationTries = readInteger(
+      "CONFIRMATION_TRIES",
+      env.CONFIRMATION_TRIES,
+      DEFAULT_CONFIRMATION_TRIES,
+      CLIENT_CONFIRMATION_TRIES
+    );
+
+    this.confirmBudgetMs = readInteger(
+      "CONFIRM_BUDGET_MS",
+      env.CONFIRM_BUDGET_MS,
+      DEFAULT_CONFIRM_BUDGET_MS,
+      LOCK_TTL_MS - 1
+    );
+
+    // The load-bearing relation, asserted rather than left as a comment.
+    //
+    // `assertBeforeDeadline` bounds when a broadcast *begins*; the confirmation wait runs after it. So a
+    // broadcast starting just inside the deadline finishes at `deadline + confirmBudget`, and if the lock has
+    // lapsed by then two consumers can be working one transfer. The lock is never renewed — a Cloud Run 504
+    // does not stop handler code — so the TTL is the only thing covering that overhang.
+    if (LOCK_TTL_MS < this.applicationDeadlineMs + this.confirmBudgetMs) {
+      throw new Error(
+        `lock TTL (${LOCK_TTL_MS}ms) must cover APPLICATION_DEADLINE_MS (${this.applicationDeadlineMs}ms) plus ` +
+          `CONFIRM_BUDGET_MS (${this.confirmBudgetMs}ms); a broadcast beginning just inside the deadline would ` +
+          "otherwise outlive its lock"
+      );
+    }
   }
 }

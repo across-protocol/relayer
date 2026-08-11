@@ -1,0 +1,606 @@
+import { AddressInfo } from "net";
+import { Server } from "http";
+import { expect, winston } from "./utils";
+import { AcrossApiHttpError } from "../src/clients/AcrossApiBaseClient";
+import { AcrossSwapApiClient, DepositAddressExecuteResponse } from "../src/clients/AcrossSwapApiClient";
+import { AugmentedTransaction, TransactionClient } from "../src/clients/TransactionClient";
+import {
+  CHAIN_IDs,
+  EvmAddress,
+  Provider,
+  TransactionReceipt,
+  TransactionResponse,
+  Wallet,
+  ethers,
+  toBN,
+} from "../src/utils";
+import { createApp } from "../src/deposit-address-service/app";
+import { DepositAddressServiceConfig } from "../src/deposit-address-service/config";
+import { createDepositHandler } from "../src/deposit-address-service/depositHandler";
+import { RequestLifecycle } from "../src/deposit-address-service/lifecycle";
+import { TransferStore, TransferStoreRedis } from "../src/deposit-address-service/transferState";
+
+/**
+ * The v3 deposit execute path over the real Express boundary and the real store, with only the chain, the
+ * quote-api and the submission client faked. Every case below is a failure point from the plan's verification
+ * list, and each asserts the **queue disposition** as well as the state left in Redis, because those two
+ * together are what stop a transfer being swept twice.
+ */
+describe("DepositAddressService v3 deposit execution", function () {
+  const ARBITRUM = CHAIN_IDs.ARBITRUM;
+  const FUNDING_TX = "0xa3f1c7d40e9b6852f1ad0c3b7e94f628a1d5c09e3b7a2d8f4c6e1b0a9d8c7f6e5";
+  const FUNDING_BLOCK = 312884201;
+  const DEPOSIT_ADDRESS = "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984";
+  const USDC = "0xaf88d065e77c8cC2239327C5EDb3A432268e5831";
+  const TRANSFER_ID = `${ARBITRUM}:${FUNDING_TX}:7`;
+  const STATE_KEY = `deposit-address:state:${TRANSFER_ID}`;
+  const LOCK_KEY = `deposit-address:lock:${TRANSFER_ID}`;
+  const AMOUNT = "10000000";
+  const EXECUTE_HASH = "0xbb11c7d40e9b6852f1ad0c3b7e94f628a1d5c09e3b7a2d8f4c6e1b0a9d8c7f600";
+  const SIGNER_NONCE = 41;
+  const METADATA_TOPIC = ethers.utils.id("MetadataEmitted(bytes)");
+
+  let server: Server;
+  let baseUrl: string;
+  let logs: { level: string; payload: Record<string, unknown> }[];
+  let redisStore: Map<string, string>;
+  let signerAddress: string;
+
+  /** What the fake chain reports. Each test reshapes only the part it is about. */
+  let chain: {
+    fundingReceipt: TransactionReceipt | null;
+    balance: string;
+    executeReceipt: TransactionReceipt | null;
+    latestNonce: number;
+    receiptError?: Error;
+    nonceError?: Error;
+  };
+
+  /** What the fake submission client does once it has been handed the transaction. */
+  let submission: { mode: "broadcast" | "throwBeforeBroadcast" | "throwAfterBroadcast" | "noHash"; hash: string };
+
+  /** What the quote-api answers. */
+  let quote: { response?: Partial<DepositAddressExecuteResponse>; error?: Error };
+
+  function message(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      depositAddress: DEPOSIT_ADDRESS,
+      version: 3,
+      salt: "0x00",
+      initialRoot: "0x00",
+      counterfactualBeaconContractAddress: "0x00000000000000000000000000000000000000b1",
+      counterfactualFactoryContractAddress: "0x00000000000000000000000000000000000000f1",
+      adminWithdrawManagerContractAddress: "0x00000000000000000000000000000000000000a1",
+      shouldSponsorAccountCreation: false,
+      counterfactualMaterials: [],
+      depositAddressNamespace: "evm",
+      refundAddress: { namespace: "evm", address: "0x9A6e5F1B8C7D0E3a2b4c5D6e7F8A9b0c1D2E3f40" },
+      routeParams: {
+        outputToken: USDC,
+        destinationChainId: "8453",
+        recipient: { namespace: "evm", address: "0x9A6e5F1B8C7D0E3a2b4c5D6e7F8A9b0c1D2E3f40" },
+      },
+      erc20Transfer: {
+        chainId: String(ARBITRUM),
+        blockNumber: FUNDING_BLOCK,
+        logIndex: 7,
+        from: "0x9A6e5F1B8C7D0E3a2b4c5D6e7F8A9b0c1D2E3f40",
+        to: DEPOSIT_ADDRESS,
+        amount: AMOUNT,
+        contractAddress: USDC,
+        transactionHash: FUNDING_TX,
+        transferClassification: "correct_transfer",
+      },
+      integrator: { name: "test", integratorId: "0x1dc0" },
+      ...over,
+    };
+  }
+
+  function receipt(over: Partial<TransactionReceipt> = {}): TransactionReceipt {
+    return { blockNumber: FUNDING_BLOCK, status: 1, logs: [], ...over } as TransactionReceipt;
+  }
+
+  function recordingLogger(): winston.Logger {
+    const record = (level: string) => (payload: Record<string, unknown>) => void logs.push({ level, payload });
+    return {
+      debug: record("debug"),
+      info: record("info"),
+      warn: record("warn"),
+      error: record("error"),
+    } as unknown as winston.Logger;
+  }
+
+  /** Only the commands `TransferStore` issues, so this can `satisfies` rather than be cast. */
+  function fakeRedis(): TransferStoreRedis {
+    return {
+      async acquireLock(key: string, token: string) {
+        if (redisStore.has(key)) {
+          return false;
+        }
+        redisStore.set(key, token);
+        return true;
+      },
+      async releaseLock(key: string, token: string) {
+        if (redisStore.get(key) !== token) {
+          return false;
+        }
+        redisStore.delete(key);
+        return true;
+      },
+      async get<T>(key?: string) {
+        return (redisStore.get(key ?? "") ?? null) as T | null;
+      },
+      async set<T>(key: string, val: T) {
+        redisStore.set(key, String(val));
+        return "OK";
+      },
+      async del(key: string) {
+        return redisStore.delete(key) ? 1 : 0;
+      },
+    } satisfies TransferStoreRedis;
+  }
+
+  /**
+   * A real `JsonRpcProvider` with its methods replaced, not a plain object: `new Contract(addr, abi, provider)`
+   * checks `Provider.isProvider()`, so a bare fake would make every non-native balance read throw and look like
+   * a transient RPC failure rather than exercising the guard.
+   */
+  function fakeProvider(): Provider {
+    const provider = new ethers.providers.JsonRpcProvider("http://127.0.0.1:1/never-called");
+    return Object.assign(provider, {
+      getTransactionReceipt: async (hash: string) => {
+        if (chain.receiptError) {
+          throw chain.receiptError;
+        }
+        // The funding lookup and the execute lookup share this method; distinguish by hash.
+        return hash.toLowerCase() === FUNDING_TX ? chain.fundingReceipt : chain.executeReceipt;
+      },
+      getBalance: async () => toBN(chain.balance),
+      getTransactionCount: async () => {
+        if (chain.nonceError) {
+          throw chain.nonceError;
+        }
+        return chain.latestNonce;
+      },
+      // `readDepositAddressBalance` reads a real ERC20 contract for non-native tokens: answer `balanceOf`.
+      call: async () => ethers.utils.defaultAbiCoder.encode(["uint256"], [toBN(chain.balance)]),
+      getNetwork: async () => ({ chainId: ARBITRUM, name: "arbitrum" }),
+    }) as unknown as Provider;
+  }
+
+  /**
+   * Stands in for `TransactionClient` at the two methods `submitTransaction` uses. Crucially it invokes
+   * `onBroadcast` exactly where the real client does — once the hash exists and **before** the confirmation
+   * wait — so the tests exercise the seam the design depends on rather than a convenient approximation.
+   */
+  function fakeTransactionClient(): TransactionClient {
+    return {
+      async simulate(txns: AugmentedTransaction[]) {
+        return txns.map((transaction) => ({ transaction, succeed: true }));
+      },
+      async submit(_chainId: number, txns: AugmentedTransaction[]) {
+        const txn = txns[0];
+        if (submission.mode === "throwBeforeBroadcast") {
+          throw new Error("nonce too low");
+        }
+
+        const response = {
+          hash: submission.hash,
+          nonce: SIGNER_NONCE,
+          from: signerAddress,
+        } as unknown as TransactionResponse;
+        await txn.onBroadcast?.(response);
+
+        if (submission.mode === "throwAfterBroadcast") {
+          throw new Error("Arbitrum transaction reverted");
+        }
+        // An empty array is what `submit()` returns when `_submit` threw; `submitTransaction` turns it into a
+        // generic Error, which is precisely why the outcome is read from the chain instead.
+        return submission.mode === "noHash" ? [] : [response];
+      },
+    } as unknown as TransactionClient;
+  }
+
+  function fakeApi(): AcrossSwapApiClient {
+    return {
+      async executeDepositAddress(): Promise<DepositAddressExecuteResponse> {
+        if (quote.error) {
+          throw quote.error;
+        }
+        return {
+          depositAddress: DEPOSIT_ADDRESS,
+          executeTx: {
+            ecosystem: "evm",
+            chainId: ARBITRUM,
+            to: "0x0000000000000000000000000000000000000ca1",
+            data: "0xdeadbeef",
+            value: "0",
+          },
+          signer: signerAddress,
+          signatureDeadline: Math.floor(Date.now() / 1000) + 600,
+          isPlaceholder: false,
+          ...quote.response,
+        };
+      },
+    } as unknown as AcrossSwapApiClient;
+  }
+
+  function pushBody(payload: Record<string, unknown>): string {
+    return JSON.stringify({
+      message: {
+        data: Buffer.from(JSON.stringify(payload), "utf8").toString("base64"),
+        messageId: "msg-4412",
+        publishTime: "2026-08-11T10:00:00.000Z",
+      },
+      subscription: "projects/p/subscriptions/s",
+    });
+  }
+
+  async function post(payload: Record<string, unknown>): Promise<Response> {
+    return fetch(baseUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: pushBody(payload),
+    });
+  }
+
+  function state(): Record<string, unknown> | undefined {
+    const raw = redisStore.get(STATE_KEY);
+    return raw === undefined ? undefined : JSON.parse(raw);
+  }
+
+  function lastLine(): Record<string, unknown> {
+    expect(logs.length).to.be.greaterThan(0);
+    return logs[logs.length - 1].payload;
+  }
+
+  /** The structured failure block from the one log line. Named `failure`, not `error`, so the logger keeps it. */
+  function failure(): Record<string, unknown> {
+    const block = lastLine().failure;
+    expect(block, "expected a failure block on the outcome line").to.not.equal(undefined);
+    return block as Record<string, unknown>;
+  }
+
+  beforeEach(async function () {
+    logs = [];
+    redisStore = new Map();
+    chain = {
+      fundingReceipt: receipt(),
+      balance: AMOUNT,
+      executeReceipt: receipt({ blockNumber: FUNDING_BLOCK + 10, logs: [{ topics: [METADATA_TOPIC] }] as never }),
+      latestNonce: SIGNER_NONCE,
+    };
+    submission = { mode: "broadcast", hash: EXECUTE_HASH };
+    quote = {};
+
+    const baseSigner = Wallet.createRandom();
+    signerAddress = await baseSigner.getAddress();
+
+    const logger = recordingLogger();
+    const config = new DepositAddressServiceConfig({
+      EXECUTION_ENABLED: "true",
+      RELAYER_ORIGIN_CHAINS: `[${ARBITRUM}]`,
+    } as never);
+
+    const handler = createDepositHandler({
+      logger,
+      config,
+      store: new TransferStore(fakeRedis()),
+      api: fakeApi(),
+      transactionClient: fakeTransactionClient(),
+      baseSigner,
+      signerAddress: EvmAddress.from(signerAddress),
+      dispatcherSigners: [],
+      getProvider: async () => fakeProvider(),
+    });
+
+    const app = createApp({ logger, config, lifecycle: new RequestLifecycle(), handler });
+    server = app.listen(0, "127.0.0.1");
+    await new Promise((resolve) => server.once("listening", resolve));
+    baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
+  });
+
+  afterEach(function () {
+    server?.close();
+  });
+
+  describe("the happy path", function () {
+    it("executes, records deposit_executed and ACKs", async function () {
+      const response = await post(message());
+
+      expect(response.status).to.equal(204);
+      expect(state()).to.deep.include({
+        status: "deposit_executed",
+        txHash: EXECUTE_HASH,
+        chainId: ARBITRUM,
+        blockNumber: FUNDING_BLOCK + 10,
+      });
+      expect(lastLine()).to.include({ outcome: "deposit_executed", metadataEmitted: true });
+    });
+
+    // The lock is what stops two live consumers both passing the guards; holding it after a finished request
+    // would block the transfer for the whole TTL for nothing.
+    it("releases the lock on the way out", async function () {
+      await post(message());
+      expect(redisStore.has(LOCK_KEY)).to.equal(false);
+    });
+
+    it("warns but still records the sweep when the provenance event is missing", async function () {
+      chain.executeReceipt = receipt({ blockNumber: FUNDING_BLOCK + 10, logs: [] as never });
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(204);
+      // Never a cause of re-execution: the funds have already moved.
+      expect(state()).to.include({ status: "deposit_executed" });
+      expect(logs.some((l) => l.level === "warn")).to.equal(true);
+      expect(lastLine()).to.include({ metadataEmitted: false });
+    });
+  });
+
+  describe("broadcast_pending is durable before the confirmation wait", function () {
+    it("records the hash, signer and nonce from the onBroadcast hook", async function () {
+      // Left unresolved so the record is observed as the hook wrote it, before any terminal write.
+      chain.executeReceipt = null;
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.deep.include({
+        status: "broadcast_pending",
+        txHash: EXECUTE_HASH,
+        from: signerAddress,
+        nonce: SIGNER_NONCE,
+      });
+    });
+
+    // Nothing reached the wire, so there is nothing to reconcile and nothing to record.
+    it("writes no state when submission fails before any broadcast", async function () {
+      submission.mode = "throwBeforeBroadcast";
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "TRANSIENT_DEPENDENCY_FAILURE" });
+    });
+  });
+
+  describe("the outcome comes from the chain, not the exception", function () {
+    // `submit()` flattens revert, exhausted retries and RPC failure into one untyped Error, so a throw with a
+    // hash in hand means "ask the chain", not "assume the worst".
+    it("still records success when submission throws after the transaction confirmed", async function () {
+      submission.mode = "throwAfterBroadcast";
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(204);
+      expect(state()).to.include({ status: "deposit_executed" });
+    });
+
+    it("clears the record and NACKs on an on-chain revert", async function () {
+      chain.executeReceipt = receipt({ blockNumber: FUNDING_BLOCK + 10, status: 0 });
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      // Nothing moved, so the transfer may be attempted again.
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "BROADCAST_REVERTED" });
+    });
+
+    it("retains the record and NACKs while a transaction might still land", async function () {
+      chain.executeReceipt = null;
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.include({ status: "broadcast_pending" });
+      expect(failure()).to.include({ code: "UNRESOLVED_BROADCAST" });
+    });
+
+    it("retains the record when the receipt lookup itself fails", async function () {
+      // An RPC failure is not evidence of anything. Guessing "gone" here is the irreversible direction.
+      chain.receiptError = new Error("upstream connect error");
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(failure()).to.include({ code: "TRANSIENT_DEPENDENCY_FAILURE" });
+    });
+  });
+
+  describe("a replaced transaction is recognised rather than stranded", function () {
+    // The accepted nonce race leaves losers behind a hash that never mines. Without this they would NACK every
+    // 60s until retention expired, leaving a no-TTL key nobody looks at.
+    it("clears the record and re-attempts when the nonce was spent by another transaction", async function () {
+      chain.executeReceipt = null;
+      chain.latestNonce = SIGNER_NONCE + 1;
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "REPLACED_BROADCAST" });
+    });
+
+    it("retains the record while the nonce is still unspent", async function () {
+      chain.executeReceipt = null;
+      chain.latestNonce = SIGNER_NONCE;
+
+      await post(message());
+
+      expect(state()).to.include({ status: "broadcast_pending" });
+    });
+
+    it("retains the record rather than guessing when the nonce read fails", async function () {
+      // Only the nonce read fails; the receipt lookup still answers "not mined". Cannot tell replaced from
+      // in-flight, so the safe direction is to keep the record.
+      chain.executeReceipt = null;
+      chain.nonceError = new Error("rate limited");
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.include({ status: "broadcast_pending" });
+      expect(failure()).to.include({ code: "TRANSIENT_DEPENDENCY_FAILURE" });
+    });
+  });
+
+  describe("redelivery", function () {
+    it("ACKs a transfer that already reached a terminal state without touching the chain", async function () {
+      redisStore.set(
+        STATE_KEY,
+        JSON.stringify({
+          status: "deposit_executed",
+          txHash: EXECUTE_HASH,
+          chainId: ARBITRUM,
+          blockNumber: FUNDING_BLOCK + 10,
+          completedAtMs: 1_700_000_000_000,
+        })
+      );
+      // Would fail every guard if the path were re-entered.
+      chain.fundingReceipt = null;
+      chain.balance = "0";
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(204);
+      expect(lastLine()).to.include({ outcome: "already_deposit_executed" });
+    });
+
+    it("reconciles a pending record instead of re-executing", async function () {
+      redisStore.set(
+        STATE_KEY,
+        JSON.stringify({
+          status: "broadcast_pending",
+          operation: "deposit",
+          txHash: EXECUTE_HASH,
+          chainId: ARBITRUM,
+          submittedAtMs: 1_700_000_000_000,
+          from: signerAddress,
+          nonce: SIGNER_NONCE,
+        })
+      );
+      // A second broadcast would answer with this hash; the recorded one is what must be resolved.
+      submission.hash = "0xdeadbeef";
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(204);
+      expect(state()).to.include({ status: "deposit_executed", txHash: EXECUTE_HASH });
+    });
+
+    it("NACKs while another consumer holds the lock", async function () {
+      redisStore.set(LOCK_KEY, "some-other-attempt-uuid");
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "LOCK_CONTENTION" });
+    });
+  });
+
+  describe("guards that need the chain", function () {
+    // Ordered before the balance check on purpose: this one can tell a real funding transfer from money that
+    // merely happens to be sitting at a shared-pot address.
+    it("ACKs a transfer whose funding transaction is mined at a different block", async function () {
+      chain.fundingReceipt = receipt({ blockNumber: FUNDING_BLOCK + 1 });
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(204);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "NON_CANONICAL_TRANSFER" });
+    });
+
+    // Ambiguous between reorged-away and our RPC lagging the indexer, and re-reading a receipt is harmless —
+    // so this must NOT ACK, or every lag would silently discard a live transfer.
+    it("NACKs when the funding transaction is not yet visible", async function () {
+      chain.fundingReceipt = null;
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(failure()).to.include({ code: "TRANSIENT_DEPENDENCY_FAILURE" });
+    });
+
+    it("ACKs and writes no state when the balance is short", async function () {
+      chain.balance = "9999999";
+
+      const response = await post(message());
+
+      // ACK deliberately: without a dead-letter topic a NACK would retry a condition that may never clear.
+      expect(response.status).to.equal(204);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "INSUFFICIENT_BALANCE" });
+    });
+
+    it("does not reach the balance check when canonicality fails", async function () {
+      chain.fundingReceipt = receipt({ blockNumber: FUNDING_BLOCK + 1 });
+      chain.balance = "0";
+
+      const response = await post(message());
+
+      expect(failure()).to.include({ code: "NON_CANONICAL_TRANSFER" });
+      expect(response.status).to.equal(204);
+    });
+  });
+
+  describe("quote-api outcomes", function () {
+    it("NACKs a below-minimum rejection until the withdraw fallback exists", async function () {
+      quote.error = new AcrossApiHttpError("amount below minimum", 422, "AMOUNT_BELOW_MINIMUM");
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "AMOUNT_BELOW_MINIMUM" });
+    });
+
+    it("NACKs any other quote failure", async function () {
+      quote.error = new Error("gateway timeout");
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(failure()).to.include({ code: "TRANSIENT_DEPENDENCY_FAILURE" });
+    });
+
+    it("NACKs a response whose derived address is not the funded one", async function () {
+      quote.response = { depositAddress: "0x00000000000000000000000000000000000000ff" };
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "INVALID_EXECUTE_RESPONSE" });
+    });
+  });
+
+  describe("routing", function () {
+    it("NACKs a mis_route until the withdraw path exists", async function () {
+      const misRoute = message({
+        erc20Transfer: { ...(message().erc20Transfer as object), transferClassification: "mis_route" },
+      });
+
+      const response = await post(misRoute);
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "WITHDRAW_ROUTE_NOT_IMPLEMENTED" });
+    });
+
+    it("ACKs an origin chain that is not enabled", async function () {
+      const otherChain = message({
+        erc20Transfer: { ...(message().erc20Transfer as object), chainId: String(CHAIN_IDs.BASE) },
+      });
+
+      const response = await post(otherChain);
+
+      expect(response.status).to.equal(204);
+      expect(failure()).to.include({ code: "UNSUPPORTED_ORIGIN_CHAIN" });
+    });
+  });
+});
