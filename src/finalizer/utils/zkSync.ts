@@ -163,7 +163,7 @@ async function getEOAWithdrawals(
         l2TokenAddress: EvmAddress.from(l2TokenAddress),
         txnRef: transactionHash,
         txnIndex: transactionIndex,
-      } as TokensBridged,
+      },
     ];
   });
 }
