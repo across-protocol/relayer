@@ -210,7 +210,12 @@ async function broadcast(
   const useDispatcher = deps.dispatcherSigners.length > 0;
   const destinationChainId = Number(message.routeParams.destinationChainId);
 
+  // Assigned **before** the Redis write, not after. The hook's rejection is swallowed by
+  // `TransactionClient`, so a write failure that also lost the hash would leave a confirmed transaction with
+  // no record anywhere and a redelivery free to sweep again — the failure this service exists to close.
+  // Holding the hash means the confirmed path still reaches `recordTerminal`, which supersedes this record.
   let pending: BroadcastPendingState | undefined;
+  let persisted = false;
   const txn: AugmentedTransaction = {
     contract: executeContract(deps.baseSigner, provider, executeTx.to, originChainId, useDispatcher),
     method: "",
@@ -226,15 +231,18 @@ async function broadcast(
       `${blockExplorerLink(message.depositAddress, originChainId)}`,
     onBroadcast: async (tx) => {
       // Re-entered on every hash change, so the record always names the transaction `TransactionClient` is
-      // currently tracking rather than one it replaced.
-      const record: Omit<BroadcastPendingState, "status"> = {
+      // currently tracking rather than one it replaced. `persisted` resets per entry: a hash that persisted
+      // does not vouch for the replacement that followed it.
+      pending = {
+        status: "broadcast_pending",
         operation: "deposit",
         txHash: tx.hash,
         chainId: originChainId,
         submittedAtMs: Date.now(),
       };
-      await store.recordBroadcast(transferId, record);
-      pending = { status: "broadcast_pending", ...record };
+      persisted = false;
+      await store.recordBroadcast(transferId, pending);
+      persisted = true;
     },
   };
 
@@ -265,6 +273,24 @@ async function broadcast(
     // A hash-less success should be impossible — `submitTransaction` throws on an empty response — but the
     // record is what makes a broadcast recoverable, so treat its absence as "did not happen" rather than assume.
     throw new TransientDependencyError(`execute for ${transferId} produced no transaction hash`);
+  }
+
+  if (!persisted) {
+    // The hook's write failed and `TransactionClient` swallowed it. Retry here, where it is not swallowed —
+    // but **best-effort**: a failure must not stop us reaching `recordTerminal`, which supersedes this record
+    // entirely. Throwing here when the transaction has already confirmed would leave it unrecorded, which is
+    // the very outcome this retry exists to avoid. A persistent Redis outage surfaces from the terminal write.
+    try {
+      await store.recordBroadcast(transferId, pending);
+    } catch (err) {
+      logger.warn({
+        at: "DepositAddressService#broadcast",
+        message: "Could not persist broadcast_pending; resolving against the chain regardless.",
+        transferId,
+        txHash: pending.txHash,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
   return pending;
 }

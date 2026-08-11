@@ -88,6 +88,15 @@ Instead the path uses the broadcast-only helpers underneath it plus two optional
   again on every hash change — so the record always names the live transaction rather than one the client
   replaced at the same nonce. Its rejections are swallowed by the shared client, deliberately: the
   transaction is on the wire, and losing the record must not lose the transaction.
+
+  **The hash is captured before the write, not after** — the single most load-bearing line ordering in this
+  file. Because the shared client swallows the hook's rejection, capturing after a successful write would
+  mean a Redis blip silently discarded the hash, `resolvePendingTransaction` was never reached, and a
+  *confirmed* sweep went unrecorded — the exact failure this service exists to close. After submission the
+  write is retried once, where it is no longer swallowed, but **best-effort**: throwing there would skip
+  `recordTerminal`, which supersedes `broadcast_pending` anyway and is the stronger record of the two.
+  `DepositAddressService.deposit.ts` pins it — both writes fail, the transaction confirms,
+  `deposit_executed` is still recorded.
 - **`maxTries: 4`** bounds the wait. The client's default of 10 is `M(M+1)/2` = 55 waits — ~22 minutes on
   mainnet — outliving both the deadline and the lock.
 

@@ -46,6 +46,9 @@ describe("DepositAddressService v3 deposit execution", function () {
   let redisStore: Map<string, string>;
   let signerAddress: string;
 
+  /** How many of the next `set` calls reject. Models a Redis blip across the broadcast. */
+  let redisFaults: { setFailures: number };
+
   /** What the fake chain reports. Each test reshapes only the part it is about. */
   let chain: {
     fundingReceipt: TransactionReceipt | null;
@@ -130,6 +133,10 @@ describe("DepositAddressService v3 deposit execution", function () {
         return (redisStore.get(key ?? "") ?? null) as T | null;
       },
       async set<T>(key: string, val: T) {
+        if (redisFaults.setFailures > 0) {
+          redisFaults.setFailures -= 1;
+          throw new Error("READONLY You can't write against a read only replica");
+        }
         redisStore.set(key, String(val));
         return "OK";
       },
@@ -258,6 +265,7 @@ describe("DepositAddressService v3 deposit execution", function () {
   beforeEach(async function () {
     logs = [];
     redisStore = new Map();
+    redisFaults = { setFailures: 0 };
     chain = {
       fundingReceipt: receipt(),
       balance: AMOUNT,
@@ -346,6 +354,34 @@ describe("DepositAddressService v3 deposit execution", function () {
         txHash: EXECUTE_HASH,
         chainId: ARBITRUM,
       });
+    });
+
+    // The regression test for the failure this whole service exists to close. `TransactionClient` swallows a
+    // failing onBroadcast hook, so if the hash were only captured *after* a successful write, a Redis blip
+    // would leave a confirmed sweep with no record anywhere — and a redelivery free to sweep the next
+    // unrelated transfer's money with the same calldata. Both set calls fail here (the hook's and the
+    // post-submit retry's), so nothing is recorded until the terminal write.
+    it("records the terminal state when both pending writes failed but the transaction confirmed", async function () {
+      redisFaults.setFailures = 2;
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(204);
+      expect(state()).to.include({ status: "deposit_executed", txHash: EXECUTE_HASH });
+      // The swallowed write is visible, rather than silent.
+      expect(logs.some((l) => l.level === "warn")).to.equal(true);
+    });
+
+    it("retries the pending write after submission when the hook's write failed", async function () {
+      // Only the hook's write fails; the retry lands. Left unresolved so the retry's result is what is observed.
+      redisFaults.setFailures = 1;
+      chain.executeReceipt = null;
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      // Durable before the NACK, so the redelivery resolves this hash instead of re-executing.
+      expect(state()).to.include({ status: "broadcast_pending", txHash: EXECUTE_HASH });
     });
 
     // Nothing reached the wire, so there is nothing to reconcile and nothing to record.
