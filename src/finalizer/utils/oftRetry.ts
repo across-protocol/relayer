@@ -89,7 +89,7 @@ export async function oftRetryFinalizer(
       assert(chainIsEvm(destinationChainId), `Cannot replay LZ messages on non-EVM chain ${destinationChainId}`);
 
       // @dev Last entry: LZ appends an entry per execution attempt, so the most recent one is the live failure.
-      const failedTx = message.destination.failedTx.at(-1);
+      const failedTx = message.destination?.failedTx?.at(-1);
       assert(isDefined(failedTx), `oftRetry: message ${message.source.tx} has no failed destination transaction`);
 
       const { txHash } = failedTx;
