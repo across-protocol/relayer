@@ -158,6 +158,8 @@ export async function arbStackFinalizer(
         unknownTokenWithdrawals.push({
           l1Token: e.args.l1Token,
           to: e.args._to,
+          // @dev Stringified deliberately: the logger stringifies BigNumbers itself, but does so via
+          // Object.fromEntries(), which would collapse this array into an object keyed "0", "1", ...
           amount: e.args._amount.toString(),
           txnRef: e.transactionHash,
         });
