@@ -54,6 +54,7 @@ import {
   OpStackUSDCBridge as L2OpStackUSDCBridge,
   OpStackWethBridge as L2OpStackWethBridge,
   OpStackBridge as L2OpStackBridge,
+  PolygonERC20Bridge as L2PolygonERC20Bridge,
   BinanceCEXBridge as L2BinanceCEXBridge,
   UsdcCCTPBridge as L2UsdcCCTPBridge,
   BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
@@ -472,6 +473,9 @@ export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2Bridg
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
   // @dev Lens is deliberately absent: each of its tokens needs a different exit, wired per-token in CUSTOM_L2_BRIDGE.
   [CHAIN_IDs.LISK]: L2OpStackBridge,
+  // @dev Chain-level default: standard PoS bridged ERC20s (WETH, WBTC, ...) exit by burning the child token.
+  // USDC and USDT override this in CUSTOM_L2_BRIDGE with their faster CCTP/OFT exits.
+  [CHAIN_IDs.POLYGON]: L2PolygonERC20Bridge,
   [CHAIN_IDs.ZK_SYNC]: L2ZKStackBridge,
   [CHAIN_IDs.ZORA]: L2OpStackBridge,
 };

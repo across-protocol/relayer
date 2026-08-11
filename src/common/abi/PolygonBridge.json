@@ -30,5 +30,15 @@
     ],
     "name": "NewDepositBlock",
     "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      { "indexed": true, "internalType": "address", "name": "exitor", "type": "address" },
+      { "indexed": true, "internalType": "address", "name": "rootToken", "type": "address" },
+      { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }
+    ],
+    "name": "ExitedERC20",
+    "type": "event"
   }
 ]
