@@ -184,7 +184,7 @@ describe("InventoryClient: Rebalancing inventory", function () {
 
   it("Restricts L1 tokens to L1_TOKENS_OVERRIDE when set", async function () {
     // A bot may narrow the tokens it tracks via L1_TOKENS_OVERRIDE while reusing an inventory config that references
-    // more tokens (e.g. the same-asset rebalancer reusing the primary relayer's inventory config). The InventoryClient
+    // more tokens. The InventoryClient
     // must not generate rebalances for tokens outside the override; the TokenClient holds no data for them.
     inventoryClient = new MockInventoryClient(
       EvmAddress.from(owner.address),

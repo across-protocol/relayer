@@ -12,8 +12,6 @@ import { ReadOnlyRebalancerClient } from "./clients/ReadOnlyRebalancerClient";
 import { RebalancerConfig } from "./RebalancerConfig";
 import { buildBridgeSupportRoutes, buildRebalanceRoutes } from "./buildRebalanceRoutes";
 import { RebalancerAdapter, RebalanceRoute } from "./utils/interfaces";
-import { SameAssetRebalancerClient } from "./clients/SameAssetRebalancerClient";
-import { buildSameAssetRebalanceRoutes } from "./buildSameAssetRebalanceRoutes";
 
 export type AdapterName = "cctp" | "oft" | "hyperliquid" | "binance";
 type AdapterMap = { [name: string]: RebalancerAdapter };
@@ -126,22 +124,6 @@ export async function constructCumulativeBalanceRebalancerClient(
     "constructCumulativeBalanceRebalancerClient",
     "CumulativeBalanceRebalancerClient initialized",
     (routes) => [...routes, ...buildAdapterManagerBinanceRoutes()]
-  );
-}
-
-export async function constructSameAssetRebalancerClient(
-  logger: winston.Logger,
-  baseSigner: Signer,
-  rebalanceRoutesOverride?: RebalanceRoute[]
-): Promise<SameAssetRebalancerClient> {
-  return constructInitializedRebalancerClient(
-    logger,
-    baseSigner,
-    SameAssetRebalancerClient,
-    (rebalancerConfig) => rebalanceRoutesOverride ?? buildSameAssetRebalanceRoutes(rebalancerConfig),
-    false,
-    "constructSameAssetRebalancerClient",
-    "SameAssetRebalancerClient initialized"
   );
 }
 

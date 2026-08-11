@@ -186,11 +186,18 @@ async function prepareGraphTopologyFromEnv(): Promise<PreparedGraphTopology> {
   ensureGraphLogicalAssetsAreIncludedInRelayerTokens();
   const relayerConfig = new RelayerConfig(process.env);
   const rebalancerConfig = new RebalancerConfig(process.env);
-  const evmChainIds = rebalancerConfig.chainIds.filter((chainId) => !chainIsSvm(chainId));
+  const prepared = await prepareGraphTopology({ relayerConfig, rebalancerConfig });
+  const evmChainIds = getEvmTopologyChainIds(prepared);
   relayerConfig.relayerOriginChains.splice(0, relayerConfig.relayerOriginChains.length, ...evmChainIds);
   relayerConfig.relayerDestinationChains.splice(0, relayerConfig.relayerDestinationChains.length, ...evmChainIds);
 
-  return prepareGraphTopology({ relayerConfig, rebalancerConfig });
+  return prepared;
+}
+
+export function getEvmTopologyChainIds(prepared: PreparedGraphTopology): number[] {
+  return Array.from(
+    new Set(prepared.topology.nodeContexts.map(({ chainId }) => chainId).filter((chainId) => !chainIsSvm(chainId)))
+  );
 }
 
 async function writeBuildArtifacts(
@@ -244,7 +251,7 @@ async function runPreparedFullBuild(
   ]);
 
   inventoryClient.setBundleData();
-  await inventoryClient.update(prepared.rebalancerConfig.chainIds);
+  await inventoryClient.update(getEvmTopologyChainIds(prepared));
 
   const rebalancerClient = await constructCumulativeBalanceRebalancerClient(
     logger,

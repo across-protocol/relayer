@@ -25,12 +25,9 @@ All modes start with `prepareGraphTopology`, a pure step that parses relayer/reb
 The prepared route set has three sources:
 
 - cumulative-mode swap and same-asset routes from `buildRebalanceRoutes(rebalancerConfig)`;
-- dedicated SameAsset-mode routes from `buildSameAssetRebalanceRoutes(rebalancerConfig)`, filtered by the supported-route catalog and `sameAssetBalances` configuration;
 - bridge-derived routes discovered from the InventoryConfig-backed graph nodes by `buildBridgeAdapterRoutes(...)`.
 
-Every endpoint of a configured SameAsset route must already be materialized in the graph node set. The hub source may use the neutral logical-asset node that Jussi always materializes; every non-hub endpoint must be explicitly managed by InventoryConfig. Topology preparation fails with route, token, and chain context when a required node is missing; it does not synthesize an unconfigured destination or silently omit the route. This keeps the graph aligned with both operator intent in RebalancerConfig and the inventory locations that the relayer actually manages.
-
-Default and upload full builds initialize rebalancer pricing adapters with the complete prepared route set, including SameAsset and bridge-derived routes added during topology preparation, so every serialized candidate can be priced against an initialized adapter route. Same-symbol Binance routes use the existing `binance_cex_bridge` edge family and Binance rate-limit bucket handling; they do not become spot-swap edges merely because the swap-rebalancer Binance adapter executes them.
+Default and upload full builds initialize rebalancer pricing adapters with the complete prepared route set, including bridge-derived routes added during topology preparation, so every serialized candidate can be priced against an initialized adapter route. Same-symbol Binance routes use the existing `binance_cex_bridge` edge family and Binance rate-limit bucket handling; they do not become spot-swap edges merely because the swap-rebalancer Binance adapter executes them.
 
 | Mode | Behavior after topology prep | Signer | Redis |
 |------|------------------------------|--------|-------|
@@ -116,8 +113,6 @@ yarn build-jussi-graph --topology-only --check
 ```
 
 `--topology-only --check` reads `src/jussi/graphs/sampleTopology.json` by default. Override the input path with `JUSSI_TOPOLOGY_JSON_IN`.
-
-Validate SameAsset coverage from configuration rather than checking a hard-coded route. Load the same production RebalancerConfig, call `buildSameAssetRebalanceRoutes`, and for every returned route compute its canonical source and destination node keys from token metadata. Each key must exist in the topology and graph; the topology must contain a directed candidate whose rebalance-route metadata and adapter match the route, and the full graph must contain the corresponding directed serialized edge. This procedure automatically covers additions or removals in the support catalog and `sameAssetBalances`.
 
 ## How To Use The PUT Payload
 
