@@ -331,9 +331,17 @@ Swap deposits into Binance are tagged `SWAP` in Redis with a TTL of twice the fi
 lookback (`FINALIZER_TOKENBRIDGE_LOOKBACK`) so the finalizer excludes them from its deposit ledger for the whole
 lookback — including after the swap completes, so a consumed deposit is never re-counted as finalizable ("phantom"
 `amountToFinalize`). Handover to the finalizer is driven by order state, not
-wall clock: if an order is abandoned while still in `PENDING_DEPOSIT` (its `REBALANCER_PENDING_ORDER_TTL` elapses), the
-prune path deletes the deposit's tag via `_onExpiredOrderPruned`, and the finalizer reclaims the funds on its next run.
+wall clock: if an order is abandoned while still in `PENDING_DEPOSIT` or `PENDING_DEPOSIT_SUBMISSION` (its
+`REBALANCER_PENDING_ORDER_TTL` elapses), the prune path deletes the deposit's tag via `_onExpiredOrderPruned`, and the
+finalizer reclaims the funds on its next run.
 Orders pruned in later statuses keep the tag, since their deposit was already consumed by the spot order.
+
+Direct Binance deposits are crash-safe: the order is written in `PENDING_DEPOSIT_SUBMISSION` with a recovery marker
+before the deposit transaction is submitted, and is promoted to `PENDING_DEPOSIT` after a clean submission. If the
+process dies mid-submission, the next lifecycle pass resolves the marked order from the on-chain receipt via
+`_reconcileDepositRecovery` (promote on success, purge on revert, wait while unconfirmed). A marked order whose
+transaction hash was never persisted, or a markerless `PENDING_DEPOSIT_SUBMISSION` order, fails closed to the TTL
+prune.
 
 When Binance reports `RW00441`, the account has recently credited deposit value that is not withdrawal-unlocked yet.
 The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads

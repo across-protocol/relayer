@@ -103,6 +103,9 @@ export enum STATUS {
   PENDING_DEPOSIT,
   PENDING_SWAP,
   PENDING_WITHDRAWAL,
+  // A direct Binance deposit whose order was persisted before the deposit transaction was submitted. Promoted to
+  // PENDING_DEPOSIT once the deposit transaction hash is confirmed on-chain (or immediately after a clean submission).
+  PENDING_DEPOSIT_SUBMISSION,
 }
 
 export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS, account: string): string {
@@ -120,6 +123,9 @@ export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS
     case STATUS.PENDING_BRIDGE_PRE_DEPOSIT:
       orderStatusKey = redisPrefix + "pending-bridge-pre-deposit";
       break;
+    case STATUS.PENDING_DEPOSIT_SUBMISSION:
+      orderStatusKey = redisPrefix + "pending-deposit-submission";
+      break;
     default:
       throw new Error(`Invalid status: ${status}`);
   }
@@ -134,6 +140,12 @@ export function getPendingBridgeOrderKey(redisPrefix: string, cloid: string, acc
 // (e.g. pruning an expired order) can locate and untag the deposit.
 export function getPendingBridgeDepositTxnKey(redisPrefix: string, cloid: string, account: string): string {
   return `${redisPrefix}deposit-txn:${cloid}:${account.toLowerCase()}`;
+}
+
+// Marks an order whose deposit submission may have broadcast without its outcome being recorded. While present,
+// lifecycle passes resolve the order from the on-chain receipt instead of progressing it.
+export function getPendingBridgeDepositRecoveryKey(redisPrefix: string, cloid: string, account: string): string {
+  return `${redisPrefix}deposit-recovery:${cloid}:${account.toLowerCase()}`;
 }
 
 export async function redisGetOrderDetailsForAdapter(
