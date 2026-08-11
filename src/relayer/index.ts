@@ -19,7 +19,6 @@ import { RelayerConfig } from "./RelayerConfig";
 import { constructRelayerClients } from "./RelayerClientHelper";
 import { InventoryClientState, isSpokePoolClientWithListener } from "../clients";
 import { updateSpokePoolClients } from "../common";
-import { withRebalancerInitiationLock } from "../rebalancer/utils/utils";
 config();
 let logger: winston.Logger;
 
@@ -245,7 +244,7 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
 
   const rebalancer = new Relayer(await baseSigner.getAddress(), logger, clients, config);
 
-  const run = async () => {
+  try {
     await rebalancer.init();
     await rebalancer.update();
     await inventoryClient.update(rebalancer.inventoryChainIds);
@@ -258,16 +257,6 @@ export async function runRebalancer(_logger: winston.Logger, baseSigner: Signer)
     await inventoryClient.rebalanceInventoryIfNeeded();
     // Need to update here to capture all pending L1 to L2 rebalances sent from above function.
     await inventoryClient.withdrawExcessBalances();
-  };
-
-  try {
-    // A sending run's balance snapshot and the initiations planned from it must happen while no other run for
-    // this account can initiate, so an overlapping run cannot duplicate a transfer from a stale snapshot.
-    if (config.sendingTransactionsEnabled) {
-      await withRebalancerInitiationLock(logger, await baseSigner.getAddress(), run);
-    } else {
-      await run();
-    }
   } finally {
     abortController.abort();
     await disconnectRedisClients(logger);
