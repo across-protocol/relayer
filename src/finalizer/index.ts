@@ -96,11 +96,22 @@ const chainFinalizers: {
   },
 };
 
+// @dev finalize() runs inside a polling loop and calls generateChainConfig() on every pass, but chainFinalizers
+// is module-level state that is never reset. Regenerating would append a second copy of every autoconfigured
+// finalizer per pass, so by pass N each chain would rescan -- and re-enqueue -- the same messages N times.
+// Nothing generated below depends on runtime config, so generating once is sufficient.
+let chainConfigGenerated = false;
+
 /**
- * Autopopulate the majority of the chainFinalizers object above.
+ * Autopopulate the majority of the chainFinalizers object above. Idempotent: only the first call has any effect.
  * @returns void
  */
 function generateChainConfig(): void {
+  if (chainConfigGenerated) {
+    return;
+  }
+  chainConfigGenerated = true;
+
   const erc20Defaults: Partial<Record<ChainFamily, ChainFinalizer>> = {
     [ChainFamily.OP_STACK]: opStackFinalizer,
     [ChainFamily.ORBIT]: arbStackFinalizer,
