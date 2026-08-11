@@ -1,0 +1,19 @@
+[
+  {
+    "name": "withdraw",
+    "type": "function",
+    "stateMutability": "payable",
+    "inputs": [{ "name": "_l1Receiver", "type": "address" }],
+    "outputs": []
+  },
+  {
+    "name": "Withdrawal",
+    "type": "event",
+    "anonymous": false,
+    "inputs": [
+      { "name": "_l2Sender", "type": "address", "indexed": true },
+      { "name": "_l1Receiver", "type": "address", "indexed": true },
+      { "name": "_amount", "type": "uint256", "indexed": false }
+    ]
+  }
+]
