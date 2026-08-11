@@ -37,6 +37,7 @@ describe("DepositAddressService v3 deposit execution", function () {
   const LOCK_KEY = `deposit-address:lock:${TRANSFER_ID}`;
   const AMOUNT = "10000000";
   const EXECUTE_HASH = "0xbb11c7d40e9b6852f1ad0c3b7e94f628a1d5c09e3b7a2d8f4c6e1b0a9d8c7f600";
+  const ORIGINAL_HASH = "0xaa22c7d40e9b6852f1ad0c3b7e94f628a1d5c09e3b7a2d8f4c6e1b0a9d8c7f611";
   const SIGNER_NONCE = 41;
   const METADATA_TOPIC = ethers.utils.id("MetadataEmitted(bytes)");
 
@@ -46,8 +47,8 @@ describe("DepositAddressService v3 deposit execution", function () {
   let redisStore: Map<string, string>;
   let signerAddress: string;
 
-  /** How many of the next `set` calls reject. Models a Redis blip across the broadcast. */
-  let redisFaults: { setFailures: number };
+  /** 1-based `set` call indices that reject. Models a Redis blip at a precise point in the broadcast. */
+  let redisFaults: { failSetCalls: number[]; setCalls: number };
 
   /** What the fake chain reports. Each test reshapes only the part it is about. */
   let chain: {
@@ -59,7 +60,10 @@ describe("DepositAddressService v3 deposit execution", function () {
   };
 
   /** What the fake submission client does once it has been handed the transaction. */
-  let submission: { mode: "broadcast" | "throwBeforeBroadcast" | "throwAfterBroadcast" | "noHash"; hash: string };
+  let submission: {
+    mode: "broadcast" | "throwBeforeBroadcast" | "throwAfterBroadcast" | "noHash" | "repriced";
+    hash: string;
+  };
 
   /** What the quote-api answers. */
   let quote: { response?: Partial<DepositAddressExecuteResponse>; error?: Error };
@@ -133,8 +137,8 @@ describe("DepositAddressService v3 deposit execution", function () {
         return (redisStore.get(key ?? "") ?? null) as T | null;
       },
       async set<T>(key: string, val: T) {
-        if (redisFaults.setFailures > 0) {
-          redisFaults.setFailures -= 1;
+        redisFaults.setCalls += 1;
+        if (redisFaults.failSetCalls.includes(redisFaults.setCalls)) {
           throw new Error("READONLY You can't write against a read only replica");
         }
         redisStore.set(key, String(val));
@@ -183,6 +187,16 @@ describe("DepositAddressService v3 deposit execution", function () {
         const txn = txns[0];
         if (submission.mode === "throwBeforeBroadcast") {
           throw new Error("nonce too low");
+        }
+
+        // A repriced transaction notifies the original hash first, then the replacement — exactly where the
+        // real client re-notifies, so the record has to follow it.
+        if (submission.mode === "repriced") {
+          await txn.onBroadcast?.({
+            hash: ORIGINAL_HASH,
+            nonce: SIGNER_NONCE,
+            from: signerAddress,
+          } as unknown as TransactionResponse);
         }
 
         const response = {
@@ -265,7 +279,7 @@ describe("DepositAddressService v3 deposit execution", function () {
   beforeEach(async function () {
     logs = [];
     redisStore = new Map();
-    redisFaults = { setFailures: 0 };
+    redisFaults = { failSetCalls: [], setCalls: 0 };
     chain = {
       fundingReceipt: receipt(),
       balance: AMOUNT,
@@ -371,7 +385,7 @@ describe("DepositAddressService v3 deposit execution", function () {
     // unrelated transfer's money with the same calldata. Both set calls fail here (the hook's and the
     // post-submit retry's), so nothing is recorded until the terminal write.
     it("records the terminal state when both pending writes failed but the transaction confirmed", async function () {
-      redisFaults.setFailures = 2;
+      redisFaults.failSetCalls = [1, 2, 3, 4];
 
       const response = await post(message());
 
@@ -383,7 +397,7 @@ describe("DepositAddressService v3 deposit execution", function () {
 
     it("retries the pending write after submission when the hook's write failed", async function () {
       // Only the hook's write fails; the retry lands. Left unresolved so the retry's result is what is observed.
-      redisFaults.setFailures = 1;
+      redisFaults.failSetCalls = [1];
       chain.executeReceipt = null;
 
       const response = await post(message());
@@ -391,6 +405,36 @@ describe("DepositAddressService v3 deposit execution", function () {
       expect(response.status).to.equal(500);
       // Durable before the NACK, so the redelivery resolves this hash instead of re-executing.
       expect(state()).to.include({ status: "broadcast_pending", txHash: EXECUTE_HASH });
+    });
+
+    // The sharp case. The original hash persisted, the client repriced, and the replacement's write failed —
+    // so Redis names a transaction that will never mine while `pending` names the live one. `canReplace` then
+    // refuses the terminal write because the hashes differ, and every later delivery resolves the dead hash
+    // instead. Failing the first retry too proves the backoff is doing the work: one attempt would not save it.
+    it("re-persists a repriced replacement so its terminal state is accepted", async function () {
+      submission.mode = "repriced";
+      // set #1 = the original hash (lands), #2 = the replacement's hook write, #3 = its first retry.
+      redisFaults.failSetCalls = [2, 3];
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(204);
+      expect(state()).to.include({ status: "deposit_executed", txHash: EXECUTE_HASH });
+    });
+
+    it("warns that the terminal write will be refused when a replacement can never be persisted", async function () {
+      submission.mode = "repriced";
+      // The original lands; every write for the replacement fails, including all of the retries.
+      redisFaults.failSetCalls = [2, 3, 4, 5];
+
+      const response = await post(message());
+
+      // Stuck on the dead hash — the accepted residual — but named rather than silent.
+      expect(response.status).to.equal(500);
+      expect(state()).to.include({ status: "broadcast_pending", txHash: ORIGINAL_HASH });
+      expect(
+        logs.some((l) => l.level === "warn" && /terminal write will be refused/.test(String(l.payload.message)))
+      ).to.equal(true);
     });
 
     // Nothing reached the wire, so there is nothing to reconcile and nothing to record.

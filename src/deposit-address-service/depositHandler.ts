@@ -10,6 +10,7 @@ import {
   Provider,
   Signer,
   blockExplorerLink,
+  delay,
   dispatchTransaction,
   getEthersCompatibleAddress,
   getNetworkName,
@@ -43,6 +44,14 @@ import { BroadcastPendingState, TransferLock, TransferStore } from "./transferSt
 
 /** The API's stable discriminator for an amount under the minimum deposit; a 422 with any other code is not this. */
 const AMOUNT_BELOW_MINIMUM_ERROR_CODE = "AMOUNT_BELOW_MINIMUM";
+
+/**
+ * Backoff for re-persisting `broadcast_pending` after the hook's write failed. First entry is 0, so the first
+ * retry is immediate. ~1.25s total, deliberately small: it is sized for a **blip**, and a Redis that has been
+ * unreachable for seconds is an outage, where waiting longer buys almost nothing and the accepted residual
+ * applies anyway. The request also still owes the chain a receipt lookup and a terminal write afterwards.
+ */
+const PENDING_WRITE_BACKOFF_MS = [0, 250, 1_000];
 
 /**
  * Everything the handler closes over. Injected rather than constructed here so tests can supply fakes —
@@ -189,7 +198,7 @@ async function executeDeposit(
     throw new LockContentionError(`lock for ${transferId} is no longer held; refusing to broadcast`);
   }
 
-  const pending = await broadcast(deps, parsed, response, originChainId, provider);
+  const pending = await broadcast(deps, context, parsed, response, originChainId, provider);
   const result = await resolvePendingTransaction({ logger, store, provider }, transferId, pending);
   return { outcome: result.outcome, fields: { ...result.fields, quoteMs: Date.now() - quotedAtMs, integratorId } };
 }
@@ -208,6 +217,7 @@ async function executeDeposit(
  */
 async function broadcast(
   deps: DepositHandlerDeps,
+  context: RequestContext,
   parsed: ParsedTransfer,
   response: DepositAddressExecuteResponse,
   originChainId: number,
@@ -224,7 +234,10 @@ async function broadcast(
   // no record anywhere and a redelivery free to sweep again — the failure this service exists to close.
   // Holding the hash means the confirmed path still reaches `recordTerminal`, which supersedes this record.
   let pending: BroadcastPendingState | undefined;
-  let persisted = false;
+  // The hash Redis is known to hold. Tracked rather than a boolean so a **stale** record (an earlier hash
+  // landed, the current one did not) is distinguishable from an absent one — they fail differently, and only
+  // the stale variant makes the terminal write unacceptable to `canReplace`.
+  let recordedTxHash: string | undefined;
   const txn: AugmentedTransaction = {
     contract: executeContract(deps.baseSigner, provider, executeTx.to, originChainId, useDispatcher),
     method: "",
@@ -249,9 +262,8 @@ async function broadcast(
         chainId: originChainId,
         submittedAtMs: Date.now(),
       };
-      persisted = false;
       await store.recordBroadcast(transferId, pending);
-      persisted = true;
+      recordedTxHash = tx.hash;
     },
   };
 
@@ -284,24 +296,66 @@ async function broadcast(
     throw new TransientDependencyError(`execute for ${transferId} produced no transaction hash`);
   }
 
-  if (!persisted) {
-    // The hook's write failed and `TransactionClient` swallowed it. Retry here, where it is not swallowed —
-    // but **best-effort**: a failure must not stop us reaching `recordTerminal`, which supersedes this record
-    // entirely. Throwing here when the transaction has already confirmed would leave it unrecorded, which is
-    // the very outcome this retry exists to avoid. A persistent Redis outage surfaces from the terminal write.
-    try {
-      await store.recordBroadcast(transferId, pending);
-    } catch (err) {
-      logger.warn({
-        at: "DepositAddressService#broadcast",
-        message: "Could not persist broadcast_pending; resolving against the chain regardless.",
-        transferId,
-        txHash: pending.txHash,
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
+  if (recordedTxHash !== pending.txHash) {
+    await persistPendingWithRetry(deps, context, transferId, pending, recordedTxHash);
   }
   return pending;
+}
+
+/**
+ * Retries the `broadcast_pending` write the hook could not land, here where the failure is not swallowed.
+ *
+ * **Best-effort by design.** Throwing would skip `recordTerminal`, which supersedes this record entirely — so
+ * a failure here must never stop a confirmed transaction from being recorded. That is the whole point of
+ * holding the hash rather than the write result.
+ *
+ * The retries exist for a sharper case than a merely absent record. If an *earlier* hash landed and the
+ * current one did not — `TransactionClient` repriced or resubmitted, and that write failed — Redis names a
+ * transaction that will never mine while `pending` names the live one. `canReplace` then refuses the terminal
+ * write, because it requires the terminal hash to match the pending record, and every later delivery resolves
+ * the dead hash instead. A few seconds of backoff turns that from "one failed write" into "Redis unavailable
+ * across a replacement", which is the difference between plausible and unlikely.
+ *
+ * It is a probability reduction, not a proof: see the issue's Scope. Bounded by the request deadline so it
+ * cannot eat the budget the resolution that follows it needs.
+ */
+async function persistPendingWithRetry(
+  deps: DepositHandlerDeps,
+  context: RequestContext,
+  transferId: string,
+  pending: BroadcastPendingState,
+  recordedTxHash: string | undefined
+): Promise<void> {
+  const { store, logger } = deps;
+  let lastError: unknown;
+
+  for (const backoffMs of PENDING_WRITE_BACKOFF_MS) {
+    // Never sleep past the deadline: the receipt lookup and terminal write still have to happen.
+    if (backoffMs > 0 && Date.now() + backoffMs >= context.deadlineAtMs) {
+      break;
+    }
+    if (backoffMs > 0) {
+      await delay(backoffMs / 1000);
+    }
+
+    try {
+      await store.recordBroadcast(transferId, pending);
+      return;
+    } catch (err) {
+      lastError = err;
+    }
+  }
+
+  logger.warn({
+    at: "DepositAddressService#broadcast",
+    message: isDefined(recordedTxHash)
+      ? "broadcast_pending still names a replaced transaction; the terminal write will be refused."
+      : "Could not persist broadcast_pending; resolving against the chain regardless.",
+    transferId,
+    txHash: pending.txHash,
+    recordedTxHash,
+    error: lastError instanceof Error ? lastError.message : String(lastError),
+  });
 }
 
 /**
