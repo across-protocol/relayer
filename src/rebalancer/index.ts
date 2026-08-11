@@ -2,25 +2,13 @@ import { InventoryClient, TokenClient } from "../clients";
 import { updateSpokePoolClients } from "../common";
 import { constructRelayerClients, RelayerClients } from "../relayer/RelayerClientHelper";
 import { RelayerConfig } from "../relayer/RelayerConfig";
-import {
-  assert,
-  BigNumber,
-  config,
-  disconnectRedisClients,
-  getTokenInfoFromSymbol,
-  Signer,
-  toBNWei,
-  winston,
-} from "../utils";
+import { assert, BigNumber, config, disconnectRedisClients, getTokenInfoFromSymbol, Signer, winston } from "../utils";
 import { CumulativeBalanceRebalancerClient } from "./clients/CumulativeBalanceRebalancerClient";
-import { SameAssetRebalancerClient } from "./clients/SameAssetRebalancerClient";
 
-import {
-  constructCumulativeBalanceRebalancerClient,
-  constructSameAssetRebalancerClient,
-} from "./RebalancerClientHelper";
+import { constructCumulativeBalanceRebalancerClient } from "./RebalancerClientHelper";
 import { RebalancerConfig } from "./RebalancerConfig";
 import { RebalancerClient } from "./utils/interfaces";
+import { getMaxFeePct, withRebalancerInitiationLock } from "./utils/utils";
 config();
 let logger: winston.Logger;
 
@@ -206,6 +194,22 @@ export function loadCumulativeModeBalances(
 }
 
 export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
+  try {
+    // A sending run's balance snapshot and the initiations planned from it must happen while no other run for
+    // this account can initiate, so an overlapping run cannot duplicate a transfer from a stale snapshot.
+    if (process.env.SEND_REBALANCES === "true") {
+      await withRebalancerInitiationLock(_logger, await baseSigner.getAddress(), () =>
+        cumulativeBalanceRebalancerRun(_logger, baseSigner)
+      );
+    } else {
+      await cumulativeBalanceRebalancerRun(_logger, baseSigner);
+    }
+  } finally {
+    await disconnectRedisClients(_logger);
+  }
+}
+
+async function cumulativeBalanceRebalancerRun(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
   const logLabel = "runCumulativeBalanceRebalancer";
   const { rebalancerConfig, inventoryClient, rebalancerClient } = await initializeRebalancerRun(
     _logger,
@@ -220,7 +224,7 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
   try {
     if (process.env.SEND_REBALANCES === "true" && !shouldSkipNewRebalances(inventoryClient, logLabel)) {
       timerStart = performance.now();
-      const maxFeePct = toBNWei(process.env.MAX_FEE_PCT ?? "2.5", 18);
+      const maxFeePct = getMaxFeePct();
       await (rebalancerClient as CumulativeBalanceRebalancerClient).rebalanceInventory(
         cumulativeBalances,
         currentBalances,
@@ -240,37 +244,5 @@ export async function runCumulativeBalanceRebalancer(_logger: winston.Logger, ba
     // eslint-disable-next-line no-console
     console.error("Error running rebalancer", error);
     throw error;
-  } finally {
-    await disconnectRedisClients(logger);
-  }
-}
-
-export async function runSameAssetRebalancer(_logger: winston.Logger, baseSigner: Signer): Promise<void> {
-  const logLabel = "runSameAssetRebalancer";
-  const { rebalancerClient, inventoryClient } = await initializeRebalancerRun(
-    _logger,
-    baseSigner,
-    logLabel,
-    constructSameAssetRebalancerClient
-  );
-
-  let timerStart = performance.now();
-  try {
-    if (process.env.SEND_REBALANCES === "true" && !shouldSkipNewRebalances(inventoryClient, logLabel)) {
-      timerStart = performance.now();
-      const maxFeePct = toBNWei(process.env.MAX_FEE_PCT ?? "2.5", 18);
-      await (rebalancerClient as SameAssetRebalancerClient).rebalanceInventory(inventoryClient, maxFeePct);
-      logger.debug({
-        at: `index.ts:${logLabel}`,
-        message: "Completed rebalancing inventory",
-        duration: performance.now() - timerStart,
-      });
-    }
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.error("Error running rebalancer", error);
-    throw error;
-  } finally {
-    await disconnectRedisClients(logger);
   }
 }

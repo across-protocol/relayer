@@ -54,9 +54,11 @@ Operational note:
 - Intermediate on-chain bridge legs into or out of Binance remain restricted to `USDC` and `USDT`; current `WETH` routes therefore source or settle through mainnet rather than bridging WETH into another Binance ETH network.
 - Hyperliquid routes intentionally exclude Avalanche, BSC, and Tron USDT endpoints and BSC USDC endpoints because those token/chain combinations cannot bridge through HyperEVM. Same-asset routes involving those endpoints do not use OFT or CCTP.
 
-The dedicated SameAsset mode has a separate route source in `src/rebalancer/buildSameAssetRebalanceRoutes.ts`. Its read-only `SAME_ASSET_REBALANCE_ROUTE_SUPPORT` catalog is the source of truth for token, destination-chain, and adapter combinations that this mode can execute. `buildSameAssetRebalanceRoutes(rebalancerConfig)` returns only the intersection of that catalog and `sameAssetBalances`; adding configuration alone does not enable an unsupported route. Both `SameAssetRebalancerClient` and Jussi topology preparation consume this builder so runtime support and graph edges stay aligned.
+Same-asset routes have a separate route source in `src/rebalancer/buildSameAssetRebalanceRoutes.ts`. Its read-only `SAME_ASSET_REBALANCE_ROUTE_SUPPORT` catalog is the source of truth for token, destination-chain, and adapter combinations. `buildSameAssetRebalanceRoutes(rebalancerConfig)` returns only the intersection of that catalog and `sameAssetBalances`; adding configuration alone does not enable an unsupported route.
 
-SameAsset routes are directional. They move an unchanged asset from the hub chain to a configured destination chain through the selected swap-rebalancer adapter. Excess destination-chain inventory moving back to the hub chain remains an InventoryClient responsibility and is not emitted as a reverse SameAsset route.
+Same-asset routes are directional. They move an unchanged asset from the hub chain to a configured destination chain through the selected swap-rebalancer adapter. Excess destination-chain inventory moving back to the hub chain remains an InventoryClient responsibility and is not emitted as a reverse same-asset route.
+
+Same-asset hub-to-L2 execution is owned by the AdapterManager: `src/adapter/bridges/BinanceStablecoinSwapBridge.ts` is a bridge registered in `CUSTOM_BRIDGE` (currently Mainnet `USDT` to Avalanche) that delegates hub-to-L2 same-asset initiation to the rebalancer's Binance adapter via `initializeRebalanceWithTransaction` (direct deposits only). InventoryClient drives it through the normal `sendTokenCrossChain` flow. Initiation is a one-shot promise: it resolves with the Binance deposit transaction hash or rejects with no funds moved and no Redis state. Every Binance-side failure — an amount above the rebalancer config's `maxAmountsToTransfer`, the pending-order cap, the fee cap, a withdrawal suspension, an API outage — is deliberately treated like a contract-bridge transaction that failed to mine; the bridge never resizes a transfer and no decline/rollback classification exists. The resulting Redis orders progress through the swap rebalancer's normal lifecycle: `buildAdapterManagerBinanceRoutes(rebalancerConfig)` derives routes that are both registered in `CUSTOM_BRIDGE` and operator-enabled via `sameAssetBalances` in the rebalancer config, and `constructCumulativeBalanceRebalancerClient` initializes the Binance adapter with those routes (in addition to its own rebalance routes) so it can progress the orders without ever selecting the routes for cumulative rebalancing. Because the routes are operator-configured, a route-validation failure during initialization crashes the run like any other configured route. Pending orders surface through `getPendingRebalances` as destination-chain virtual balances, which is what prevents InventoryClient from re-initiating an in-flight transfer.
 
 ### Rebalancer Adapter
 
@@ -124,6 +126,11 @@ pre-deposit bridge to OFT (e.g. `BinanceStablecoinSwapAdapter`) keep their pendi
 underlying bridge. Note that `_redisUpdateOrderStatus` does not refresh the TTL, so the value set at creation is the
 lifetime of the whole order across all status transitions.
 
+Order-state writes are atomic: `_redisCreateOrder` writes the order-details key and its status-set membership in one
+Redis transaction (`RedisCache.setAndAddToSet`), and `_redisUpdateOrderStatus` moves the cloid between status sets in
+one transaction (`RedisCache.moveSetMember`). A crash therefore cannot leave an order in both status sets, in neither
+set, or with set membership but no details key — either the whole transition landed or none of it did.
+
 If an order does not finalize before the TTL expires, order details and associated pending-order status tracking are
 eventually pruned from Redis cache state. `BaseAdapter._redisCleanupPendingOrders` emits a `warn` log (`⏰ Pruning
 expired pending order ...`) when this happens so operators can detect abandoned orders that never received a
@@ -181,7 +188,7 @@ When adding a new file in `src/rebalancer/adapters/`, contributors should usuall
 
 `RebalancerConfig` is loaded from `REBALANCER_CONFIG` or `REBALANCER_EXTERNAL_CONFIG`.
 
-The active config supports cumulative-target and SameAsset modes:
+The active config supports cumulative-target mode and same-asset route enablement:
 
 ```json
 {
@@ -213,9 +220,9 @@ Notes:
 - `targetBalance` and `thresholdBalance` values are human-readable and converted to token-native decimals.
 - `cumulativeTargetBalances` define per-token aggregate objectives plus allowed source/destination chain sets for `CumulativeBalanceRebalancerClient.rebalanceInventory()`.
 - `cumulativeTargetBalances[token].chains[chainId]` is a chain priority tier used when selecting where to source excess inventory from and where to land deficit inventory. Lower tiers are preferred for sourcing; higher tiers are preferred for destinations.
-- `sameAssetBalances[token].chains` enables destination chains for `SameAssetRebalancerClient`; InventoryConfig supplies the per-chain target and threshold used to decide whether a transfer is needed. Values in this chain map are enablement markers after parsing, not route-ranking inputs.
-- A SameAsset entry becomes executable only when the support catalog contains the same token and destination chain. The configured source and destination must also be present for that token in InventoryConfig when the route is included in a Jussi graph.
-- `chainIds` are derived from the union of chains found in `cumulativeTargetBalances` and `sameAssetBalances`, with the hub chain included when SameAsset mode is configured.
+- `sameAssetBalances[token].chains` enables destination chains for the AdapterManager's Binance swap bridge routes (`buildAdapterManagerBinanceRoutes`); InventoryConfig supplies the per-chain target and threshold used to decide whether a transfer is needed. Values in this chain map are enablement markers after parsing, not route-ranking inputs.
+- A same-asset entry becomes executable only when it is also registered in `CUSTOM_BRIDGE` (for runtime initiation).
+- `chainIds` are derived from the union of chains found in `cumulativeTargetBalances` and `sameAssetBalances`, with the hub chain included when `sameAssetBalances` is configured.
 
 For an operator playbook on sizing these values from expected deposit fills, see
 [`docs/rebalancer-config-from-deposit-flow.md`](../../docs/rebalancer-config-from-deposit-flow.md).
@@ -248,20 +255,11 @@ Design tradeoff:
 
 - Destination-chain selection evaluates all eligible routes and favors configured destination priority before expected cost. This sends replenishment to preferred inventory locations while still falling back to lower-priority routes when higher-priority routes exceed `maxFeePct`.
 
-### SameAsset mode: `SameAssetRebalancerClient.rebalanceInventory()`
+### Same-asset transfers: InventoryClient via the AdapterManager
 
-This mode handles configured same-token hub-to-destination transfers that InventoryClient cannot reliably execute through its own bridge adapters. It reuses InventoryClient's inventory targets but delegates execution and lifecycle tracking to the swap-rebalancer adapters.
+Configured same-token hub-to-destination transfers are initiated by `InventoryClient.rebalanceInventoryIfNeeded()` through the AdapterManager's `BinanceStablecoinSwapBridge` (see the AdapterManager paragraph above). There is no dedicated runtime entrypoint: operators enable destination token/chain pairs under `sameAssetBalances`, the `CUSTOM_BRIDGE` registry controls which of those pairs can become routes, and the resulting Redis orders are progressed by the `swapRebalancer` bot's `updateRebalanceStatuses()` pass. The former `SameAssetRebalancerClient`/`sameAssetRebalancer` entrypoint has been deleted; its scheduled deployment must be replaced by running the `swapRebalancer` alongside the `--rebalancer` bot so orders progress after initiation.
 
-High-level flow:
-
-1. Ask InventoryClient for the currently needed hub-to-destination inventory rebalances without allowing InventoryClient to execute them.
-2. Match each candidate against the directional routes produced by `buildSameAssetRebalanceRoutes` and discard candidates with no configured, supported route.
-3. Cap the amount using `maxAmountsToTransfer`, reject estimates above `MAX_FEE_PCT`, and initialize the route through its configured adapter when transaction sending is enabled.
-4. Track intermediate venue and bridge state in the adapter's Redis lifecycle, preserving the destination-chain context that the InventoryClient bridge-adapter path cannot represent.
-
-The runtime entrypoint is `runSameAssetRebalancer`, exposed as the `sameAssetRebalancer` bot. It is independent of cumulative mode: operators enable destination token/chain pairs under `sameAssetBalances`, while the support catalog controls which of those pairs can become routes.
-
-Cross-mode pending orders: the `swapRebalancer` and `sameAssetRebalancer` bots typically share a base signer and the Redis order store, so each bot's `updateRebalanceStatuses()` pass can encounter pending orders created by the other mode. Adapters only progress orders whose routes are in their own configured `availableRoutes` (`BaseAdapter._canProgressOrder`); unsupported orders are skipped with a debug log and left pending for the properly-configured bot to progress. If no configured instance supports an order's route (e.g. after config drift), the order is eventually TTL-pruned with a warning by `_redisCleanupPendingOrders`.
+Cross-runtime pending orders: the `swapRebalancer` bot and the AdapterManager's Binance swap bridge share a base signer and the Redis order store, so an `updateRebalanceStatuses()` pass can encounter pending orders created by the other path. Adapters only progress orders whose routes are in their own configured `availableRoutes` (`BaseAdapter._canProgressOrder`); unsupported orders are skipped with a debug log and left pending for the properly-configured bot to progress. If no configured instance supports an order's route (e.g. after config drift), the order is eventually TTL-pruned with a warning by `_redisCleanupPendingOrders`.
 
 ### Read-only mode: `ReadOnlyRebalancerClient`
 
@@ -278,7 +276,6 @@ The OFT and CCTP adapters also expose their pending bridge-pre-deposit Redis sch
 Use the rebalancer construction layer to instantiate mode-specific clients:
 
 - `constructCumulativeBalanceRebalancerClient()` for operational runs.
-- `constructSameAssetRebalancerClient()` for configured same-token hub-to-destination runs.
 - `constructReadOnlyRebalancerClient()` for pending-state consumers.
 
 Lifecycle note:
@@ -301,10 +298,9 @@ Lifecycle note:
 Runtime entrypoints in `src/rebalancer/`:
 
 - `runCumulativeBalanceRebalancer` (supported operational path).
-- `runSameAssetRebalancer` (directional SameAsset operational path).
 - The runtime updates adapter status/sweeps first, then refreshes `TokenClient` balances before applying adapter-reported pending rebalance adjustments and evaluating new rebalances. The refresh is required because the sweeps and `updateRebalanceStatuses` calls submit OFT/CCTP/Hypercore transactions that leave the initial `TokenClient.update()` snapshot stale; without it, `rebalanceInventory` can size a new bridge against a pre-burn balance and crash on the underlying simulation revert.
 - Venue-outage degradation: the status/sweep update loop isolates per-adapter failures (a venue whose API is down is
-  logged with a warning and skipped for the run while the remaining adapters progress), both run entrypoints skip
+  logged with a warning and skipped for the run while the remaining adapters progress), the run entrypoint skips
   initiating new rebalances for the run whenever `getAdaptersWithFailedPendingReads()` is non-empty (see the
   duplicate-rebalance rationale above), and a route whose `getEstimatedCost` read fails is excluded from that
   round's route competition instead of aborting the pass.
@@ -335,9 +331,24 @@ Swap deposits into Binance are tagged `SWAP` in Redis with a TTL of twice the fi
 lookback (`FINALIZER_TOKENBRIDGE_LOOKBACK`) so the finalizer excludes them from its deposit ledger for the whole
 lookback — including after the swap completes, so a consumed deposit is never re-counted as finalizable ("phantom"
 `amountToFinalize`). Handover to the finalizer is driven by order state, not
-wall clock: if an order is abandoned while still in `PENDING_DEPOSIT` (its `REBALANCER_PENDING_ORDER_TTL` elapses), the
-prune path deletes the deposit's tag via `_onExpiredOrderPruned`, and the finalizer reclaims the funds on its next run.
+wall clock: if an order is abandoned while still in `PENDING_DEPOSIT` or `PENDING_DEPOSIT_SUBMISSION` (its
+`REBALANCER_PENDING_ORDER_TTL` elapses), the prune path deletes the deposit's tag via `_onExpiredOrderPruned`, and the
+finalizer reclaims the funds on its next run.
 Orders pruned in later statuses keep the tag, since their deposit was already consumed by the spot order.
+
+Sending runs are serialized per account: `withRebalancerInitiationLock` wraps each initiating entrypoint's whole
+plan-and-initiate phase (balance snapshot through initiation) in a per-account Redis `SET NX` lock (30-minute TTL),
+and an overlapping run is skipped rather than run from a snapshot that predates the lock holder's orders. This is
+what prevents two overlapping runs (two instances of one bot, or the inventory-rebalancer overlapping a swap
+rebalancer) from double-initiating the same transfer. A crashed holder's lock expires via TTL; read-only runs
+(`SEND_REBALANCES` unset) do not take the lock.
+
+Direct Binance deposits are crash-safe: the order is written in `PENDING_DEPOSIT_SUBMISSION` with a recovery marker
+before the deposit transaction is submitted, and is promoted to `PENDING_DEPOSIT` after a clean submission. If the
+process dies mid-submission, the next lifecycle pass resolves the marked order from the on-chain receipt via
+`_reconcileDepositRecovery` (promote on success, purge on revert, wait while unconfirmed). A marked order whose
+transaction hash was never persisted, or a markerless `PENDING_DEPOSIT_SUBMISSION` order, fails closed to the TTL
+prune.
 
 When Binance reports `RW00441`, the account has recently credited deposit value that is not withdrawal-unlocked yet.
 The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads

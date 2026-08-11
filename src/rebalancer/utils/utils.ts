@@ -5,10 +5,78 @@ import {
   ethers,
   getTokenInfoFromSymbol,
   isDefined,
+  toBNWei,
   winston,
 } from "../../utils";
 import { getRedisCache, RedisCache } from "../../cache/Redis";
 import { ExcessOrDeficit, OrderDetails, RedisOrderDetailsPayload } from "./interfaces";
+
+const REBALANCER_INITIATION_LOCK_TTL_MS = 30 * 60 * 1000;
+
+export function getRebalancerInitiationLockKey(account: string): string {
+  return `rebalancer-initiation-lock:${account.toLowerCase()}`;
+}
+
+/**
+ * Serialize an entire plan-and-initiate rebalancer run per account: balance snapshots and the initiations they
+ * produce happen while the lock is held, so an overlapping run can never initiate from a snapshot that predates
+ * another run's orders. When the lock is already held the run is skipped (runs are frequent); a crashed holder's
+ * lock expires via TTL. Without a status-tracking Redis, runs proceed unserialized.
+ */
+export async function withRebalancerInitiationLock<T>(
+  logger: winston.Logger,
+  account: string,
+  fn: () => Promise<T>,
+  redisCache?: RedisCache
+): Promise<T | undefined> {
+  redisCache ??= await getRedisCacheForRebalancerStatusTracking(logger);
+  if (!isDefined(redisCache)) {
+    logger.debug({
+      at: "withRebalancerInitiationLock",
+      message: "No rebalancer status-tracking Redis configured; running without the initiation lock",
+    });
+    return fn();
+  }
+  const key = getRebalancerInitiationLockKey(account);
+  const token = getCloidForAccount(account);
+  if (!(await redisCache.acquireLock(key, token, REBALANCER_INITIATION_LOCK_TTL_MS))) {
+    logger.warn({
+      at: "withRebalancerInitiationLock",
+      message: "Another rebalancer run holds the initiation lock; skipping this run",
+      account,
+    });
+    return undefined;
+  }
+  try {
+    return await fn();
+  } finally {
+    await redisCache.releaseLock(key, token).catch((error) =>
+      logger.warn({
+        at: "withRebalancerInitiationLock",
+        message: "Failed to release the rebalancer initiation lock; waiting for its TTL",
+        error,
+      })
+    );
+  }
+}
+
+// The operator's maximum acceptable venue cost, in percentage points scaled to 18 decimals (default 2.5%).
+export function getMaxFeePct(): BigNumber {
+  return toBNWei(process.env.MAX_FEE_PCT ?? "2.5");
+}
+
+// The maximum acceptable venue cost for a rebalance of `amount`, from getMaxFeePct().
+export function getMaxFee(amount: BigNumber): BigNumber {
+  return amount.mul(getMaxFeePct()).div(toBNWei(100));
+}
+
+// @todo Default low for now, eventually change this to a very high default value.
+export function getMaxPendingOrders(
+  config: { maxPendingOrders: { [adapter: string]: number | undefined } },
+  adapterName: string
+): number {
+  return config.maxPendingOrders[adapterName] ?? 2;
+}
 
 // Optional namespace that lets different rebalancer deployments keep their status-tracking data isolated
 // even if they share the same Redis instance.
@@ -84,6 +152,9 @@ export enum STATUS {
   PENDING_DEPOSIT,
   PENDING_SWAP,
   PENDING_WITHDRAWAL,
+  // A direct Binance deposit whose order was persisted before the deposit transaction was submitted. Promoted to
+  // PENDING_DEPOSIT once the deposit transaction hash is confirmed on-chain (or immediately after a clean submission).
+  PENDING_DEPOSIT_SUBMISSION,
 }
 
 export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS, account: string): string {
@@ -101,6 +172,9 @@ export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS
     case STATUS.PENDING_BRIDGE_PRE_DEPOSIT:
       orderStatusKey = redisPrefix + "pending-bridge-pre-deposit";
       break;
+    case STATUS.PENDING_DEPOSIT_SUBMISSION:
+      orderStatusKey = redisPrefix + "pending-deposit-submission";
+      break;
     default:
       throw new Error(`Invalid status: ${status}`);
   }
@@ -115,6 +189,12 @@ export function getPendingBridgeOrderKey(redisPrefix: string, cloid: string, acc
 // (e.g. pruning an expired order) can locate and untag the deposit.
 export function getPendingBridgeDepositTxnKey(redisPrefix: string, cloid: string, account: string): string {
   return `${redisPrefix}deposit-txn:${cloid}:${account.toLowerCase()}`;
+}
+
+// Marks an order whose deposit submission may have broadcast without its outcome being recorded. While present,
+// lifecycle passes resolve the order from the on-chain receipt instead of progressing it.
+export function getPendingBridgeDepositRecoveryKey(redisPrefix: string, cloid: string, account: string): string {
+  return `${redisPrefix}deposit-recovery:${cloid}:${account.toLowerCase()}`;
 }
 
 export async function redisGetOrderDetailsForAdapter(

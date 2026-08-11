@@ -47,6 +47,7 @@ import {
   BridgeApi,
   TokenSplitterBridge,
   PaxosTransitBridge,
+  BinanceStablecoinSwapBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
@@ -61,6 +62,9 @@ import {
   TokenSplitterBridge as L2TokenSplitterBridge,
   PaxosTransitL2Bridge,
   ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
+  ZKStackBridge as L2ZKStackBridge,
+  ZKStackNativeBridge as L2ZKStackNativeBridge,
+  ZKStackUSDCBridge as L2ZKStackUSDCBridge,
 } from "../adapter/l2Bridges";
 import { getContractAddress } from "./ContractAddresses";
 import { OFTL2Bridge } from "../adapter/l2Bridges/OFTL2Bridge";
@@ -467,7 +471,9 @@ export const CANONICAL_BRIDGE = resolveCanonicalBridges();
 
 export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2BridgeAdapter>> = {
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
+  // @dev Lens is deliberately absent: each of its tokens needs a different exit, wired per-token in CUSTOM_L2_BRIDGE.
   [CHAIN_IDs.LISK]: L2OpStackBridge,
+  [CHAIN_IDs.ZK_SYNC]: L2ZKStackBridge,
   [CHAIN_IDs.ZORA]: L2OpStackBridge,
 };
 
@@ -483,6 +489,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
   [CHAIN_IDs.AVALANCHE]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: BinanceStablecoinSwapBridge,
   },
   [CHAIN_IDs.BASE]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
@@ -648,6 +655,19 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     // L2→L1 excess withdrawals via Binance (same pattern as Optimism USDT). No L1→L2 Binance route.
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
   },
+  // Lens is wired per-token rather than via CANONICAL_L2_BRIDGE because only one of its three supported tokens can
+  // take the asset router route:
+  //   - USDC arrives over the standalone ZK Stack USDC bridge and is unknown to the native token vault, so it has
+  //     its own adapter. The finalizer routes every Lens USDC withdrawal to that standalone bridge on
+  //     (chain, token) alone, which could not settle an asset router message.
+  //   - WGHO is Lens's wrapped base token, which the vault refuses to burn, so it exits via L2BaseToken. Lens
+  //     registered its L1 base token as LGHO (the L1 "WGHO" the inventory book is keyed on), so the withdrawal is
+  //     minted on L1 as exactly that token.
+  [CHAIN_IDs.LENS]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2ZKStackUSDCBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2ZKStackBridge,
+    [TOKEN_SYMBOLS_MAP.WGHO.addresses[CHAIN_IDs.MAINNET]]: L2ZKStackNativeBridge,
+  },
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2OpStackUSDCBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
@@ -722,6 +742,10 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   },
   [CHAIN_IDs.ZK_SYNC]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
+    // WETH is zkSync's wrapped base token, which the native token vault refuses to burn, so it cannot take the
+    // canonical asset router route that the other ZK_SYNC tokens use. It is unwrapped and withdrawn as ETH
+    // instead, which the relayer then re-wraps on the hub chain.
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2ZKStackNativeBridge,
   },
 };
 

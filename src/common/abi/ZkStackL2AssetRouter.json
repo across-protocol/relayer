@@ -1,0 +1,19 @@
+[
+  {
+    "name": "withdraw",
+    "type": "function",
+    "stateMutability": "nonpayable",
+    "inputs": [
+      { "name": "_assetId", "type": "bytes32" },
+      { "name": "_assetData", "type": "bytes" }
+    ],
+    "outputs": [{ "name": "", "type": "bytes32" }]
+  },
+  {
+    "name": "l1TokenAddress",
+    "type": "function",
+    "stateMutability": "view",
+    "inputs": [{ "name": "_l2Token", "type": "address" }],
+    "outputs": [{ "name": "", "type": "address" }]
+  }
+]
