@@ -63,7 +63,7 @@ async function getEOAWithdrawals(
   // Withdrawals sent by the SpokePool are already covered by getTokensBridged().
   const senders = Array.from(senderAddresses.keys())
     .filter((address) => address.isEVM())
-    .map((address) => address.toEvmAddress())
+    .map((address) => address.toNative())
     .filter((sender) => sender !== spokePoolClient.spokePool.address);
   if (senders.length === 0) {
     return [];
