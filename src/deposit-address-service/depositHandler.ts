@@ -39,7 +39,7 @@ import {
 } from "./guards";
 import { HandlerResult, MessageHandler, RequestContext, assertBeforeDeadline } from "./handler";
 import { ParsedTransfer, parseTransfer } from "./message";
-import { reconcileBroadcast } from "./reconcile";
+import { resolvePendingTransaction } from "./pendingTransaction";
 import { BroadcastPendingState, TransferLock, TransferStore } from "./transferState";
 
 /** The API's stable discriminator for an amount under the minimum deposit; a 422 with any other code is not this. */
@@ -70,17 +70,18 @@ export interface DepositHandlerDeps {
 /**
  * v3 deposit execution.
  *
- * Lifecycle: read state → acquire lock → **re-read** state → route → guards → quote → deadline and
- * lock-ownership recheck → broadcast → reconcile → release. The second read is what closes the race between
- * the first read and lock acquisition; the lock is what stops two live consumers both passing the guards,
- * since `broadcast_pending` is only written after a broadcast and so cannot do that job.
+ * Lifecycle: read state → acquire lock → **re-read** state → classification → guards → quote → deadline
+ * and lock-ownership recheck → broadcast → resolve against the chain → release. The second read is what
+ * closes the race between the first read and lock acquisition; the lock is what stops two live consumers
+ * both passing the guards, since `broadcast_pending` is only written after a broadcast and so cannot do
+ * that job.
  */
 export function createDepositHandler(deps: DepositHandlerDeps): MessageHandler {
   return async (context: RequestContext): Promise<HandlerResult> => {
     const parsed = parseTransfer(context.delivery.payload);
 
     // A cheap short-circuit before taking a lock: a transfer that is already done needs no exclusion. Only
-    // terminal states qualify — a pending record has to be reconciled, which may clear it, so it needs the lock.
+    // terminal states qualify — resolving a pending record may clear it, so that needs the lock.
     const existing = await deps.store.read(parsed.transferId);
     if (isDefined(existing) && existing.status !== "broadcast_pending") {
       return { outcome: `already_${existing.status}`, fields: { transferId: parsed.transferId, ...existing } };
@@ -119,7 +120,7 @@ async function processUnderLock(
       return { outcome: `already_${current.status}`, fields: { transferId, ...current } };
     }
     // A transaction may still land, so never re-execute: resolve the recorded one instead.
-    return reconcileBroadcast({ logger: deps.logger, store, provider }, transferId, current);
+    return resolvePendingTransaction({ logger: deps.logger, store, provider }, transferId, current);
   }
 
   // Switched on the indexer's own classification rather than a deposit/withdraw label decided at parse time:
@@ -181,7 +182,7 @@ async function executeDeposit(
   }
 
   const pending = await broadcast(deps, parsed, response, originChainId, provider);
-  const result = await reconcileBroadcast({ logger, store, provider }, transferId, pending);
+  const result = await resolvePendingTransaction({ logger, store, provider }, transferId, pending);
   return { outcome: result.outcome, fields: { ...result.fields, quoteMs: Date.now() - quotedAtMs, integratorId } };
 }
 

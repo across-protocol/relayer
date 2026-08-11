@@ -43,7 +43,7 @@ export function hasMetadataEvent(receipt: TransactionReceipt): boolean {
   return (receipt.logs ?? []).some((log) => log.topics?.[0] === METADATA_EMITTED_TOPIC);
 }
 
-export interface ReconcileDeps {
+export interface ResolveDeps {
   logger: winston.Logger;
   store: TransferStore;
   provider: Provider;
@@ -59,11 +59,12 @@ export interface ReconcileDeps {
  * `submitTransaction` flattens revert, exhausted-`maxTries` and RPC failure into one untyped `Error`. There
  * is nothing in the exception to switch on, so the outcome comes from the chain in both cases.
  *
- * Throws on every non-terminal outcome, so the retry decision travels with the error rather than being
- * re-derived by the caller.
+ * **Returns only when the transaction confirmed**, and throws a typed error for every other outcome —
+ * reverted, replaced, or still unresolved. Unusual enough to state, and deliberate: the retry decision then
+ * travels with the error instead of being re-derived from a result by each caller.
  */
-export async function reconcileBroadcast(
-  deps: ReconcileDeps,
+export async function resolvePendingTransaction(
+  deps: ResolveDeps,
   transferId: string,
   pending: BroadcastPendingState
 ): Promise<HandlerResult> {
@@ -87,7 +88,7 @@ export async function reconcileBroadcast(
       const metadataEmitted = hasMetadataEvent(confirmed);
       if (!metadataEmitted) {
         logger.warn({
-          at: "DepositAddressService#reconcileBroadcast",
+          at: "DepositAddressService#resolvePendingTransaction",
           message: "Execute confirmed without the expected provenance metadata event.",
           ...fields,
           blockNumber: confirmed.blockNumber,
@@ -128,7 +129,7 @@ export async function reconcileBroadcast(
  * Absent that evidence the record is **retained**. Guessing "gone" here is the one irreversible direction.
  */
 async function resolveMissingReceipt(
-  deps: ReconcileDeps,
+  deps: ResolveDeps,
   transferId: string,
   pending: BroadcastPendingState
 ): Promise<never> {

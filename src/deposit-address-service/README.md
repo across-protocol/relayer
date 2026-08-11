@@ -39,11 +39,11 @@ lives on `TransactionClient`, so a per-request client would turn the accepted no
 ## The v3 deposit execute path
 
 [`depositHandler.ts`](./depositHandler.ts) is the handler; [`guards.ts`](./guards.ts) holds the pure
-checks and [`reconcile.ts`](./reconcile.ts) resolves a broadcast against the chain.
+checks and [`pendingTransaction.ts`](./pendingTransaction.ts) resolves a recorded broadcast against the chain.
 
 ```
 read state → acquire lock → RE-READ state → classification → guards → quote
-→ deadline + lock-ownership recheck → broadcast → reconcile → record terminal → release lock
+→ deadline + lock-ownership recheck → broadcast → resolve against chain → record terminal → release lock
 ```
 
 The **second** state read closes the race between the first read and lock acquisition. The first read is
@@ -92,15 +92,17 @@ Instead the path uses the broadcast-only helpers underneath it plus two optional
   mainnet — outliving both the deadline and the lock.
 
 `broadcast_pending` records `from` and `nonce` on **EVM only**. TVM reports `nonce: 0` unconditionally and
-has no replacement semantics, so recording them there would let reconciliation read a live record as
-replaced and clear it.
+has no replacement semantics, so recording them there would let resolution read a live record as replaced
+and clear it.
 
-### Reconciliation — the outcome comes from the chain
+### Resolving a pending transaction — the outcome comes from the chain
 
 `submit()` catches `_submit`'s throw, deletes its nonce cache and returns an empty array, which
 `submitTransaction` turns into a generic `Error` — so revert, exhausted `maxTries` and RPC failure are
-indistinguishable. There is nothing to switch on, so `reconcileBroadcast` reads the chain instead, and the
-same function serves a redelivery that finds a pending record.
+indistinguishable. There is nothing to switch on, so `resolvePendingTransaction` reads the chain instead,
+and the same function serves a redelivery that finds a pending record. It **returns only when the
+transaction confirmed** and throws a typed error for every other outcome, so the retry decision travels
+with the error rather than being re-derived by each caller.
 
 | Observation | Action |
 | --- | --- |
