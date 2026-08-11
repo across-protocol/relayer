@@ -91,9 +91,10 @@ Instead the path uses the broadcast-only helpers underneath it plus two optional
 - **`maxTries: 4`** bounds the wait. The client's default of 10 is `M(M+1)/2` = 55 waits — ~22 minutes on
   mainnet — outliving both the deadline and the lock.
 
-`broadcast_pending` records `from` and `nonce` on **EVM only**. TVM reports `nonce: 0` unconditionally and
-has no replacement semantics, so recording them there would let resolution read a live record as replaced
-and clear it.
+`broadcast_pending` records the hash, the chain and when — no signer, no nonce. **Nonce management is
+`TransactionClient`'s job.** Its confirmation wait already refuses to resubmit a consumed nonce, and
+re-notifies `onBroadcast` when it replaces a transaction, so the record follows the live hash without this
+service reasoning about nonces at all.
 
 ### Resolving a pending transaction — the outcome comes from the chain
 
@@ -108,13 +109,19 @@ with the error rather than being re-derived by each caller.
 | --- | --- |
 | Receipt, success | record `deposit_executed`, ACK |
 | Receipt, `status === 0` | clear `broadcast_pending`, NACK |
-| No receipt, and (EVM) `getTransactionCount(from,"latest") > nonce` | replaced and can never mine; it moved nothing, so clear and NACK to re-attempt |
-| No receipt, or the nonce read failed | **retain** `broadcast_pending`, NACK |
+| No receipt | **retain** `broadcast_pending`, NACK |
 
-That third row is what stops the accepted nonce race stranding a transfer: without it a loser NACKs every
-60s until retention expires, leaving a no-TTL key nobody looks at. It mirrors `TransactionClient`'s own
-"a consumed nonce must not be resubmitted" check, inverted. Hashes are stored verbatim and `0x`-prefixed
-at lookup, since TronWeb reports an un-prefixed `txid`.
+**A revert is the only case that clears anything**, because a reverted transaction provably moved nothing.
+"No receipt" is a statement about our knowledge, not the transaction: it may be unmined, dropped, replaced
+at its nonce, already mined behind a lagging RPC node, or reorged out. Those five are treated identically
+on purpose — retaining is safe in all of them, clearing is unrecoverable in some, and no observable evidence
+separates them cheaply. Trying to split the bucket by reading nonces would duplicate `TransactionClient`'s
+own bookkeeping to recover one narrow case (a worker that died mid-confirm during a nonce collision) at the
+price of a chain-family gate that clears a *live* record whenever it is wrong.
+
+The residual: that transfer stays blocked until an operator clears the key. See the issue's Scope.
+
+Hashes are stored verbatim and `0x`-prefixed at lookup, since TronWeb reports an un-prefixed `txid`.
 
 ### Metadata is mandatory
 

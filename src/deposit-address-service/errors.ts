@@ -218,21 +218,17 @@ export class BroadcastRevertedError extends DepositAddressServiceError {
 }
 
 /**
- * A broadcast transaction has no receipt yet and cannot be shown to be dead, so its `broadcast_pending`
- * record is **retained** and the transfer stays blocked. NACK; a later delivery reconciles it.
+ * The chain has not said what became of a broadcast transaction, so its `broadcast_pending` record is
+ * **retained** and the transfer stays blocked. NACK; a later delivery looks again.
+ *
+ * "Unresolved" is a statement about our knowledge, not about the transaction: it may be unmined, dropped,
+ * replaced at its nonce, already mined behind a lagging RPC node, or reorged out. Those are treated
+ * identically because retaining is safe in all of them and clearing is unrecoverable in some — the funds may
+ * already have moved.
  */
 export class UnresolvedBroadcastError extends DepositAddressServiceError {
   readonly retriable = true;
   readonly code = "UNRESOLVED_BROADCAST";
-}
-
-/**
- * A broadcast transaction was replaced at its nonce and can never mine, so its record was cleared. NACK to
- * re-attempt: it moved nothing, which is what makes clearing safe.
- */
-export class ReplacedBroadcastError extends DepositAddressServiceError {
-  readonly retriable = true;
-  readonly code = "REPLACED_BROADCAST";
 }
 
 /** RPC error, quote-api timeout or 5xx, Redis unavailable — may clear on its own, so NACK. */

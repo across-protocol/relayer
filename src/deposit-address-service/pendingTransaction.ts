@@ -1,20 +1,8 @@
 import { utils as ethersUtils } from "ethers";
 import { Provider, TransactionReceipt, winston } from "../utils";
-import { isDefined } from "../utils/TypeGuards";
-import {
-  BroadcastRevertedError,
-  ReplacedBroadcastError,
-  TransientDependencyError,
-  UnresolvedBroadcastError,
-} from "./errors";
+import { BroadcastRevertedError, TransientDependencyError, UnresolvedBroadcastError } from "./errors";
 import { HandlerResult } from "./handler";
-import {
-  BroadcastPendingState,
-  TerminalState,
-  TransferStore,
-  classifyReceipt,
-  replacementTarget,
-} from "./transferState";
+import { BroadcastPendingState, TerminalState, TransferStore, classifyReceipt } from "./transferState";
 
 /**
  * `MetadataEmitted(bytes)`, emitted by the AcrossEventEmitter when the execute carries `erc20Transfer`
@@ -59,9 +47,12 @@ export interface ResolveDeps {
  * `submitTransaction` flattens revert, exhausted-`maxTries` and RPC failure into one untyped `Error`. There
  * is nothing in the exception to switch on, so the outcome comes from the chain in both cases.
  *
- * **Returns only when the transaction confirmed**, and throws a typed error for every other outcome —
- * reverted, replaced, or still unresolved. Unusual enough to state, and deliberate: the retry decision then
- * travels with the error instead of being re-derived from a result by each caller.
+ * **Returns only when the transaction confirmed**, and throws a typed error otherwise. Unusual enough to
+ * state, and deliberate: the retry decision then travels with the error instead of being re-derived from a
+ * result by each caller.
+ *
+ * Three outcomes, and only one of them clears anything. A revert is the sole case where the record can be
+ * removed, because a reverted transaction provably moved nothing.
  */
 export async function resolvePendingTransaction(
   deps: ResolveDeps,
@@ -70,7 +61,7 @@ export async function resolvePendingTransaction(
 ): Promise<HandlerResult> {
   const { logger, store, provider } = deps;
   const { txHash, chainId, operation } = pending;
-  const fields = { transferId, txHash, chainId, operation, nonce: pending.nonce, signer: pending.from };
+  const fields = { transferId, txHash, chainId, operation };
 
   // Typed non-nullable by ethers, but null at runtime for an unmined hash — `classifyReceipt` guards that.
   let receipt: TransactionReceipt;
@@ -113,49 +104,20 @@ export async function resolvePendingTransaction(
       throw new BroadcastRevertedError(`transaction ${txHash} on chain ${chainId} reverted`);
 
     case "unresolved":
-      return await resolveMissingReceipt(deps, transferId, pending);
-  }
-}
-
-/**
- * No receipt yet: either the transaction is still in flight, or it was replaced at its nonce and never will
- * be. Only the second is safe to clear, and only on EVM.
- *
- * The discriminator is `TransactionClient`'s own "a consumed nonce must not be resubmitted" check, inverted:
- * if some *other* transaction spent this nonce while ours still has no receipt, ours can never mine. It moved
- * nothing, so clearing cannot double-sweep — which is what keeps an accepted nonce collision from stranding a
- * transfer forever behind a no-TTL key.
- *
- * Absent that evidence the record is **retained**. Guessing "gone" here is the one irreversible direction.
- */
-async function resolveMissingReceipt(
-  deps: ResolveDeps,
-  transferId: string,
-  pending: BroadcastPendingState
-): Promise<never> {
-  const { store, provider } = deps;
-  const target = replacementTarget(pending);
-
-  if (isDefined(target)) {
-    let latestNonce: number;
-    try {
-      latestNonce = await provider.getTransactionCount(target.from, "latest");
-    } catch (err) {
-      // Cannot tell replaced from in-flight, so retain rather than guess.
-      throw new TransientDependencyError(`failed to read nonce for ${target.from}: ${stringify(err)}`, err);
-    }
-
-    if (latestNonce > target.nonce) {
-      await store.clearRevertedBroadcast(transferId, pending.txHash);
-      throw new ReplacedBroadcastError(
-        `transaction ${pending.txHash} was replaced at nonce ${target.nonce} (chain is at ${latestNonce})`
+      // Every reason a receipt is missing gets the same answer, deliberately. It may be unmined, dropped,
+      // replaced at its nonce, already mined behind a lagging RPC node, or reorged out — and the observable
+      // evidence does not separate them. Retaining is safe in all five; clearing is unrecoverable in two of
+      // them, because the funds may already have moved. So there is nothing to discriminate.
+      //
+      // Nonce management is `TransactionClient`'s concern, not this service's: its confirmation wait already
+      // refuses to resubmit a consumed nonce, and re-notifies `onBroadcast` when it replaces a transaction, so
+      // the record follows the live hash while a worker is alive. A worker that *dies* mid-confirm can still
+      // leave a record naming a transaction that will never mine — that transfer stays blocked until an
+      // operator clears the key. Accepted; see the issue's Scope.
+      throw new UnresolvedBroadcastError(
+        `transaction ${txHash} on chain ${chainId} has no receipt; retaining broadcast_pending`
       );
-    }
   }
-
-  throw new UnresolvedBroadcastError(
-    `transaction ${pending.txHash} on chain ${pending.chainId} has no receipt; retaining broadcast_pending`
-  );
 }
 
 function stringify(err: unknown): string {
