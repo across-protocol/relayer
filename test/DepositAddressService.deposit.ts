@@ -293,7 +293,16 @@ describe("DepositAddressService v3 deposit execution", function () {
       baseSigner,
       signerAddress: EvmAddress.from(signerAddress),
       dispatcherSigners: [],
-      getProvider: async () => fakeProvider(),
+      // Throws for any chain but the configured one, because the real `getProvider` throws
+      // `No RPC providers defined` for a chain with no RPC configuration. A fake that answered for every
+      // chain would be more forgiving than production and would mask a guard running *after* the provider
+      // is built — which it did, until review caught it.
+      getProvider: async (chainId: number) => {
+        if (chainId !== ARBITRUM) {
+          throw new Error(`No RPC providers defined for chain ${chainId}`);
+        }
+        return fakeProvider();
+      },
     });
 
     const app = createApp({ logger, config, lifecycle: new RequestLifecycle(), handler });

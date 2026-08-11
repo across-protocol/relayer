@@ -107,20 +107,29 @@ async function processUnderLock(
   parsed: ParsedTransfer,
   lock: TransferLock
 ): Promise<HandlerResult> {
-  const { store } = deps;
+  const { config, store } = deps;
   const { transferId, message } = parsed;
   const { chainId, transferClassification } = message.erc20Transfer;
   const originChainId = Number(chainId);
-  const provider = await (deps.getProvider ?? getProviderDefault)(originChainId);
+  const getProvider = deps.getProvider ?? getProviderDefault;
 
   const current = await store.read(transferId);
   if (isDefined(current)) {
     if (current.status !== "broadcast_pending") {
       return { outcome: `already_${current.status}`, fields: { transferId, ...current } };
     }
-    // A transaction may still land, so never re-execute: resolve the recorded one instead.
-    return resolvePendingTransaction({ logger: deps.logger, store, provider }, transferId, current);
+    // A transaction may still land, so never re-execute: resolve the recorded one instead. The chain guards
+    // below deliberately do **not** gate this — a transfer on a since-disabled chain still has a transaction
+    // on the wire, and abandoning it unresolved is the one unrecoverable direction.
+    const deps_ = { logger: deps.logger, store, provider: await getProvider(originChainId) };
+    return resolvePendingTransaction(deps_, transferId, current);
   }
+
+  // Both guards run **before** the provider is built. `getProvider` throws a bare `No RPC providers defined`
+  // for a chain with no configuration, and the app cannot tell that from a transient fault — so it would
+  // alert and redeliver forever, instead of the ACK an unsupported family is supposed to get. Ordering, not
+  // logic, is what makes those dispositions reachable.
+  assertSupportedOriginChain(config.originChains, originChainId);
 
   // Switched on the indexer's own classification rather than a deposit/withdraw label decided at parse time:
   // a `correct_transfer` the execute endpoint rejects as below the minimum becomes a refund withdraw too, so
@@ -132,7 +141,7 @@ async function processUnderLock(
     );
   }
 
-  return executeDeposit(deps, context, parsed, lock, provider, originChainId);
+  return executeDeposit(deps, context, parsed, lock, await getProvider(originChainId), originChainId);
 }
 
 async function executeDeposit(
@@ -143,11 +152,11 @@ async function executeDeposit(
   provider: Provider,
   originChainId: number
 ): Promise<HandlerResult> {
-  const { config, store, logger } = deps;
+  const { store, logger } = deps;
   const { transferId, message } = parsed;
   const { depositAddress, erc20Transfer } = message;
 
-  assertSupportedOriginChain(config.originChains, originChainId);
+  // `assertSupportedOriginChain` already ran in `processUnderLock`, before the provider was built.
   assertSupportedNamespace(message, originChainId);
   const integratorId = assertIntegratorId(message);
 
