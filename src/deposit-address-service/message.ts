@@ -64,12 +64,19 @@ const V3MessageStruct = type({
   integrator: optional(nullable(type({ name: string(), integratorId: nullable(string()) }))),
 });
 
-/** Which path a message takes. `drop` is not represented: those throw {@link UnsupportedMessageError}. */
-export type TransferRoute = "deposit" | "withdraw";
-
+/**
+ * Deliberately carries no deposit-vs-withdraw decision.
+ *
+ * Naming one here would be both a rename and a lie. A rename because `correct_transfer` ⇒ "deposit" and
+ * `mis_route` ⇒ "withdraw" is a second vocabulary for a fact the indexer already stated, with no rules
+ * folded in. A lie because the decision is not knowable yet: a `correct_transfer` the execute endpoint
+ * rejects as below the minimum becomes a refund withdraw, and that is only known after the API answers.
+ *
+ * The honest place for that word is `BroadcastPendingState.operation`, which records what the transaction
+ * being broadcast actually does, at the point it is known.
+ */
 export interface ParsedTransfer {
   readonly transferId: string;
-  readonly route: TransferRoute;
   readonly message: DepositAddressMessageV3;
 }
 
@@ -88,11 +95,14 @@ export function transferId(transfer: Erc20Transfer): string {
 }
 
 /**
- * Validates a decoded payload and decides its route. Pure: no I/O, no clients, no config.
+ * Validates a decoded payload and derives its identity. Pure: no I/O, no clients, no config.
  *
  * Throws `MessageValidationError` (ACK — the same bytes fail identically on every redelivery) for bad
- * JSON or a shape that breaks the contract, and `UnsupportedMessageError` (ACK) for anything this
- * service does not act on: a non-v3 version, or a classification with no route.
+ * JSON or a shape that breaks the contract, and `UnsupportedMessageError` (ACK) for a non-v3 version.
+ *
+ * Every v3 classification is actionable — `correct_transfer` sweeps, `mis_route` and `intent_refund` both
+ * refund — so there is nothing to drop here, and the struct's `enums` already rejects an unknown one as a
+ * validation failure. Note what this does **not** decide — see {@link ParsedTransfer}.
  *
  * v1 is intentionally unsupported here; the polling bot still serves it until a later PR ports it.
  */
@@ -118,24 +128,5 @@ export function parseTransfer(payload: string): ParsedTransfer {
     throw new MessageValidationError(`v3 message failed validation at ${detail}`);
   }
 
-  return { transferId: transferId(message.erc20Transfer), route: route(message), message };
-}
-
-/**
- * Mirrors `processExecution` in the polling bot, minus the refund-only marker: that state is gone, so a
- * below-minimum transfer re-asks the execute endpoint on redelivery and falls back to withdraw again.
- */
-function route(message: DepositAddressMessageV3): TransferRoute {
-  const { transferClassification } = message.erc20Transfer;
-  switch (transferClassification) {
-    case "correct_transfer":
-      return "deposit";
-    // An expired intent refunds to the deposit address itself (the SpokePool depositor), so it needs
-    // the same second hop out to the committed refund address as a mis_route.
-    case "mis_route":
-    case "intent_refund":
-      return "withdraw";
-    default:
-      throw new UnsupportedMessageError(`no v3 route for classification ${transferClassification}`);
-  }
+  return { transferId: transferId(message.erc20Transfer), message };
 }

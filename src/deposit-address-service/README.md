@@ -17,8 +17,16 @@ left untouched until cutover. Why a service rather than a poller:
 `payload`, required `messageId`, always-present `attributes` — so nothing downstream optional-chains
 transport fields.
 
-`parseTransfer` in [`message.ts`](./message.ts) then validates the **payload** and returns its
-`transferId` and route. Pure, no I/O.
+`parseTransfer` in [`message.ts`](./message.ts) then validates the **payload** and returns its `transferId`
+and the message as the indexer stated it. Pure, no I/O.
+
+It deliberately returns **no deposit-vs-withdraw decision**. Naming one there would be a rename —
+`correct_transfer` ⇒ "deposit", `mis_route` ⇒ "withdraw" folds in no rules the indexer had not already
+stated — and it would also be wrong, because the decision is not knowable that early: a `correct_transfer`
+the execute endpoint rejects as below the minimum becomes a refund withdraw. The one thing `parseTransfer`
+does decide is that `intent_refund` is not actionable on v3 at all. The honest home for the word is
+`BroadcastPendingState.operation`, which records what the transaction being broadcast actually does, at the
+point it is known.
 
 [`transferState.ts`](./transferState.ts) holds the two Redis keys per transfer — an expiring `lock:` and a
 `state:` that must not expire while a transaction could still land — plus `classifyReceipt`, which reports
@@ -34,7 +42,7 @@ lives on `TransactionClient`, so a per-request client would turn the accepted no
 checks and [`reconcile.ts`](./reconcile.ts) resolves a broadcast against the chain.
 
 ```
-read state → acquire lock → RE-READ state → route → guards → quote
+read state → acquire lock → RE-READ state → classification → guards → quote
 → deadline + lock-ownership recheck → broadcast → reconcile → record terminal → release lock
 ```
 

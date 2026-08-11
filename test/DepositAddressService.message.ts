@@ -70,19 +70,27 @@ describe("transferId", function () {
 });
 
 describe("parseTransfer", function () {
-  it("routes correct_transfer to deposit and returns the transferId", function () {
+  it("returns the transferId and the message as the indexer stated it", function () {
     const parsed = parseTransfer(v3());
-    expect(parsed.route).to.equal("deposit");
     expect(parsed.transferId).to.equal("42161:0xa3f1c7d40e9b6852f1ad0c3b7e94f628a1d5c09e:7");
     expect(parsed.message.erc20Transfer.amount).to.equal("25000000");
+    expect(parsed.message.erc20Transfer.transferClassification).to.equal("correct_transfer");
   });
 
-  it("routes mis_route to withdraw", function () {
-    expect(parseTransfer(v3({}, { transferClassification: "mis_route" })).route).to.equal("withdraw");
+  it("passes an actionable classification through untranslated", function () {
+    // Deliberately no deposit/withdraw label here: a correct_transfer the execute endpoint rejects as below
+    // the minimum becomes a refund withdraw, so the action is not knowable at parse time.
+    const parsed = parseTransfer(v3({}, { transferClassification: "mis_route" }));
+    expect(parsed.message.erc20Transfer.transferClassification).to.equal("mis_route");
+    expect("route" in parsed).to.equal(false);
   });
 
-  it("routes intent_refund to withdraw", function () {
-    expect(parseTransfer(v3({}, { transferClassification: "intent_refund" })).route).to.equal("withdraw");
+  // Master routes intent_refund to withdraw (an expired intent refunds to the deposit address itself, so it
+  // needs the same second hop as a mis_route). Nothing is dropped here any more, and the classification is
+  // passed through untranslated for the handler to act on.
+  it("passes intent_refund through as actionable", function () {
+    const parsed = parseTransfer(v3({}, { transferClassification: "intent_refund" }));
+    expect(parsed.message.erc20Transfer.transferClassification).to.equal("intent_refund");
   });
 
   it("drops unsupported versions before validating the rest", function () {
@@ -107,12 +115,12 @@ describe("parseTransfer", function () {
 
   it("accepts a message with no integrator", function () {
     // Pre-integrator deposit addresses omit it; the execute path validates the id separately.
-    expect(parseTransfer(v3({ integrator: undefined })).route).to.equal("deposit");
-    expect(parseTransfer(v3({ integrator: null })).route).to.equal("deposit");
+    expect(parseTransfer(v3({ integrator: undefined })).message.integrator).to.equal(undefined);
+    expect(parseTransfer(v3({ integrator: null })).message.integrator).to.equal(null);
   });
 
   it("tolerates unknown fields so an indexer addition cannot break the service", function () {
     const parsed = parseTransfer(v3({ someFutureField: { nested: true } }));
-    expect(parsed.route).to.equal("deposit");
+    expect(parsed.transferId).to.equal("42161:0xa3f1c7d40e9b6852f1ad0c3b7e94f628a1d5c09e:7");
   });
 });
