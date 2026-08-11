@@ -2,7 +2,6 @@ import { CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY, getContractAbi, get
 import {
   BigNumber,
   bnZero,
-  compareAddressesSimple,
   Contract,
   createFormatFunction,
   EventSearchConfig,
@@ -91,9 +90,9 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
     ]);
     const counted = new Set<number>();
     // @dev Both gateways can be shared across tokens (DEFAULT_ARBITRUM_GATEWAY), so each side is filtered on the
-    // non-indexed l1Token. The event decodes it to a checksummed string, so it must be compared case-insensitively
-    // against the EvmAddress rather than by identity.
-    const isTrackedToken = (eventL1Token: string) => compareAddressesSimple(eventL1Token, l1Token.toNative());
+    // non-indexed l1Token. The event decodes it to a plain string, so lift it into an EvmAddress before comparing;
+    // testing the string against the EvmAddress directly is always unequal.
+    const isTrackedToken = (eventL1Token: string) => EvmAddress.from(eventL1Token).eq(l1Token);
     const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, { args: l2Args }) => {
       if (!isTrackedToken(l2Args.l1Token)) {
         return totalAmount;
