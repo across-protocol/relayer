@@ -131,12 +131,27 @@ export class WithdrawRouteNotImplementedError extends DepositAddressServiceError
 }
 
 /**
- * The origin chain is not in `RELAYER_ORIGIN_CHAINS`, or its family has no v3 execute path. Deterministic
- * static-config mismatch, so ACK: no retry can change it.
+ * The origin chain's family has no v3 execute path at all — not EVM, not TVM. ACK: this is a property of the
+ * code, not of configuration, so no redelivery can change it while this build is deployed.
  */
-export class UnsupportedOriginChainError extends DepositAddressServiceError {
+export class UnsupportedChainFamilyError extends DepositAddressServiceError {
   readonly retriable = false;
-  readonly code = "UNSUPPORTED_ORIGIN_CHAIN";
+  readonly code = "UNSUPPORTED_CHAIN_FAMILY";
+}
+
+/**
+ * The origin chain is absent from `RELAYER_ORIGIN_CHAINS`. **NACK, unlike an unsupported family** — this is an
+ * operator switch, so the transfer becomes executable again the moment the chain is re-enabled, and ACKing
+ * would destroy the only delivery for funds that are still sitting on the deposit address.
+ *
+ * The polling bot simply skipped and revisited the row on its next poll, so ACKing here would be a parity
+ * regression rather than a design choice. Same shape as {@link ExecutionDisabledError}, and the same
+ * corollary: a chain disabled for long enough should stop being *published* to this service, not be
+ * published and then retried.
+ */
+export class OriginChainDisabledError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "ORIGIN_CHAIN_DISABLED";
 }
 
 /**

@@ -9,6 +9,7 @@ import {
   min,
   nullable,
   optional,
+  refine,
   string,
   type,
 } from "superstruct";
@@ -21,8 +22,28 @@ import { MessageValidationError, UnsupportedMessageError } from "./errors";
  * same reason. v3 messages get **no** structural validation in the polling bot — it checks `version`
  * and casts the rest — so this is new coverage, not a port.
  */
+
+/**
+ * A chain id the indexer sends as a **string**, constrained to something `Number()` turns into a usable chain
+ * id. Validated here rather than at the first use because the damage is not limited to one call site:
+ * `Number("bogus")` is `NaN`, which flows into `transferId()` and produces the key
+ * `deposit-address:lock:NaN:<txHash>:<logIndex>` — so two malformed messages sharing a hash and log index
+ * would collide on one lock and one state record. Identity corruption, not just a bad RPC call.
+ *
+ * Downstream it would also reach `getProvider(NaN)`, whose ordinary `Error` is *unrecognised* by the app and
+ * therefore treated as retriable **and** alerting — so a deterministically malformed message would page and
+ * then redeliver every 60s for the whole retention period. Failing validation instead makes it an ACK.
+ *
+ * Refined on the converted value rather than pattern-matched on the string, so a legitimate non-decimal
+ * encoding is not rejected for cosmetic reasons.
+ */
+const NumericChainId = refine(string(), "numeric chain id", (value) => {
+  const chainId = Number(value);
+  return Number.isInteger(chainId) && chainId > 0;
+});
+
 const Erc20TransferStruct = type({
-  chainId: string(),
+  chainId: NumericChainId,
   blockNumber: min(integer(), 0),
   logIndex: min(integer(), 0),
   from: string(),
@@ -55,7 +76,9 @@ const V3MessageStruct = type({
   ),
   routeParams: type({
     outputToken: string(),
-    destinationChainId: string(),
+    // Same treatment: a NaN here reaches the execute endpoint, which rejects it as a client error that this
+    // service cannot distinguish from a transient one, so it would also redeliver forever.
+    destinationChainId: NumericChainId,
     recipient: NamespacedAccountStruct,
   }),
   refundAddress: NamespacedAccountStruct,

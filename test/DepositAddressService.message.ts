@@ -99,6 +99,25 @@ describe("parseTransfer", function () {
     }
   });
 
+  it("rejects a chainId that does not convert to a chain id", function () {
+    // `Number()` on these is NaN or nonsense. Caught here rather than at first use, because NaN also flows
+    // into transferId() and would make two malformed messages share one lock and state key.
+    for (const chainId of ["bogus", "", "1.5", "-1", "0"]) {
+      expect(() => parseTransfer(v3({}, { chainId })), JSON.stringify(chainId)).to.throw(/erc20Transfer.chainId/);
+    }
+  });
+
+  it("rejects a destinationChainId that does not convert to a chain id", function () {
+    const bad = JSON.parse(v3()) as { routeParams: Record<string, unknown> };
+    bad.routeParams.destinationChainId = "bogus";
+    expect(() => parseTransfer(JSON.stringify(bad))).to.throw(/routeParams.destinationChainId/);
+  });
+
+  it("accepts a chainId in any encoding Number() understands", function () {
+    // Not pattern-matched on the string, so a legitimate non-decimal encoding is not rejected cosmetically.
+    expect(parseTransfer(v3({}, { chainId: "0xa4b1" })).transferId).to.match(/^42161:/);
+  });
+
   it("rejects payloads that are not JSON", function () {
     expect(() => parseTransfer("{not json")).to.throw(/not JSON/);
   });
