@@ -1,4 +1,6 @@
-import { assert, CHAIN_IDs, Signer, winston } from "../utils";
+import { assert, CHAIN_IDs, EvmAddress, getTokenInfo, isDefined, Signer, winston } from "../utils";
+import { CUSTOM_BRIDGE } from "../common";
+import { BinanceStablecoinSwapBridge } from "../adapter/bridges";
 import { BinanceStablecoinSwapAdapter } from "./adapters/binance";
 import { CctpAdapter } from "./adapters/cctpAdapter";
 import { HyperliquidStablecoinSwapAdapter } from "./adapters/hyperliquid";
@@ -10,8 +12,6 @@ import { ReadOnlyRebalancerClient } from "./clients/ReadOnlyRebalancerClient";
 import { RebalancerConfig } from "./RebalancerConfig";
 import { buildBridgeSupportRoutes, buildRebalanceRoutes } from "./buildRebalanceRoutes";
 import { RebalancerAdapter, RebalanceRoute } from "./utils/interfaces";
-import { SameAssetRebalancerClient } from "./clients/SameAssetRebalancerClient";
-import { buildSameAssetRebalanceRoutes } from "./buildSameAssetRebalanceRoutes";
 
 export type AdapterName = "cctp" | "oft" | "hyperliquid" | "binance";
 type AdapterMap = { [name: string]: RebalancerAdapter };
@@ -23,7 +23,31 @@ type RebalancerClientConstructor<T extends BaseRebalancerClient> = new (
   isReadonly: boolean
 ) => T;
 
-function constructRebalancerDependencies(
+// Derive the L1 -> L2 same-asset routes owned by the AdapterManager's Binance swap bridge: a route requires both
+// a CUSTOM_BRIDGE registration and operator enablement of the token + destination chain in the rebalancer config.
+export function buildAdapterManagerBinanceRoutes(rebalancerConfig: RebalancerConfig): RebalanceRoute[] {
+  return Object.entries(CUSTOM_BRIDGE).flatMap(([chainId, bridges]) =>
+    Object.entries(bridges)
+      .filter(([, Bridge]) => Bridge === BinanceStablecoinSwapBridge)
+      .flatMap(([l1Token]) => {
+        const { symbol } = getTokenInfo(EvmAddress.from(l1Token), CHAIN_IDs.MAINNET);
+        if (!isDefined(rebalancerConfig.sameAssetBalances[symbol]?.[Number(chainId)])) {
+          return [];
+        }
+        return [
+          {
+            sourceChain: CHAIN_IDs.MAINNET,
+            sourceToken: symbol,
+            destinationChain: Number(chainId),
+            destinationToken: symbol,
+            adapter: "binance",
+          },
+        ];
+      })
+  );
+}
+
+export function constructRebalancerDependencies(
   logger: winston.Logger,
   baseSigner: Signer
 ): {
@@ -77,6 +101,10 @@ async function constructInitializedRebalancerClient<T extends BaseRebalancerClie
       adapters[adapterName] ? [adapters[adapterName].initialize(bridgeSupportRoutes)] : []
     )
   );
+  // Initialize the Binance adapter first (initialize() is idempotent, first call wins) so it carries lifecycle
+  // routes beyond the client's own rebalance routes, e.g. orders initiated by the AdapterManager's Binance swap
+  // bridge. Routes are operator-configured, so a validation failure crashes the run like any other route.
+  await adapters.binance?.initialize([...rebalanceRoutes, ...buildAdapterManagerBinanceRoutes(rebalancerConfig)]);
   await rebalancerClient.initialize(rebalanceRoutes);
   logger.debug({
     at: `RebalancerClientHelper.${logLabel}`,
@@ -100,22 +128,6 @@ export async function constructCumulativeBalanceRebalancerClient(
     false,
     "constructCumulativeBalanceRebalancerClient",
     "CumulativeBalanceRebalancerClient initialized"
-  );
-}
-
-export async function constructSameAssetRebalancerClient(
-  logger: winston.Logger,
-  baseSigner: Signer,
-  rebalanceRoutesOverride?: RebalanceRoute[]
-): Promise<SameAssetRebalancerClient> {
-  return constructInitializedRebalancerClient(
-    logger,
-    baseSigner,
-    SameAssetRebalancerClient,
-    (rebalancerConfig) => rebalanceRoutesOverride ?? buildSameAssetRebalanceRoutes(rebalancerConfig),
-    false,
-    "constructSameAssetRebalancerClient",
-    "SameAssetRebalancerClient initialized"
   );
 }
 

@@ -984,6 +984,19 @@ export class InventoryClient {
       return [];
     }
 
+    // Redis-tracked pending rebalances are the ONLY in-flight accounting for Binance swap transfers (the
+    // bridge's queryL1BridgeInitiationEvents deliberately returns nothing), so an incomplete Binance pending
+    // read could double-initiate a transfer that is already in flight. Skip initiation for this run instead.
+    const failedAdapters = this.rebalancerClient.getAdaptersWithFailedPendingReads();
+    if (failedAdapters.includes("binance")) {
+      this.log(
+        "Skipping inventory rebalances because Binance pending-rebalance state is incomplete",
+        { failedAdapters },
+        "warn"
+      );
+      return [];
+    }
+
     const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
     this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
 
@@ -999,6 +1012,21 @@ export class InventoryClient {
 
     // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
     for (const rebalance of rebalancesRequired) {
+      // Bridges backed by an external venue (e.g. Binance) enforce a per-transfer maximum and reject over-cap
+      // sends one-shot, so clamp the requested amount and let successive runs chunk an over-cap deficit. An
+      // unavailable venue is surfaced when the transfer is sent, not here.
+      const maxTransferAmount = await this.adapterManager
+        .getMaxL1ToL2TransferAmount(rebalance.chainId, rebalance.l1Token)
+        .catch(() => undefined);
+      if (isDefined(maxTransferAmount) && rebalance.amount.gt(maxTransferAmount)) {
+        this.log("Capping rebalance amount to the bridge's maximum transfer amount", {
+          chainId: rebalance.chainId,
+          l2Token: rebalance.l2Token,
+          amount: rebalance.amount,
+          maxTransferAmount,
+        });
+        rebalance.amount = maxTransferAmount;
+      }
       const { balance, amount, l1Token, l2Token, chainId } = rebalance;
 
       // This is the balance left after any assumed rebalances from earlier loop iterations.

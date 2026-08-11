@@ -398,6 +398,37 @@ describe("InventoryClient: Rebalancing inventory", function () {
     }
   });
 
+  it("Skips initiation when the Binance pending-rebalance read failed", async function () {
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+    const initialMainnetBalance = tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc));
+    mockRebalancerClient.setFailedPendingReads(["binance"]);
+
+    await inventoryClient.rebalanceInventoryIfNeeded();
+
+    // Redis-tracked pending rebalances are the only in-flight accounting for Binance swap transfers, so an
+    // incomplete read must not initiate transfers that may already be in flight.
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
+    expect(tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc))).to.equal(initialMainnetBalance);
+
+    // Other adapters' failed reads do not halt contract-bridge rebalances.
+    mockRebalancerClient.setFailedPendingReads(["hyperliquid"]);
+    await inventoryClient.update();
+    expect(await inventoryClient.rebalanceInventoryIfNeeded(true)).to.have.lengthOf(1);
+  });
+
+  it("Clamps the rebalance amount to the bridge's maximum transfer amount", async function () {
+    // A 500 USDC withdrawal from Arbitrum triggers a 515 USDC rebalance (see the target-allocation test above),
+    // but the bridge only accepts 100 per transfer, so each run sends a 100 chunk instead of never initiating.
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+    adapterManager.setMaxL1ToL2TransferAmount(ARBITRUM, EvmAddress.from(mainnetUsdc), toMegaWei(100));
+
+    await inventoryClient.update();
+    await inventoryClient.rebalanceInventoryIfNeeded();
+
+    expect(lastSpyLogIncludes(spy, "100.00 USDC rebalanced")).to.be.true;
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM][mainnetUsdc].amount.eq(toMegaWei(100))).to.be.true;
+  });
+
   // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
   // alongside that logic.
   it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {

@@ -29,11 +29,12 @@ const args = minimist(process.argv.slice(2), {
 // tsx ./scripts/withdrawTokenFromL2.ts --token USDC --chainId 143 --amount 3  # Shows calldata, doesn't execute
 // tsx ./scripts/withdrawTokenFromL2.ts --token USDT --chainId 8453 --amount 5 --sendTx  # Actually sends transaction
 // tsx ./scripts/withdrawTokenFromL2.ts --token USDC --chainId 137 --amount 2
+// tsx ./scripts/withdrawTokenFromL2.ts --token WGHO --chainId 232 --amount 1 --sendTx --wallet secret
 
 const MAINNET_CHAIN_ID = CHAIN_IDs.MAINNET;
 
 // Supported tokens
-const SUPPORTED_TOKENS = ["USDC", "USDT"] as const;
+const SUPPORTED_TOKENS = ["USDC", "USDT", "WETH", "WGHO"] as const;
 type SupportedToken = (typeof SUPPORTED_TOKENS)[number];
 
 async function run(): Promise<void> {
@@ -164,6 +165,18 @@ async function run(): Promise<void> {
     );
   }
 
+  // Bridges that pull tokens via transferFrom (e.g. the ZK Stack native token vault and the standalone
+  // ZK Stack USDC bridge) need an allowance. The bot grants these elsewhere; this one-shot script grants
+  // the exact withdrawal amount itself.
+  const approvals: { erc20: Contract; spender: string }[] = [];
+  for (const { token, bridge } of l2Bridge.requiredTokenApprovals()) {
+    const erc20 = new Contract(token.toNative(), ERC20.abi, l2Signer);
+    const allowance = await erc20.allowance(signerAddr, bridge.toNative());
+    if (allowance.lt(amountInWei)) {
+      approvals.push({ erc20, spender: bridge.toNative() });
+    }
+  }
+
   // Confirm transaction
   console.log("\n📍 Withdrawal Details:");
   console.log(`   From: ${l2ChainName} (Chain ID: ${l2ChainId})`);
@@ -172,6 +185,9 @@ async function run(): Promise<void> {
   console.log(`   Amount: ${formatter(amountInWei.toString())} ${tokenSymbol}`);
   console.log(`   Recipient: ${signerAddr}`);
   console.log(`   Bridge: ${BridgeConstructor.name}`);
+  approvals.forEach(({ erc20, spender }) =>
+    console.log(`   Approval to send first: ${erc20.address} allowance for ${spender}`)
+  );
 
   // Only execute if --sendTx is explicitly set
   if (!sendTransactions) {
@@ -192,6 +208,14 @@ async function run(): Promise<void> {
   if (!(await askYesNoQuestion("\n⚠️  Confirm that you want to execute this withdrawal?"))) {
     console.log("Transaction cancelled.");
     return;
+  }
+
+  // The withdrawal spends the allowance, so each approval must be confirmed before it is submitted.
+  for (const { erc20, spender } of approvals) {
+    logger.info(`Approving ${spender} to spend ${formatter(amountInWei.toString())} ${tokenSymbol}...`);
+    const txn = await erc20.approve(spender, amountInWei);
+    await txn.wait();
+    console.log(`Approval confirmed: ${blockExplorerLink(txn.hash, l2ChainId)}`);
   }
 
   // Execute withdrawal

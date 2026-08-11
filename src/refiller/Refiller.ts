@@ -402,6 +402,13 @@ export class Refiller {
       l1Token,
       this.logger
     );
+    if (isDefined(tokenBridge.sendL1ToL2Transfer)) {
+      this.logger.warn({
+        at: "Refiller#refillBalances",
+        message: `Cannot refill ${l2TokenInfo.symbol} on ${getNetworkName(chainId)}: its bridge submits through an external venue`,
+      });
+      return;
+    }
     const {
       contract,
       method,
