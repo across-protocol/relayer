@@ -25,11 +25,11 @@ Keep all relevant `AGENTS.md` and `README.md` files updated in the same change w
 - Rebalancer behavior and adapters: `src/rebalancer/README.md`
 - Refiller behavior: `src/refiller/README.md`
 - Dataworker root-bundle flow: `src/dataworker/README.md`
-- Jussi graph builder topology/economics/upload flow: `src/jussi/README.md`
 - Deposit-address handler and withdraw lifecycle: `src/deposit-address/README.md`
+- Deposit-address service (Express + Pub/Sub push; replaces the polling handler): `src/deposit-address-service/README.md`
 - Gasless relayer (API polling, deposits-only mode, integrator filters): `src/gasless/README.md`
 - Shared runtime clients: `src/clients/README.md`
-- Cross-bot messaging transports (Redis pub/sub + GCP Pub/Sub publisher): `src/messaging/`
+- Cross-bot messaging transports (Redis pub/sub + GCP Pub/Sub publisher and push-request helpers): `src/messaging/`
 - Finalization-specific workflows: `src/finalizer/*` and `src/cctp-finalizer/*`
 - UMA and smart-contract context: `docs/uma.md` and `docs/smart-contracts.md`
 - Relayer fill and repayment deep dives: `docs/relayer-fill-decision-flow.md` and `docs/repayment-selection.md`
@@ -50,6 +50,7 @@ The main bot types in `src/`:
 - `monitor`: Runs monitoring and reporting checks.
 - `gasless`: Handles gasless relay flows.
 - `deposit-address`: Polls the across-indexer for counterfactual deposit-address transfers and executes the resulting deposits or refund withdraws.
+- `deposit-address-service`: Standalone Express service doing the same work driven by GCP Pub/Sub push instead of polling. Not part of the `index.ts` CLI dispatch — it runs as its own entrypoint, like `cctp-finalizer`. Intended to replace `deposit-address`.
 
 ## Directory tree
 
@@ -65,7 +66,8 @@ relayer-v2/
 │   ├── cctp-finalizer/           # CCTP-focused finalization runtime and utility modules.
 │   ├── monitor/                  # Monitoring and operational health checks.
 │   ├── gasless/                  # Gasless relay runtime.
-│   ├── deposit-address/          # Counterfactual deposit-address handler: deposit + refund-withdraw paths.
+│   ├── deposit-address/          # Counterfactual deposit-address handler (polling): deposit + refund-withdraw paths.
+│   ├── deposit-address-service/  # Same work as a Pub/Sub-push Express service; own entrypoint, replaces the poller.
 │   ├── hyperliquid/              # Hyperliquid-specific execution and integration flows.
 │   ├── clients/                  # Shared clients for events, txs, inventory, pricing, and bridges.
 │   │   ├── ProfitClient.ts       # Profitability evaluation for potential fills.
@@ -77,7 +79,7 @@ relayer-v2/
 │   ├── caching/                  # Redis-backed and in-memory cache helpers.
 │   ├── messaging/                # Cross-bot messaging transports.
 │   │   ├── redis/                # Redis pub/sub wrapper (handover signaling).
-│   │   └── gcp/                  # GCP Pub/Sub publisher (lifecycle events to the indexer).
+│   │   └── gcp/                  # GCP Pub/Sub publisher (lifecycle events) + push-request decode/auth.
 │   ├── adapter/                  # Chain/exchange adapter abstractions.
 │   ├── interfaces/               # Shared interfaces and cross-module types.
 │   ├── libexec/                  # Websocket/event listener execution helpers.
