@@ -63,10 +63,12 @@ export interface PolygonTokensBridged extends MaybeEOATokensBridged {
  * PoS burn on-chain, so they are excluded from PoS exit handling wherever burns are inspected.
  */
 function isAltL2Withdrawal(l2TokenAddress: Address, chainId: number): boolean {
-  return (
-    l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDC.addresses[chainId], chainId)) ||
-    l2TokenAddress.eq(toAddressType(TOKEN_SYMBOLS_MAP.USDT.addresses[chainId], chainId))
-  );
+  // Neither token is mapped on every PoS chain (i.e. USDT on Amoy). An unmapped token can't be the one that burned,
+  // and toAddressType() throws on undefined, so drop it before comparing.
+  return [TOKEN_SYMBOLS_MAP.USDC, TOKEN_SYMBOLS_MAP.USDT]
+    .map(({ addresses }) => addresses[chainId])
+    .filter(isDefined)
+    .some((altL2Token) => l2TokenAddress.eq(toAddressType(altL2Token, chainId)));
 }
 
 /**
