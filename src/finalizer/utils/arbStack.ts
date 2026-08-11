@@ -31,7 +31,7 @@ import {
   Provider,
 } from "../../utils";
 import { getRedisCache } from "../../cache/Redis";
-import { TokensBridged } from "../../interfaces";
+import { CachingMechanismInterface, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CHAIN_MAX_BLOCK_LOOKBACK, getContractEntry } from "../../common";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
@@ -84,7 +84,8 @@ export async function arbStackFinalizer(
     logger,
     chainId,
     hubPoolProvider,
-    spokePoolClient.spokePool.provider
+    spokePoolClient.spokePool.provider,
+    redis
   );
   const latestBlockToFinalize =
     latestConfirmedBlock ??
@@ -226,18 +227,31 @@ async function getLatestConfirmedL2Block(
   logger: winston.Logger,
   chainId: number,
   l1Provider: Provider,
-  l2Provider: Provider
+  l2Provider: Provider,
+  redis?: CachingMechanismInterface
 ): Promise<number | undefined> {
   const at = `Finalizer#${getNetworkName(chainId)}Finalizer`;
   try {
     const { address, abi } = getContractEntry(CHAIN_IDs.MAINNET, `orbitOutbox_${chainId}`);
     const outbox = new Contract(address, abi, l1Provider);
 
-    // One challenge period of L1 blocks contains at least one confirmation on a live chain. That is ~50k blocks
-    // for a 7-day period, so the range has to be paginated to stay under provider eth_getLogs limits.
-    const lookbackBlocks = Math.ceil(getArbitrumOrbitFinalizationTime(chainId) / MAINNET_BLOCK_TIME);
+    // A live chain confirms at least once per challenge period, so one challenge period of L1 history is
+    // guaranteed to contain a SendRootUpdated. Resolve that start block by searching real block timestamps
+    // rather than dividing the period by MAINNET_BLOCK_TIME: averageBlockTime() seeds its cache with a
+    // hardcoded 12.5s at module load under a 15-minute TTL, so a finalizer run that starts and finishes
+    // inside that window never measures the chain. At mainnet's actual ~12s that assumption yields ~48.4k
+    // blocks, sizing the window at ~6.7 days rather than the 7 the invariant above depends on.
+    //
+    // The resulting range is ~50k blocks, hence the pagination below.
+    const fromBlock = await getBlockForTimestamp(
+      logger,
+      CHAIN_IDs.MAINNET,
+      getCurrentTime() - getArbitrumOrbitFinalizationTime(chainId),
+      undefined,
+      redis
+    );
     const sendRootEvents = await paginatedEventQuery(outbox, outbox.filters.SendRootUpdated(), {
-      from: Math.max(LATEST_MAINNET_BLOCK - lookbackBlocks, 0),
+      from: fromBlock,
       to: LATEST_MAINNET_BLOCK,
       maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[CHAIN_IDs.MAINNET],
     });
