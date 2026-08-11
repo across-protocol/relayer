@@ -23,3 +23,5 @@ The dataworker runtime file is index.ts. This file contains a `runDataworker()` 
 1. Checks if there is an existing pending root bundle. If there is one, validate it. If invalid, submit a dispute, otherwise proceed.
 2. If no existing pending root bundle, construct and propose a new one.
 3. If existing pending root bundle has passed its optimistic challenge liveness window, then execute it by calling functions on the `HubPool` and functions on each spoke network's `SpokePool`. Recall that each root bundle refers to a Merkle root describing the list of relayer and depositor refunds. Therefore, executing these refunds amounts to submitting Merkle leaves from this Merkle root to the HubPool/SpokePool and letting those contracts send out payments based on those Merkle leaf contents.
+
+The dataworker loads the shared address denylist once at startup and skips executing any slow fill leaf whose depositor or recipient is on it. Sources and the environment variables controlling it are documented in `src/relayer/README.md` under "Address denylist".
