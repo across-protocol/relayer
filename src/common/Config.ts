@@ -11,7 +11,6 @@ import {
   parseJson,
   stringifyThrownValue,
 } from "../utils";
-import * as httpAdapter from "./addressFilter/http";
 import * as Constants from "./Constants";
 
 export interface ProcessEnv {
@@ -180,11 +179,7 @@ export class CommonConfig {
    * @param logger Logger instance.
    */
   async update(logger: winston.Logger): Promise<void> {
-    const {
-      DISABLE_ADDRESS_FILTER,
-      ADDRESS_FILTER_PATH: path = "./addresses.json",
-      OSTIUM_ADDRESS_FILTER_URL: ostiumUrl,
-    } = process.env;
+    const { DISABLE_ADDRESS_FILTER, ADDRESS_FILTER_PATH: path = "./addresses.json" } = process.env;
     const noFilter = DISABLE_ADDRESS_FILTER === "true";
     if (noFilter) {
       logger.debug({ at: "Config::update", message: "Skipping address list update." });
@@ -192,14 +187,7 @@ export class CommonConfig {
     }
 
     const localList = new addressAdapters.fs.AddressList({ path, logger });
-    const remoteLists = [
-      new addressAdapters.risklabs.AddressList({ logger, timeout: 5000 }),
-      // throwOnError: false => an Ostium outage omits only the Ostium list, rather than failing the entire
-      // aggregate (which would also drop the Risk Labs list on a fresh start, where there is no filter to retain).
-      isDefined(ostiumUrl)
-        ? new httpAdapter.AddressList({ name: "Ostium", path: ostiumUrl, logger, throwOnError: false })
-        : undefined,
-    ].filter(isDefined);
+    const remoteLists = [new addressAdapters.risklabs.AddressList({ logger, timeout: 5000 })];
 
     try {
       this.addressFilter = await new AddressAggregator([localList, ...remoteLists], logger).update();
