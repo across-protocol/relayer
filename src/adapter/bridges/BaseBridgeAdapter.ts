@@ -10,6 +10,7 @@ import {
   Address,
   getHubPoolAddress,
   getSpokePoolAddress,
+  TransactionResponse,
 } from "../../utils";
 import { SortableEvent } from "../../interfaces";
 import { CctpOftReadOnlyClient, PendingBridgeAdapterName } from "../../rebalancer/clients/CctpOftReadOnlyClient";
@@ -67,6 +68,20 @@ export abstract class BaseBridgeAdapter {
     toAddress: Address,
     eventConfig: EventSearchConfig
   ): Promise<BridgeEvents>;
+
+  // Bridges that submit through an external venue rather than an L1 contract call implement this instead of
+  // constructL1ToL2Txn. One-shot: resolves with the venue's transaction reference or rejects with no funds moved.
+  sendL1ToL2Transfer?(
+    toAddress: Address,
+    l1Token: EvmAddress,
+    l2Token: Address,
+    amount: BigNumber,
+    simMode: boolean
+  ): Promise<TransactionResponse>;
+
+  // Per-transfer maximum the bridge enforces on L1 -> L2 sends, if any. Callers should clamp the requested
+  // amount to this cap so a deficit above it is transferred in chunks across runs instead of never initiating.
+  getMaxL1ToL2TransferAmount?(): Promise<BigNumber | undefined>;
 
   setPendingBridgeRedisReader(pendingBridgeRedisReader?: CctpOftReadOnlyClient): void {
     this.pendingBridgeRedisReader = pendingBridgeRedisReader;

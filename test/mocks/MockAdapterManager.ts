@@ -25,6 +25,17 @@ export class MockAdapterManager extends AdapterManager {
   public withdrawalsRequired: L2Withdrawal[] = [];
 
   public mockedOutstandingCrossChainTransfers: { [chainId: number]: OutstandingTransfers } = {};
+  public mockedMaxL1ToL2TransferAmounts: { [chainId: number]: { [l1Token: string]: BigNumber } } = {};
+
+  setMaxL1ToL2TransferAmount(chainId: number, l1Token: EvmAddress, amount: BigNumber): void {
+    this.mockedMaxL1ToL2TransferAmounts[chainId] ??= {};
+    this.mockedMaxL1ToL2TransferAmounts[chainId][l1Token.toNative()] = amount;
+  }
+
+  override async getMaxL1ToL2TransferAmount(chainId: number, l1Token: EvmAddress): Promise<BigNumber | undefined> {
+    return this.mockedMaxL1ToL2TransferAmounts[chainId]?.[l1Token.toNative()];
+  }
+
   async sendTokenCrossChain(
     _address: Address,
     chainId: number,
