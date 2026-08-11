@@ -169,10 +169,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   ): Promise<void> {
     const oldOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, oldStatus, account.toNative());
     const newOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
-    const result = await Promise.all([
-      this.redisCache.sRem(oldOrderStatusKey, cloid),
-      this.redisCache.sAdd(newOrderStatusKey, cloid),
-    ]);
+    const result = await this.redisCache.moveSetMember(oldOrderStatusKey, newOrderStatusKey, cloid);
     this.logger.debug({
       at: "BaseAdapter._redisUpdateOrderStatus",
       message: `Updated order status for cloid ${cloid} from ${oldOrderStatusKey} to ${newOrderStatusKey}`,
@@ -206,23 +203,21 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       amountToTransfer: amountToTransfer.toString(),
     });
 
-    const results = await Promise.all([
-      // @todo: Should we set a TTL here?
-      this.redisCache.sAdd(orderStatusKey, cloid.toString()),
-      this.redisCache.set(
-        orderDetailsKey,
-        JSON.stringify({
-          sourceToken,
-          destinationToken,
-          sourceChain,
-          destinationChain,
-          amountToTransfer: amountToTransfer.toString(),
-        }),
-        process.env.REBALANCER_PENDING_ORDER_TTL
-          ? Number(process.env.REBALANCER_PENDING_ORDER_TTL)
-          : (ttlOverride ?? 60 * 60) // default to 1 hour
-      ),
-    ]);
+    const results = await this.redisCache.setAndAddToSet(
+      orderDetailsKey,
+      JSON.stringify({
+        sourceToken,
+        destinationToken,
+        sourceChain,
+        destinationChain,
+        amountToTransfer: amountToTransfer.toString(),
+      }),
+      orderStatusKey,
+      cloid,
+      process.env.REBALANCER_PENDING_ORDER_TTL
+        ? Number(process.env.REBALANCER_PENDING_ORDER_TTL)
+        : (ttlOverride ?? 60 * 60) // default to 1 hour
+    );
     this.logger.debug({
       at: "BaseAdapter._redisCreateOrder",
       message: `Completed saving new order details for cloid ${cloid}`,

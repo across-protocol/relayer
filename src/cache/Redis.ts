@@ -15,6 +15,7 @@ export interface RedisCacheInterface extends interfaces.CachingMechanismInterfac
   renewLock(key: string, token: string, ttlMs: number): Promise<boolean>;
   incr(key: string): Promise<number>;
   incrBy(key: string, amount: number): Promise<number>;
+  moveSetMember(source: string, destination: string, value: string): Promise<unknown>;
   ttl(key: string): Promise<number | undefined>;
 }
 
@@ -116,6 +117,29 @@ export class RedisCache implements RedisCacheInterface {
 
   sRem(key: string, value: string): Promise<number> {
     return this.client.sRem(this.getNamespacedKey(key), value);
+  }
+
+  // Atomically move a member between two sets so a crash between the writes cannot leave the member in both
+  // sets or in neither.
+  moveSetMember(source: string, destination: string, value: string): Promise<unknown> {
+    return this.client
+      .multi()
+      .sAdd(this.getNamespacedKey(destination), value)
+      .sRem(this.getNamespacedKey(source), value)
+      .exec();
+  }
+
+  // Atomically write a value and add a member to a set, e.g. order details plus status-set membership.
+  setAndAddToSet(key: string, value: string, setKey: string, setValue: string, ttl: number): Promise<unknown> {
+    const transaction = this.client.multi();
+    key = this.getNamespacedKey(key);
+    if (ttl === Number.POSITIVE_INFINITY) {
+      transaction.set(key, value);
+    } else {
+      assert(ttl > 0, `Cannot set Redis key ${key} with non-positive TTL ${ttl}`);
+      transaction.set(key, value, { expiration: { type: "EX", value: ttl } });
+    }
+    return transaction.sAdd(this.getNamespacedKey(setKey), setValue).exec();
   }
 
   del(key: string): Promise<number> {
