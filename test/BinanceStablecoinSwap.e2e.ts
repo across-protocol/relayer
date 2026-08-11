@@ -39,6 +39,18 @@ function makeInMemoryRedis() {
       return Number(members.size > before);
     },
     sRem: async (key: string, value: string) => Number(sets.get(key)?.delete(value) ?? false),
+    moveSetMember: async (source: string, destination: string, value: string) => {
+      const members = sets.get(destination) ?? new Set<string>();
+      sets.set(destination, members);
+      members.add(value);
+      sets.get(source)?.delete(value);
+    },
+    setAndAddToSet: async (key: string, value: string, setKey: string, setValue: string, _ttl: number) => {
+      values.set(key, value);
+      const members = sets.get(setKey) ?? new Set<string>();
+      sets.set(setKey, members);
+      members.add(setValue);
+    },
   };
 }
 

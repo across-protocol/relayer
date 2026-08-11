@@ -126,6 +126,11 @@ pre-deposit bridge to OFT (e.g. `BinanceStablecoinSwapAdapter`) keep their pendi
 underlying bridge. Note that `_redisUpdateOrderStatus` does not refresh the TTL, so the value set at creation is the
 lifetime of the whole order across all status transitions.
 
+Order-state writes are atomic: `_redisCreateOrder` writes the order-details key and its status-set membership in one
+Redis transaction (`RedisCache.setAndAddToSet`), and `_redisUpdateOrderStatus` moves the cloid between status sets in
+one transaction (`RedisCache.moveSetMember`). A crash therefore cannot leave an order in both status sets, in neither
+set, or with set membership but no details key — either the whole transition landed or none of it did.
+
 If an order does not finalize before the TTL expires, order details and associated pending-order status tracking are
 eventually pruned from Redis cache state. `BaseAdapter._redisCleanupPendingOrders` emits a `warn` log (`⏰ Pruning
 expired pending order ...`) when this happens so operators can detect abandoned orders that never received a
