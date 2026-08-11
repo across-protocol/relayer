@@ -34,6 +34,7 @@ import {
   getProvider,
   chunk,
   isPromiseFulfilled,
+  getDeployedAddress,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } from "./types";
 import {
@@ -127,8 +128,14 @@ function generateChainConfig(): void {
       config.finalizeOnAny.push(cctpV2Finalizer);
     }
 
-    // @todo Once contracts are linked, change this to add all chains w/ OFT enabled.
-    if (chainId === CHAIN_IDs.ARBITRUM) {
+    // Autoconfigure OFT retries. oftRetryFinalizer resolves the origin chain's SponsoredOFTSrcPeriphery via
+    // getSrcOftPeriphery(), which asserts when that contract has no deployment, so the deployment is the
+    // thing that gates registration -- this is the "contracts are linked" the previous @todo referred to.
+    // Deriving it here rather than hardcoding means a new OFT chain is picked up on the next contracts bump.
+    //
+    // @dev Deliberately NOT keyed off EVM_OFT_MESSENGERS: Optimism, Plasma and Tempo appear there but have
+    // no SponsoredOFTSrcPeriphery deployment, so registering from that map would assert on those chains.
+    if (isDefined(getDeployedAddress("SponsoredOFTSrcPeriphery", chainId, false))) {
       config.finalizeOnAny.push(oftRetryFinalizer);
     }
   });
