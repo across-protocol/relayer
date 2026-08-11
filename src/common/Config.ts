@@ -187,6 +187,9 @@ export class CommonConfig {
     }
 
     const localList = new addressAdapters.fs.AddressList({ path, logger });
+    // Add new remote sources to the SDK's addressAggregator adapters, subclassing its AbstractAdapter for
+    // fetch/retry/error handling as risklabs and bybit do. AbstractAdapter is not re-exported from the adapters
+    // index, so it cannot be extended from here; hand-rolling a local adapter instead duplicates that base class.
     const remoteLists = [new addressAdapters.risklabs.AddressList({ logger, timeout: 5000 })];
 
     try {
