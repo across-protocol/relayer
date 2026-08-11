@@ -65,8 +65,6 @@ ZK Stack chains (zkSync Era, Lens) withdraw to the hub chain through two adapter
 
 Withdrawals initiated by the relayer's own address do not emit `TokensBridged`, so the zkSync finalizer additionally discovers them from `BridgeBurn` on the L2 native token vault, `Withdrawal` on the L2BaseToken contract, and `WithdrawalInitiated` on the standalone USDC bridge where the chain has one, filtered by the addresses in `FINALIZER_WITHDRAWAL_TO_ADDRESSES`. Without that address list configured the withdrawals will initiate but never be finalized.
 
-Robinhood WETH withdraws to mainnet over the Arbitrum Orbit canonical bridge (`ArbitrumOrbitBridge`); its USDG stays on `PaxosTransitL2Bridge`. The rollup's challenge period is 45818 L1 blocks (~6.4 days), stored as `confirmPeriodBlocks` in `ARB_ORBIT_NETWORK_CONFIGS`, so withdrawals sit pending for roughly a week while `getL2PendingWithdrawalAmount` holds the in-flight amount in the virtual mainnet balance. Keep `confirmPeriodBlocks` an exact integer: `@arbitrum/sdk` passes it to `BigNumber.from()`, which throws `NUMERIC_FAULT` on a fractional value, and `getMessageOutboxStatusAndProof` swallows that error, so every affected withdrawal would silently go unfinalized.
-
 ### Plan for Deprecation of Token Transfer Logic
 
 Note that the InventoryClient is an older module and its token transfer functions are slated to be migrated over to rebalancer clients eventually. For now, the separation of concerns between the two is that the InventoryClient is in charge of sending **same** tokens across chains while rebalancer clients swap different tokens across chains.
