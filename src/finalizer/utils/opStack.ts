@@ -755,7 +755,10 @@ async function finalizeOptimismMessage(
     // than just this one -- observed erroring on every run from 2026-07-20 onwards.
     //
     // A proof cannot predate its own withdrawal, so bound the search below at the L1 block corresponding
-    // to the L2 withdrawal and let paginatedEventQuery() chunk it into provider-safe ranges.
+    // to the L2 withdrawal. That alone is not enough: any message reaching this path has cleared the 7-day
+    // challenge period, so the bounded range is still ~50k mainnet blocks. paginatedEventQuery() only splits
+    // a range when maxLookBack is set -- otherwise it issues the same single oversized eth_getLogs -- so pass
+    // the L1 lookback to get provider-safe chunks.
     const redis = await getRedisCache(logger);
     const l2WithdrawalBlock = await crossChainMessenger.l2Provider.getBlock(message.event.blockNumber);
     const [fromBlock, toBlock] = await Promise.all([
@@ -769,6 +772,7 @@ async function finalizeOptimismMessage(
       paginatedEventQuery(blastPortal, blastPortal.filters.WithdrawalProven(withdrawalHash), {
         from: fromBlock,
         to: toBlock,
+        maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[MAINNET],
       }),
       blastEthYield.getLastCheckpointId(),
       blastEthYield.getLastFinalizedRequestId(),
