@@ -54,6 +54,7 @@ const CONFIRMATION_TIMEOUTS_MS: { [chainId: number]: number } = {
   [CHAIN_IDs.MAINNET]: 24_000,
 };
 const CONFIRMATION_BLOCKS = 2;
+export const DEFAULT_CONFIRMATION_TRIES = 10;
 
 // TRANSACTION_REPLACED errors carry the mined replacement and its receipt (undeclared on the type).
 const ReplacedError = type({
@@ -90,6 +91,15 @@ export interface AugmentedTransaction {
   nonMulticall?: boolean;
   // Flag indicating whether the client should await the transaction response for onchain confirmation.
   ensureConfirmation?: boolean;
+  // Invoked once the transaction is broadcast and its hash is known, before the confirmation wait, and
+  // again whenever the hash to track changes. For callers that must survive being killed mid-confirmation:
+  // recording success only after the receipt leaves no trace of a transaction already on the wire.
+  onBroadcast?: (response: TransactionResponse) => Promise<void>;
+  // Bounds the confirmation wait when ensureConfirmation is set. Each timeout may resubmit at the same
+  // nonce by recursing with one fewer try, so the worst case is M(M+1)/2 waits of CONFIRMATION_TIMEOUTS_MS
+  // — at the default 10 that is 55 waits, i.e. ~22 minutes on mainnet. Callers working to a deadline
+  // should lower it. Defaults to DEFAULT_CONFIRMATION_TRIES.
+  maxTries?: number;
   // If true, the contract's provider will be replaced with the TransactionClient's SpeedProvider for
   // this chain (if configured), enabling parallel multi-RPC dispatch for faster submission.
   spray?: boolean;
@@ -152,13 +162,46 @@ export class TransactionClient {
     return transactionHandler(this.logger, contract, method, args, value, gasLimit, nonce);
   }
 
+  /**
+   * Runs the caller's `onBroadcast` hook for `response`.
+   *
+   * The transaction is already on the wire, so a failing hook must not fail the submission — losing the
+   * caller's record must not lose the transaction. Rejections are logged and swallowed, which means a
+   * caller for whom the record is load-bearing has to observe the failure itself (e.g. by catching in
+   * the hook and checking afterwards) rather than relying on this to propagate.
+   */
+  protected async _notifyBroadcast(txn: AugmentedTransaction, response: TransactionResponse): Promise<void> {
+    if (!isDefined(txn.onBroadcast)) {
+      return;
+    }
+
+    try {
+      await txn.onBroadcast(response);
+    } catch (error) {
+      this.logger.warn({
+        at: "TransactionClient#_submit",
+        message: "onBroadcast hook failed; continuing to await confirmation.",
+        txn: { chainId: txn.chainId, contract: txn.contract.address, method: txn.method },
+        txnRef: blockExplorerLink(response.hash, txn.chainId),
+        error: stringifyThrownValue(error),
+      });
+    }
+  }
+
   protected async _submit(
     txn: AugmentedTransaction,
     opts: { nonce: number | null; maxTries?: number }
   ): Promise<TransactionResponse> {
     const { chainId } = txn;
-    const { nonce = null, maxTries = 10 } = opts;
+    const { nonce = null, maxTries = DEFAULT_CONFIRMATION_TRIES } = opts;
     const txnPromise = this._getTransactionPromise(txn, nonce);
+
+    if (isDefined(txn.onBroadcast)) {
+      // `await txnPromise` sits outside _notifyBroadcast so a failed *broadcast* still propagates to the
+      // caller; only the hook's own failure is swallowed. The resubmission paths below recurse into
+      // _submit and so notify their new hash from here.
+      await this._notifyBroadcast(txn, await txnPromise);
+    }
 
     if (txn.ensureConfirmation) {
       const at = "TransactionClient#_submit";
@@ -203,6 +246,10 @@ export class TransactionClient {
             case ethers.errors.TRANSACTION_REPLACED:
               // "repriced" ⇒ a transaction identical to ours (data/to/value) was mined at this nonce; adopt it.
               if (error.reason === "repriced" && isReplacedError(error)) {
+                // Re-notify before deciding the outcome. Only the replacement will ever have a receipt, so
+                // a caller still holding the original hash could not resolve its record either way —
+                // including when the replacement reverted.
+                await this._notifyBroadcast(txn, error.replacement);
                 if (error.receipt.status === 0) {
                   this.logger.warn({ ...common, message: `Transaction on ${chain} failed during execution...` });
                   throw error;
@@ -316,7 +363,7 @@ export class TransactionClient {
 
       let response: TransactionResponse;
       try {
-        response = await this._submit(txn, { nonce: nonce ?? null });
+        response = await this._submit(txn, { nonce: nonce ?? null, maxTries: txn.maxTries });
       } catch (error) {
         delete chainNonceMap[signerAddr];
         this.logger.info({

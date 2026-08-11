@@ -386,5 +386,115 @@ describe("TransactionClient", function () {
       // wait() was called maxTries times (default is 10).
       expect(waitCalls).to.equal(10);
     });
+
+    it("Honours a caller-supplied maxTries", async function () {
+      const chainId = chainIds[0];
+      let waitCalls = 0;
+      txnClient.waitOverride = () => {
+        ++waitCalls;
+        return Promise.reject(makeEthersError(ethers.errors.SERVER_ERROR));
+      };
+
+      // Callers working to a deadline need this: at the default the worst case is M(M+1)/2 waits, which on
+      // mainnet's 24s cadence is ~22 minutes.
+      await txnClient.submit(chainId, [{ ...makeConfirmationTxn(chainId), maxTries: 3 }]);
+      expect(waitCalls).to.equal(3);
+    });
+
+    describe("onBroadcast", function () {
+      it("Fires once the hash exists and before the confirmation wait", async function () {
+        const chainId = chainIds[0];
+        const order: string[] = [];
+        txnClient.waitOverride = () => {
+          order.push("wait");
+          return Promise.resolve({} as TransactionReceipt);
+        };
+
+        const seen: TransactionResponse[] = [];
+        await txnClient.submit(chainId, [
+          {
+            ...makeConfirmationTxn(chainId),
+            onBroadcast: async (response) => {
+              order.push("onBroadcast");
+              seen.push(response);
+            },
+          },
+        ]);
+
+        // The ordering is the whole point: a caller recording only after the receipt has no record of a
+        // transaction already on the wire.
+        expect(order).to.deep.equal(["onBroadcast", "wait"]);
+        expect(seen.length).to.equal(1);
+        expect(isDefined(seen[0].hash)).to.equal(true);
+      });
+
+      it("Fires even without ensureConfirmation", async function () {
+        const chainId = chainIds[0];
+        let calls = 0;
+
+        await txnClient.submit(chainId, [
+          { ...makeConfirmationTxn(chainId), ensureConfirmation: false, onBroadcast: async () => void ++calls },
+        ]);
+        expect(calls).to.equal(1);
+      });
+
+      it("Re-notifies with the replacement hash when a transaction is repriced", async function () {
+        const chainId = chainIds[0];
+        const replacement = { hash: ethers.utils.id("repriced"), nonce: 1 } as TransactionResponse;
+        txnClient.waitOverride = () =>
+          Promise.reject(
+            makeEthersError(ethers.errors.TRANSACTION_REPLACED, {
+              reason: "repriced",
+              receipt: { status: 1, blockNumber: 100 } as TransactionReceipt,
+              replacement,
+            })
+          );
+
+        const hashes: string[] = [];
+        const txnResponses = await txnClient.submit(chainId, [
+          { ...makeConfirmationTxn(chainId), onBroadcast: async (r) => void hashes.push(r.hash) },
+        ]);
+
+        // Only the replacement will ever have a receipt, so a caller left holding the original hash could not
+        // resolve its record against the chain.
+        expect(hashes.length).to.equal(2);
+        expect(hashes[1]).to.equal(replacement.hash);
+        expect(txnResponses[0].hash).to.equal(replacement.hash);
+      });
+
+      it("Re-notifies for the client's own resubmission", async function () {
+        const chainId = chainIds[0];
+        let waitCalls = 0;
+        txnClient.waitOverride = () => {
+          if (++waitCalls === 1) {
+            return Promise.reject(makeEthersError(ethers.errors.TRANSACTION_REPLACED));
+          }
+          return Promise.resolve({} as TransactionReceipt);
+        };
+
+        let calls = 0;
+        await txnClient.submit(chainId, [{ ...makeConfirmationTxn(chainId), onBroadcast: async () => void ++calls }]);
+
+        // The resubmission recurses into _submit, which notifies from its own entry point.
+        expect(calls).to.equal(2);
+      });
+
+      it("Swallows a failing hook and still confirms", async function () {
+        const chainId = chainIds[0];
+        let waitCalls = 0;
+        txnClient.waitOverride = () => {
+          ++waitCalls;
+          return Promise.resolve({} as TransactionReceipt);
+        };
+
+        // The transaction is already on the wire, so losing the caller's record must not lose the transaction.
+        const txnResponses = await txnClient.submit(chainId, [
+          { ...makeConfirmationTxn(chainId), onBroadcast: () => Promise.reject(new Error("redis unavailable")) },
+        ]);
+
+        expect(txnResponses.length).to.equal(1);
+        expect(waitCalls).to.equal(1);
+      });
+    });
   });
 });
