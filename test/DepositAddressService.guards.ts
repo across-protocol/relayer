@@ -11,8 +11,9 @@ import {
 import {
   InvalidExecuteResponseError,
   InvalidIntegratorIdError,
+  OriginChainDisabledError,
+  UnsupportedChainFamilyError,
   UnsupportedNamespaceError,
-  UnsupportedOriginChainError,
 } from "../src/deposit-address-service/errors";
 
 /**
@@ -73,15 +74,26 @@ describe("DepositAddressService guards", function () {
       expect(() => assertSupportedOriginChain([ARBITRUM, CHAIN_IDs.BASE], ARBITRUM)).to.not.throw();
     });
 
-    it("rejects a chain that is not enabled", function () {
-      expect(() => assertSupportedOriginChain([CHAIN_IDs.BASE], ARBITRUM)).to.throw(UnsupportedOriginChainError);
+    // NACK, not ACK: an operator switch may be flipped back, and the funds are still on the deposit address.
+    // The polling bot skipped and revisited, so ACKing here would be a parity regression.
+    it("treats a chain missing from config as retriable", function () {
+      expect(() => assertSupportedOriginChain([CHAIN_IDs.BASE], ARBITRUM)).to.throw(OriginChainDisabledError);
+      expect(new OriginChainDisabledError("x").retriable).to.equal(true);
     });
 
-    it("rejects a chain whose family has no v3 execute path", function () {
+    // ACK: a property of the code, so no redelivery can change it.
+    it("treats a chain whose family has no v3 execute path as terminal", function () {
       // Solana is neither EVM nor TVM, so `expectedNamespaceForChain` has nothing to offer even if enabled.
       expect(() => assertSupportedOriginChain([CHAIN_IDs.SOLANA], CHAIN_IDs.SOLANA)).to.throw(
-        UnsupportedOriginChainError
+        UnsupportedChainFamilyError
       );
+      expect(new UnsupportedChainFamilyError("x").retriable).to.equal(false);
+    });
+
+    // Family is checked first on purpose: checking config first would NACK this every 60s for the whole
+    // retention period over a condition no operator action can resolve.
+    it("prefers the terminal error when a chain is both unsupported and unconfigured", function () {
+      expect(() => assertSupportedOriginChain([], CHAIN_IDs.SOLANA)).to.throw(UnsupportedChainFamilyError);
     });
   });
 
@@ -190,7 +202,7 @@ describe("DepositAddressService guards", function () {
 
   describe("disposition of the deterministic guards", function () {
     it("ACKs every guard whose outcome a retry cannot change", function () {
-      expect(new UnsupportedOriginChainError("x").retriable).to.equal(false);
+      expect(new UnsupportedChainFamilyError("x").retriable).to.equal(false);
       expect(new UnsupportedNamespaceError("x").retriable).to.equal(false);
       expect(new InvalidIntegratorIdError("x").retriable).to.equal(false);
     });

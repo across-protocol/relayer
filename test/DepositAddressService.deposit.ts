@@ -612,15 +612,45 @@ describe("DepositAddressService v3 deposit execution", function () {
       expect(failure()).to.include({ code: "WITHDRAW_ROUTE_NOT_IMPLEMENTED" });
     });
 
-    it("ACKs an origin chain that is not enabled", async function () {
+    // NACK, not ACK. The chain may be re-enabled and the funds are still on the deposit address, so ACKing
+    // would destroy the only delivery that could ever sweep them — the polling bot skipped and revisited.
+    it("NACKs an origin chain that is not enabled", async function () {
       const otherChain = message({
         erc20Transfer: { ...(message().erc20Transfer as object), chainId: String(CHAIN_IDs.BASE) },
       });
 
       const response = await post(otherChain);
 
+      expect(response.status).to.equal(500);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "ORIGIN_CHAIN_DISABLED" });
+    });
+
+    // A chain family with no v3 path is a property of the code, so no redelivery can change it.
+    it("ACKs an origin chain whose family has no v3 execute path", async function () {
+      const svm = message({
+        erc20Transfer: { ...(message().erc20Transfer as object), chainId: String(CHAIN_IDs.SOLANA) },
+      });
+
+      const response = await post(svm);
+
       expect(response.status).to.equal(204);
-      expect(failure()).to.include({ code: "UNSUPPORTED_ORIGIN_CHAIN" });
+      expect(failure()).to.include({ code: "UNSUPPORTED_CHAIN_FAMILY" });
+    });
+
+    // Rejected at the schema, before any provider lookup: `Number("bogus")` is NaN, which would otherwise
+    // reach getProvider(NaN) as an unrecognised throw — alerting *and* retried forever — and would corrupt
+    // the transferId into "NaN:<hash>:<logIndex>", colliding two malformed messages onto one lock.
+    it("ACKs a payload whose chainId is not numeric", async function () {
+      const bogus = message({
+        erc20Transfer: { ...(message().erc20Transfer as object), chainId: "bogus" },
+      });
+
+      const response = await post(bogus);
+
+      expect(response.status).to.equal(204);
+      expect(failure()).to.include({ code: "MESSAGE_VALIDATION_FAILED" });
+      expect(redisStore.size).to.equal(0);
     });
   });
 });

@@ -56,7 +56,8 @@ delivery re-executing a transaction already on the wire.
 
 | Guard | Kind | Disposition on failure |
 | --- | --- | --- |
-| Origin chain enabled, and its family has a v3 path | pure | ACK |
+| Origin chain's family has a v3 path | pure | ACK |
+| Origin chain in `RELAYER_ORIGIN_CHAINS` | pure | **NACK** — see below |
 | `depositAddressNamespace` **and** `refundAddress.namespace` native to the chain family | pure | ACK |
 | `integratorId` matches `^0x[0-9a-fA-F]{4}$` | pure | ACK |
 | Funding receipt `blockNumber` matches the message | provider | ACK on mismatch, **NACK when absent** |
@@ -65,6 +66,14 @@ delivery re-executing a transaction already on the wire.
 
 `expectedNamespaceForChain`, the integrator regex and the deadline buffer are **re-declared** rather than
 imported: they are module-private in `DepositAddressHandler.ts`, which this issue does not modify.
+
+**A disabled chain is not an unsupported chain.** An unsupported *family* is a property of the code, so no
+redelivery can change it and it ACKs. A chain merely absent from `RELAYER_ORIGIN_CHAINS` is an operator
+switch that may be flipped back, and the funds are still sitting on the deposit address — so it **NACKs**,
+because ACKing would destroy the only delivery that could ever sweep them. The polling bot skipped and
+revisited the row on its next poll, so ACKing would be a parity regression, not a design choice. Family is
+checked **first**: a chain that is both unsupported and unconfigured must ACK, or it would retry every 60s
+for the whole retention period over something no operator can fix.
 
 **Guard order is load-bearing.** Canonicality runs *before* the balance check, and an absent funding
 receipt NACKs. `getTransactionReceipt` has three outcomes: a mismatched `blockNumber` is unambiguously

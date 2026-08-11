@@ -5,8 +5,9 @@ import { isDefined } from "../utils/TypeGuards";
 import {
   InvalidExecuteResponseError,
   InvalidIntegratorIdError,
+  OriginChainDisabledError,
+  UnsupportedChainFamilyError,
   UnsupportedNamespaceError,
-  UnsupportedOriginChainError,
 } from "./errors";
 
 /**
@@ -40,13 +41,24 @@ function expectedNamespaceForChain(chainId: number): "evm" | "tron" | undefined 
   return chainIsTvm(chainId) ? "tron" : chainIsEvm(chainId) ? "evm" : undefined;
 }
 
-/** The origin chain must be enabled *and* belong to a family with a v3 execute path. */
+/**
+ * The origin chain must belong to a family with a v3 execute path, *and* be enabled.
+ *
+ * Two conditions with **opposite dispositions**, which is why they raise different errors. An unsupported
+ * family is a property of the code and can never pass on redelivery, so it ACKs. A chain missing from
+ * `RELAYER_ORIGIN_CHAINS` is an operator switch that may be flipped back, so it NACKs — the funds are still on
+ * the deposit address, and ACKing would destroy the only delivery that could ever sweep them.
+ *
+ * **Family is checked first, deliberately.** A chain that is both unsupported *and* absent from config must
+ * ACK; checking config first would NACK it every 60s for the whole retention period over a condition no
+ * operator action can resolve.
+ */
 export function assertSupportedOriginChain(originChains: number[], originChainId: number): void {
-  if (!originChains.includes(originChainId)) {
-    throw new UnsupportedOriginChainError(`origin chain ${originChainId} is not enabled for execution`);
-  }
   if (!isDefined(expectedNamespaceForChain(originChainId))) {
-    throw new UnsupportedOriginChainError(`origin chain ${originChainId} belongs to an unsupported chain family`);
+    throw new UnsupportedChainFamilyError(`origin chain ${originChainId} belongs to an unsupported chain family`);
+  }
+  if (!originChains.includes(originChainId)) {
+    throw new OriginChainDisabledError(`origin chain ${originChainId} is not in RELAYER_ORIGIN_CHAINS`);
   }
 }
 
