@@ -10,7 +10,6 @@ import {
   Provider,
   Signer,
   blockExplorerLink,
-  chainIsEvm,
   dispatchTransaction,
   getEthersCompatibleAddress,
   getNetworkName,
@@ -226,14 +225,13 @@ async function broadcast(
       `${getNetworkName(destinationChainId)}, using deposit address ` +
       `${blockExplorerLink(message.depositAddress, originChainId)}`,
     onBroadcast: async (tx) => {
-      // `from`/`nonce` only on EVM: TVM reports nonce 0 unconditionally and has no replacement semantics, so
-      // recording them would let a later reconciliation read a live record as replaced and clear it.
+      // Re-entered on every hash change, so the record always names the transaction `TransactionClient` is
+      // currently tracking rather than one it replaced.
       const record: Omit<BroadcastPendingState, "status"> = {
         operation: "deposit",
         txHash: tx.hash,
         chainId: originChainId,
         submittedAtMs: Date.now(),
-        ...(chainIsEvm(originChainId) ? { from: tx.from, nonce: tx.nonce } : {}),
       };
       await store.recordBroadcast(transferId, record);
       pending = { status: "broadcast_pending", ...record };

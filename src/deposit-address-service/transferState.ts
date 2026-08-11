@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { Infer, create, enums, integer, literal, min, optional, string, type, union } from "superstruct";
+import { Infer, create, enums, integer, literal, min, string, type, union } from "superstruct";
 import { RedisCacheInterface } from "../cache/Redis";
 import { TransactionReceipt } from "../utils";
 import { isDefined } from "../utils/TypeGuards";
@@ -32,16 +32,13 @@ const TERMINAL_TTL_SECONDS = 90 * 24 * 60 * 60;
 const timestampMs = () => min(integer(), 0);
 
 /**
- * `from` and `nonce` are **EVM-only** and optional.
+ * Deliberately just the hash, the chain and when.
  *
- * They exist so a transaction that was replaced at its nonce can be recognised as permanently dead
- * ({@link isReplacedBroadcast}) instead of stranding: without them an `unresolved` record is retained
- * forever, NACKing every 60s until Pub/Sub retention expires, leaving a no-TTL key behind.
- *
- * Absent on TVM, where `_runTransactionTvm` returns `nonce: 0` unconditionally and the chain has no
- * replacement semantics — so the check would compare against 0, read as consumed, and clear a **live**
- * record. Optional rather than required for the same reason a record written before this field existed
- * must still parse.
+ * No signer or nonce: nonce management belongs to `TransactionClient`, whose confirmation wait already
+ * refuses to resubmit a consumed nonce and re-notifies `onBroadcast` when it replaces a transaction, so the
+ * record follows the live hash on its own. Recording them here to second-guess that would buy only one
+ * narrow recovery — a worker that died mid-confirm during a nonce collision — and cost a chain-family gate
+ * that clears a **live** record if it is ever wrong (TVM reports `nonce: 0` unconditionally).
  */
 const BroadcastPending = type({
   status: literal("broadcast_pending"),
@@ -49,8 +46,6 @@ const BroadcastPending = type({
   txHash: string(),
   chainId: min(integer(), 1),
   submittedAtMs: timestampMs(),
-  from: optional(string()),
-  nonce: optional(min(integer(), 0)),
 });
 
 const DepositExecuted = type({
@@ -123,24 +118,6 @@ export function classifyReceipt(
     return "unresolved";
   }
   return receipt.status === 0 ? "reverted" : "confirmed";
-}
-
-/**
- * The signer and nonce to test a pending broadcast for replacement against, or `undefined` when the record
- * cannot be tested that way.
- *
- * Kept as a narrowing rather than doing the RPC call here so this module stays free of chain I/O. A caller
- * that gets a value compares it against `getTransactionCount(from, "latest")`: greater means the nonce was
- * spent by some *other* transaction while ours still has no receipt, so ours was replaced and can never
- * mine. It moved nothing, so clearing the record cannot double-sweep — which is what stops an accepted
- * nonce collision stranding a transfer.
- *
- * Answers `undefined` on TVM records, which carry neither field: `nonce: 0` there is a placeholder, and the
- * chain has no replacement semantics for the check to detect.
- */
-export function replacementTarget(pending: BroadcastPendingState): { from: string; nonce: number } | undefined {
-  const { from, nonce } = pending;
-  return isDefined(from) && isDefined(nonce) ? { from, nonce } : undefined;
 }
 
 /** Held while a transfer is being worked. The token stays inside, so no caller can supply or reuse one. */

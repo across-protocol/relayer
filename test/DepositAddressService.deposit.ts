@@ -53,7 +53,6 @@ describe("DepositAddressService v3 deposit execution", function () {
     executeReceipt: TransactionReceipt | null;
     latestNonce: number;
     receiptError?: Error;
-    nonceError?: Error;
   };
 
   /** What the fake submission client does once it has been handed the transaction. */
@@ -156,12 +155,7 @@ describe("DepositAddressService v3 deposit execution", function () {
         return hash.toLowerCase() === FUNDING_TX ? chain.fundingReceipt : chain.executeReceipt;
       },
       getBalance: async () => toBN(chain.balance),
-      getTransactionCount: async () => {
-        if (chain.nonceError) {
-          throw chain.nonceError;
-        }
-        return chain.latestNonce;
-      },
+      getTransactionCount: async () => chain.latestNonce,
       // `readDepositAddressBalance` reads a real ERC20 contract for non-native tokens: answer `balanceOf`.
       call: async () => ethers.utils.defaultAbiCoder.encode(["uint256"], [toBN(chain.balance)]),
       getNetwork: async () => ({ chainId: ARBITRUM, name: "arbitrum" }),
@@ -339,7 +333,7 @@ describe("DepositAddressService v3 deposit execution", function () {
   });
 
   describe("broadcast_pending is durable before the confirmation wait", function () {
-    it("records the hash, signer and nonce from the onBroadcast hook", async function () {
+    it("records the hash from the onBroadcast hook", async function () {
       // Left unresolved so the record is observed as the hook wrote it, before any terminal write.
       chain.executeReceipt = null;
 
@@ -348,9 +342,9 @@ describe("DepositAddressService v3 deposit execution", function () {
       expect(response.status).to.equal(500);
       expect(state()).to.deep.include({
         status: "broadcast_pending",
+        operation: "deposit",
         txHash: EXECUTE_HASH,
-        from: signerAddress,
-        nonce: SIGNER_NONCE,
+        chainId: ARBITRUM,
       });
     });
 
@@ -410,40 +404,32 @@ describe("DepositAddressService v3 deposit execution", function () {
     });
   });
 
-  describe("a replaced transaction is recognised rather than stranded", function () {
-    // The accepted nonce race leaves losers behind a hash that never mines. Without this they would NACK every
-    // 60s until retention expired, leaving a no-TTL key nobody looks at.
-    it("clears the record and re-attempts when the nonce was spent by another transaction", async function () {
+  describe("an unresolved transaction is retained, never cleared", function () {
+    // Every reason a receipt can be missing gets the same answer: unmined, dropped, replaced at its nonce,
+    // already mined behind a lagging RPC node, or reorged out. Retaining is safe in all of them and clearing
+    // is unrecoverable in some, so the service does not try to tell them apart — and nonce management stays
+    // TransactionClient's concern.
+    it("retains the record when the transaction has no receipt", async function () {
       chain.executeReceipt = null;
-      chain.latestNonce = SIGNER_NONCE + 1;
-
-      const response = await post(message());
-
-      expect(response.status).to.equal(500);
-      expect(state()).to.equal(undefined);
-      expect(failure()).to.include({ code: "REPLACED_BROADCAST" });
-    });
-
-    it("retains the record while the nonce is still unspent", async function () {
-      chain.executeReceipt = null;
-      chain.latestNonce = SIGNER_NONCE;
-
-      await post(message());
-
-      expect(state()).to.include({ status: "broadcast_pending" });
-    });
-
-    it("retains the record rather than guessing when the nonce read fails", async function () {
-      // Only the nonce read fails; the receipt lookup still answers "not mined". Cannot tell replaced from
-      // in-flight, so the safe direction is to keep the record.
-      chain.executeReceipt = null;
-      chain.nonceError = new Error("rate limited");
 
       const response = await post(message());
 
       expect(response.status).to.equal(500);
       expect(state()).to.include({ status: "broadcast_pending" });
-      expect(failure()).to.include({ code: "TRANSIENT_DEPENDENCY_FAILURE" });
+      expect(failure()).to.include({ code: "UNRESOLVED_BROADCAST" });
+    });
+
+    it("retains the record even once the signer has moved past this nonce", async function () {
+      // The transaction was replaced and will never mine. Still retained: the service does not read nonces to
+      // work that out, so the transfer stays blocked until an operator clears the key. Accepted.
+      chain.executeReceipt = null;
+      chain.latestNonce = SIGNER_NONCE + 5;
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.include({ status: "broadcast_pending" });
+      expect(failure()).to.include({ code: "UNRESOLVED_BROADCAST" });
     });
   });
 
@@ -469,7 +455,7 @@ describe("DepositAddressService v3 deposit execution", function () {
       expect(lastLine()).to.include({ outcome: "already_deposit_executed" });
     });
 
-    it("reconciles a pending record instead of re-executing", async function () {
+    it("resolves a pending record instead of re-executing", async function () {
       redisStore.set(
         STATE_KEY,
         JSON.stringify({
@@ -478,8 +464,6 @@ describe("DepositAddressService v3 deposit execution", function () {
           txHash: EXECUTE_HASH,
           chainId: ARBITRUM,
           submittedAtMs: 1_700_000_000_000,
-          from: signerAddress,
-          nonce: SIGNER_NONCE,
         })
       );
       // A second broadcast would answer with this hash; the recorded one is what must be resolved.
