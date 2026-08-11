@@ -231,6 +231,11 @@ async function makeInitializedAdapter(
       sMembers: async () => [],
       sAdd: async () => 1,
       sRem: async () => 1,
+      moveSetMember: async () => [],
+      setAndAddToSet: async (key: string, value: string) => {
+        values.set(key, value);
+        return [];
+      },
     },
   });
   return adapter;
