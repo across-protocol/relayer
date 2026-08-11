@@ -55,6 +55,7 @@ import {
   OpStackWethBridge as L2OpStackWethBridge,
   OpStackBridge as L2OpStackBridge,
   PolygonERC20Bridge as L2PolygonERC20Bridge,
+  PolygonWethBridge as L2PolygonWethBridge,
   BinanceCEXBridge as L2BinanceCEXBridge,
   UsdcCCTPBridge as L2UsdcCCTPBridge,
   BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
@@ -733,6 +734,9 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   [CHAIN_IDs.POLYGON]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+    // WETH still exits over PoS, but Polygon maps it to L1 ether, so its claim settles on the Ether predicate
+    // rather than the ERC20 predicate that CANONICAL_L2_BRIDGE binds.
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2PolygonWethBridge,
   },
   [CHAIN_IDs.SOLANA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2SolanaUsdcCCTPBridge,

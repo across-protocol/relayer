@@ -104,7 +104,9 @@ async function getEOAWithdrawals(
   // hub-enabled L1 tokens keeps that bounded to the handful the relayer can actually hold.
   const l2Tokens = hubPoolClient
     .getL1Tokens()
-    .map(({ address }) => getL2TokenAddresses(address.toNative())?.[l2ChainId])
+    // getL2TokenAddresses() defaults its L1 chain to mainnet; pass the configured hub chain so that a testnet
+    // HubPool's (i.e. Sepolia) tokens resolve to their Amoy counterparts instead of silently dropping out.
+    .map(({ address }) => getL2TokenAddresses(address.toNative(), hubPoolClient.chainId)?.[l2ChainId])
     .filter(isDefined)
     .map((l2Token) => EvmAddress.from(l2Token))
     .filter((l2Token) => !isAltL2Withdrawal(l2Token, l2ChainId));

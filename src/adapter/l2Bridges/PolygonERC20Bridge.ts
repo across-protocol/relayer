@@ -1,3 +1,4 @@
+import { EventFilter } from "ethers";
 import { getContractEntry, getContractAbi } from "../../common";
 import {
   assert,
@@ -43,6 +44,14 @@ export class PolygonERC20Bridge extends BaseL2BridgeAdapter {
     // ERC20Predicate on the hub chain, which emits ExitedERC20 once a burn has been claimed.
     const { address: l1Address, abi: l1Abi } = getContractEntry(hubChainId, "polygonBridge");
     this.l1Bridge = new Contract(l1Address, l1Abi, l1Signer);
+  }
+
+  /**
+   * Filter for the hub-chain event marking a burn as claimed. The predicate that releases the root token depends on
+   * how the child token is mapped, so ether-mapped tokens (WETH) override this along with the l1Bridge binding.
+   */
+  protected exitedEventFilter(fromAddress: EvmAddress): EventFilter {
+    return this.getL1Bridge().filters.ExitedERC20(fromAddress.toNative(), this.l1Token.toNative());
   }
 
   async constructWithdrawToL1Txns(
@@ -94,11 +103,7 @@ export class PolygonERC20Bridge extends BaseL2BridgeAdapter {
         this.getL2Bridge().filters.Transfer(fromAddress.toNative(), ZERO_ADDRESS),
         l2EventConfig
       ),
-      paginatedEventQuery(
-        this.getL1Bridge(),
-        this.getL1Bridge().filters.ExitedERC20(fromAddress.toNative(), this.l1Token.toNative()),
-        l1EventConfig
-      ),
+      paginatedEventQuery(this.getL1Bridge(), this.exitedEventFilter(fromAddress), l1EventConfig),
     ]);
 
     // Match each burn against at most one exit of the same size, mirroring OpStackBridge.
