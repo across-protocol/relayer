@@ -33,7 +33,7 @@ import {
 import { getRedisCache } from "../../cache/Redis";
 import { TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { getContractEntry } from "../../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK, getContractEntry } from "../../common";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
@@ -233,11 +233,13 @@ async function getLatestConfirmedL2Block(
     const { address, abi } = getContractEntry(CHAIN_IDs.MAINNET, `orbitOutbox_${chainId}`);
     const outbox = new Contract(address, abi, l1Provider);
 
-    // One challenge period of L1 blocks contains at least one confirmation on a live chain.
+    // One challenge period of L1 blocks contains at least one confirmation on a live chain. That is ~50k blocks
+    // for a 7-day period, so the range has to be paginated to stay under provider eth_getLogs limits.
     const lookbackBlocks = Math.ceil(getArbitrumOrbitFinalizationTime(chainId) / MAINNET_BLOCK_TIME);
     const sendRootEvents = await paginatedEventQuery(outbox, outbox.filters.SendRootUpdated(), {
       from: Math.max(LATEST_MAINNET_BLOCK - lookbackBlocks, 0),
       to: LATEST_MAINNET_BLOCK,
+      maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[CHAIN_IDs.MAINNET],
     });
 
     // paginatedEventQuery returns events in ascending block order, so the last one is the newest root.
