@@ -107,6 +107,19 @@ describe("parseTransfer", function () {
     }
   });
 
+  it("rejects an amount that is not a non-negative integer", function () {
+    // "-1" is the dangerous one: it does not throw, so `onchainBalance.lt(-1)` is false and the balance guard
+    // — the only check between the message and the execute call — passes.
+    for (const amount of ["bogus", "", "1.5", "-1", "  10  "]) {
+      expect(() => parseTransfer(v3({}, { amount })), JSON.stringify(amount)).to.throw(/erc20Transfer.amount/);
+    }
+  });
+
+  it("accepts a well-formed amount", function () {
+    expect(parseTransfer(v3({}, { amount: "0" })).message.erc20Transfer.amount).to.equal("0");
+    expect(parseTransfer(v3({}, { amount: "25000000" })).message.erc20Transfer.amount).to.equal("25000000");
+  });
+
   it("rejects a destinationChainId that does not convert to a chain id", function () {
     const bad = JSON.parse(v3()) as { routeParams: Record<string, unknown> };
     bad.routeParams.destinationChainId = "bogus";

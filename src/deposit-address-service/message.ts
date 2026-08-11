@@ -9,6 +9,7 @@ import {
   min,
   nullable,
   optional,
+  pattern,
   refine,
   string,
   type,
@@ -42,13 +43,30 @@ const NumericChainId = refine(string(), "numeric chain id", (value) => {
   return Number.isInteger(chainId) && chainId > 0;
 });
 
+/**
+ * The transfer amount: a plain non-negative integer, decimal or `0x`-hex — the two encodings the execute
+ * endpoint documents.
+ *
+ * Three separate defects hid behind one unvalidated string, and only the first is the loud kind.
+ * `toBN("bogus")` throws an untyped ethers error the app cannot tell from a transient fault, so a
+ * deterministically malformed message pages and then redelivers for the whole retention period. `toBN("-1")`
+ * does **not** throw — it yields −1, and `onchainBalance.lt(-1)` is `false`, so a negative amount sails
+ * straight through the balance guard, the only check between the message and the execute call. And
+ * `toBN("1.5")` silently **truncates** to 1, so the guard would check a different number than the one sent.
+ *
+ * Pinned by shape rather than by attempting the conversion, precisely because of that last case: unlike
+ * `chainId`, the raw string is *also* forwarded to the API verbatim, so the value the guard checks and the
+ * value we ask for have to be the same one.
+ */
+const AmountString = pattern(string(), /^(0x[0-9a-fA-F]+|\d+)$/);
+
 const Erc20TransferStruct = type({
   chainId: NumericChainId,
   blockNumber: min(integer(), 0),
   logIndex: min(integer(), 0),
   from: string(),
   to: string(),
-  amount: string(),
+  amount: AmountString,
   contractAddress: string(),
   transactionHash: string(),
   transferClassification: enums(["correct_transfer", "mis_route", "intent_refund"]),
