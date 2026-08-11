@@ -336,6 +336,13 @@ wall clock: if an order is abandoned while still in `PENDING_DEPOSIT` or `PENDIN
 finalizer reclaims the funds on its next run.
 Orders pruned in later statuses keep the tag, since their deposit was already consumed by the spot order.
 
+Sending runs are serialized per account: `withRebalancerInitiationLock` wraps each initiating entrypoint's whole
+plan-and-initiate phase (balance snapshot through initiation) in a per-account Redis `SET NX` lock (30-minute TTL),
+and an overlapping run is skipped rather than run from a snapshot that predates the lock holder's orders. This is
+what prevents two overlapping runs (two instances of one bot, or the inventory-rebalancer overlapping a swap
+rebalancer) from double-initiating the same transfer. A crashed holder's lock expires via TTL; read-only runs
+(`SEND_REBALANCES` unset) do not take the lock.
+
 Direct Binance deposits are crash-safe: the order is written in `PENDING_DEPOSIT_SUBMISSION` with a recovery marker
 before the deposit transaction is submitted, and is promoted to `PENDING_DEPOSIT` after a clean submission. If the
 process dies mid-submission, the next lifecycle pass resolves the marked order from the on-chain receipt via
