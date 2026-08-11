@@ -54,7 +54,7 @@ import {
   blockExplorerLink,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
-import { getPendingBridgeDepositTxnKey, STATUS } from "../utils/utils";
+import { getPendingBridgeDepositRecoveryKey, getPendingBridgeDepositTxnKey, STATUS } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
 import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
@@ -241,6 +241,21 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
+    const account = this.baseSignerAddress.toNative();
+
+    const pendingDepositSubmissions = await this._redisGetPendingDepositSubmissions(this.baseSignerAddress);
+    for (const cloid of pendingDepositSubmissions) {
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+      if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
+      // Fail closed on markerless submissions: without a recovery marker there is no receipt trail to prove the
+      // deposit landed, so leave the order to the TTL prune.
+      const recoveryKey = getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account);
+      if (isDefined(await this.redisCache.get(recoveryKey))) {
+        await this._reconcileDepositRecovery(cloid);
+      }
+    }
 
     // Pending bridges to Binance network: we'll attempt to deposit the tokens to Binance if we have enough balance.
     const pendingBridgeToBinanceDepositNetwork = await this._redisGetPendingBridgesPreDeposit(this.baseSignerAddress);
@@ -552,11 +567,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // rebalancing logic.
   }
 
-  // Only PENDING_DEPOSIT prunes have unconsumed Binance deposits to release.
+  // Only deposit-stage prunes can have unconsumed Binance deposits to release.
   protected override async _onExpiredOrderPruned(status: STATUS, cloid: string, account: EvmAddress): Promise<void> {
-    if (status !== STATUS.PENDING_DEPOSIT) {
+    if (status !== STATUS.PENDING_DEPOSIT && status !== STATUS.PENDING_DEPOSIT_SUBMISSION) {
       return;
     }
+    await this.redisCache.del(getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account.toNative()));
     const depositTxnKey = getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account.toNative());
     const depositTxn = await this.redisCache.get<string>(depositTxnKey);
     if (!isDefined(depositTxn)) {
@@ -935,16 +951,122 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
         expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
-      const transactionHash = await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer);
+      const recoveryKey = getPendingBridgeDepositRecoveryKey(
+        this.REDIS_PREFIX,
+        cloid,
+        this.baseSignerAddress.toNative()
+      );
+      // Persist the order and a recovery marker before the deposit can broadcast, so a crash mid-submission
+      // leaves a reconcilable order instead of an untracked deposit.
       await this._redisCreateOrder(
         cloid,
-        STATUS.PENDING_DEPOSIT,
+        STATUS.PENDING_DEPOSIT_SUBMISSION,
         rebalanceRoute,
         amountToTransfer,
         this.baseSignerAddress
       );
+      try {
+        assert(
+          isDefined(await this.redisCache.set(recoveryKey, "1", 2 * FINALIZER_TOKENBRIDGE_LOOKBACK)),
+          "Failed to persist Binance deposit recovery marker"
+        );
+      } catch (error) {
+        // Nothing has been submitted yet, so remove the unreconcilable order instead of leaving it to the TTL prune.
+        await this._purgeOrderBestEffort(cloid);
+        throw error;
+      }
+      let transactionHash: string;
+      try {
+        transactionHash = await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer);
+        await this._redisUpdateOrderStatus(
+          cloid,
+          STATUS.PENDING_DEPOSIT_SUBMISSION,
+          STATUS.PENDING_DEPOSIT,
+          this.baseSignerAddress
+        );
+        await this.redisCache.del(recoveryKey);
+      } catch (error) {
+        // The deposit may have broadcast: leave the order for _reconcileDepositRecovery to resolve from the
+        // receipt or, failing that, for the TTL prune to reclaim.
+        this.logger.warn({
+          at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+          message: `Binance deposit submission for order ${cloid} failed; leaving the order for receipt reconciliation`,
+          error,
+        });
+        throw error;
+      }
       return { amount: amountToTransfer, transactionHash };
     }
+  }
+
+  /**
+   * Resolve a recovery-marked order from its deposit transaction receipt: promote to PENDING_DEPOSIT on success,
+   * purge on revert, and wait when the receipt (or the persisted transaction hash) is not yet available.
+   */
+  private async _reconcileDepositRecovery(cloid: string): Promise<void> {
+    const account = this.baseSignerAddress.toNative();
+    const depositTxn = await this.redisCache.get<string>(
+      getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account)
+    );
+    if (!isDefined(depositTxn)) {
+      // The crash predates the transaction-hash write, so there is no receipt to check. Wait: either a concurrent
+      // submitter is still writing it, or the TTL prune reclaims the order.
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter._reconcileDepositRecovery",
+        message: `Waiting for deposit transaction recovery data for order ${cloid}`,
+      });
+      return;
+    }
+    const { chainId, transactionHash } = JSON.parse(depositTxn) as { chainId: number; transactionHash: string };
+    const transactionReceipt = await this._getDepositTransactionReceipt(chainId, transactionHash);
+    if (!isDefined(transactionReceipt)) {
+      return;
+    }
+    if (transactionReceipt.status === 0) {
+      await this._purgeOrder(cloid);
+      return;
+    }
+    // Re-tag the deposit in case the crash raced the tag write, then resume the normal lifecycle.
+    await setBinanceDepositType(
+      chainId,
+      transactionHash,
+      BinanceTransactionType.SWAP,
+      2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+    );
+    await this._redisUpdateOrderStatus(
+      cloid,
+      STATUS.PENDING_DEPOSIT_SUBMISSION,
+      STATUS.PENDING_DEPOSIT,
+      this.baseSignerAddress
+    );
+    await this.redisCache.del(getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account));
+  }
+
+  // Remove all Redis state for an order that definitively has no funds behind it.
+  private async _purgeOrder(cloid: string): Promise<void> {
+    const account = this.baseSignerAddress.toNative();
+    await Promise.all([
+      this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT_SUBMISSION, this.baseSignerAddress),
+      this.redisCache.del(getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account)),
+      this.redisCache.del(getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account)),
+    ]);
+  }
+
+  private async _purgeOrderBestEffort(cloid: string): Promise<void> {
+    await this._purgeOrder(cloid).catch((cleanupError) =>
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Failed to remove pre-submission order ${cloid}; manual recovery may be required`,
+        cleanupError,
+      })
+    );
+  }
+
+  private async _getDepositTransactionReceipt(chainId: number, transactionHash: string) {
+    const provider = await getProvider(chainId);
+    const hash =
+      chainId === CHAIN_IDs.TRON && !transactionHash.startsWith("0x") ? `0x${transactionHash}` : transactionHash;
+    return provider.getTransactionReceipt(hash);
   }
 
   async getEstimatedCost(

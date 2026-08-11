@@ -55,6 +55,7 @@ type BinanceAdapterInternals = {
   initialized: boolean;
   availableRoutes: RebalanceRoute[];
   _redisGetPendingBridgesPreDeposit(account: EvmAddress): Promise<string[]>;
+  _redisGetPendingDepositSubmissions(account: EvmAddress): Promise<string[]>;
   _redisGetPendingDeposits(account: EvmAddress): Promise<string[]>;
   _redisGetPendingSwaps(account: EvmAddress): Promise<string[]>;
   _redisGetPendingWithdrawals(account: EvmAddress): Promise<string[]>;
@@ -202,6 +203,7 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
     adapter.baseSignerAddress = signer;
 
     sinon.stub(internals, "_redisGetPendingBridgesPreDeposit").resolves([]);
+    sinon.stub(internals, "_redisGetPendingDepositSubmissions").resolves([]);
     sinon.stub(internals, "_redisGetPendingDeposits").resolves(["adapter-manager-order"]);
     sinon.stub(internals, "_redisGetPendingSwaps").resolves([]);
     sinon.stub(internals, "_redisGetPendingWithdrawals").resolves([]);
