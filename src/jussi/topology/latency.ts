@@ -1,5 +1,6 @@
 import { EXPECTED_L1_TO_L2_MESSAGE_TIME, SLOW_WITHDRAWAL_CHAINS } from "../../common/Constants";
 import { CHAIN_IDs } from "@across-protocol/constants";
+import { getArbitrumOrbitFinalizationTime } from "../../utils/ArbSdkUtils";
 import {
   DEFAULT_HUB_POOL_CHAIN_ID,
   LATENCY_BY_FAMILY,
@@ -44,6 +45,11 @@ export function resolveGraphBridgeLatencySeconds(
     }
     if (candidate.adapterOrBridgeName.startsWith("Scroll") || candidate.adapterOrBridgeName.startsWith("Linea")) {
       return LINEA_SCROLL_WITHDRAWAL_LATENCY_SECONDS;
+    }
+    // Orbit withdrawals are gated on the rollup's challenge period, which varies per chain, so read it from the
+    // registered Orbit config instead of assuming the canonical default.
+    if (candidate.adapterOrBridgeName.startsWith("ArbitrumOrbit")) {
+      return getArbitrumOrbitFinalizationTime(candidate.from.chainId);
     }
     if (
       candidate.adapterOrBridgeName.startsWith("OpStack") ||

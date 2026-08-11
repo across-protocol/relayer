@@ -3,7 +3,6 @@ import {
   ChildTransactionReceipt,
   ChildToParentMessageWriter,
   registerCustomArbitrumNetwork,
-  ArbitrumNetwork,
 } from "@arbitrum/sdk";
 import {
   winston,
@@ -57,19 +56,18 @@ export async function arbStackFinalizer(
   LATEST_MAINNET_BLOCK = hubPoolClient.latestHeightSearched;
   const hubPoolProvider = await getProvider(hubPoolClient.chainId, logger);
   MAINNET_BLOCK_TIME = (await arch.evm.averageBlockTime(hubPoolProvider)).average;
-  // Now that we know the L1 block time, we can calculate the confirmPeriodBlocks.
 
-  ARB_ORBIT_NETWORK_CONFIGS.forEach((_networkConfig) => {
-    if (_networkConfig.registered) {
+  // @dev confirmPeriodBlocks is carried verbatim from the rollup rather than derived from MAINNET_BLOCK_TIME. The SDK
+  // passes it to BigNumber.from() in getFirstExecutableBlock(), which throws NUMERIC_FAULT on a fractional value, and
+  // the sampled block time is rarely an exact divisor (mainnet's cached average is 12.5s).
+  ARB_ORBIT_NETWORK_CONFIGS.forEach((orbitNetwork) => {
+    if (orbitNetwork.registered) {
       return;
     }
-    const networkConfig: ArbitrumNetwork = {
-      ..._networkConfig,
-      confirmPeriodBlocks: _networkConfig.challengePeriodSeconds / MAINNET_BLOCK_TIME,
-    };
-    // The network config object should be full now.
+    // @dev registerCustomArbitrumNetwork stores the object by reference, so hand it a copy without our bookkeeping.
+    const { registered: _registered, ...networkConfig } = orbitNetwork;
     registerCustomArbitrumNetwork(networkConfig);
-    _networkConfig.registered = true;
+    orbitNetwork.registered = true;
   });
 
   const { chainId } = spokePoolClient;

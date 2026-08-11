@@ -51,7 +51,7 @@ import { parseBuildJussiGraphFlags } from "../scripts/buildJussiGraph";
 import { estimateEdgeEconomics, estimateQuotedBridgeBreakdown } from "../src/jussi/economics/edgeCosts";
 import { serializeEdgeClassDefinition } from "../src/jussi/economics/rates";
 import * as jussiQuotes from "../src/jussi/economics/quotes";
-import { CCTP_MAX_SEND_AMOUNT } from "../src/common";
+import { CCTP_MAX_SEND_AMOUNT, EXPECTED_L1_TO_L2_MESSAGE_TIME } from "../src/common";
 import {
   JUSSI_LAST_PUBLISHED_KEY,
   JUSSI_PUBLISH_LOCK_KEY,
@@ -832,6 +832,50 @@ describe("Jussi graph builder helpers", function () {
         )
       )
     ).to.equal(5 * 60);
+  });
+
+  it("prices the Robinhood WETH withdrawal edge off the Orbit challenge period", async function () {
+    const relayerConfig = new RelayerConfig({
+      HUB_CHAIN_ID: String(CHAIN_IDs.MAINNET),
+      RELAYER_INVENTORY_CONFIG: JSON.stringify({
+        tokenConfig: {
+          WETH: {
+            [CHAIN_IDs.ROBINHOOD]: { targetPct: 5, thresholdPct: 2 },
+          },
+        },
+        wrapEtherTarget: "0",
+        wrapEtherTargetPerChain: {},
+        wrapEtherThreshold: "0",
+        wrapEtherThresholdPerChain: {},
+      }),
+    });
+    const nodeContexts = materializeNodeDefinitions(buildManagedNodeTemplates(relayerConfig.inventoryConfig));
+    const bridgeCandidates = buildBridgeEdgeCandidates(nodeContexts);
+
+    const robinhoodToMainnet = findExpectedEdge(
+      bridgeCandidates,
+      (candidate) =>
+        candidate.from.chainId === CHAIN_IDs.ROBINHOOD &&
+        candidate.to.chainId === CHAIN_IDs.MAINNET &&
+        candidate.from.logicalAsset === "WETH",
+      "Robinhood WETH to mainnet"
+    );
+    expect(robinhoodToMainnet.adapterOrBridgeName).to.equal("ArbitrumOrbitBridge");
+    // Rollup.confirmPeriodBlocks() (45818 L1 blocks) rather than the 20 minute canonical default.
+    expect(resolveGraphBridgeLatencySeconds(robinhoodToMainnet)).to.equal(45818 * 12);
+
+    // The inbound leg is unaffected by the withdrawal-latency override.
+    const mainnetToRobinhood = findExpectedEdge(
+      bridgeCandidates,
+      (candidate) =>
+        candidate.from.chainId === CHAIN_IDs.MAINNET &&
+        candidate.to.chainId === CHAIN_IDs.ROBINHOOD &&
+        candidate.from.logicalAsset === "WETH",
+      "Mainnet WETH to Robinhood"
+    );
+    expect(resolveGraphBridgeLatencySeconds(mainnetToRobinhood)).to.equal(
+      EXPECTED_L1_TO_L2_MESSAGE_TIME[CHAIN_IDs.ROBINHOOD]
+    );
   });
 
   it("skips bridged USDC lookups on chains that only support native USDC", async function () {

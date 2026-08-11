@@ -2,6 +2,7 @@ import { CUSTOM_ARBITRUM_GATEWAYS, DEFAULT_ARBITRUM_GATEWAY, getContractAbi, get
 import {
   BigNumber,
   bnZero,
+  compareAddressesSimple,
   Contract,
   createFormatFunction,
   EventSearchConfig,
@@ -89,15 +90,23 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
       ),
     ]);
     const counted = new Set<number>();
+    // @dev Both gateways can be shared across tokens (DEFAULT_ARBITRUM_GATEWAY), so each side is filtered on the
+    // non-indexed l1Token. The event decodes it to a checksummed string, so it must be compared case-insensitively
+    // against the EvmAddress rather than by identity.
+    const isTrackedToken = (eventL1Token: string) => compareAddressesSimple(eventL1Token, l1Token.toNative());
     const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, { args: l2Args }) => {
-      if (l2Args.l1Token !== l1Token) {
+      if (!isTrackedToken(l2Args.l1Token)) {
         return totalAmount;
       }
       const received = withdrawalFinalizedEvents.find(({ args: l1Args }, idx) => {
         // Protect against double-counting the same l1 withdrawal events.
         // @dev: If we begin to send "fast-finalized" messages via CCTP V2 then the amounts will not exactly match
         // and we will need to adjust this logic.
-        if (counted.has(idx) || !toBN(l1Args._amount.toString()).eq(toBN(l2Args._amount.toString()))) {
+        if (
+          counted.has(idx) ||
+          !isTrackedToken(l1Args.l1Token) ||
+          !toBN(l1Args._amount.toString()).eq(toBN(l2Args._amount.toString()))
+        ) {
           return false;
         }
 
