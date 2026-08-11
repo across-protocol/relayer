@@ -1,16 +1,21 @@
 import { expect } from "./utils";
 import { CHAIN_IDs } from "../src/utils";
-import { DepositAddressExecuteResponse } from "../src/clients/AcrossSwapApiClient";
+import { DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } from "../src/clients/AcrossSwapApiClient";
 import { DepositAddressMessageV3 } from "../src/interfaces/DepositAddress";
 import {
+  assertEvmWithdrawNamespaces,
   assertIntegratorId,
   assertSupportedNamespace,
   assertSupportedOriginChain,
   assertValidExecuteResponse,
+  assertValidWithdrawResponse,
+  assertWithdrawMaterials,
 } from "../src/deposit-address-service/guards";
 import {
   InvalidExecuteResponseError,
   InvalidIntegratorIdError,
+  InvalidWithdrawResponseError,
+  MissingWithdrawMaterialsError,
   OriginChainDisabledError,
   UnsupportedChainFamilyError,
   UnsupportedNamespaceError,
@@ -200,11 +205,120 @@ describe("DepositAddressService guards", function () {
     });
   });
 
+  describe("assertEvmWithdrawNamespaces", function () {
+    it("passes matching evm namespaces", function () {
+      expect(() => assertEvmWithdrawNamespaces(message())).to.not.throw();
+    });
+
+    it("rejects a non-evm namespace on either side", function () {
+      const tronDeposit = message({ depositAddressNamespace: "tron" });
+      const tronRefund = message({
+        refundAddress: { namespace: "tron", address: "TQ5NMqJjW8sSjhWkrGheJHnWvpJPMdKMzn" },
+      } as Partial<DepositAddressMessageV3>);
+      expect(() => assertEvmWithdrawNamespaces(tronDeposit)).to.throw(UnsupportedNamespaceError);
+      expect(() => assertEvmWithdrawNamespaces(tronRefund)).to.throw(UnsupportedNamespaceError);
+    });
+
+    // The withdraw path is stricter than the deposit path, deliberately: a Tron-native message that
+    // `assertSupportedNamespace` would execute as a deposit still has no v3 withdraw route.
+    it("rejects a Tron-native message the deposit path would accept", function () {
+      const tronNative = message({
+        depositAddressNamespace: "tron",
+        refundAddress: { namespace: "tron", address: "TQ5NMqJjW8sSjhWkrGheJHnWvpJPMdKMzn" },
+      } as Partial<DepositAddressMessageV3>);
+      expect(() => assertSupportedNamespace(tronNative, CHAIN_IDs.TRON)).to.not.throw();
+      expect(() => assertEvmWithdrawNamespaces(tronNative)).to.throw(UnsupportedNamespaceError);
+    });
+  });
+
+  describe("assertWithdrawMaterials", function () {
+    const withdrawLeaf = {
+      kind: "withdraw",
+      implementationAddress: "0x00000000000000000000000000000000000000e1",
+      encodedParams: "0x",
+      leafHash: "0x01",
+      merkleProof: ["0x02"],
+    };
+    const cctpLeaf = { ...withdrawLeaf, kind: "cctp" };
+
+    it("returns the withdraw leaf from among the message's materials", function () {
+      const found = assertWithdrawMaterials(message({ counterfactualMaterials: [cctpLeaf, withdrawLeaf] }));
+      expect(found).to.deep.equal(withdrawLeaf);
+    });
+
+    it("rejects a message with no materials at all", function () {
+      expect(() => assertWithdrawMaterials(message({ counterfactualMaterials: [] }))).to.throw(
+        MissingWithdrawMaterialsError
+      );
+    });
+
+    // `find` must select by kind, not take whatever leaf comes first.
+    it("rejects a message whose materials carry no withdraw leaf", function () {
+      expect(() => assertWithdrawMaterials(message({ counterfactualMaterials: [cctpLeaf] }))).to.throw(
+        MissingWithdrawMaterialsError
+      );
+    });
+
+    // ACK: the leaves were fixed when the deposit address was created, so no redelivery can grow one.
+    it("is terminal", function () {
+      expect(new MissingWithdrawMaterialsError("x").retriable).to.equal(false);
+    });
+  });
+
+  describe("assertValidWithdrawResponse", function () {
+    function signed(over: Partial<DepositAddressSignWithdrawResponse> = {}): DepositAddressSignWithdrawResponse {
+      return {
+        signedWithdrawTx: {
+          ecosystem: "evm",
+          chainId: ARBITRUM,
+          to: "0x0000000000000000000000000000000000000ca1",
+          data: "0xdeadbeef",
+          value: "0",
+        },
+        bundledDeploy: false,
+        signer: "0x9A6e5F1B8C7D0E3a2b4c5D6e7F8A9b0c1D2E3f40",
+        deadline: NOW_SECONDS + 600,
+        requestedAmount: "10000000",
+        appliedGasFee: "2000",
+        netAmount: "9998000",
+        ...over,
+      };
+    }
+
+    it("passes a well-formed response", function () {
+      expect(() => assertValidWithdrawResponse(signed(), ARBITRUM, NOW_SECONDS)).to.not.throw();
+    });
+
+    // The refund chain is `erc20Transfer.chainId` — where the funds landed — so a response signed for any
+    // other chain must not be broadcast.
+    it("rejects a response signed for a different chain", function () {
+      const wrongChain = signed({ signedWithdrawTx: { ...signed().signedWithdrawTx, chainId: CHAIN_IDs.BASE } });
+      expect(() => assertValidWithdrawResponse(wrongChain, ARBITRUM, NOW_SECONDS)).to.throw(
+        InvalidWithdrawResponseError
+      );
+    });
+
+    it("rejects a signature deadline inside the buffer, accepts one exactly at it", function () {
+      expect(() => assertValidWithdrawResponse(signed({ deadline: NOW_SECONDS + 59 }), ARBITRUM, NOW_SECONDS)).to.throw(
+        InvalidWithdrawResponseError
+      );
+      expect(() =>
+        assertValidWithdrawResponse(signed({ deadline: NOW_SECONDS + 60 }), ARBITRUM, NOW_SECONDS)
+      ).to.not.throw();
+    });
+
+    // A perishable response must NACK, not ACK: a fresh one next delivery may well pass.
+    it("makes withdraw-response failures retriable", function () {
+      expect(new InvalidWithdrawResponseError("x").retriable).to.equal(true);
+    });
+  });
+
   describe("disposition of the deterministic guards", function () {
     it("ACKs every guard whose outcome a retry cannot change", function () {
       expect(new UnsupportedChainFamilyError("x").retriable).to.equal(false);
       expect(new UnsupportedNamespaceError("x").retriable).to.equal(false);
       expect(new InvalidIntegratorIdError("x").retriable).to.equal(false);
+      expect(new MissingWithdrawMaterialsError("x").retriable).to.equal(false);
     });
   });
 });

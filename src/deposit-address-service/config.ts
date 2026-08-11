@@ -74,6 +74,14 @@ export class DepositAddressServiceConfig {
   readonly executionEnabled: boolean;
 
   /**
+   * Gates the v3 refund-withdraw path independently of {@link executionEnabled}, defaulting **false**.
+   * Reuses `ENABLE_V3_WITHDRAWALS`, the same variable the polling bot reads, so both can run during
+   * migration without new config. Disabled withdraws NACK — the funds are still on the deposit address,
+   * and an ACK would discard the only delivery that could ever refund them.
+   */
+  readonly v3WithdrawalsEnabled: boolean;
+
+  /**
    * Why the Redis lock needs no renewal. A Cloud Run 504 does **not** stop handler code, so the
    * guarantee comes from the application: bound every outbound call, and never broadcast past this.
    */
@@ -96,6 +104,7 @@ export class DepositAddressServiceConfig {
   constructor(env: ProcessEnv) {
     this.port = readInteger("PORT", env.PORT, DEFAULT_PORT, MAX_PORT);
     this.executionEnabled = readBoolean(env.EXECUTION_ENABLED);
+    this.v3WithdrawalsEnabled = readBoolean(env.ENABLE_V3_WITHDRAWALS);
     this.originChains = parseJson.numberArray(env.RELAYER_ORIGIN_CHAINS);
 
     this.applicationDeadlineMs = readInteger(

@@ -5,11 +5,11 @@ and executes them, replacing the polling bot in [`../deposit-address`](../deposi
 left untouched until cutover. Why a service rather than a poller:
 [#3663](https://github.com/across-protocol/relayer/issues/3663).
 
-> **v3 deposits execute; v3 withdrawals do not yet.** A `mis_route` transfer, and a `correct_transfer`
-> the execute endpoint rejects as below the minimum, both **NACK** until the withdraw path lands — they
-> are preserved, not discarded. With no handler configured, or `EXECUTION_ENABLED` unset, the service
-> NACKs every delivery and `/ready` stays `503`, so nothing is discarded if a subscription is attached
-> early. v1 messages stay with the polling bot.
+> **v3 deposits and refund withdrawals execute.** A withdrawal's `withdraw_executed` is recorded but not
+> yet announced — lifecycle publishing and its recovery land next, before execution is enabled anywhere.
+> With no handler configured, or `EXECUTION_ENABLED` unset, the service NACKs every delivery and `/ready`
+> stays `503`, so nothing is discarded if a subscription is attached early. v1 messages stay with the
+> polling bot.
 
 ## Contracts
 
@@ -85,6 +85,32 @@ transfer's money — so `null` is transient. Ordering it first is what lets the 
 This guard is **new**, not parity. The polling bot's balance check claims to cover reorgs
 (`DepositAddressHandler.ts:1165`) but cannot distinguish "this funding transfer is real" from "there
 happens to be money at this address" — the shared-pot failure this service exists to close.
+
+### The v3 refund withdrawal
+
+`executeWithdraw` serves a `mis_route`, and a `correct_transfer` the execute endpoint rejected as
+`AMOUNT_BELOW_MINIMUM` — that rejection is terminal at the API, so the fallback runs immediately, **under
+the same lock**, as the polling bot holds its in-flight lock across `initiateWithdrawV3`. No `refund_only`
+marker is recorded: a redelivery re-calls `/execute`, gets the same rejection, and falls through again.
+
+Not the deposit path with a different verb, ported guard-for-guard from `initiateWithdrawV3`:
+
+| Guard | Disposition on failure |
+| --- | --- |
+| `ENABLE_V3_WITHDRAWALS` set | NACK — an operator switch, like a disabled chain |
+| `depositAddressNamespace` **and** `refundAddress.namespace` exactly `evm` | ACK — **stricter than the deposit path**; there is no TVM withdraw route |
+| withdraw leaf present in `counterfactualMaterials` | ACK — the leaves were fixed at address creation |
+| funding transfer canonical, then balance ≥ amount | as the deposit path, same order, same reasons |
+| signed `chainId` matches the **refund** chain (`erc20Transfer.chainId` — for a `mis_route` not the route's origin) | NACK |
+| signature deadline ≥ now + 60s | NACK |
+| sign-withdraw answered **422** | persist `withdraw_failed`, ACK |
+
+The 422 is classified on the HTTP status alone, exactly as production's `_getSignedWithdrawV3` does — the
+client posts through `_postOrThrow`, which discards the API's error code, so `withdraw_failed.code` is
+optional and unset. Every other sign-withdraw failure NACKs. The refund is gas-deducted
+(`deductGasFromRefund: true`), deliberately unlike v1's full-amount refund. Broadcast and reconciliation
+are the deposit path's, with `operation: "withdraw"` on the pending record — a confirmed withdraw is not
+expected to carry the provenance event, so it does not warn about its absence.
 
 ### Broadcasting — why not `sendAndConfirmTransaction`
 
@@ -182,7 +208,7 @@ for as long as the message is retained. That drives every mapping:
 | Handler threw a `retriable` error | `500` | May clear; let the subscription back off. |
 | Handler threw a terminal error | `204` | Redelivery can't help; a non-2xx would retry forever. |
 | Lock held by another consumer | `500` | It finishes or its lock expires; either way a later delivery proceeds. |
-| `mis_route`, or `AMOUNT_BELOW_MINIMUM` | `500` | Both want the withdraw path, which is not built yet. Permanently-retriable would normally be the no-DLQ trap, but it is unreachable while `EXECUTION_ENABLED` is false. |
+| Sign-withdraw answered 422 | `204` | Terminal per product decision; recorded as `withdraw_failed` first. |
 | Fails the transport contract (no decodable `data`, no `messageId`) | `204` | Same reasoning. |
 | Unparseable JSON, or body over the 1mb cap | `204` | Body-parser errors only; anything else NACKs. |
 | Execution disabled, or no handler configured | `500` | Preserves the message; never discards silently. |
@@ -259,6 +285,7 @@ the config cannot tell whether it actually was.
 | --- | --- | --- |
 | `PORT` | `8080` | HTTP port. |
 | `EXECUTION_ENABLED` | `false` | Master switch for fund-moving work. Must be exactly `"true"`. |
+| `ENABLE_V3_WITHDRAWALS` | `false` | Gates the refund-withdraw path independently. **The same variable the polling bot reads.** Disabled withdraws NACK. |
 | `APPLICATION_DEADLINE_MS` | `480000` | See above. Must be < 540s. |
 | `SHUTDOWN_DRAIN_TIMEOUT_MS` | `8000` | Must be < 10s: Cloud Run SIGKILLs that long after SIGTERM. |
 | `CONFIRMATION_TRIES` | `4` | `AugmentedTransaction.maxTries`. Capped at the client's own default of 10, which would be ~22 min. |
