@@ -52,7 +52,7 @@ The main bot types in `src/`:
 - `monitor`: Runs monitoring and reporting checks.
 - `gasless`: Handles gasless relay flows.
 - `deposit-address`: Polls the across-indexer for counterfactual deposit-address transfers and executes the resulting deposits or refund withdraws.
-- `deposit-address-service`: Standalone Express service doing the same work driven by GCP Pub/Sub push instead of polling. Not part of the `index.ts` CLI dispatch — it runs as its own entrypoint, like `cctp-finalizer`. Intended to replace `deposit-address`. Executes v3 deposits; v3 withdrawals and v1 are not ported yet, and both NACK so nothing is discarded.
+- `deposit-address-service`: Standalone Express service doing the same work driven by GCP Pub/Sub push instead of polling. Not part of the `index.ts` CLI dispatch — it runs as its own entrypoint, like `cctp-finalizer`. Intended to replace `deposit-address`. Executes v3 deposits and refund withdrawals; v1 is not ported yet and stays with the polling bot.
 
 ## Directory tree
 
