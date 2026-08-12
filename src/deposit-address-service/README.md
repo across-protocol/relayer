@@ -129,6 +129,12 @@ state, never on the message's classification — a `correct_transfer` refunded b
 same announcement — and it re-fetches the receipt, because the payload's `logIndex` comes from scanning
 `receipt.logs` for the settlement log and cannot be rebuilt from the record.
 
+Resolution and announcement are therefore **one function**, `resolveAndAnnounce`, and no caller invokes the
+resolver directly. `resolvePendingTransaction` is the only place `withdraw_executed` is written and its
+caller ACKs immediately after, so a resolution that did not announce would be the last delivery that could
+ever announce — the same permanent loss, reached from a redelivery that resolves a broadcast whose original
+request died rather than from one that found the terminal state already written.
+
 **Publish, then stamp.** The reverse order loses the announcement for good on any failure between the two;
 this order can at worst announce twice, which at-least-once delivery already implies. A fresh withdrawal
 publishes from what `TransferStore` durably holds rather than from what the request believes it just did,

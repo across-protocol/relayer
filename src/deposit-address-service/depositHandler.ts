@@ -173,8 +173,11 @@ async function processUnderLock(
     // A transaction may still land, so never re-execute: resolve the recorded one instead. The chain guards
     // below deliberately do **not** gate this — a transfer on a since-disabled chain still has a transaction
     // on the wire, and abandoning it unresolved is the one unrecoverable direction.
-    const deps_ = { logger: deps.logger, store, provider: await getProvider(originChainId) };
-    return resolvePendingTransaction(deps_, transferId, current);
+    //
+    // Announcing here is not optional. This is the branch that first observes a withdrawal broadcast by a
+    // request that died before it could resolve, so it is where `withdraw_executed` gets written — and it
+    // then ACKs, which is the last delivery that could ever announce it.
+    return resolveAndAnnounce(deps, transferId, message, await getProvider(originChainId), current);
   }
 
   // Both guards run **before** the provider is built. `getProvider` throws a bare `No RPC providers defined`
@@ -209,7 +212,6 @@ async function executeDeposit(
   provider: Provider,
   originChainId: number
 ): Promise<HandlerResult> {
-  const { store, logger } = deps;
   const { transferId, message } = parsed;
   const { depositAddress, erc20Transfer } = message;
 
@@ -265,7 +267,7 @@ async function executeDeposit(
       `${getNetworkName(destinationChainId)}, using deposit address ` +
       `${blockExplorerLink(message.depositAddress, originChainId)}`,
   });
-  const result = await resolvePendingTransaction({ logger, store, provider }, transferId, pending);
+  const result = await resolveAndAnnounce(deps, transferId, message, provider, pending);
   return { outcome: result.outcome, fields: { ...result.fields, quoteMs: Date.now() - quotedAtMs, integratorId } };
 }
 
@@ -290,7 +292,7 @@ async function executeWithdraw(
   provider: Provider,
   refundChainId: number
 ): Promise<HandlerResult> {
-  const { config, store, logger } = deps;
+  const { config, store } = deps;
   const { transferId, message } = parsed;
   const { depositAddress, erc20Transfer } = message;
 
@@ -375,30 +377,51 @@ async function executeWithdraw(
       `appliedGasFee: ${signed.appliedGasFee}, netAmount: ${signed.netAmount}, ` +
       `bundledDeploy: ${signed.bundledDeploy})`,
   });
-  const result = await resolvePendingTransaction({ logger, store, provider }, transferId, pending);
-
-  // Announced from what Redis durably holds, not from what this request believes it just did — so a
-  // withdrawal is never announced unless its terminal state landed, and this path is the same code a
-  // redelivery runs to finish an announcement that failed. A publish failure throws, leaving
-  // `withdraw_executed` in place for that redelivery to retry; nothing here re-signs or re-broadcasts.
-  const lifecycle = withdrawLifecycleDeps(deps);
-  const recorded = await store.read(transferId);
-  const published =
-    isDefined(lifecycle) && awaitsWithdrawPublication(recorded)
-      ? await publishWithdrawExecuted(lifecycle, provider, transferId, message, recorded)
-      : {};
-
+  const result = await resolveAndAnnounce(deps, transferId, message, provider, pending);
   return {
     outcome: result.outcome,
     fields: {
       ...result.fields,
-      ...published,
       quoteMs: Date.now() - quotedAtMs,
       requestedAmount: signed.requestedAmount,
       appliedGasFee: signed.appliedGasFee,
       netAmount: signed.netAmount,
     },
   };
+}
+
+/**
+ * Resolves a broadcast against the chain and then announces the withdrawal it settled, if one is owed.
+ *
+ * **The two steps belong together**, which is why every caller goes through here rather than calling the
+ * resolver directly. This is the only place `withdraw_executed` is written, and the request ACKs immediately
+ * after — so an announcement skipped here is never made, whether the record was written by this request or
+ * by an earlier one that died before it could announce. A caller that resolved without announcing would
+ * reopen the gap this whole path exists to close.
+ *
+ * The announcement is built from what Redis durably holds, not from what the resolution believes it just
+ * did, so a withdrawal is never announced unless its terminal state landed. A publish failure throws,
+ * leaving `withdraw_executed` in place for a redelivery to retry; nothing here re-signs or re-broadcasts.
+ * The deposit path pays only an extra read for this: `deposit_executed` never awaits an announcement.
+ */
+async function resolveAndAnnounce(
+  deps: DepositHandlerDeps,
+  transferId: string,
+  message: DepositAddressMessageV3,
+  provider: Provider,
+  pending: BroadcastPendingState
+): Promise<HandlerResult> {
+  const { logger, store } = deps;
+  const result = await resolvePendingTransaction({ logger, store, provider }, transferId, pending);
+
+  const lifecycle = withdrawLifecycleDeps(deps);
+  const recorded = await store.read(transferId);
+  if (!isDefined(lifecycle) || !awaitsWithdrawPublication(recorded)) {
+    return result;
+  }
+
+  const published = await publishWithdrawExecuted(lifecycle, provider, transferId, message, recorded);
+  return { outcome: result.outcome, fields: { ...result.fields, ...published } };
 }
 
 /** The publication dependencies, or `undefined` when the publisher gate is off and nothing is announced. */
