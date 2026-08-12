@@ -3,6 +3,7 @@ import minimist from "minimist";
 import { getRedisCache } from "../cache/Redis";
 import { AcrossSwapApiClient } from "../clients/AcrossSwapApiClient";
 import { TransactionClient } from "../clients/TransactionClient";
+import { getGcpPubSubPublisher } from "../messaging/gcp";
 import { EvmAddress, assert, config, getDispatcherKeys, getSigner, isDefined, Logger, waitForLogger } from "../utils";
 import { safeStringifyThrownValue } from "./errors";
 import { createApp } from "./app";
@@ -80,6 +81,16 @@ async function buildHandler(
   const swapApiKey = SWAP_API_KEY?.trim();
   assert(isDefined(swapApiKey) && swapApiKey.length > 0, "DepositAddressService: SWAP_API_KEY is required");
 
+  // Asserted rather than degraded, like Redis above: a gate that is on with no publisher behind it announces
+  // nothing, and that is invisible until a refund settles and the indexer is never told.
+  const publisher = serviceConfig.withdrawPublisherEnabled
+    ? getGcpPubSubPublisher(logger, serviceConfig.pubSubGcpProjectId)
+    : undefined;
+  assert(
+    !serviceConfig.withdrawPublisherEnabled || isDefined(publisher),
+    "DepositAddressService: the withdraw publisher is enabled but no Pub/Sub publisher could be built"
+  );
+
   return createDepositHandler({
     logger,
     config: serviceConfig,
@@ -89,6 +100,7 @@ async function buildHandler(
     baseSigner,
     signerAddress,
     dispatcherSigners,
+    publisher,
   });
 }
 

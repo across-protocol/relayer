@@ -56,13 +56,20 @@ const DepositExecuted = type({
   completedAtMs: timestampMs(),
 });
 
-/** Separate from `DepositExecuted` because only this one gains lifecycle-publication state (PR 6). */
+/**
+ * Separate from `DepositExecuted` because only this one carries lifecycle-publication state.
+ *
+ * Withdrawals have no on-chain provenance event, so the indexer only learns of one from the Pub/Sub
+ * announcement — which makes "did we announce it" durable state rather than a detail of the request that
+ * made it. Absent means the announcement is still owed, and a redelivery retries **the publication only**.
+ */
 const WithdrawExecuted = type({
   status: literal("withdraw_executed"),
   txHash: string(),
   chainId: min(integer(), 1),
   blockNumber: min(integer(), 0),
   completedAtMs: timestampMs(),
+  withdrawLifecyclePublishedAt: optional(timestampMs()),
 });
 
 /**
@@ -81,6 +88,7 @@ const TerminalStateStruct = union([DepositExecuted, WithdrawExecuted, WithdrawFa
 const TransferStateStruct = union([BroadcastPending, TerminalStateStruct]);
 
 export type BroadcastPendingState = Infer<typeof BroadcastPending>;
+export type WithdrawExecutedState = Infer<typeof WithdrawExecuted>;
 export type TerminalState = Infer<typeof TerminalStateStruct>;
 export type TransferState = Infer<typeof TransferStateStruct>;
 

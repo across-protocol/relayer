@@ -7,6 +7,7 @@ import {
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 import { DepositAddressMessageV3 } from "../interfaces/DepositAddress";
+import { GcpPubSubPublisher } from "../messaging/gcp";
 import {
   BigNumber,
   Contract,
@@ -48,6 +49,7 @@ import { HandlerResult, MessageHandler, RequestContext, assertBeforeDeadline } f
 import { ParsedTransfer, parseTransfer } from "./message";
 import { resolvePendingTransaction } from "./pendingTransaction";
 import { BroadcastPendingState, TerminalState, TransferLock, TransferStore } from "./transferState";
+import { WithdrawLifecycleDeps, awaitsWithdrawPublication, publishWithdrawExecuted } from "./withdrawLifecycle";
 
 /** The API's stable discriminator for an amount under the minimum deposit; a 422 with any other code is not this. */
 const AMOUNT_BELOW_MINIMUM_ERROR_CODE = "AMOUNT_BELOW_MINIMUM";
@@ -78,6 +80,11 @@ export interface DepositHandlerDeps {
   signerAddress: EvmAddress;
   /** Non-empty enables `dispatch()`'s signer rotation, matching the polling bot's `depositAddressSigners`. */
   dispatcherSigners: Signer[];
+  /**
+   * Announces settled withdrawals. Absent when the publisher gate is off — and under `RELAYER_TEST`, which is
+   * why it is injected. Deposits are never published: the indexer ingests their on-chain provenance event.
+   */
+  publisher?: GcpPubSubPublisher;
   /** Defaults to the repo's memoized `getProvider`, so nothing is built per request or at startup. */
   getProvider?: (chainId: number) => Promise<Provider>;
 }
@@ -97,8 +104,18 @@ export function createDepositHandler(deps: DepositHandlerDeps): MessageHandler {
 
     // A cheap short-circuit before taking a lock: a transfer that is already done needs no exclusion. Only
     // terminal states qualify — resolving a pending record may clear it, so that needs the lock.
+    //
+    // A withdrawal that settled but was never announced is **not** done, however cheap acknowledging it would
+    // be: the indexer still has to be told, and this is the only delivery that can do it. So it falls through
+    // and takes the lock. Piercing here is half the job — `processUnderLock` re-reads and would acknowledge
+    // it there instead.
+    const lifecycle = withdrawLifecycleDeps(deps);
     const existing = await deps.store.read(parsed.transferId);
-    if (isDefined(existing) && existing.status !== "broadcast_pending") {
+    if (
+      isDefined(existing) &&
+      existing.status !== "broadcast_pending" &&
+      !(isDefined(lifecycle) && awaitsWithdrawPublication(existing))
+    ) {
       return { outcome: `already_${existing.status}`, fields: { transferId: parsed.transferId, ...existing } };
     }
 
@@ -129,9 +146,28 @@ async function processUnderLock(
   const originChainId = Number(chainId);
   const getProvider = deps.getProvider ?? getProviderDefault;
 
+  const lifecycle = withdrawLifecycleDeps(deps);
   const current = await store.read(transferId);
   if (isDefined(current)) {
     if (current.status !== "broadcast_pending") {
+      // The other half of piercing the terminal short-circuit. A withdrawal that settled but was never
+      // announced takes the lock — this is where the retry actually happens, and acknowledging here would
+      // make the pre-lock pierce pointless.
+      //
+      // The provider is built from the **record's** chain, which is where the transaction we are looking up
+      // is (the same chain the message names, since a refund settles where the funds landed). Built before
+      // the chain guards, as the pending branch below is, and for the same reason: a settled withdrawal on a
+      // since-disabled chain still owes its announcement.
+      if (isDefined(lifecycle) && awaitsWithdrawPublication(current)) {
+        const published = await publishWithdrawExecuted(
+          lifecycle,
+          await getProvider(current.chainId),
+          transferId,
+          message,
+          current
+        );
+        return { outcome: `already_${current.status}`, fields: { transferId, ...current, ...published } };
+      }
       return { outcome: `already_${current.status}`, fields: { transferId, ...current } };
     }
     // A transaction may still land, so never re-execute: resolve the recorded one instead. The chain guards
@@ -238,8 +274,8 @@ async function executeDeposit(
  * sign-withdraw rejection is *recorded* as `withdraw_failed` and ACKed rather than retried. The refund is
  * gas-deducted (`deductGasFromRefund: true`) — deliberate, and different from v1's full-amount refund.
  *
- * `withdraw_executed` is recorded but not yet announced; lifecycle publishing and its recovery follow in a
- * later change, before execution is enabled anywhere.
+ * A settled withdrawal is then announced over Pub/Sub, since it leaves no on-chain provenance event for the
+ * indexer to read. See {@link publishWithdrawExecuted}.
  */
 async function executeWithdraw(
   deps: DepositHandlerDeps,
@@ -335,16 +371,35 @@ async function executeWithdraw(
       `bundledDeploy: ${signed.bundledDeploy})`,
   });
   const result = await resolvePendingTransaction({ logger, store, provider }, transferId, pending);
+
+  // Announced from what Redis durably holds, not from what this request believes it just did — so a
+  // withdrawal is never announced unless its terminal state landed, and this path is the same code a
+  // redelivery runs to finish an announcement that failed. A publish failure throws, leaving
+  // `withdraw_executed` in place for that redelivery to retry; nothing here re-signs or re-broadcasts.
+  const lifecycle = withdrawLifecycleDeps(deps);
+  const recorded = await store.read(transferId);
+  const published =
+    isDefined(lifecycle) && awaitsWithdrawPublication(recorded)
+      ? await publishWithdrawExecuted(lifecycle, provider, transferId, message, recorded)
+      : {};
+
   return {
     outcome: result.outcome,
     fields: {
       ...result.fields,
+      ...published,
       quoteMs: Date.now() - quotedAtMs,
       requestedAmount: signed.requestedAmount,
       appliedGasFee: signed.appliedGasFee,
       netAmount: signed.netAmount,
     },
   };
+}
+
+/** The publication dependencies, or `undefined` when the publisher gate is off and nothing is announced. */
+function withdrawLifecycleDeps(deps: DepositHandlerDeps): WithdrawLifecycleDeps | undefined {
+  const { logger, store, config, publisher } = deps;
+  return isDefined(publisher) ? { logger, store, publisher, topic: config.pubSubWithdrawTopic } : undefined;
 }
 
 /** Raw calldata for one broadcast, plus the Slack-facing lines the shared client logs on success. */

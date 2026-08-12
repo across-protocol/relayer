@@ -5,11 +5,10 @@ and executes them, replacing the polling bot in [`../deposit-address`](../deposi
 left untouched until cutover. Why a service rather than a poller:
 [#3663](https://github.com/across-protocol/relayer/issues/3663).
 
-> **v3 deposits and refund withdrawals execute.** A withdrawal's `withdraw_executed` is recorded but not
-> yet announced — lifecycle publishing and its recovery land next, before execution is enabled anywhere.
-> With no handler configured, or `EXECUTION_ENABLED` unset, the service NACKs every delivery and `/ready`
-> stays `503`, so nothing is discarded if a subscription is attached early. v1 messages stay with the
-> polling bot.
+> **v3 deposits and refund withdrawals execute**, and a withdrawal is announced over Pub/Sub. With no
+> handler configured, or `EXECUTION_ENABLED` unset, the service NACKs every delivery and `/ready` stays
+> `503`, so nothing is discarded if a subscription is attached early. v1 messages stay with the polling
+> bot.
 
 ## Contracts
 
@@ -112,6 +111,37 @@ optional and unset. Every other sign-withdraw failure NACKs. The refund is gas-d
 are the deposit path's, with `operation: "withdraw"` on the pending record — a confirmed withdraw is not
 expected to carry the provenance event, so it does not warn about its absence.
 
+### Announcing a settled withdrawal
+
+A withdrawal leaves **no on-chain provenance event**, so unlike a deposit it has to be announced: the
+Pub/Sub `withdraw_executed` message is the only way the indexer learns the refund settled.
+[`withdrawLifecycle.ts`](./withdrawLifecycle.ts) reuses `buildWithdrawExecutedPayload` from the polling
+bot verbatim, and the `{ type, data }` envelope is locked by the consumer.
+
+The announcement is **durable state, not a step of the request that made it** —
+`withdrawLifecyclePublishedAt` on the `withdraw_executed` record. That is what makes a dropped one
+recoverable, and it is why the terminal short-circuit is pierced in **both** places (the pre-lock read and
+the post-lock re-read): a settled-but-unannounced withdrawal takes the lock and publishes instead of
+acknowledging. Piercing one alone would ACK before the retry could happen. Recovery keys on the recorded
+state, never on the message's classification — a `correct_transfer` refunded below the minimum owes the
+same announcement — and it re-fetches the receipt, because the payload's `logIndex` comes from scanning
+`receipt.logs` for the settlement log and cannot be rebuilt from the record.
+
+**Publish, then stamp.** The reverse order loses the announcement for good on any failure between the two;
+this order can at worst announce twice, which at-least-once delivery already implies. A fresh withdrawal
+publishes from what `TransferStore` durably holds rather than from what the request believes it just did,
+so the happy path runs the same code a redelivery does — the recovery path being the one that cannot be
+exercised in production.
+
+| Outcome | Disposition |
+| --- | --- |
+| Published | stamp the record, ACK |
+| Publish threw | preserve `withdraw_executed` **unstamped**, NACK; the redelivery retries the publication only |
+| Receipt carries no settlement log | ACK + `warn`, record left unstamped — the funds moved correctly and no redelivery can conjure a log that is not there |
+
+**No path here re-executes the withdrawal.** The polling bot instead catches, logs at `error` and never
+throws, so a dropped publish is never replayed; closing that is the point of publishing from state.
+
 ### Broadcasting — why not `sendAndConfirmTransaction`
 
 That helper submits **and** confirms in one call and returns `undefined` with no hash on every failure
@@ -209,6 +239,7 @@ for as long as the message is retained. That drives every mapping:
 | Handler threw a terminal error | `204` | Redelivery can't help; a non-2xx would retry forever. |
 | Lock held by another consumer | `500` | It finishes or its lock expires; either way a later delivery proceeds. |
 | Sign-withdraw answered 422 | `204` | Terminal per product decision; recorded as `withdraw_failed` first. |
+| Withdrawal settled but its announcement failed | `500` | The refund is done; the redelivery retries the publication alone. |
 | Fails the transport contract (no decodable `data`, no `messageId`) | `204` | Same reasoning. |
 | Unparseable JSON, or body over the 1mb cap | `204` | Body-parser errors only; anything else NACKs. |
 | Execution disabled, or no handler configured | `500` | Preserves the message; never discards silently. |
@@ -291,6 +322,9 @@ the config cannot tell whether it actually was.
 | `CONFIRMATION_TRIES` | `4` | `AugmentedTransaction.maxTries`. Capped at the client's own default of 10, which would be ~22 min. |
 | `CONFIRM_BUDGET_MS` | `300000` | Time reserved for the confirmation after the deadline check; only used to assert the lock-TTL relation above. |
 | `RELAYER_ORIGIN_CHAINS` | `[]` | Origin chains to execute on. **The same variable the polling bot reads**, so both can run during migration without new config. |
+| `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` | `false` | Gates announcing settled withdrawals. **The polling bot's variable.** Off leaves records unstamped, so turning it on lets a redelivery announce after the fact. `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER` is dead config here. |
+| `PUBSUB_GCP_PROJECT_ID` | — | Project hosting the topic. Required when the publisher gate is on; startup fails otherwise. |
+| `PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC` | — | Short topic name. Required when the publisher gate is on. |
 | `SWAP_API_KEY` | — | Required; startup fails without it. |
 | `API_TIMEOUT_OVERRIDE` | `3000` | quote-api timeout, ms. |
 
