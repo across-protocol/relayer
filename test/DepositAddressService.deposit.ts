@@ -676,6 +676,9 @@ describe("DepositAddressService v3 execution", function () {
 
       expect(response.status).to.equal(204);
       expect(state()).to.include({ status: "deposit_executed", txHash: EXECUTE_HASH });
+      // Resolving a pending record announces a settled withdrawal, but never a deposit: the indexer reads
+      // the deposit's provenance event on-chain.
+      expect(lifecycle.published).to.have.length(0);
     });
 
     it("NACKs while another consumer holds the lock", async function () {
@@ -1126,6 +1129,29 @@ describe("DepositAddressService v3 execution", function () {
         // Taken and given back: the announcement runs under the transfer's lock, like everything else.
         expect(redisStore.has(LOCK_KEY)).to.equal(false);
         expect(lastLine()).to.include({ outcome: "already_withdraw_executed" });
+      });
+
+      // The other way a withdrawal reaches `withdraw_executed`: an earlier request broadcast it and died
+      // before the receipt landed. This delivery is the one that resolves the record — and it ACKs, so it is
+      // also the last one that could ever announce it.
+      it("announces a withdrawal it resolved from a pending record", async function () {
+        redisStore.set(
+          STATE_KEY,
+          JSON.stringify({
+            status: "broadcast_pending",
+            operation: "withdraw",
+            txHash: EXECUTE_HASH,
+            chainId: ARBITRUM,
+            submittedAtMs: 1_700_000_000_000,
+          })
+        );
+
+        const response = await post(misRoute());
+
+        expect(response.status).to.equal(204);
+        expect(lifecycle.published).to.have.length(1);
+        expect(state()).to.have.property("withdrawLifecyclePublishedAt").that.is.a("number");
+        expect(withdraw.requests).to.have.length(0);
       });
 
       // A `correct_transfer` the execute endpoint rejected below the minimum was refunded too, so recovery
