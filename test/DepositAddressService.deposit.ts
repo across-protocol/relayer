@@ -19,6 +19,7 @@ import {
   ethers,
   toBN,
 } from "../src/utils";
+import { GcpPubSubPublisher } from "../src/messaging/gcp";
 import { createApp } from "../src/deposit-address-service/app";
 import { DepositAddressServiceConfig } from "../src/deposit-address-service/config";
 import { createDepositHandler } from "../src/deposit-address-service/depositHandler";
@@ -45,6 +46,11 @@ describe("DepositAddressService v3 execution", function () {
   const ORIGINAL_HASH = "0xaa22c7d40e9b6852f1ad0c3b7e94f628a1d5c09e3b7a2d8f4c6e1b0a9d8c7f611";
   const SIGNER_NONCE = 41;
   const METADATA_TOPIC = ethers.utils.id("MetadataEmitted(bytes)");
+  const TRANSFER_TOPIC = ethers.utils.id("Transfer(address,address,uint256)");
+  const REFUND_ADDRESS = "0x9A6e5F1B8C7D0E3a2b4c5D6e7F8A9b0c1D2E3f40";
+  const LIFECYCLE_TOPIC = "topic-deposit-address-execution-test";
+  const LIFECYCLE_MESSAGE_ID = "pubsub-99123";
+  const SETTLEMENT_LOG_INDEX = 3;
   const WITHDRAW_LEAF = {
     kind: "withdraw",
     implementationAddress: "0x00000000000000000000000000000000000000e1",
@@ -80,6 +86,9 @@ describe("DepositAddressService v3 execution", function () {
   /** What the quote-api answers. */
   let quote: { response?: Partial<DepositAddressExecuteResponse>; error?: Error };
 
+  /** Every lifecycle announcement the handler published, and an optional failure to inject. */
+  let lifecycle: { published: { topic: string; payload: unknown }[]; error?: Error };
+
   /** What the sign-withdraw endpoint answers, plus every request it received. */
   let withdraw: {
     response?: Partial<DepositAddressSignWithdrawResponse>;
@@ -106,7 +115,7 @@ describe("DepositAddressService v3 execution", function () {
       shouldSponsorAccountCreation: false,
       counterfactualMaterials: [WITHDRAW_LEAF],
       depositAddressNamespace: "evm",
-      refundAddress: { namespace: "evm", address: "0x9A6e5F1B8C7D0E3a2b4c5D6e7F8A9b0c1D2E3f40" },
+      refundAddress: { namespace: "evm", address: REFUND_ADDRESS },
       routeParams: {
         outputToken: USDC,
         destinationChainId: "8453",
@@ -130,6 +139,24 @@ describe("DepositAddressService v3 execution", function () {
 
   function receipt(over: Partial<TransactionReceipt> = {}): TransactionReceipt {
     return { blockNumber: FUNDING_BLOCK, status: 1, logs: [], ...over } as TransactionReceipt;
+  }
+
+  /**
+   * The ERC20 `Transfer` a settled refund leaves behind — token contract, `from` the deposit address, `to` the
+   * refund address. `buildWithdrawExecutedPayload` matches on all three and takes its `logIndex` from the log,
+   * which is why the announcement needs the receipt and cannot be rebuilt from the state record.
+   */
+  function settlementLog(over: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      address: USDC,
+      topics: [
+        TRANSFER_TOPIC,
+        ethers.utils.hexZeroPad(DEPOSIT_ADDRESS.toLowerCase(), 32),
+        ethers.utils.hexZeroPad(REFUND_ADDRESS.toLowerCase(), 32),
+      ],
+      logIndex: SETTLEMENT_LOG_INDEX,
+      ...over,
+    };
   }
 
   function recordingLogger(): winston.Logger {
@@ -292,6 +319,22 @@ describe("DepositAddressService v3 execution", function () {
     } as unknown as AcrossSwapApiClient;
   }
 
+  /**
+   * Stands in for `GcpPubSubPublisher`, which `getGcpPubSubPublisher` refuses to build under `RELAYER_TEST`.
+   * Records what was announced and where, so a test can assert the envelope the indexer consumer is keyed on.
+   */
+  function fakePublisher(): GcpPubSubPublisher {
+    return {
+      async publishJson(topic: string, payload: unknown) {
+        if (lifecycle.error) {
+          throw lifecycle.error;
+        }
+        lifecycle.published.push({ topic, payload });
+        return LIFECYCLE_MESSAGE_ID;
+      },
+    } as unknown as GcpPubSubPublisher;
+  }
+
   function pushBody(payload: Record<string, unknown>): string {
     return JSON.stringify({
       message: {
@@ -342,12 +385,22 @@ describe("DepositAddressService v3 execution", function () {
     quote = {};
     withdraw = { requests: [] };
     lockSeen = {};
+    lifecycle = { published: [] };
 
-    await startServer({ ENABLE_V3_WITHDRAWALS: "true" });
+    await startServer({
+      ENABLE_V3_WITHDRAWALS: "true",
+      ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER: "true",
+      PUBSUB_GCP_PROJECT_ID: "test-project",
+      PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC: LIFECYCLE_TOPIC,
+    });
   });
 
-  /** Builds the handler and binds the app. Re-callable inside a test that needs different env, e.g. the withdraw gate off. */
-  async function startServer(env: Record<string, string>): Promise<void> {
+  /**
+   * Builds the handler and binds the app. Re-callable inside a test that needs different env, e.g. the
+   * withdraw gate off. `publisher` defaults on so every withdraw test exercises the announcement rather than
+   * passing because publishing happened to be disabled; pass `false` for the unconfigured case.
+   */
+  async function startServer(env: Record<string, string>, publisher = true): Promise<void> {
     const baseSigner = Wallet.createRandom();
     signerAddress = await baseSigner.getAddress();
 
@@ -367,6 +420,7 @@ describe("DepositAddressService v3 execution", function () {
       baseSigner,
       signerAddress: EvmAddress.from(signerAddress),
       dispatcherSigners: [],
+      publisher: publisher ? fakePublisher() : undefined,
       // Throws for any chain but the configured one, because the real `getProvider` throws
       // `No RPC providers defined` for a chain with no RPC configuration. A fake that answered for every
       // chain would be more forgiving than production and would mask a guard running *after* the provider
@@ -755,8 +809,13 @@ describe("DepositAddressService v3 execution", function () {
 
     beforeEach(function () {
       // Withdraw transactions carry no provenance event — only executes do — so the default receipt here has
-      // no metadata topic, and the tests assert that never produces a warning.
-      chain.executeReceipt = receipt({ blockNumber: FUNDING_BLOCK + 10 });
+      // no metadata topic, and the tests assert that never produces a warning. It does carry the settlement
+      // log the lifecycle announcement is built from, as a real refund's receipt would.
+      chain.executeReceipt = receipt({
+        blockNumber: FUNDING_BLOCK + 10,
+        transactionHash: EXECUTE_HASH,
+        logs: [settlementLog()] as never,
+      });
     });
 
     it("refunds a mis_route, records withdraw_executed and ACKs", async function () {
@@ -1003,6 +1062,172 @@ describe("DepositAddressService v3 execution", function () {
       expect(response.status).to.equal(204);
       expect(state()).to.include({ status: "withdraw_executed", txHash: EXECUTE_HASH });
       expect(withdraw.requests).to.have.length(0);
+    });
+
+    /**
+     * A withdrawal leaves no on-chain provenance event, so the Pub/Sub announcement is the only way the
+     * indexer learns it settled — which is why a dropped one is retried rather than logged and forgotten, as
+     * the polling bot does. Every case here asserts both halves: what was announced, and what the state record
+     * says was announced.
+     */
+    describe("the lifecycle announcement", function () {
+      /** Seeds a settled withdrawal, optionally already announced. */
+      function settled(over: Record<string, unknown> = {}): void {
+        redisStore.set(
+          STATE_KEY,
+          JSON.stringify({
+            status: "withdraw_executed",
+            txHash: EXECUTE_HASH,
+            chainId: ARBITRUM,
+            blockNumber: FUNDING_BLOCK + 10,
+            completedAtMs: 1_700_000_000_000,
+            ...over,
+          })
+        );
+      }
+
+      it("announces the settled withdrawal and records that it did", async function () {
+        const response = await post(misRoute());
+
+        expect(response.status).to.equal(204);
+        expect(lifecycle.published).to.have.length(1);
+        expect(lifecycle.published[0].topic).to.equal(LIFECYCLE_TOPIC);
+        // The envelope is locked by the indexer consumer, which keys on `type` and validates `data`. The
+        // logIndex is the settlement log's, which is why the receipt has to be read rather than the record.
+        expect(lifecycle.published[0].payload).to.deep.equal({
+          type: "withdraw_executed",
+          data: {
+            chainId: ARBITRUM,
+            blockNumber: FUNDING_BLOCK + 10,
+            txHash: EXECUTE_HASH,
+            logIndex: SETTLEMENT_LOG_INDEX,
+            erc20Transfer: {
+              chainId: ARBITRUM,
+              blockNumber: FUNDING_BLOCK,
+              txHash: FUNDING_TX,
+              logIndex: 7,
+            },
+          },
+        });
+        expect(state()).to.have.property("withdrawLifecyclePublishedAt").that.is.a("number");
+        expect(lastLine()).to.include({ withdrawLifecyclePublished: true, lifecycleMessageId: LIFECYCLE_MESSAGE_ID });
+      });
+
+      // The point of the whole change. A dropped announcement must survive as work still owed, which means
+      // the timestamp is written only *after* the publish returns — the reverse order would discard the
+      // evidence that it never happened.
+      it("preserves the unannounced withdrawal and NACKs when the publish fails", async function () {
+        lifecycle.error = new Error("Total timeout of API google.pubsub.v1.Publisher exceeded");
+
+        const response = await post(misRoute());
+
+        expect(response.status).to.equal(500);
+        expect(state()).to.include({ status: "withdraw_executed", txHash: EXECUTE_HASH });
+        expect(state()).to.not.have.property("withdrawLifecyclePublishedAt");
+        expect(failure()).to.include({ code: "WITHDRAW_PUBLICATION_FAILED" });
+      });
+
+      // Retries the announcement and *only* the announcement: the funds already moved, so re-signing or
+      // re-broadcasting would be the double-sweep this service exists to prevent.
+      it("announces on redelivery without re-withdrawing", async function () {
+        settled();
+
+        const response = await post(misRoute());
+
+        expect(response.status).to.equal(204);
+        expect(lifecycle.published).to.have.length(1);
+        expect(withdraw.requests).to.have.length(0);
+        expect(state()).to.have.property("withdrawLifecyclePublishedAt").that.is.a("number");
+        // Taken and given back: the announcement runs under the transfer's lock, like everything else.
+        expect(redisStore.has(LOCK_KEY)).to.equal(false);
+        expect(lastLine()).to.include({ outcome: "already_withdraw_executed" });
+      });
+
+      // A `correct_transfer` the execute endpoint rejected below the minimum was refunded too, so recovery
+      // has to key on the recorded state rather than on the message's classification.
+      it("announces a below-minimum refund's withdrawal, not just a mis_route's", async function () {
+        settled();
+
+        const response = await post(message());
+
+        expect(response.status).to.equal(204);
+        expect(lifecycle.published).to.have.length(1);
+        expect(withdraw.requests).to.have.length(0);
+      });
+
+      it("ACKs a redelivery of an already-announced withdrawal without announcing again", async function () {
+        settled({ withdrawLifecyclePublishedAt: 1_700_000_001_000 });
+        // Would fail every guard if any path beyond the short-circuit were re-entered.
+        chain.fundingReceipt = null;
+        chain.balance = "0";
+
+        const response = await post(misRoute());
+
+        expect(response.status).to.equal(204);
+        expect(lifecycle.published).to.have.length(0);
+        expect(withdraw.requests).to.have.length(0);
+      });
+
+      // The funds moved correctly and no redelivery can conjure a log that is not in the receipt, so this
+      // acknowledges. It stays unstamped: the timestamp means "announced", and claiming one here would be a
+      // lie, where repeating the warning is merely noise.
+      it("warns and ACKs when the receipt carries no settlement log", async function () {
+        chain.executeReceipt = receipt({
+          blockNumber: FUNDING_BLOCK + 10,
+          transactionHash: EXECUTE_HASH,
+          logs: [settlementLog({ topics: [TRANSFER_TOPIC] })] as never,
+        });
+
+        const response = await post(misRoute());
+
+        expect(response.status).to.equal(204);
+        expect(lifecycle.published).to.have.length(0);
+        expect(state()).to.not.have.property("withdrawLifecyclePublishedAt");
+        expect(logs.some((l) => l.level === "warn")).to.equal(true);
+      });
+
+      // Announcing something Redis does not hold would tell the indexer a refund is done while every later
+      // delivery still believes it is owed one.
+      it("announces nothing when the terminal write itself failed", async function () {
+        // set #1 = broadcast_pending from the hook, #2 = the terminal write.
+        redisFaults.failSetCalls = [2];
+
+        const response = await post(misRoute());
+
+        expect(response.status).to.equal(500);
+        expect(lifecycle.published).to.have.length(0);
+      });
+
+      // With the gate off nothing is announced and nothing claims to have been, so turning it on later lets a
+      // redelivery finish the job.
+      it("records no announcement when no publisher is configured", async function () {
+        server.close();
+        await startServer({ ENABLE_V3_WITHDRAWALS: "true" }, false);
+
+        expect((await post(misRoute())).status).to.equal(204);
+        expect(state()).to.include({ status: "withdraw_executed" });
+        expect(state()).to.not.have.property("withdrawLifecyclePublishedAt");
+
+        // And the terminal short-circuit still ACKs it rather than taking the lock every time.
+        expect((await post(misRoute())).status).to.equal(204);
+        expect(lastLine()).to.include({ outcome: "already_withdraw_executed" });
+      });
+
+      it("never announces a deposit, whose provenance the indexer reads on-chain", async function () {
+        redisStore.set(
+          STATE_KEY,
+          JSON.stringify({
+            status: "deposit_executed",
+            txHash: EXECUTE_HASH,
+            chainId: ARBITRUM,
+            blockNumber: FUNDING_BLOCK + 10,
+            completedAtMs: 1_700_000_000_000,
+          })
+        );
+
+        expect((await post(message())).status).to.equal(204);
+        expect(lifecycle.published).to.have.length(0);
+      });
     });
   });
 });
