@@ -5,8 +5,11 @@ import {
   normalizeIntegratorId,
   restructureGaslessDeposits,
   buildGaslessDepositTx,
+  findGaslessSubmitBlocker,
+  getGaslessAuthorizationWindow,
   getLegacySpokePoolPeripheryAddresses,
   isErc2612PermitNonceConsumed,
+  isErc3009AuthorizationUsed,
   resolveTokenInfoForLog,
 } from "../src/utils/GaslessUtils";
 import { CHAIN_IDs, toAddressType, getTokenInfo } from "../src/utils";
@@ -611,5 +614,226 @@ describe("GaslessUtils#resolveTokenInfoForLog", function () {
     });
 
     expect(info).to.deep.equal({ symbol: "UNKNOWN", decimals: 18 });
+  });
+});
+
+describe("GaslessUtils#getGaslessAuthorizationWindow", function () {
+  it("reads validAfter/validBefore from an EIP-3009 authorization", function () {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg = makeDepositMessage() as any;
+    msg.permit.message.validAfter = 100;
+    msg.permit.message.validBefore = 200;
+    expect(getGaslessAuthorizationWindow(msg)).to.deep.equal({ validAfter: 100, validBefore: 200 });
+  });
+
+  it("maps the Permit2 deadline onto validBefore", function () {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const msg = makeDepositMessage({ permitType: "permit2" }) as any;
+    msg.permit.message = { nonce: DUMMY_BYTES32, deadline: 4242 };
+    expect(getGaslessAuthorizationWindow(msg)).to.deep.equal({ validBefore: 4242 });
+  });
+
+  it("uses permitApprovalDeadline for the EIP-2612 swap-and-bridge flow", function () {
+    const msg = {
+      ...makeSwapAndBridgeErc3009Message(DUMMY_SIGNATURE),
+      permitType: "permit",
+      permitApprovalDeadline: 777,
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(getGaslessAuthorizationWindow(msg as any)).to.deep.equal({ validBefore: 777 });
+  });
+
+  it("returns an undefined window when the EIP-2612 flow carries no deadline", function () {
+    const msg = { ...makeSwapAndBridgeErc3009Message(DUMMY_SIGNATURE), permitType: "permit" };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(getGaslessAuthorizationWindow(msg as any)).to.deep.equal({ validBefore: undefined });
+  });
+});
+
+describe("GaslessUtils#isErc3009AuthorizationUsed", function () {
+  const AUTH_STATE_ABI = ["function authorizationState(address,bytes32) view returns (bool)"];
+
+  it("returns the on-chain authorizationState", async function () {
+    for (const used of [true, false]) {
+      const fake = await smock.fake(AUTH_STATE_ABI);
+      fake.authorizationState.returns(used);
+      expect(await isErc3009AuthorizationUsed(fake as unknown as Contract, DUMMY_ADDRESS, DUMMY_BYTES32)).to.equal(
+        used
+      );
+    }
+  });
+});
+
+describe("GaslessUtils#findGaslessSubmitBlocker", function () {
+  const BALANCE_ABI = ["function balanceOf(address) view returns (uint256)"];
+  const AUTH_STATE_ABI = ["function authorizationState(address,bytes32) view returns (bool)"];
+  // makeDepositMessage signs over inputAmount = 1000000.
+  const REQUIRED = 1000000;
+  const NOW = 1000;
+
+  // Valid window, unspent nonce: the checks fall through to the balance read.
+  async function makeFakes(opts: { balance?: number; authUsed?: boolean } = {}) {
+    const amountToken = await smock.fake(BALANCE_ABI);
+    amountToken.balanceOf.returns(ethers.BigNumber.from(opts.balance ?? REQUIRED));
+    const authToken = await smock.fake(AUTH_STATE_ABI);
+    authToken.authorizationState.returns(opts.authUsed ?? false);
+    return { amountToken: amountToken as unknown as Contract, authToken: authToken as unknown as Contract };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function inWindowMessage(overrides: Record<string, unknown> = {}): any {
+    const msg = makeDepositMessage(overrides);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (msg as any).permit.message.validAfter = NOW - 100;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (msg as any).permit.message.validBefore = NOW + 100;
+    return msg;
+  }
+
+  it("returns undefined when the deposit is fully submittable", async function () {
+    const blocker = await findGaslessSubmitBlocker({
+      depositMessage: inWindowMessage(),
+      currentTime: NOW,
+      ...(await makeFakes()),
+    });
+    expect(blocker).to.be.undefined;
+  });
+
+  it("reports insufficient-balance with the shortfall when the depositor is underfunded", async function () {
+    const blocker = await findGaslessSubmitBlocker({
+      depositMessage: inWindowMessage(),
+      currentTime: NOW,
+      ...(await makeFakes({ balance: 350000 })),
+    });
+
+    expect(blocker?.code).to.equal("insufficient-balance");
+    // Recoverable: a top-up inside the authorization window still lands the deposit.
+    expect(blocker?.permanent).to.be.false;
+    expect(blocker?.context.balance).to.equal("350000");
+    expect(blocker?.context.required).to.equal(String(REQUIRED));
+    expect(blocker?.context.shortfall).to.equal("650000");
+  });
+
+  it("treats a balance exactly equal to the required amount as submittable", async function () {
+    const blocker = await findGaslessSubmitBlocker({
+      depositMessage: inWindowMessage(),
+      currentTime: NOW,
+      ...(await makeFakes({ balance: REQUIRED })),
+    });
+    expect(blocker).to.be.undefined;
+  });
+
+  it("reports authorization-expired as permanent, without reading balance", async function () {
+    const fakes = await makeFakes();
+    const msg = inWindowMessage();
+    msg.permit.message.validBefore = NOW;
+
+    const blocker = await findGaslessSubmitBlocker({ depositMessage: msg, currentTime: NOW, ...fakes });
+
+    expect(blocker?.code).to.equal("authorization-expired");
+    expect(blocker?.permanent).to.be.true;
+    // Window check is free and conclusive, so no RPC is spent.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((fakes.amountToken as any).balanceOf).to.have.callCount(0);
+  });
+
+  it("reports authorization-not-yet-valid as recoverable", async function () {
+    const msg = inWindowMessage();
+    msg.permit.message.validAfter = NOW + 1;
+
+    const blocker = await findGaslessSubmitBlocker({
+      depositMessage: msg,
+      currentTime: NOW,
+      ...(await makeFakes()),
+    });
+
+    expect(blocker?.code).to.equal("authorization-not-yet-valid");
+    expect(blocker?.permanent).to.be.false;
+  });
+
+  it("reports authorization-consumed as permanent when the EIP-3009 nonce is already spent", async function () {
+    const blocker = await findGaslessSubmitBlocker({
+      depositMessage: inWindowMessage(),
+      currentTime: NOW,
+      ...(await makeFakes({ authUsed: true })),
+    });
+
+    expect(blocker?.code).to.equal("authorization-consumed");
+    expect(blocker?.permanent).to.be.true;
+  });
+
+  it("reports authorization-consumed for a used Permit2 nonce", async function () {
+    const msg = inWindowMessage({ permitType: "permit2" });
+    msg.permit.message = { nonce: "0", deadline: NOW + 100 };
+    const permit2 = await smock.fake(["function nonceBitmap(address,uint256) view returns (uint256)"]);
+    permit2.nonceBitmap.returns(ethers.BigNumber.from(1)); // bit 0 set => nonce 0 used
+
+    const blocker = await findGaslessSubmitBlocker({
+      depositMessage: msg,
+      currentTime: NOW,
+      permit2: permit2 as unknown as Contract,
+      ...(await makeFakes()),
+    });
+
+    expect(blocker?.code).to.equal("authorization-consumed");
+    expect(blocker?.context.permitType).to.equal("permit2");
+  });
+
+  it("requires the signed permit value, which covers submission fees above the bridged amount", async function () {
+    // inputAmount is 1000000 but the depositor signed over 1000100 to cover a 100-unit fee: a balance of
+    // exactly inputAmount is still short, and comparing against inputAmount alone would miss it.
+    const msg = inWindowMessage();
+    msg.permit.message.value = "1000100";
+
+    const blocker = await findGaslessSubmitBlocker({
+      depositMessage: msg,
+      currentTime: NOW,
+      ...(await makeFakes({ balance: REQUIRED })),
+    });
+
+    expect(blocker?.code).to.equal("insufficient-balance");
+    expect(blocker?.context.required).to.equal("1000100");
+    expect(blocker?.context.shortfall).to.equal("100");
+  });
+
+  it("falls back to the witness swap amount for the EIP-2612 swap-and-bridge flow", async function () {
+    // permitType "permit" carries no permit value, so swapTokenAmount (123) governs.
+    const msg = { ...makeSwapAndBridgeErc3009Message(DUMMY_SIGNATURE), permitType: "permit" };
+    const periphery = await smock.fake(["function permitNonces(address) view returns (uint256)"]);
+    periphery.permitNonces.returns(ethers.BigNumber.from(0));
+
+    const blocker = await findGaslessSubmitBlocker({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      depositMessage: msg as any,
+      currentTime: NOW,
+      spokePoolPeriphery: periphery as unknown as Contract,
+      ...(await makeFakes({ balance: 100 })),
+    });
+
+    expect(blocker?.code).to.equal("insufficient-balance");
+    expect(blocker?.context.required).to.equal("123");
+    expect(blocker?.context.shortfall).to.equal("23");
+  });
+
+  it("returns undefined rather than throwing when an on-chain read fails", async function () {
+    const amountToken = await smock.fake(BALANCE_ABI);
+    amountToken.balanceOf.reverts();
+    const authToken = await smock.fake(AUTH_STATE_ABI);
+    authToken.authorizationState.returns(false);
+
+    const blocker = await findGaslessSubmitBlocker({
+      depositMessage: inWindowMessage(),
+      currentTime: NOW,
+      amountToken: amountToken as unknown as Contract,
+      authToken: authToken as unknown as Contract,
+    });
+
+    expect(blocker).to.be.undefined;
+  });
+
+  it("skips the checks it has no contract for instead of throwing", async function () {
+    // No amountToken / authToken: nothing conclusive to report, but must not throw.
+    const blocker = await findGaslessSubmitBlocker({ depositMessage: inWindowMessage(), currentTime: NOW });
+    expect(blocker).to.be.undefined;
   });
 });

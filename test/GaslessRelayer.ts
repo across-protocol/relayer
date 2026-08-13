@@ -26,7 +26,7 @@ import {
   isStablecoin,
 } from "../src/utils";
 import { MAX_EXCLUSIVITY_PERIOD_SECONDS } from "../src/utils/GaslessUtils";
-import { createSpyLogger, expect, FakeContract, smock, ethers, toBN } from "./utils";
+import { createSpyLogger, expect, FakeContract, smock, ethers, toBN, spyLogIncludes, spyLogLevel } from "./utils";
 
 // Minimal 65-byte hex signature.
 const DUMMY_SIGNATURE = "0x" + "ab".repeat(65);
@@ -115,6 +115,12 @@ class TestableGaslessRelayer extends GaslessRelayer {
   }
   public runResolvePeriphery(chainId: number, targetAddress?: string): Contract | undefined {
     return this.resolvePeriphery(chainId, targetAddress);
+  }
+  public runLogSubmitFailure(
+    depositMessage: AnyGaslessDepositMessage,
+    opts: { destinationChainId: number; amountToken: string; submitError?: unknown }
+  ): Promise<void> {
+    return this._logSubmitFailure(depositMessage, opts);
   }
 
   // Configurable function properties -- tests assign return values; overrides track call counts.
@@ -1586,5 +1592,130 @@ describe("GaslessRelayer", function () {
         expect(result).to.be.true;
       });
     });
+  });
+});
+
+describe("GaslessRelayer#_logSubmitFailure", function () {
+  // A deposit the API keeps serving but that can never land retries every poll, so the diagnosis has to
+  // be informative on the first sighting and quiet afterwards.
+  const TOKEN_ABI = [
+    "function balanceOf(address) view returns (uint256)",
+    "function authorizationState(address,bytes32) view returns (bool)",
+  ];
+  const REQUIRED = "1000000";
+
+  let relayer: TestableGaslessRelayer;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let spy: any;
+  let token: FakeContract;
+  let message: GaslessDepositMessage;
+
+  beforeEach(async function () {
+    const spyLoggerResult = createSpyLogger();
+    spy = spyLoggerResult.spy;
+    const [signer] = await ethers.getSigners();
+    const provider = signer.provider;
+    assert(isDefined(provider), "Signer must have a provider in test setup");
+
+    const config = new GaslessRelayerConfig({
+      RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+      RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+      RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+      API_GASLESS_ENDPOINT: "http://127.0.0.1",
+      SEND_TRANSACTIONS: "true",
+    });
+    relayer = new TestableGaslessRelayer(spyLoggerResult.spyLogger, config, signer, []);
+    relayer.setProvidersByChain({ [ORIGIN_CHAIN_ID]: provider });
+
+    const fakePeripherySmock = await smock.fake(SPOKE_POOL_PERIPHERY_ABI);
+    relayer.setSpokePoolPeripheries({
+      [ORIGIN_CHAIN_ID]: new Contract(fakePeripherySmock.address, SPOKE_POOL_PERIPHERY_ABI, provider),
+    });
+
+    // The relayer builds its own Contract at the amount-token address; smock intercepts by address,
+    // so one fake serves both the ERC20 and EIP-3009 reads.
+    token = await smock.fake(TOKEN_ABI);
+    token.balanceOf.returns(toBN(REQUIRED));
+    token.authorizationState.returns(false);
+
+    message = makeDepositMessage({ inputAmount: REQUIRED }, DUMMY_ADDRESS);
+  });
+
+  const logFailure = (submitError?: unknown) =>
+    relayer.runLogSubmitFailure(message, {
+      destinationChainId: DESTINATION_CHAIN_ID,
+      amountToken: token.address,
+      submitError,
+    });
+
+  it("attaches the swallowed simulation revert reason to the warning", async function () {
+    await logFailure(new Error("Failed to simulate 0xabc.depositWithAuthorization() on 1 (transfer amount exceeds)"));
+
+    expect(spyLogLevel(spy, -2)).to.equal("warn");
+    expect(spyLogIncludes(spy, -2, "transfer amount exceeds")).to.be.true;
+  });
+
+  it("names the blocker and its shortfall when the depositor is underfunded", async function () {
+    token.balanceOf.returns(toBN("350000"));
+
+    await logFailure(new Error("reverted"));
+
+    expect(spyLogLevel(spy, -2)).to.equal("warn");
+    expect(spyLogIncludes(spy, -2, "insufficient-balance")).to.be.true;
+    expect(spyLogIncludes(spy, -2, "650000")).to.be.true;
+    // Recoverable: a top-up inside the authorization window still lands the deposit.
+    expect(spyLogIncludes(spy, -2, '"permanent":false')).to.be.true;
+  });
+
+  it("warns once for a repeated blocker, then drops to debug", async function () {
+    token.balanceOf.returns(toBN("350000"));
+
+    await logFailure(new Error("reverted"));
+    expect(spyLogLevel(spy, -2)).to.equal("warn");
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await logFailure(new Error("reverted"));
+      expect(spyLogLevel(spy, -2)).to.equal("debug");
+      expect(spyLogIncludes(spy, -2, "insufficient-balance")).to.be.true;
+    }
+  });
+
+  it("warns again when the diagnosis changes", async function () {
+    token.balanceOf.returns(toBN("350000"));
+    await logFailure(new Error("reverted"));
+    expect(spyLogIncludes(spy, -2, "insufficient-balance")).to.be.true;
+
+    // Depositor tops up, but meanwhile the authorization is spent elsewhere.
+    token.balanceOf.returns(toBN(REQUIRED));
+    token.authorizationState.returns(true);
+    await logFailure(new Error("reverted"));
+
+    expect(spyLogLevel(spy, -2)).to.equal("warn");
+    expect(spyLogIncludes(spy, -2, "authorization-consumed")).to.be.true;
+  });
+
+  it("stops re-reading chain state once a permanent blocker is known", async function () {
+    token.authorizationState.returns(true);
+
+    await logFailure(new Error("reverted"));
+    expect(token.authorizationState).to.have.callCount(1);
+
+    await logFailure(new Error("reverted"));
+    await logFailure(new Error("reverted"));
+
+    // A spent authorization cannot un-spend, so the diagnosis is reused rather than re-read.
+    expect(token.authorizationState).to.have.callCount(1);
+    expect(spyLogLevel(spy, -1)).to.equal("debug");
+    expect(spyLogIncludes(spy, -1, "authorization-consumed")).to.be.true;
+  });
+
+  it("keeps warning without a blocker when nothing conclusive is found", async function () {
+    // Balance and nonce are both fine: the failure is transient, so every attempt stays visible.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await logFailure(new Error("connection reset"));
+      expect(spyLogLevel(spy, -2)).to.equal("warn");
+      expect(spyLogIncludes(spy, -2, "Failed to submit gasless deposit")).to.be.true;
+      expect(spyLogIncludes(spy, -2, "connection reset")).to.be.true;
+    }
   });
 });

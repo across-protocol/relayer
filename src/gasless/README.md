@@ -29,6 +29,20 @@ Lookup order in `GaslessUtils#resolveTokenInfoForLog`:
 
 The deposit transaction itself is built from the API message and is unaffected by probe/cache/placeholder outcomes. Production passes the shared Gasless Redis client into the resolver; tests inject a mock cache and/or `probeOnChain`.
 
+### Unsubmittable deposits (`findGaslessSubmitBlocker`)
+
+`DEPOSIT_CONFIRM` returns a deposit it cannot locate on-chain to `DEPOSIT_SUBMIT`, so a deposit the API keeps serving but that can never land is re-attempted every `API_POLLING_INTERVAL` until its authorization expires — potentially for the authorization's full lifetime. `sendAndConfirmTransaction` swallows the simulation revert, so those attempts used to log a bare "Failed to submit gasless deposit" with no reason, indistinguishable from a transient RPC failure.
+
+`GaslessRelayer#_logSubmitFailure` now attaches the revert reason (via `sendAndConfirmTransaction`'s `onError`) and runs `GaslessUtils#findGaslessSubmitBlocker` to name the cause. Checks run cheapest-first and stop at the first hit:
+
+1. **Signed validity window** — free, no RPC. EIP-3009 `validAfter`/`validBefore`, Permit2 `deadline`, ERC-2612 `permitApprovalDeadline`. Yields `authorization-expired` (permanent) or `authorization-not-yet-valid`.
+2. **Nonce consumption** — `authorizationState` (EIP-3009), `nonceBitmap` (Permit2), `permitNonces` (ERC-2612). A consumed nonce with no located deposit means the authorization was redeemed elsewhere: `authorization-consumed` (permanent).
+3. **Depositor balance** — `balanceOf(authorizer)` against `getGaslessRequiredBalance`, which prefers the *signed permit* amount (EIP-3009 `value`, Permit2 `permitted.amount`) over the witness `inputAmount`, since the permit is what the token transfers and it covers `submissionFees` on top of the bridged amount. Yields `insufficient-balance` with `balance` / `required` / `shortfall`.
+
+`permanent` distinguishes "can never succeed" (spent or expired authorization) from "blocked now, could clear" (an underfunded depositor who tops up in time). Diagnosis is purely observational — it does not change the state machine, so a recoverable deposit still lands if the blocker clears.
+
+Log volume is bounded without losing the signal: a blocker warns on first sighting and whenever the diagnosis changes, and drops to debug while unchanged; a `permanent` blocker also suppresses re-diagnosis, since it cannot clear. Failures with no conclusive blocker keep warning every attempt. The checks are read-only and never throw — an RPC failure returns no blocker rather than masking the underlying error.
+
 ## Configuration
 
 ### Required

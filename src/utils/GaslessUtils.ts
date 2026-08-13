@@ -542,6 +542,198 @@ export async function isErc2612PermitNonceConsumed(params: {
 }
 
 /**
+ * EIP-3009 `authorizationState(authorizer, nonce)`: true once the authorization has been redeemed.
+ * A direct storage read, so unlike {@link GaslessRelayer._findAuthorizationUsed} it is not bounded by
+ * the event search lookback — an authorization spent before the lookback window still reports true.
+ */
+export async function isErc3009AuthorizationUsed(
+  authToken: Contract,
+  authorizer: string,
+  nonce: string
+): Promise<boolean> {
+  return await authToken.authorizationState(authorizer, nonce);
+}
+
+/**
+ * The signed validity window, where the permit flow carries one. EIP-3009 signs an explicit
+ * [validAfter, validBefore) range; Permit2 signs a single `deadline`; the EIP-2612 swap-and-bridge
+ * flow carries its approval deadline alongside the witness. Fields absent from a flow are undefined.
+ */
+export function getGaslessAuthorizationWindow(depositMessage: AnyGaslessDepositMessage): {
+  validAfter?: number;
+  validBefore?: number;
+} {
+  switch (depositMessage.permitType) {
+    case "erc3009": {
+      const { validAfter, validBefore } = (depositMessage.permit as ReceiveWithAuthorization).message;
+      return { validAfter: Number(validAfter), validBefore: Number(validBefore) };
+    }
+    case "permit2": {
+      const { deadline } = (depositMessage.permit as Permit2Permit | Permit2SwapAndBridgePermit).message;
+      return { validBefore: Number(deadline) };
+    }
+    case "permit": {
+      const deadline =
+        depositMessage.depositFlowType === "swapAndBridge" ? depositMessage.permitApprovalDeadline : undefined;
+      return { validBefore: isDefined(deadline) ? Number(deadline) : undefined };
+    }
+  }
+}
+
+/**
+ * The token amount the depositor must hold for the origin deposit to execute.
+ *
+ * Prefers the signed permit amount over the witness `inputAmount`: the permit is what the token contract
+ * actually transfers, and it covers `submissionFees` on top of the bridged amount, so comparing a balance
+ * against `inputAmount` alone can call a deposit funded when it is short by the fee. Falls back to the
+ * witness amount for the EIP-2612 swap-and-bridge flow, whose witness carries no permit value.
+ */
+export function getGaslessRequiredBalance(depositMessage: AnyGaslessDepositMessage): BigNumber {
+  const witnessAmount =
+    depositMessage.depositFlowType === "swapAndBridge"
+      ? depositMessage.swapTokenAmount
+      : depositMessage.baseDepositData.inputAmount;
+
+  switch (depositMessage.permitType) {
+    case "erc3009":
+      return toBN((depositMessage.permit as ReceiveWithAuthorization).message.value);
+    case "permit2":
+      return toBN((depositMessage.permit as Permit2Permit | Permit2SwapAndBridgePermit).message.permitted.amount);
+    case "permit":
+      return toBN(witnessAmount);
+  }
+}
+
+/**
+ * Returns true when the signed nonce has already been consumed on-chain, i.e. the authorization
+ * cannot be redeemed a second time. Each permit flow tracks consumption in its own place — see
+ * {@link isErc3009AuthorizationUsed}, {@link isPermit2NonceUsed} and {@link isErc2612PermitNonceConsumed}.
+ */
+export async function isGaslessAuthorizationConsumed(params: {
+  depositMessage: AnyGaslessDepositMessage;
+  /** Token carrying the EIP-3009 authorization (`erc3009` only). */
+  authToken?: Contract;
+  /** Permit2 on the origin chain (`permit2` only). */
+  permit2?: Contract;
+  /** Periphery the message targets (`permit` only) — permitNonces is periphery-local storage. */
+  spokePoolPeriphery?: Contract;
+}): Promise<boolean | undefined> {
+  const { depositMessage, authToken, permit2, spokePoolPeriphery } = params;
+  const authorizer = getGaslessAuthorizerAddress(depositMessage);
+  const nonce = getGaslessPermitNonce(depositMessage);
+
+  switch (depositMessage.permitType) {
+    case "erc3009":
+      return isDefined(authToken) ? await isErc3009AuthorizationUsed(authToken, authorizer, nonce) : undefined;
+    case "permit2":
+      return isDefined(permit2) ? await isPermit2NonceUsed(permit2, authorizer, nonce) : undefined;
+    case "permit":
+      return isDefined(spokePoolPeriphery)
+        ? await isErc2612PermitNonceConsumed({ spokePoolPeriphery, owner: authorizer, signedNonce: nonce })
+        : undefined;
+  }
+}
+
+/** Why a gasless deposit cannot currently be submitted. See {@link findGaslessSubmitBlocker}. */
+export type GaslessSubmitBlocker = {
+  /** Machine-readable classification, stable for log filtering and alerting. */
+  code: "authorization-expired" | "authorization-not-yet-valid" | "authorization-consumed" | "insufficient-balance";
+  /** One-line human-readable summary, safe to put straight into a log message. */
+  detail: string;
+  /**
+   * True when nothing the depositor does can make this deposit submittable: the signed authorization
+   * is spent, or its validity window has closed. False means blocked *now* but recoverable — an
+   * underfunded depositor who tops up before the authorization expires still gets their deposit.
+   */
+  permanent: boolean;
+  /** Structured fields to attach to the log line. */
+  context: Record<string, unknown>;
+};
+
+/**
+ * Diagnoses why an origin-chain gasless deposit won't submit, for deposits the API keeps serving but
+ * that can never land — the relayer otherwise retries them every poll until the authorization expires,
+ * with no reason recorded (the simulation revert is swallowed by `sendAndConfirmTransaction`).
+ *
+ * Purely diagnostic: three read-only calls at most, and it never throws. A read that fails returns
+ * `undefined` (unknown, not "fine"), so callers must not treat `undefined` as a clean bill of health.
+ *
+ * Checks run cheapest-and-most-conclusive first: signed validity window (free), then nonce consumption,
+ * then depositor balance.
+ */
+export async function findGaslessSubmitBlocker(params: {
+  depositMessage: AnyGaslessDepositMessage;
+  currentTime: number;
+  /** Origin-chain token contract for the amount the depositor must hold (input or swap token). */
+  amountToken?: Contract;
+  /** Token carrying the EIP-3009 authorization (`erc3009` only). */
+  authToken?: Contract;
+  permit2?: Contract;
+  spokePoolPeriphery?: Contract;
+}): Promise<GaslessSubmitBlocker | undefined> {
+  const { depositMessage, currentTime, amountToken, authToken, permit2, spokePoolPeriphery } = params;
+  const authorizer = getGaslessAuthorizerAddress(depositMessage);
+  const nonce = getGaslessPermitNonce(depositMessage);
+
+  try {
+    const { validAfter, validBefore } = getGaslessAuthorizationWindow(depositMessage);
+    if (isDefined(validBefore) && currentTime >= validBefore) {
+      return {
+        code: "authorization-expired",
+        detail: `Signed authorization expired at ${validBefore} (now ${currentTime}).`,
+        permanent: true,
+        context: { authorizer, nonce, validBefore, currentTime },
+      };
+    }
+    if (isDefined(validAfter) && currentTime < validAfter) {
+      return {
+        code: "authorization-not-yet-valid",
+        detail: `Signed authorization is not valid until ${validAfter} (now ${currentTime}).`,
+        permanent: false,
+        context: { authorizer, nonce, validAfter, currentTime },
+      };
+    }
+
+    // Consumed nonce with no deposit located means the authorization was redeemed by something
+    // other than this relayer's tracked submission; it can never be redeemed again.
+    const consumed = await isGaslessAuthorizationConsumed({ depositMessage, authToken, permit2, spokePoolPeriphery });
+    if (consumed) {
+      return {
+        code: "authorization-consumed",
+        detail: "Signed nonce is already consumed on-chain; the authorization cannot be redeemed again.",
+        permanent: true,
+        context: { authorizer, nonce, permitType: depositMessage.permitType },
+      };
+    }
+
+    if (isDefined(amountToken)) {
+      const required = getGaslessRequiredBalance(depositMessage);
+      const balance: BigNumber = await amountToken.balanceOf(authorizer);
+      if (balance.lt(required)) {
+        return {
+          code: "insufficient-balance",
+          detail: `Depositor holds ${balance.toString()} of the ${required.toString()} required to submit.`,
+          permanent: false,
+          context: {
+            authorizer,
+            nonce,
+            token: amountToken.address,
+            balance: balance.toString(),
+            required: required.toString(),
+            shortfall: required.sub(balance).toString(),
+          },
+        };
+      }
+    }
+  } catch {
+    // Diagnosis is best-effort: a failed read must not mask the underlying submission failure.
+    return undefined;
+  }
+
+  return undefined;
+}
+
+/**
  * Builds calldata for SpokePoolPeriphery.depositWithAuthorization[Bytes](signatureOwner, depositData, validAfter, validBefore, signature).
  * The *Bytes variant is used for smart-wallet (>65-byte) signatures.
  */

@@ -311,11 +311,15 @@ export async function dispatchTransaction(
  * Submits a transaction (via submitTransaction or dispatchTransaction), awaits the receipt, and returns it.
  * Ensures ensureConfirmation is true on the tx. On failure catches errors and returns undefined; callers should
  * check with isDefined(receipt) and log a warning.
+ * @param onError Optional handler receiving the swallowed error, so callers can log *why* the submission
+ * failed — the simulation revert reason is otherwise lost. Must not throw; if it does, the error is
+ * swallowed to preserve this function's never-throws contract.
  */
 export async function sendAndConfirmTransaction(
   tx: AugmentedTransaction,
   transactionClient: TransactionClient,
-  useDispatcher = false
+  useDispatcher = false,
+  onError?: (err: unknown) => void
 ): Promise<TransactionReceipt | undefined> {
   const txWithConfirmation: AugmentedTransaction = { ...tx, ensureConfirmation: true };
   try {
@@ -329,7 +333,12 @@ export async function sendAndConfirmTransaction(
     // available immediately; bound the lookup rather than risk an indefinite wait().
     const hash = txResponse.hash.startsWith("0x") ? txResponse.hash : `0x${txResponse.hash}`;
     return await tx.contract.provider.waitForTransaction(hash, 1, RECEIPT_TIMEOUT_MS);
-  } catch {
+  } catch (err) {
+    try {
+      onError?.(err);
+    } catch {
+      // A throwing error handler must not turn a swallowed failure into a thrown one.
+    }
     return undefined;
   }
 }
