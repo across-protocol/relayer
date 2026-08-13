@@ -27,11 +27,12 @@ import {
   isDefined,
   isEVMSpokePoolClient,
   EvmAddress,
+  Provider,
 } from "../../utils";
 import { getRedisCache } from "../../cache/Redis";
-import { TokensBridged } from "../../interfaces";
+import { CachingMechanismInterface, TokensBridged } from "../../interfaces";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
-import { getContractEntry } from "../../common";
+import { CHAIN_MAX_BLOCK_LOOKBACK, getContractEntry } from "../../common";
 import { FinalizerPromise, CrossChainMessage, AddressesToFinalize } from "../types";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import ARBITRUM_ERC20_GATEWAY_L2_ABI from "../../common/abi/ArbitrumErc20GatewayL2.json";
@@ -73,19 +74,32 @@ export async function arbStackFinalizer(
   const { chainId } = spokePoolClient;
   const networkName = getNetworkName(chainId);
 
-  // Arbitrum orbit takes 7 days to finalize withdrawals, so don't look up events younger than that.
+  // A withdrawal is only executable once the Outbox holds a confirmed send root covering it, so bound the
+  // event search at that block rather than at a wall-clock estimate of when confirmation ought to have
+  // happened. See getLatestConfirmedL2Block() for why the estimate is not good enough.
   const redis = await getRedisCache(logger);
-  const latestBlockToFinalize = await getBlockForTimestamp(
+  const latestConfirmedBlock = await getLatestConfirmedL2Block(
     logger,
     chainId,
-    getCurrentTime() - getArbitrumOrbitFinalizationTime(chainId),
-    undefined,
+    hubPoolProvider,
+    spokePoolClient.spokePool.provider,
     redis
   );
+  const latestBlockToFinalize =
+    latestConfirmedBlock ??
+    (await getBlockForTimestamp(
+      logger,
+      chainId,
+      getCurrentTime() - getArbitrumOrbitFinalizationTime(chainId),
+      undefined,
+      redis
+    ));
   logger.debug({
     at: `Finalizer#${networkName}Finalizer`,
     message: `${networkName} TokensBridged event filter`,
     to: latestBlockToFinalize,
+    // Surfaced so a regression back to the estimate is visible in the logs rather than silent.
+    bound: isDefined(latestConfirmedBlock) ? "outboxSendRoot" : "challengePeriodEstimate",
   });
   const withdrawalEvents: TokensBridged[] = [];
 
@@ -188,6 +202,72 @@ export async function arbStackFinalizer(
   });
 
   return await multicallArbitrumFinalizations(withdrawalEvents, signer, hubPoolClient, logger, chainId);
+}
+
+/**
+ * Resolve the highest L2 block whose withdrawals are actually executable, by reading the latest confirmed
+ * send root from the L1 Outbox.
+ *
+ * The Outbox emits SendRootUpdated on every confirmed assertion, carrying the L2 block hash that root
+ * covers, and executeTransaction() will only settle a leaf beneath a confirmed root. Bounding the event
+ * search there therefore tracks the exact condition the Outbox enforces.
+ *
+ * The alternative -- `now - challengePeriodSeconds` -- only estimates when confirmation *ought* to have
+ * happened, and it is wrong in both directions. Measured on Arbitrum One 2026-08-11, the estimate trailed
+ * the real frontier by ~195k blocks (~14h), so withdrawals sat executable but undiscovered for over half a
+ * day. Were assertions ever to confirm slower than the configured period, the estimate would instead run
+ * ahead of the frontier and the finalizer would repeatedly attempt leaves that cannot yet settle.
+ *
+ * Returns undefined when no confirmation is visible in the lookback (e.g. a halted Orbit chain), leaving
+ * the caller to fall back to the estimate.
+ */
+async function getLatestConfirmedL2Block(
+  logger: winston.Logger,
+  chainId: number,
+  l1Provider: Provider,
+  l2Provider: Provider,
+  redis?: CachingMechanismInterface
+): Promise<number | undefined> {
+  const at = `Finalizer#${getNetworkName(chainId)}Finalizer`;
+  try {
+    const { address, abi } = getContractEntry(CHAIN_IDs.MAINNET, `orbitOutbox_${chainId}`);
+    const outbox = new Contract(address, abi, l1Provider);
+
+    // A live chain confirms at least once per challenge period, so one challenge period of L1 history is
+    // guaranteed to contain a SendRootUpdated. Resolve that start block by searching real block timestamps
+    // rather than dividing the period by MAINNET_BLOCK_TIME: averageBlockTime() seeds its cache with a
+    // hardcoded 12.5s at module load under a 15-minute TTL, so a finalizer run that starts and finishes
+    // inside that window never measures the chain. At mainnet's actual ~12s that assumption yields ~48.4k
+    // blocks, sizing the window at ~6.7 days rather than the 7 the invariant above depends on.
+    //
+    // The resulting range is ~50k blocks, hence the pagination below.
+    const fromBlock = await getBlockForTimestamp(
+      logger,
+      CHAIN_IDs.MAINNET,
+      getCurrentTime() - getArbitrumOrbitFinalizationTime(chainId),
+      undefined,
+      redis
+    );
+    const sendRootEvents = await paginatedEventQuery(outbox, outbox.filters.SendRootUpdated(), {
+      from: fromBlock,
+      to: LATEST_MAINNET_BLOCK,
+      maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[CHAIN_IDs.MAINNET],
+    });
+
+    // paginatedEventQuery returns events in ascending block order, so the last one is the newest root.
+    const latestSendRoot = sendRootEvents.at(-1);
+    if (!isDefined(latestSendRoot)) {
+      logger.debug({ at, message: "No SendRootUpdated event in lookback; falling back to challenge-period estimate." });
+      return undefined;
+    }
+
+    const l2Block = await l2Provider.getBlock(latestSendRoot.args.l2BlockHash);
+    return l2Block?.number;
+  } catch (error) {
+    // Never let this optimisation break finalization; the caller falls back to the estimate.
+    logger.debug({ at, message: "Failed to resolve confirmed send root; falling back to estimate.", error });
+    return undefined;
+  }
 }
 
 async function multicallArbitrumFinalizations(
