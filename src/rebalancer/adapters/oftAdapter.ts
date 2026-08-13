@@ -297,7 +297,9 @@ export class OftAdapter extends BaseAdapter {
     return await this._submitTransaction(withdrawTxn);
   }
 
-  private async _getOftStatus(txnHash: string, retryNumber = 0): Promise<string> {
+  // @dev Resolves to undefined while LZ has yet to index the message's arrival on the destination, per the comment
+  // below. Both callers test for equality against "SUCCEEDED", so an unindexed message reads as not-yet-final.
+  private async _getOftStatus(txnHash: string, retryNumber = 0): Promise<string | undefined> {
     if (retryNumber > 2) {
       this.logger.warn({
         at: "OftAdapter._getOftStatus",

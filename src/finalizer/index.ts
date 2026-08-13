@@ -34,6 +34,7 @@ import {
   getProvider,
   chunk,
   isPromiseFulfilled,
+  getDeployedAddress,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } from "./types";
 import {
@@ -95,11 +96,22 @@ const chainFinalizers: {
   },
 };
 
+// @dev finalize() runs inside a polling loop and calls generateChainConfig() on every pass, but chainFinalizers
+// is module-level state that is never reset. Regenerating would append a second copy of every autoconfigured
+// finalizer per pass, so by pass N each chain would rescan -- and re-enqueue -- the same messages N times.
+// Nothing generated below depends on runtime config, so generating once is sufficient.
+let chainConfigGenerated = false;
+
 /**
- * Autopopulate the majority of the chainFinalizers object above.
+ * Autopopulate the majority of the chainFinalizers object above. Idempotent: only the first call has any effect.
  * @returns void
  */
 function generateChainConfig(): void {
+  if (chainConfigGenerated) {
+    return;
+  }
+  chainConfigGenerated = true;
+
   const erc20Defaults: Partial<Record<ChainFamily, ChainFinalizer>> = {
     [ChainFamily.OP_STACK]: opStackFinalizer,
     [ChainFamily.ORBIT]: arbStackFinalizer,
@@ -127,8 +139,14 @@ function generateChainConfig(): void {
       config.finalizeOnAny.push(cctpV2Finalizer);
     }
 
-    // @todo Once contracts are linked, change this to add all chains w/ OFT enabled.
-    if (chainId === CHAIN_IDs.ARBITRUM) {
+    // Autoconfigure OFT retries. oftRetryFinalizer resolves the origin chain's SponsoredOFTSrcPeriphery via
+    // getSrcOftPeriphery(), which asserts when that contract has no deployment, so the deployment is the
+    // thing that gates registration -- this is the "contracts are linked" the previous @todo referred to.
+    // Deriving it here rather than hardcoding means a new OFT chain is picked up on the next contracts bump.
+    //
+    // @dev Deliberately NOT keyed off EVM_OFT_MESSENGERS: Optimism, Plasma and Tempo appear there but have
+    // no SponsoredOFTSrcPeriphery deployment, so registering from that map would assert on those chains.
+    if (isDefined(getDeployedAddress("SponsoredOFTSrcPeriphery", chainId, false))) {
       config.finalizeOnAny.push(oftRetryFinalizer);
     }
   });
