@@ -1,4 +1,4 @@
-import { Contract } from "ethers";
+import { BigNumber, Contract } from "ethers";
 import {
   AnyGaslessDepositMessage,
   DepositWithBlock,
@@ -104,7 +104,7 @@ class TestableGaslessRelayer extends GaslessRelayer {
   ): boolean {
     return this.fillImmediate(deposit, spokePool);
   }
-  public getDepositKey(token: string, originChainId: number, depositId: string): string {
+  public getDepositKey(token: string, originChainId: number, depositId: BigNumber): string {
     return this._getDepositKey(token, originChainId, depositId);
   }
   protected override getPeripheryContract(originChainId: number, targetAddress?: string): Contract {
@@ -222,7 +222,7 @@ function makeDepositMessage(
   return {
     depositFlowType: "bridge" as const,
     originChainId: ORIGIN_CHAIN_ID,
-    depositId: "42",
+    depositId: toBN(42),
     requestId: "req-test",
     signature: DUMMY_SIGNATURE,
     permitType: "erc3009",
@@ -285,7 +285,7 @@ function makePermit2DepositMessage(
   return {
     depositFlowType: "bridge" as const,
     originChainId: ORIGIN_CHAIN_ID,
-    depositId: "42",
+    depositId: toBN(42),
     requestId: "req-permit2-test",
     signature: DUMMY_SIGNATURE,
     permitType: "permit2",
@@ -339,7 +339,7 @@ const CCTP_SPOKE_POOL = "0x" + "cc".repeat(20);
  */
 function makeSwapAndBridgePermit2CctpMessage(
   overrides: Partial<{
-    depositId: string;
+    depositId: BigNumber;
     permitNonce: string;
     depositData: Partial<SwapAndBridgeGaslessDepositMessage["depositData"]>;
   }> = {}
@@ -361,7 +361,7 @@ function makeSwapAndBridgePermit2CctpMessage(
     ...overrides.depositData,
   };
   const permitNonce = overrides.permitNonce ?? "0";
-  const depositId = overrides.depositId ?? "1000000";
+  const depositId = overrides.depositId ?? toBN(1000000);
 
   return {
     depositFlowType: "swapAndBridge",
@@ -861,7 +861,7 @@ describe("GaslessRelayer", function () {
 
   describe("Permit2 nonce bitmap (CCTP swap)", function () {
     it("updateObservedCctpDeposits adds observed key when Permit2 nonce is consumed", async function () {
-      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-1", permitNonce: "0" });
+      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: toBN(9001), permitNonce: "0" });
       const expectedKey = relayer.getDepositKey(
         EvmAddress.from(msg.depositData.inputToken).toNative(),
         ORIGIN_CHAIN_ID,
@@ -875,7 +875,7 @@ describe("GaslessRelayer", function () {
     });
 
     it("updateObservedCctpDeposits skips when Permit2 nonce is not consumed", async function () {
-      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-2", permitNonce: "0" });
+      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: toBN(9002), permitNonce: "0" });
       const expectedKey = relayer.getDepositKey(
         EvmAddress.from(msg.depositData.inputToken).toNative(),
         ORIGIN_CHAIN_ID,
@@ -889,7 +889,7 @@ describe("GaslessRelayer", function () {
     });
 
     it("CCTP swap + Permit2: null deposit receipt but consumed nonce confirms to DONE", async function () {
-      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-3", permitNonce: "0" });
+      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: toBN(9003), permitNonce: "0" });
       const nonce = depositNonceForSwap(relayer, msg);
       fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(1));
 
@@ -1233,9 +1233,9 @@ describe("GaslessRelayer", function () {
 
     it("Multiple messages: processes each independently", async function () {
       const msg1 = makeTestDepositMessage({ inputAmount: "1000000", outputAmount: "900000" }, { instantFill: true });
-      msg1.depositId = "100";
+      msg1.depositId = toBN(100);
       const msg2 = makeTestDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" }, { instantFill: true });
-      msg2.depositId = "200";
+      msg2.depositId = toBN(200);
       // Set threshold based on larger of the two amounts
       setFillImmediateThreshold(msg2);
 

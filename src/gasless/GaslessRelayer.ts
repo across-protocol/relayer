@@ -23,7 +23,7 @@ import {
   TransactionReceipt,
   EvmAddress,
   SvmAddress,
-  toBN,
+  BigNumber,
   blockExplorerLink,
   getNetworkName,
   relayFillStatus,
@@ -346,11 +346,7 @@ export class GaslessRelayer {
           .map((event) => unpackDepositEvent(spreadEventWithBlockNumber(event), originChainId))
           .filter((deposit) => apiMessages.some(({ depositId }) => deposit.depositId.eq(depositId)))
           .forEach((deposit) => {
-            const depositKey = this._getDepositKey(
-              deposit.inputToken.toNative(),
-              originChainId,
-              deposit.depositId.toString()
-            );
+            const depositKey = this._getDepositKey(deposit.inputToken.toNative(), originChainId, deposit.depositId);
             observedDeposits.add(depositKey);
 
             if (chainIsSvm(deposit.destinationChainId)) {
@@ -386,7 +382,7 @@ export class GaslessRelayer {
     );
     for (const filledRelay of destinationFilledRelayEvents) {
       const fill = unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId);
-      observedFills.add(this._getFilledRelayKey(fill.originChainId, fill.depositId.toString()));
+      observedFills.add(this._getFilledRelayKey(fill.originChainId, fill.depositId));
     }
   }
 
@@ -415,7 +411,7 @@ export class GaslessRelayer {
       const fillStatus = await this._getDestinationFillStatus(deposit);
       if (fillStatus === FillStatus.Filled) {
         this.observedFills[deposit.destinationChainId].add(
-          this._getFilledRelayKey(deposit.originChainId, deposit.depositId.toString())
+          this._getFilledRelayKey(deposit.originChainId, deposit.depositId)
         );
       }
     });
@@ -567,7 +563,7 @@ export class GaslessRelayer {
       if (!isDefined(transactionHash)) {
         return;
       }
-      const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId.toString());
+      const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
       this.observedDeposits[originChainId].add(depositKey);
     });
   }
@@ -1189,7 +1185,7 @@ export class GaslessRelayer {
     inputToken: Address,
     authorizer: string,
     nonce: string,
-    depositId: string
+    depositId: BigNumber
   ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
     const provider = this.providersByChain[originChainId];
     const transactionHash = await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
@@ -1253,14 +1249,14 @@ export class GaslessRelayer {
    */
   private async _findDepositByDepositId(
     originChainId: number,
-    depositId: string
+    depositId: BigNumber
   ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
     const provider = this.providersByChain[originChainId];
     const originSpokePool = this.spokePools[originChainId].connect(provider);
     const searchConfig = await this._getEventSearchConfig(originChainId);
     const events = await paginatedEventQuery(
       originSpokePool,
-      originSpokePool.filters.FundsDeposited(null, null, null, null, null, toBN(depositId)),
+      originSpokePool.filters.FundsDeposited(null, null, null, null, null, depositId),
       searchConfig
     );
     if (events.length === 0) {
@@ -1277,7 +1273,7 @@ export class GaslessRelayer {
   protected _extractDepositFromTransactionReceipt(
     transactionReceipt: TransactionReceipt,
     originChainId: number,
-    depositId: string
+    depositId: BigNumber
   ): Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined {
     const originSpokePool = this.spokePools[originChainId];
     const fundsDepositedSignature = originSpokePool.interface.getEventTopic(DEPOSIT_EVENT);
@@ -1285,7 +1281,7 @@ export class GaslessRelayer {
       .filter(({ address, topics }) => address === originSpokePool.address && topics[0] === fundsDepositedSignature)
       // We must decode the log data manually and tell `spreadEventWithBlockNumber` that this log is a `FundsDeposited` event.
       .map((log) => ({ event: DEPOSIT_EVENT, ...log, ...originSpokePool.interface.parseLog(log) }))
-      .filter(({ args }) => toBN(depositId).eq(args.depositId));
+      .filter(({ args }) => depositId.eq(args.depositId));
 
     if (depositLogs.length === 0) {
       return undefined;
@@ -1331,7 +1327,7 @@ export class GaslessRelayer {
   /*
    * @notice Gets the key for `this.observedDeposits` from a relevant 3009 authorization.
    */
-  protected _getDepositKey(token: string, originChainId: number, depositId: string): string {
+  protected _getDepositKey(token: string, originChainId: number, depositId: BigNumber): string {
     return `${token}:${originChainId}:${depositId}`;
   }
 
@@ -1363,7 +1359,7 @@ export class GaslessRelayer {
    * @dev We key on the origin chain and depositId only since this is what uniquely identifies a deposit on an origin chain for a specific user (the only way to have a collision here with
    * a valid, unfilled deposit is by finding a collision in keccak).
    */
-  private _getFilledRelayKey(originChainId: number, depositId: string): string {
+  private _getFilledRelayKey(originChainId: number, depositId: BigNumber): string {
     return `${originChainId}:${depositId}`;
   }
 }
