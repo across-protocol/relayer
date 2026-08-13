@@ -100,18 +100,29 @@ RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS='["0xdead"]'
 
 Filtered-out deposits log at debug: `GaslessRelayer#_queryGaslessApi`.
 
-### Blocked addresses
+### Address filters (mutually exclusive)
+
+Filter API messages by authorizer / depositor / recipient. Addresses are normalized to lowercase (`ethers.getAddress` after lowercasing, so mixed-case paste is fine).
+
+**Only one** of these may be set; setting both causes config construction to throw.
 
 | Variable | Behavior |
 |----------|----------|
-| `RELAYER_GASLESS_BLOCKED_ADDRESSES` | JSON string array of EVM addresses. **Discard** deposits whose authorizer, depositor, or recipient is in the list (case-insensitive). |
+| `RELAYER_GASLESS_ALLOWED_ADDRESSES` | JSON string array. **Only** process deposits whose authorizer or depositor is in the list. |
+| `RELAYER_GASLESS_BLOCKED_ADDRESSES` | JSON string array. **Discard** deposits whose authorizer, depositor, or recipient is in the list. |
 
-Unset or `[]` → no address block-list.
+Neither set → no address filtering.
 
-Example:
+Example allow-list:
 
 ```bash
-RELAYER_GASLESS_BLOCKED_ADDRESSES='["0x1111111111111111111111111111111111111111","0x2222222222222222222222222222222222222222"]'
+RELAYER_GASLESS_ALLOWED_ADDRESSES='["0x1111111111111111111111111111111111111111"]'
+```
+
+Example block-list:
+
+```bash
+RELAYER_GASLESS_BLOCKED_ADDRESSES='["0x2222222222222222222222222222222222222222"]'
 ```
 
 Invalid addresses cause config construction to throw. Filtered-out deposits log at debug: `GaslessRelayer#_queryGaslessApi`.
