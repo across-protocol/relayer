@@ -189,6 +189,10 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public runFilterDepositsByIntegratorId(messages: AnyGaslessDepositMessage[]): AnyGaslessDepositMessage[] {
     return this._filterDepositsByIntegratorId(messages);
   }
+
+  public runFilterDepositsByAddress(messages: AnyGaslessDepositMessage[]): AnyGaslessDepositMessage[] {
+    return this._filterDepositsByAddress(messages);
+  }
 }
 
 /**
@@ -1162,6 +1166,103 @@ describe("GaslessRelayer", function () {
       const allowed = makeTestDepositMessage({}, {}, "0xABCD");
       const filtered = filterRelayer.runFilterDepositsByIntegratorId([allowed]);
       expect(filtered).to.deep.equal([allowed]);
+    });
+  });
+
+  describe("address filters", function () {
+    const LISTED = "0x2222222222222222222222222222222222222222";
+    const OTHER = "0x3333333333333333333333333333333333333333";
+
+    it("passes through when neither address filter is set", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+      const msg = makeTestDepositMessage({ depositor: LISTED, recipient: OTHER });
+      expect(filterRelayer.runFilterDepositsByAddress([msg])).to.deep.equal([msg]);
+    });
+
+    it("allow-list keeps only deposits whose depositor is listed", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_ALLOWED_ADDRESSES: `["${LISTED}"]`,
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const allowed = makeTestDepositMessage({ depositId: "43", depositor: LISTED, recipient: OTHER });
+      const blocked = makeTestDepositMessage({ depositId: "44", depositor: OTHER, recipient: OTHER });
+      // Recipient-only match is not enough for the allow-list.
+      const recipientOnly = makeTestDepositMessage({ depositId: "45", depositor: OTHER, recipient: LISTED });
+      expect(filterRelayer.runFilterDepositsByAddress([allowed, blocked, recipientOnly])).to.deep.equal([allowed]);
+    });
+
+    it("block-list discards deposits whose depositor is listed", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_BLOCKED_ADDRESSES: `["${LISTED}"]`,
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const blocked = makeTestDepositMessage({ depositId: "43", depositor: LISTED, recipient: OTHER });
+      const allowed = makeTestDepositMessage({ depositId: "44", depositor: OTHER, recipient: OTHER });
+      expect(filterRelayer.runFilterDepositsByAddress([blocked, allowed])).to.deep.equal([allowed]);
+    });
+
+    it("block-list discards deposits whose recipient is listed", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_BLOCKED_ADDRESSES: `["${LISTED}"]`,
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const blocked = makeTestDepositMessage({ depositId: "43", depositor: OTHER, recipient: LISTED });
+      const allowed = makeTestDepositMessage({ depositId: "44", depositor: OTHER, recipient: OTHER });
+      expect(filterRelayer.runFilterDepositsByAddress([blocked, allowed])).to.deep.equal([allowed]);
+    });
+
+    it("matches addresses case-insensitively", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_BLOCKED_ADDRESSES: '["0xAbCdEf0123456789AbCdEf0123456789aBcDeF01"]',
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const blocked = makeTestDepositMessage({
+        depositId: "43",
+        depositor: "0xabcdef0123456789abcdef0123456789abcdef01",
+        recipient: OTHER,
+      });
+      expect(filterRelayer.runFilterDepositsByAddress([blocked])).to.deep.equal([]);
     });
   });
 
