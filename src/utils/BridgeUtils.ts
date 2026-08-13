@@ -19,6 +19,7 @@ import {
   postWithTimeout,
   FetchHeaders,
   mapAsync,
+  retryBackoffS,
 } from "./";
 import { Log } from "../interfaces";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
@@ -232,9 +233,10 @@ export class BridgeApiClient {
         message: "Failed to query bridge API",
         endpoint,
         e,
+        retriesRemaining: nRetries,
       });
       if (nRetries > 0) {
-        await delay(1);
+        await delay(retryBackoffS(this.nRetries - nRetries));
         return this.getWithRetry<T>(endpoint, headers, --nRetries);
       }
       throw e;
@@ -256,9 +258,10 @@ export class BridgeApiClient {
         endpoint,
         data,
         e,
+        retriesRemaining: nRetries,
       });
       if (nRetries > 0) {
-        await delay(1);
+        await delay(retryBackoffS(this.nRetries - nRetries));
         return this.postWithRetry<T>(endpoint, data, headers, --nRetries);
       }
       throw e;

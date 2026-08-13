@@ -12,6 +12,7 @@ import {
   FetchHeaders,
   isDefined,
   MAX_SAFE_ALLOWANCE,
+  retryBackoffS,
   Signer,
   TOKEN_SYMBOLS_MAP,
   toBN,
@@ -337,9 +338,10 @@ export class PaxosTransitClient {
         message: "Failed to query Paxos Transit API",
         endpoint,
         e,
+        retriesRemaining: nRetries,
       });
       if (nRetries > 0) {
-        await delay(1);
+        await delay(retryBackoffS(this.nRetries - nRetries));
         return this.getWithRetry<T>(endpoint, --nRetries);
       }
       throw e;
