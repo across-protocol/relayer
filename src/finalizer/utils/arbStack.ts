@@ -41,6 +41,14 @@ import { ARB_ORBIT_NETWORK_CONFIGS, getArbitrumOrbitFinalizationTime } from "../
 let LATEST_MAINNET_BLOCK: number;
 let MAINNET_BLOCK_TIME: number;
 
+/**
+ * Arbitrum withdrawals are discovered from the canonical gateways and ArbSys, not from the SpokePool, so there is no
+ * `TokensBridged` event and no relayer refund leaf behind them. The Outbox proof is rebuilt from the L2 transaction
+ * receipt alone, which leaves `txnRef` as the only load-bearing field; token and amount just label the log line. The
+ * remaining `TokensBridged` fields have no counterpart here, so don't invent one.
+ */
+type ArbitrumWithdrawal = Pick<TokensBridged, "amountToReturn" | "l2TokenAddress" | "txnRef">;
+
 export async function arbStackFinalizer(
   logger: winston.Logger,
   signer: Signer,
@@ -88,7 +96,6 @@ export async function arbStackFinalizer(
     message: `${networkName} TokensBridged event filter`,
     to: latestBlockToFinalize,
   });
-  const withdrawalEvents: TokensBridged[] = [];
 
   // ERC20 withdrawals emit events in the erc20GatewayRouter.
   // Native token withdrawals emit events in the ArbSys contract.
@@ -190,20 +197,14 @@ export async function arbStackFinalizer(
     });
   }
 
-  // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
-  // submit proofs and finalizations for.
-  _withdrawalEvents.forEach(({ transactionHash, transactionIndex, ...event }) => {
-    const tokenBridgedEvent: TokensBridged = {
-      ...event,
-      amountToReturn: event.amount,
-      chainId,
-      leafId: 0,
-      l2TokenAddress: event.l2TokenAddress,
+  // Reduce the discovered events to the fields the finalization path actually reads.
+  const withdrawalEvents: ArbitrumWithdrawal[] = _withdrawalEvents.map(
+    ({ transactionHash, amount, l2TokenAddress }) => ({
+      amountToReturn: amount,
+      l2TokenAddress,
       txnRef: transactionHash,
-      txnIndex: transactionIndex,
-    };
-    withdrawalEvents.push(tokenBridgedEvent);
-  });
+    })
+  );
 
   return await multicallArbitrumFinalizations(withdrawalEvents, signer, hubPoolClient, logger, chainId);
 }
@@ -222,13 +223,13 @@ function describeToken(l2TokenAddress: Address, chainId: number): { symbol: stri
 }
 
 async function multicallArbitrumFinalizations(
-  tokensBridged: TokensBridged[],
+  withdrawals: ArbitrumWithdrawal[],
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger,
   chainId: number
 ): Promise<FinalizerPromise> {
-  const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner, chainId);
+  const finalizableMessages = await getFinalizableMessages(logger, withdrawals, hubSigner, chainId);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message, chainId)));
   const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
     const { symbol, decimals } = describeToken(l2TokenAddress, chainId);
@@ -278,17 +279,17 @@ async function finalizeArbitrum(message: ChildToParentMessageWriter, chainId: nu
 
 async function getFinalizableMessages(
   logger: winston.Logger,
-  tokensBridged: TokensBridged[],
+  withdrawals: ArbitrumWithdrawal[],
   l1Signer: Signer,
   chainId: number
 ): Promise<
   {
-    info: TokensBridged;
+    info: ArbitrumWithdrawal;
     message: ChildToParentMessageWriter;
     status: string;
   }[]
 > {
-  const allMessagesWithStatuses = await getAllMessageStatuses(tokensBridged, logger, l1Signer, chainId);
+  const allMessagesWithStatuses = await getAllMessageStatuses(withdrawals, logger, l1Signer, chainId);
   const statusesGrouped = groupObjectCountsByProp(
     allMessagesWithStatuses,
     (message: { status: string }) => message.status
@@ -305,34 +306,34 @@ async function getFinalizableMessages(
 }
 
 async function getAllMessageStatuses(
-  tokensBridged: TokensBridged[],
+  withdrawals: ArbitrumWithdrawal[],
   logger: winston.Logger,
   mainnetSigner: Signer,
   chainId: number
 ): Promise<
   {
-    info: TokensBridged;
+    info: ArbitrumWithdrawal;
     message: ChildToParentMessageWriter;
     status: string;
   }[]
 > {
   // For each token bridge event, store a unique log index for the event within the arbitrum transaction hash.
   // This is important for bridge transactions containing multiple events.
-  const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
+  const logIndexesForMessage = getUniqueLogIndex(withdrawals);
   const results = await Promise.all(
-    tokensBridged.map((e, i) =>
+    withdrawals.map((e, i) =>
       getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i], chainId)
     )
   );
   return results.flatMap((result, i) => {
     const { message, status } = result;
-    return isDefined(message) ? [{ info: tokensBridged[i], message, status }] : [];
+    return isDefined(message) ? [{ info: withdrawals[i], message, status }] : [];
   });
 }
 
 async function getMessageOutboxStatusAndProof(
   logger: winston.Logger,
-  event: TokensBridged,
+  event: ArbitrumWithdrawal,
   l1Signer: Signer,
   logIndex: number,
   chainId: number
