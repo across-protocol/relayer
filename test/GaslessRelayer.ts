@@ -1117,7 +1117,7 @@ describe("GaslessRelayer", function () {
       "function tryAggregate(bool requireSuccess, (address target, bytes callData)[] calls) returns ((bool success, bytes returnData)[] returnData)",
     ];
 
-    beforeEach(async function () {
+    async function makeBatchingRelayer(extraEnv: Record<string, string> = {}): Promise<TestableGaslessRelayer> {
       const { spyLogger } = createSpyLogger();
       const [signer] = await ethers.getSigners();
 
@@ -1128,9 +1128,10 @@ describe("GaslessRelayer", function () {
         API_GASLESS_ENDPOINT: "http://127.0.0.1",
         SEND_TRANSACTIONS: "true",
         RELAYER_GASLESS_DEPOSIT_BATCHING: "true",
+        ...extraEnv,
       });
 
-      batchingRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+      const relayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
 
       fakePeripherySmock = await smock.fake(SPOKE_POOL_PERIPHERY_ABI);
       const fakePeriphery = new Contract(fakePeripherySmock.address, SPOKE_POOL_PERIPHERY_ABI, signer.provider);
@@ -1140,15 +1141,20 @@ describe("GaslessRelayer", function () {
 
       const provider = signer.provider;
       assert(isDefined(provider), "Signer must have a provider in test setup");
-      batchingRelayer.setProvidersByChain({ [ORIGIN_CHAIN_ID]: provider, [DESTINATION_CHAIN_ID]: provider });
-      batchingRelayer.setSpokePoolPeripheries({ [ORIGIN_CHAIN_ID]: fakePeriphery });
-      batchingRelayer.setSpokePools({ [ORIGIN_CHAIN_ID]: fakeSpokePool, [DESTINATION_CHAIN_ID]: fakeSpokePool });
-      batchingRelayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set() });
-      batchingRelayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
-      batchingRelayer.setSignerAddress(EvmAddress.from(signer.address));
+      relayer.setProvidersByChain({ [ORIGIN_CHAIN_ID]: provider, [DESTINATION_CHAIN_ID]: provider });
+      relayer.setSpokePoolPeripheries({ [ORIGIN_CHAIN_ID]: fakePeriphery });
+      relayer.setSpokePools({ [ORIGIN_CHAIN_ID]: fakeSpokePool, [DESTINATION_CHAIN_ID]: fakeSpokePool });
+      relayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set() });
+      relayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
+      relayer.setSignerAddress(EvmAddress.from(signer.address));
 
       fakeMulticall3Smock = await smock.fake(MULTICALL3_ABI);
-      batchingRelayer.getMulticall3Fn = () => new Contract(fakeMulticall3Smock.address, MULTICALL3_ABI, provider);
+      relayer.getMulticall3Fn = () => new Contract(fakeMulticall3Smock.address, MULTICALL3_ABI, provider);
+      return relayer;
+    }
+
+    beforeEach(async function () {
+      batchingRelayer = await makeBatchingRelayer();
     });
 
     function makeBatchableMessages() {
@@ -1258,6 +1264,71 @@ describe("GaslessRelayer", function () {
       expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg2))).to.equal(MessageState.FILLED);
       expect(batchingRelayer.initiateBatchDepositCalls).to.equal(1);
       expect(batchingRelayer.initiateDepositCalls).to.equal(1);
+    });
+
+    it("excludes deposits failing validation from the batch", async function () {
+      const [msg1, msg2] = makeBatchableMessages();
+      // inputAmount < outputAmount is rejected by validateDeposit(). The batch is submitted before any
+      // member's state machine runs, so an unvalidated deposit would otherwise execute on-chain and then
+      // be marked ERROR, leaving a deposit that is never filled.
+      const invalid = makeTestDepositMessage({ inputAmount: "1000000", outputAmount: "2000000" });
+      invalid.depositId = toBN(300);
+
+      const receipt = makeReceipt();
+      const depositEvent1 = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+      depositEvent1.depositId = toBN(100);
+      const depositEvent2 = makeFakeDepositEvent({ inputAmount: "30000000", outputAmount: "29000000" });
+      depositEvent2.depositId = toBN(200);
+
+      fakeMulticall3Smock.tryAggregate.returns([
+        { success: true, returnData: "0x" },
+        { success: true, returnData: "0x" },
+      ]);
+      batchingRelayer.queryGaslessApiFn = async () => [msg1, invalid, msg2];
+      batchingRelayer.initiateBatchDepositFn = async () => receipt;
+      batchingRelayer.extractDepositFromReceiptFn = (_receipt, _chainId, depositId) =>
+        depositId.eq(100) ? depositEvent1 : depositEvent2;
+      batchingRelayer.initiateFillFn = async () => receipt;
+
+      await batchingRelayer.runEvaluateApiSignatures();
+
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, invalid))).to.equal(MessageState.ERROR);
+      expect(batchingRelayer.initiateBatchDepositCalls).to.equal(1);
+      // Only the two valid deposits are in the batch, and the invalid one is never submitted alone.
+      expect(batchingRelayer.batchedCalls[0].length).to.equal(2);
+      expect(batchingRelayer.initiateDepositCalls).to.equal(0);
+    });
+
+    it("splits a batch that exceeds RELAYER_GASLESS_DEPOSIT_BATCH_SIZE", async function () {
+      batchingRelayer = await makeBatchingRelayer({ RELAYER_GASLESS_DEPOSIT_BATCH_SIZE: "2" });
+
+      const messages = [100, 200, 300, 400].map((depositId) => {
+        const msg = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
+        msg.depositId = toBN(depositId);
+        return msg;
+      });
+      const receipt = makeReceipt();
+      const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+
+      fakeMulticall3Smock.tryAggregate.returns([
+        { success: true, returnData: "0x" },
+        { success: true, returnData: "0x" },
+      ]);
+      batchingRelayer.queryGaslessApiFn = async () => messages;
+      batchingRelayer.initiateBatchDepositFn = async () => receipt;
+      batchingRelayer.extractDepositFromReceiptFn = (_receipt, _chainId, depositId) => ({
+        ...depositEvent,
+        depositId,
+      });
+      batchingRelayer.initiateFillFn = async () => receipt;
+
+      await batchingRelayer.runEvaluateApiSignatures();
+
+      expect(batchingRelayer.initiateBatchDepositCalls).to.equal(2);
+      batchingRelayer.batchedCalls.forEach((calls) => expect(calls.length).to.equal(2));
+      messages.forEach((msg) =>
+        expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg))).to.equal(MessageState.FILLED)
+      );
     });
   });
 

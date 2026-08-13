@@ -232,6 +232,11 @@ export const DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER = "1.0"; // Multiplier on pr
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 50;
 
+// Gasless deposits are individually expensive (periphery entry + token transfer), so batch them far
+// more conservatively than a generic multicall: a batch that exceeds the block gas limit fails in its
+// entirety and every member has to be resubmitted on a later poll.
+export const DEFAULT_GASLESS_DEPOSIT_BATCH_SIZE = 10;
+
 // Drift margin on a finalization batch's summed estimates.
 export const MULTICALL3_BATCH_GAS_MULTIPLIER = 1.1;
 

@@ -8,6 +8,7 @@ import {
   Signer,
   scheduleTask,
   forEachAsync,
+  chunk,
   Provider,
   getCurrentTime,
   getSpokePool,
@@ -59,6 +60,7 @@ import {
 } from "../interfaces";
 import { AcrossSwapApiClient, SvmFillerClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
+import { DEFAULT_GASLESS_DEPOSIT_BATCH_SIZE } from "../common";
 import {
   buildGaslessDepositTx,
   buildGaslessFillRelayTx,
@@ -612,7 +614,8 @@ export class GaslessRelayer {
   protected async evaluateApiSignatures(): Promise<void> {
     const processDepositMessage = async (
       depositMessage: AnyGaslessDepositMessage,
-      inheritedReceipt?: Promise<TransactionReceipt | null | undefined>
+      inheritedReceipt?: Promise<TransactionReceipt | null | undefined>,
+      preValidated?: boolean
     ) => {
       const isSwap = depositMessage.depositFlowType === "swapAndBridge";
       const { originChainId, depositId, spokePool } = depositMessage;
@@ -624,7 +627,6 @@ export class GaslessRelayer {
         fillDeadline,
         inputToken,
         outputToken,
-        inputAmountForValidation,
         outputAmount,
         exclusivityParameter,
         swapToken,
@@ -695,19 +697,9 @@ export class GaslessRelayer {
         const messageState = getState();
         switch (messageState) {
           case MessageState.INITIAL: {
-            const valid = validateDeposit(
-              originChainId,
-              inputToken,
-              inputAmountForValidation,
-              destinationChainId,
-              outputToken,
-              outputAmount,
-              this.config.refundFlowTestEnabled,
-              this.config.allowedPeggedPairs,
-              this.logger,
-              this.config.depositUsdPageThreshold,
-              this.config.fillsEnabled
-            );
+            // Prefer the verdict computed before batching. _validateDepositMessage() can page on
+            // oversized deposits, so it must be evaluated exactly once per message per poll.
+            const valid = preValidated ?? this._validateDepositMessage(depositMessage);
             let nextState = MessageState.ERROR;
             if (!valid) {
               log("warn", `Rejected malformed deposit destined for ${origin}.`);
@@ -924,7 +916,19 @@ export class GaslessRelayer {
     const apiMessages = await this._queryGaslessApi();
     const pending = apiMessages.filter(messageFilter);
     // Claim state before the first await so overlapping poll ticks don't re-process these messages.
+    // @dev A claim is only released by reaching a terminal state or by the explicit delete in
+    // processBatch(). A throw that escapes before either strands its messages until restart, since
+    // messageFilter() skips anything with existing state. Keep new failure paths inside the state
+    // machine, where the do/while retries, rather than between the claim and processDepositMessage().
     pending.forEach((message) => this._getState(this._getDepositKeyFromMessage(message)));
+
+    // Validation gates batching: a batch is submitted before any of its members' state machines run,
+    // so an unvalidated deposit would execute on-chain and only then be rejected, leaving a deposit we
+    // never fill. Evaluate once here and hand the verdict to processDepositMessage(), which must not
+    // re-run it (validateDeposit() pages on oversized deposits).
+    const validated = new Map<AnyGaslessDepositMessage, boolean>(
+      pending.map((message) => [message, this._validateDepositMessage(message)])
+    );
 
     // Group deposits eligible for batched submission by origin chain. CCTP deposits confirm via the
     // receipt hash rather than a FundsDeposited log, so they stay on the individual path.
@@ -935,6 +939,7 @@ export class GaslessRelayer {
       const { fillDeadline } = extractGaslessDepositFields(message);
       const batchable =
         this.config.depositBatchingEnabled &&
+        validated.get(message) &&
         fillDeadline > now &&
         !this._isCctpDeposit(message.originChainId, message.spokePool) &&
         isBatchableGaslessDeposit(message);
@@ -949,7 +954,7 @@ export class GaslessRelayer {
       const multicall3 = this._getMulticall3(originChainId);
       // Fall back to individual submission when the chain has no Multicall3 or the batch is trivial.
       if (!isDefined(multicall3) || messages.length < 2) {
-        await forEachAsync(messages, (message) => processDepositMessage(message));
+        await forEachAsync(messages, (message) => processDepositMessage(message, undefined, validated.get(message)));
         return;
       }
 
@@ -991,12 +996,18 @@ export class GaslessRelayer {
         multicall3,
         calls.filter((_, i) => results[i].success)
       );
-      await Promise.all(live.map((message) => processDepositMessage(message, receiptPromise)));
+      await Promise.all(live.map((message) => processDepositMessage(message, receiptPromise, validated.get(message))));
     };
 
     await Promise.all([
-      ...individual.map((message) => processDepositMessage(message)),
-      ...Object.entries(batchGroups).map(([chainId, messages]) => processBatch(Number(chainId), messages)),
+      ...individual.map((message) => processDepositMessage(message, undefined, validated.get(message))),
+      // Cap each batch so it can't outgrow the origin chain's block gas limit; oversized batches fail
+      // wholesale and force every member back through a later poll.
+      ...Object.entries(batchGroups).flatMap(([chainId, messages]) => {
+        const originChainId = Number(chainId);
+        const batchSize = this.config.depositBatchSize[originChainId] ?? DEFAULT_GASLESS_DEPOSIT_BATCH_SIZE;
+        return chunk(messages, batchSize).map((batch) => processBatch(originChainId, batch));
+      }),
     ]);
   }
 
@@ -1111,6 +1122,9 @@ export class GaslessRelayer {
    * @notice Submits a batch of pre-simulated gasless deposits via Multicall3.tryAggregate on the origin
    * chain. Inner failures do not revert the batch; each message's state machine verifies its own deposit
    * against the shared receipt (FundsDeposited selected by depositId).
+   * @dev Individually-submitted mainnet deposits set `spray` to fan out over the configured RPCs; a batch
+   * is a single transaction and does not inherit it. Submission privacy is a property of the configured
+   * RPC URLs rather than of `spray`, so this only costs the redundancy, not the privacy.
    * @returns The batch transaction receipt, or null if skipped or failed.
    */
   protected async initiateBatchDeposit(
@@ -1472,6 +1486,29 @@ export class GaslessRelayer {
   protected _getDepositKeyFromMessage(depositMessage: AnyGaslessDepositMessage): string {
     const { inputToken } = extractGaslessDepositFields(depositMessage);
     return this._getDepositKey(inputToken.toNative(), depositMessage.originChainId, depositMessage.depositId);
+  }
+
+  /*
+   * @notice Applies validateDeposit() to an API message.
+   * @dev Not side-effect free: it may emit a paging error log for an oversized deposit, so it must be
+   * evaluated exactly once per message per poll and the verdict reused.
+   */
+  protected _validateDepositMessage(depositMessage: AnyGaslessDepositMessage): boolean {
+    const { destinationChainId, inputToken, inputAmountForValidation, outputToken, outputAmount } =
+      extractGaslessDepositFields(depositMessage);
+    return validateDeposit(
+      depositMessage.originChainId,
+      inputToken,
+      inputAmountForValidation,
+      destinationChainId,
+      outputToken,
+      outputAmount,
+      this.config.refundFlowTestEnabled,
+      this.config.allowedPeggedPairs,
+      this.logger,
+      this.config.depositUsdPageThreshold,
+      this.config.fillsEnabled
+    );
   }
 
   /*
