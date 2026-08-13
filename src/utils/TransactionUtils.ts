@@ -267,6 +267,58 @@ export function getTarget(targetAddress: string):
   }
 }
 
+/**
+ * Thrown when a transaction fails simulation, i.e. before anything is broadcast. Distinguishable from
+ * a post-broadcast failure, whose transaction may still land: a caller diagnosing *why* a submission
+ * failed can only attribute on-chain state (a spent nonce, a moved balance) to the deposit itself when
+ * it knows its own transaction never reached the mempool.
+ */
+export class TransactionSimulationError extends Error {
+  constructor(
+    message: string,
+    readonly reason?: string
+  ) {
+    super(message);
+    this.name = "TransactionSimulationError";
+  }
+}
+
+// Hex runs long enough to be signature or calldata material rather than an address (42 chars incl. the
+// prefix) or a bytes32 (66). A 65-byte signature is 132; ABI-encoded calldata is longer still.
+const LOGGABLE_HEX_LIMIT = 80;
+// Backstop for messages that are long without being hex.
+const LOGGABLE_MESSAGE_LIMIT = 256;
+
+/**
+ * A short, log-safe description of a failure thrown by {@link submitTransaction} or
+ * {@link dispatchTransaction}.
+ *
+ * Both compose their messages from `args.join(", ")`. For a raw transaction — which is what an
+ * integrator-tagged deposit builds, with `method: ""` and the whole ABI-encoded calldata as its single
+ * argument — that message therefore embeds the entire payload, signed authorization and any router
+ * calldata included. Logging it verbatim publishes signature material to every log transport and, for a
+ * failure that repeats each poll, buries everything else in the log.
+ *
+ * A {@link TransactionSimulationError} carries the revert reason by itself, which is the only part worth
+ * reading. Anything else keeps its message, with long hex runs elided (the leading selector survives) and
+ * the result bounded.
+ */
+export function describeTransactionFailure(err: unknown): string | undefined {
+  if (err instanceof TransactionSimulationError) {
+    return err.reason ?? "simulation reverted without a reason";
+  }
+  if (!isDefined(err)) {
+    return undefined;
+  }
+
+  const message = err instanceof Error ? err.message : String(err);
+  const elided = message.replace(
+    new RegExp(`0x[0-9a-fA-F]{${LOGGABLE_HEX_LIMIT},}`, "g"),
+    (hex) => `${hex.slice(0, 10)}…[${hex.length - 2} hex chars elided]`
+  );
+  return elided.length > LOGGABLE_MESSAGE_LIMIT ? `${elided.slice(0, LOGGABLE_MESSAGE_LIMIT)}…` : elided;
+}
+
 export async function submitTransaction(
   transaction: AugmentedTransaction,
   transactionClient: TransactionClient
@@ -277,7 +329,7 @@ export async function submitTransaction(
     const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
       txnRequest.chainId
     }`;
-    throw new Error(`${message} (${reason})`);
+    throw new TransactionSimulationError(`${message} (${reason})`, reason);
   }
 
   const response = await transactionClient.submit(transaction.chainId, [transaction]);
@@ -301,7 +353,7 @@ export async function dispatchTransaction(
     const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
       txnRequest.chainId
     }`;
-    throw new Error(`${message} (${reason})`);
+    throw new TransactionSimulationError(`${message} (${reason})`, reason);
   }
 
   return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
@@ -311,11 +363,19 @@ export async function dispatchTransaction(
  * Submits a transaction (via submitTransaction or dispatchTransaction), awaits the receipt, and returns it.
  * Ensures ensureConfirmation is true on the tx. On failure catches errors and returns undefined; callers should
  * check with isDefined(receipt) and log a warning.
+ * @param onError Optional handler receiving the swallowed error, so callers can log *why* the submission
+ * failed — the simulation revert reason is otherwise lost. Must not throw; if it does, the error is
+ * swallowed to preserve this function's never-throws contract.
+ * @dev Only a {@link TransactionSimulationError} guarantees nothing was broadcast. Every other failure —
+ * a rejected send, a confirmation timeout inside the submission path, a failed receipt lookup — may leave
+ * a live transaction behind, so a caller must not read subsequent on-chain state as evidence about the
+ * transaction it was trying to send.
  */
 export async function sendAndConfirmTransaction(
   tx: AugmentedTransaction,
   transactionClient: TransactionClient,
-  useDispatcher = false
+  useDispatcher = false,
+  onError?: (err: unknown) => void
 ): Promise<TransactionReceipt | undefined> {
   const txWithConfirmation: AugmentedTransaction = { ...tx, ensureConfirmation: true };
   try {
@@ -329,7 +389,12 @@ export async function sendAndConfirmTransaction(
     // available immediately; bound the lookup rather than risk an indefinite wait().
     const hash = txResponse.hash.startsWith("0x") ? txResponse.hash : `0x${txResponse.hash}`;
     return await tx.contract.provider.waitForTransaction(hash, 1, RECEIPT_TIMEOUT_MS);
-  } catch {
+  } catch (err) {
+    try {
+      onError?.(err);
+    } catch {
+      // A throwing error handler must not turn a swallowed failure into a thrown one.
+    }
     return undefined;
   }
 }
