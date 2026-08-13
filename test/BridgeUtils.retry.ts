@@ -54,6 +54,24 @@ describe("BridgeApiClient: retries", function () {
     expect(backoffsS[1]).to.be.at.least(2);
   });
 
+  // The backoff must be derived from the attempt number, not from the difference between the
+  // configured and remaining retry counts, which skews the schedule whenever a caller overrides it.
+  [1, 4].forEach((nCallRetries) => {
+    it(`backs off from the start of the sequence when the caller overrides nRetries to ${nCallRetries}`, async function () {
+      const fetchStub = sinon.stub(sdkUtils, "fetchWithTimeout").rejects(new Error("HTTP 500: Internal Server Error"));
+
+      await expect(client.getWithRetry("v0/transfers", {}, nCallRetries)).to.be.rejectedWith("HTTP 500");
+
+      expect(fetchStub.callCount).to.equal(nCallRetries + 1);
+      const backoffsS = delayStub.args.map(([backoffS]) => backoffS);
+      expect(backoffsS.length).to.equal(nCallRetries);
+      backoffsS.forEach((backoffS, attempt) => {
+        expect(backoffS).to.be.at.least(2 ** attempt);
+        expect(backoffS).to.be.below(2 ** attempt + 1);
+      });
+    });
+  });
+
   it("does not sleep when the request succeeds", async function () {
     sinon.stub(sdkUtils, "fetchWithTimeout").resolves({ data: [] });
 

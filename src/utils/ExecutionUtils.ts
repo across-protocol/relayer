@@ -35,6 +35,32 @@ export function retryBackoffS(attempt: number, base = 2): number {
   return base ** attempt + Math.random();
 }
 
+/**
+ * @description Run an async operation, backing off exponentially between retries.
+ * @param fn Operation to run. Invoked once, then once more per retry.
+ * @param nRetries Number of retries permitted after the initial attempt fails.
+ * @param onError Optional callback, invoked with each failure before any backoff is applied.
+ * @returns The result of the first successful attempt. Rethrows the last error once retries are exhausted.
+ */
+export async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  nRetries: number,
+  onError?: (e: unknown, retriesRemaining: number) => void
+): Promise<T> {
+  for (let attempt = 0; ; ++attempt) {
+    try {
+      return await fn();
+    } catch (e) {
+      const retriesRemaining = nRetries - attempt;
+      onError?.(e, retriesRemaining);
+      if (retriesRemaining <= 0) {
+        throw e;
+      }
+      await delay(retryBackoffS(attempt));
+    }
+  }
+}
+
 export function rejectAfterDelay(seconds: number, message = ""): Promise<never> {
   return new Promise<never>((_, reject) => {
     setTimeout(reject, seconds * 1000, {

@@ -7,12 +7,11 @@ import {
   BigNumber,
   bnZero,
   ConvertDecimals,
-  delay,
   fetchWithTimeout,
   FetchHeaders,
   isDefined,
   MAX_SAFE_ALLOWANCE,
-  retryBackoffS,
+  retryWithBackoff,
   Signer,
   TOKEN_SYMBOLS_MAP,
   toBN,
@@ -330,22 +329,18 @@ export class PaxosTransitClient {
   }
 
   async getWithRetry<T>(endpoint: string, nRetries = this.nRetries): Promise<T> {
-    try {
-      return await fetchWithTimeout<T>(`${this.baseUrl}/${endpoint}`, {}, this.defaultHeaders());
-    } catch (e) {
-      this.logger?.debug({
-        at: "PaxosTransitClient#getWithRetry",
-        message: "Failed to query Paxos Transit API",
-        endpoint,
-        e,
-        retriesRemaining: nRetries,
-      });
-      if (nRetries > 0) {
-        await delay(retryBackoffS(this.nRetries - nRetries));
-        return this.getWithRetry<T>(endpoint, --nRetries);
-      }
-      throw e;
-    }
+    return retryWithBackoff(
+      () => fetchWithTimeout<T>(`${this.baseUrl}/${endpoint}`, {}, this.defaultHeaders()),
+      nRetries,
+      (e, retriesRemaining) =>
+        this.logger?.debug({
+          at: "PaxosTransitClient#getWithRetry",
+          message: "Failed to query Paxos Transit API",
+          endpoint,
+          e,
+          retriesRemaining,
+        })
+    );
   }
 }
 
