@@ -89,15 +89,23 @@ export class ArbitrumOrbitBridge extends BaseL2BridgeAdapter {
       ),
     ]);
     const counted = new Set<number>();
+    // @dev Both gateways can be shared across tokens (DEFAULT_ARBITRUM_GATEWAY), so each side is filtered on the
+    // non-indexed l1Token. The event decodes it to a plain string, so lift it into an EvmAddress before comparing;
+    // testing the string against the EvmAddress directly is always unequal.
+    const isTrackedToken = (eventL1Token: string) => EvmAddress.from(eventL1Token).eq(l1Token);
     const withdrawalAmount = withdrawalInitiatedEvents.reduce((totalAmount, { args: l2Args }) => {
-      if (l2Args.l1Token !== l1Token) {
+      if (!isTrackedToken(l2Args.l1Token)) {
         return totalAmount;
       }
       const received = withdrawalFinalizedEvents.find(({ args: l1Args }, idx) => {
         // Protect against double-counting the same l1 withdrawal events.
         // @dev: If we begin to send "fast-finalized" messages via CCTP V2 then the amounts will not exactly match
         // and we will need to adjust this logic.
-        if (counted.has(idx) || !toBN(l1Args._amount.toString()).eq(toBN(l2Args._amount.toString()))) {
+        if (
+          counted.has(idx) ||
+          !isTrackedToken(l1Args.l1Token) ||
+          !toBN(l1Args._amount.toString()).eq(toBN(l2Args._amount.toString()))
+        ) {
           return false;
         }
 

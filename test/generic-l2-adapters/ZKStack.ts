@@ -304,9 +304,9 @@ describe("Cross Chain Adapter: ZK Stack USDC L2 Bridge", function () {
 });
 
 describe("Cross Chain Adapter: ZK Stack L2 bridge configuration", function () {
-  // Mirrors the resolution order in AdapterManager, jussi's topology builder and its edge pricing. A token that
-  // resolves to no bridge is skipped everywhere; one that resolves to a bridge which then constructs no
-  // transaction is advertised to the rebalancer as a zero-cost edge that can never execute.
+  // Mirrors the resolution order in AdapterManager. A token that resolves to no bridge is skipped; one that
+  // resolves to a bridge which then constructs no transaction is still registered as that token's withdrawal
+  // path and silently moves nothing.
   const resolveL2Bridge = (chainId: number, symbol: string) => {
     const l1Token = TOKEN_SYMBOLS_MAP[symbol].addresses[CHAIN_IDs.MAINNET];
     return CUSTOM_L2_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_L2_BRIDGE[chainId];

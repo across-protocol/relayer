@@ -126,6 +126,11 @@ pre-deposit bridge to OFT (e.g. `BinanceStablecoinSwapAdapter`) keep their pendi
 underlying bridge. Note that `_redisUpdateOrderStatus` does not refresh the TTL, so the value set at creation is the
 lifetime of the whole order across all status transitions.
 
+Order-state writes are atomic: `_redisCreateOrder` writes the order-details key and its status-set membership in one
+Redis transaction (`RedisCache.setAndAddToSet`), and `_redisUpdateOrderStatus` moves the cloid between status sets in
+one transaction (`RedisCache.moveSetMember`). A crash therefore cannot leave an order in both status sets, in neither
+set, or with set membership but no details key — either the whole transition landed or none of it did.
+
 If an order does not finalize before the TTL expires, order details and associated pending-order status tracking are
 eventually pruned from Redis cache state. `BaseAdapter._redisCleanupPendingOrders` emits a `warn` log (`⏰ Pruning
 expired pending order ...`) when this happens so operators can detect abandoned orders that never received a
@@ -326,9 +331,17 @@ Swap deposits into Binance are tagged `SWAP` in Redis with a TTL of twice the fi
 lookback (`FINALIZER_TOKENBRIDGE_LOOKBACK`) so the finalizer excludes them from its deposit ledger for the whole
 lookback — including after the swap completes, so a consumed deposit is never re-counted as finalizable ("phantom"
 `amountToFinalize`). Handover to the finalizer is driven by order state, not
-wall clock: if an order is abandoned while still in `PENDING_DEPOSIT` (its `REBALANCER_PENDING_ORDER_TTL` elapses), the
-prune path deletes the deposit's tag via `_onExpiredOrderPruned`, and the finalizer reclaims the funds on its next run.
+wall clock: if an order is abandoned while still in `PENDING_DEPOSIT` or `PENDING_DEPOSIT_SUBMISSION` (its
+`REBALANCER_PENDING_ORDER_TTL` elapses), the prune path deletes the deposit's tag via `_onExpiredOrderPruned`, and the
+finalizer reclaims the funds on its next run.
 Orders pruned in later statuses keep the tag, since their deposit was already consumed by the spot order.
+
+Direct Binance deposits are crash-safe: the order is written in `PENDING_DEPOSIT_SUBMISSION` with a recovery marker
+before the deposit transaction is submitted, and is promoted to `PENDING_DEPOSIT` after a clean submission. If the
+process dies mid-submission, the next lifecycle pass resolves the marked order from the on-chain receipt via
+`_reconcileDepositRecovery` (promote on success, purge on revert, wait while unconfirmed). A marked order whose
+transaction hash was never persisted, or a markerless `PENDING_DEPOSIT_SUBMISSION` order, fails closed to the TTL
+prune.
 
 When Binance reports `RW00441`, the account has recently credited deposit value that is not withdrawal-unlocked yet.
 The Binance adapter treats this as a retryable wait state and leaves the order pending. The Binance finalizer reads
