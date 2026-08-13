@@ -28,6 +28,7 @@ import {
   getNetworkName,
   relayFillStatus,
   sendAndConfirmTransaction,
+  TransactionSimulationError,
   getTokenInfo,
   createFormatFunction,
   toAddressType,
@@ -1031,6 +1032,12 @@ export class GaslessRelayer {
    * because `sendAndConfirmTransaction` swallowed the simulation revert — so an unservable deposit was
    * indistinguishable from a transient RPC failure. This attaches both the revert reason and, where one
    * of the {@link findGaslessSubmitBlocker} checks identifies it, the specific blocker.
+   *
+   * Diagnosis runs only for a failure that predates broadcast ({@link TransactionSimulationError}). Once a
+   * transaction is in flight the on-chain reads stop being evidence about the deposit: a submission that
+   * lands but whose receipt lookup times out returns no receipt here, and the nonce the checks would find
+   * consumed is the one our own transaction just spent — a permanent `authorization-consumed` verdict on a
+   * deposit that in fact succeeded, which DEPOSIT_CONFIRM goes on to locate.
    */
   protected async _logSubmitFailure(
     depositMessage: AnyGaslessDepositMessage,
@@ -1058,33 +1065,43 @@ export class GaslessRelayer {
         ...blocker.context,
       });
 
-    // A permanent blocker cannot clear, so re-diagnosing it on every poll only burns RPC.
-    const known = this.submitBlockers.get(depositKey);
-    if (known?.permanent) {
-      logBlocker(known, "debug");
-      return;
-    }
+    // No conclusive blocker, or none we are entitled to look for: either a transient failure or a revert
+    // the checks don't cover. Keep warning — silence here is what made the cause invisible in the first place.
+    const warnUndiagnosed = () => this.logger.warn({ ...common, message: "Failed to submit gasless deposit" });
 
-    const blocker = await findGaslessSubmitBlocker({
-      depositMessage,
-      currentTime: getCurrentTime(),
-      amountToken: isDefined(provider) ? new Contract(amountToken, ERC20_ABI, provider) : undefined,
-      // EIP-3009 authorizations live on the token the depositor signed over, which for swap-and-bridge
-      // is the swap token — the same token as the amount being pulled.
-      authToken: isDefined(provider) ? new Contract(amountToken, EIP3009_ABI, provider) : undefined,
-      permit2: this.permit2Contracts[originChainId],
-      spokePoolPeriphery: this.getPeripheryContract(originChainId, depositMessage.targetAddress),
-    });
+    // Only a simulation failure guarantees the transaction never left this process. Past that, the
+    // deposit may be in flight — a submission that lands but whose receipt lookup times out arrives here
+    // too — and the on-chain state the checks read is no longer evidence about the deposit: the nonce
+    // they would find consumed is the one our own transaction spent. Leave the verdict to DEPOSIT_CONFIRM.
+    if (submitError instanceof TransactionSimulationError) {
+      // A permanent blocker cannot clear, so re-diagnosing it on every poll only burns RPC.
+      const known = this.submitBlockers.get(depositKey);
+      if (known?.permanent) {
+        logBlocker(known, "debug");
+        return;
+      }
 
-    if (isDefined(blocker)) {
-      // Warn on the first sighting and whenever the diagnosis changes; otherwise drop to debug so a
-      // deposit blocked for hours does not bury every other warning in the log.
-      logBlocker(blocker, known?.code === blocker.code ? "debug" : "warn");
-      this.submitBlockers.set(depositKey, blocker);
+      const blocker = await findGaslessSubmitBlocker({
+        depositMessage,
+        currentTime: getCurrentTime(),
+        amountToken: isDefined(provider) ? new Contract(amountToken, ERC20_ABI, provider) : undefined,
+        // EIP-3009 authorizations live on the token the depositor signed over, which for swap-and-bridge
+        // is the swap token — the same token as the amount being pulled.
+        authToken: isDefined(provider) ? new Contract(amountToken, EIP3009_ABI, provider) : undefined,
+        permit2: this.permit2Contracts[originChainId],
+        spokePoolPeriphery: this.getPeripheryContract(originChainId, depositMessage.targetAddress),
+      });
+
+      if (isDefined(blocker)) {
+        // Warn on the first sighting and whenever the diagnosis changes; otherwise drop to debug so a
+        // deposit blocked for hours does not bury every other warning in the log.
+        logBlocker(blocker, known?.code === blocker.code ? "debug" : "warn");
+        this.submitBlockers.set(depositKey, blocker);
+      } else {
+        warnUndiagnosed();
+      }
     } else {
-      // No conclusive blocker: either a transient failure or a revert the checks don't cover. Keep
-      // warning — silence here is what made the underlying cause invisible in the first place.
-      this.logger.warn({ ...common, message: "Failed to submit gasless deposit" });
+      warnUndiagnosed();
     }
 
     this.logger.debug({

@@ -267,6 +267,22 @@ export function getTarget(targetAddress: string):
   }
 }
 
+/**
+ * Thrown when a transaction fails simulation, i.e. before anything is broadcast. Distinguishable from
+ * a post-broadcast failure, whose transaction may still land: a caller diagnosing *why* a submission
+ * failed can only attribute on-chain state (a spent nonce, a moved balance) to the deposit itself when
+ * it knows its own transaction never reached the mempool.
+ */
+export class TransactionSimulationError extends Error {
+  constructor(
+    message: string,
+    readonly reason?: string
+  ) {
+    super(message);
+    this.name = "TransactionSimulationError";
+  }
+}
+
 export async function submitTransaction(
   transaction: AugmentedTransaction,
   transactionClient: TransactionClient
@@ -277,7 +293,7 @@ export async function submitTransaction(
     const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
       txnRequest.chainId
     }`;
-    throw new Error(`${message} (${reason})`);
+    throw new TransactionSimulationError(`${message} (${reason})`, reason);
   }
 
   const response = await transactionClient.submit(transaction.chainId, [transaction]);
@@ -301,7 +317,7 @@ export async function dispatchTransaction(
     const message = `Failed to simulate ${targetContract.address}.${method}(${txnRequestData.args.join(", ")}) on ${
       txnRequest.chainId
     }`;
-    throw new Error(`${message} (${reason})`);
+    throw new TransactionSimulationError(`${message} (${reason})`, reason);
   }
 
   return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
@@ -314,6 +330,10 @@ export async function dispatchTransaction(
  * @param onError Optional handler receiving the swallowed error, so callers can log *why* the submission
  * failed — the simulation revert reason is otherwise lost. Must not throw; if it does, the error is
  * swallowed to preserve this function's never-throws contract.
+ * @dev Only a {@link TransactionSimulationError} guarantees nothing was broadcast. Every other failure —
+ * a rejected send, a confirmation timeout inside the submission path, a failed receipt lookup — may leave
+ * a live transaction behind, so a caller must not read subsequent on-chain state as evidence about the
+ * transaction it was trying to send.
  */
 export async function sendAndConfirmTransaction(
   tx: AugmentedTransaction,

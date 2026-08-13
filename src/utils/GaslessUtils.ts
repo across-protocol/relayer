@@ -555,9 +555,14 @@ export async function isErc3009AuthorizationUsed(
 }
 
 /**
- * The signed validity window, where the permit flow carries one. EIP-3009 signs an explicit
- * [validAfter, validBefore) range; Permit2 signs a single `deadline`; the EIP-2612 swap-and-bridge
- * flow carries its approval deadline alongside the witness. Fields absent from a flow are undefined.
+ * The signed validity window, where the flow carries one. EIP-3009 signs an explicit
+ * [validAfter, validBefore) range and Permit2 signs a single `deadline`; both bound the authorization
+ * itself, so passing either makes the deposit unsubmittable. Fields absent from a flow are undefined.
+ *
+ * The EIP-2612 flow deliberately reports no window. Its `permitApprovalDeadline` bounds only the token's
+ * `permit` call, which `SpokePoolPeriphery.swapAndBridgeWithPermit` wraps in try/catch before falling
+ * through to `transferFrom` — so a deposit whose approval deadline has passed still executes against an
+ * allowance the depositor already holds. {@link findGaslessSubmitBlocker} checks that allowance instead.
  */
 export function getGaslessAuthorizationWindow(depositMessage: AnyGaslessDepositMessage): {
   validAfter?: number;
@@ -572,36 +577,36 @@ export function getGaslessAuthorizationWindow(depositMessage: AnyGaslessDepositM
       const { deadline } = (depositMessage.permit as Permit2Permit | Permit2SwapAndBridgePermit).message;
       return { validBefore: Number(deadline) };
     }
-    case "permit": {
-      const deadline =
-        depositMessage.depositFlowType === "swapAndBridge" ? depositMessage.permitApprovalDeadline : undefined;
-      return { validBefore: isDefined(deadline) ? Number(deadline) : undefined };
-    }
+    case "permit":
+      return {};
   }
+}
+
+/** The EIP-2612 approval deadline, which only the swap-and-bridge `permit` flow carries. */
+function getErc2612ApprovalDeadline(depositMessage: AnyGaslessDepositMessage): number | undefined {
+  if (depositMessage.permitType !== "permit" || depositMessage.depositFlowType !== "swapAndBridge") {
+    return undefined;
+  }
+  const { permitApprovalDeadline } = depositMessage;
+  return isDefined(permitApprovalDeadline) ? Number(permitApprovalDeadline) : undefined;
 }
 
 /**
  * The token amount the depositor must hold for the origin deposit to execute.
  *
- * Prefers the signed permit amount over the witness `inputAmount`: the permit is what the token contract
- * actually transfers, and it covers `submissionFees` on top of the bridged amount, so comparing a balance
- * against `inputAmount` alone can call a deposit funded when it is short by the fee. Falls back to the
- * witness amount for the EIP-2612 swap-and-bridge flow, whose witness carries no permit value.
+ * Every periphery entrypoint pulls the witnessed transfer amount *plus* `submissionFees.amount`
+ * (`inputAmount + fee` bridging, `swapTokenAmount + fee` swapping), so that sum — not the permit's own
+ * amount — is what the token balance is measured against. The two diverge in both directions: the
+ * witness amount alone omits the fee, while a Permit2 `permitted.amount` is only an upper bound on a
+ * possibly smaller requested transfer, and the EIP-2612 flow signs no value at all. EIP-3009 is the one
+ * exact case, since `receiveWithAuthorization` transfers precisely the signed `value` — which is this
+ * same sum, or the signature would not recover.
  */
 export function getGaslessRequiredBalance(depositMessage: AnyGaslessDepositMessage): BigNumber {
-  const witnessAmount =
-    depositMessage.depositFlowType === "swapAndBridge"
-      ? depositMessage.swapTokenAmount
-      : depositMessage.baseDepositData.inputAmount;
+  const transferAmount =
+    depositMessage.depositFlowType === "swapAndBridge" ? depositMessage.swapTokenAmount : depositMessage.inputAmount;
 
-  switch (depositMessage.permitType) {
-    case "erc3009":
-      return toBN((depositMessage.permit as ReceiveWithAuthorization).message.value);
-    case "permit2":
-      return toBN((depositMessage.permit as Permit2Permit | Permit2SwapAndBridgePermit).message.permitted.amount);
-    case "permit":
-      return toBN(witnessAmount);
-  }
+  return toBN(transferAmount).add(toBN(depositMessage.submissionFees.amount));
 }
 
 /**
@@ -637,7 +642,12 @@ export async function isGaslessAuthorizationConsumed(params: {
 /** Why a gasless deposit cannot currently be submitted. See {@link findGaslessSubmitBlocker}. */
 export type GaslessSubmitBlocker = {
   /** Machine-readable classification, stable for log filtering and alerting. */
-  code: "authorization-expired" | "authorization-not-yet-valid" | "authorization-consumed" | "insufficient-balance";
+  code:
+    | "authorization-expired"
+    | "authorization-not-yet-valid"
+    | "authorization-consumed"
+    | "insufficient-balance"
+    | "insufficient-allowance";
   /** One-line human-readable summary, safe to put straight into a log message. */
   detail: string;
   /**
@@ -655,11 +665,15 @@ export type GaslessSubmitBlocker = {
  * that can never land — the relayer otherwise retries them every poll until the authorization expires,
  * with no reason recorded (the simulation revert is swallowed by `sendAndConfirmTransaction`).
  *
- * Purely diagnostic: three read-only calls at most, and it never throws. A read that fails returns
+ * Purely diagnostic: four read-only calls at most, and it never throws. A read that fails returns
  * `undefined` (unknown, not "fine"), so callers must not treat `undefined` as a clean bill of health.
  *
  * Checks run cheapest-and-most-conclusive first: signed validity window (free), then nonce consumption,
- * then depositor balance.
+ * then depositor balance, then — for an EIP-2612 permit past its deadline — standing allowance.
+ *
+ * @dev Callers must only invoke this for a submission that failed *before* broadcast (see
+ * {@link TransactionSimulationError}). A consumed nonce or a moved balance says nothing about the
+ * deposit if the caller's own transaction is what consumed or moved it.
  */
 export async function findGaslessSubmitBlocker(params: {
   depositMessage: AnyGaslessDepositMessage;
@@ -723,6 +737,37 @@ export async function findGaslessSubmitBlocker(params: {
             shortfall: required.sub(balance).toString(),
           },
         };
+      }
+
+      // EIP-2612 only, and only once the approval deadline has passed. The periphery wraps its `permit`
+      // call in try/catch — so that a permit already redeemed by somebody else does not brick the
+      // deposit — and pulls the tokens with `transferFrom` regardless. Before the deadline the permit
+      // grants the allowance itself; after it, the deposit lands only on an allowance already in place.
+      const approvalDeadline = getErc2612ApprovalDeadline(depositMessage);
+      if (isDefined(approvalDeadline) && currentTime >= approvalDeadline && isDefined(spokePoolPeriphery)) {
+        const spender = spokePoolPeriphery.address;
+        const allowance: BigNumber = await amountToken.allowance(authorizer, spender);
+        if (allowance.lt(required)) {
+          return {
+            code: "insufficient-allowance",
+            detail:
+              `Signed EIP-2612 approval expired at ${approvalDeadline} (now ${currentTime}) and the depositor's ` +
+              `standing allowance of ${allowance.toString()} is below the ${required.toString()} required to submit.`,
+            // The signed permit is spent, but an allowance granted directly to the periphery still lets
+            // this deposit through, so the depositor is not out of options.
+            permanent: false,
+            context: {
+              authorizer,
+              nonce,
+              token: amountToken.address,
+              spender,
+              allowance: allowance.toString(),
+              required: required.toString(),
+              permitApprovalDeadline: approvalDeadline,
+              currentTime,
+            },
+          };
+        }
       }
     }
   } catch {

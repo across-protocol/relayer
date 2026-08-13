@@ -633,20 +633,17 @@ describe("GaslessUtils#getGaslessAuthorizationWindow", function () {
     expect(getGaslessAuthorizationWindow(msg)).to.deep.equal({ validBefore: 4242 });
   });
 
-  it("uses permitApprovalDeadline for the EIP-2612 swap-and-bridge flow", function () {
+  it("reports no window for the EIP-2612 flow, whose approval deadline is not an expiry", function () {
+    // permitApprovalDeadline bounds only the token's `permit` call, which the periphery try/catches
+    // before pulling with transferFrom: past the deadline the deposit still lands on a standing
+    // allowance, so treating it as a window would call a live deposit permanently expired.
     const msg = {
       ...makeSwapAndBridgeErc3009Message(DUMMY_SIGNATURE),
       permitType: "permit",
       permitApprovalDeadline: 777,
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(getGaslessAuthorizationWindow(msg as any)).to.deep.equal({ validBefore: 777 });
-  });
-
-  it("returns an undefined window when the EIP-2612 flow carries no deadline", function () {
-    const msg = { ...makeSwapAndBridgeErc3009Message(DUMMY_SIGNATURE), permitType: "permit" };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(getGaslessAuthorizationWindow(msg as any)).to.deep.equal({ validBefore: undefined });
+    expect(getGaslessAuthorizationWindow(msg as any)).to.deep.equal({});
   });
 });
 
@@ -665,19 +662,38 @@ describe("GaslessUtils#isErc3009AuthorizationUsed", function () {
 });
 
 describe("GaslessUtils#findGaslessSubmitBlocker", function () {
-  const BALANCE_ABI = ["function balanceOf(address) view returns (uint256)"];
+  const BALANCE_ABI = [
+    "function balanceOf(address) view returns (uint256)",
+    "function allowance(address,address) view returns (uint256)",
+  ];
   const AUTH_STATE_ABI = ["function authorizationState(address,bytes32) view returns (bool)"];
-  // makeDepositMessage signs over inputAmount = 1000000.
-  const REQUIRED = 1000000;
+  // makeDepositMessage bridges inputAmount = 1000000 with a 100-unit submission fee, and the periphery
+  // pulls the sum of the two.
+  const REQUIRED = 1000100;
   const NOW = 1000;
 
   // Valid window, unspent nonce: the checks fall through to the balance read.
-  async function makeFakes(opts: { balance?: number; authUsed?: boolean } = {}) {
+  async function makeFakes(opts: { balance?: number; allowance?: number; authUsed?: boolean } = {}) {
     const amountToken = await smock.fake(BALANCE_ABI);
     amountToken.balanceOf.returns(ethers.BigNumber.from(opts.balance ?? REQUIRED));
+    amountToken.allowance.returns(ethers.BigNumber.from(opts.allowance ?? REQUIRED));
     const authToken = await smock.fake(AUTH_STATE_ABI);
     authToken.authorizationState.returns(opts.authUsed ?? false);
     return { amountToken: amountToken as unknown as Contract, authToken: authToken as unknown as Contract };
+  }
+
+  // An EIP-2612 swap-and-bridge message: swapTokenAmount 123 + a 100-unit submission fee.
+  const PERMIT_REQUIRED = 223;
+  async function permitFlowFixture(opts: { permitApprovalDeadline?: number } = {}) {
+    const depositMessage = {
+      ...makeSwapAndBridgeErc3009Message(DUMMY_SIGNATURE),
+      permitType: "permit",
+      ...opts,
+    };
+    const periphery = await smock.fake(["function permitNonces(address) view returns (uint256)"]);
+    periphery.permitNonces.returns(ethers.BigNumber.from(0));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { depositMessage: depositMessage as any, spokePoolPeriphery: periphery as unknown as Contract };
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -711,7 +727,21 @@ describe("GaslessUtils#findGaslessSubmitBlocker", function () {
     expect(blocker?.permanent).to.be.false;
     expect(blocker?.context.balance).to.equal("350000");
     expect(blocker?.context.required).to.equal(String(REQUIRED));
-    expect(blocker?.context.shortfall).to.equal("650000");
+    expect(blocker?.context.shortfall).to.equal("650100");
+  });
+
+  it("requires the submission fee on top of the bridged amount", async function () {
+    // The periphery pulls inputAmount + submissionFees.amount, so a balance of exactly inputAmount is
+    // still short by the fee -- comparing against the bridged amount alone would call this funded.
+    const blocker = await findGaslessSubmitBlocker({
+      depositMessage: inWindowMessage(),
+      currentTime: NOW,
+      ...(await makeFakes({ balance: 1000000 })),
+    });
+
+    expect(blocker?.code).to.equal("insufficient-balance");
+    expect(blocker?.context.required).to.equal("1000100");
+    expect(blocker?.context.shortfall).to.equal("100");
   });
 
   it("treats a balance exactly equal to the required amount as submittable", async function () {
@@ -779,40 +809,76 @@ describe("GaslessUtils#findGaslessSubmitBlocker", function () {
     expect(blocker?.context.permitType).to.equal("permit2");
   });
 
-  it("requires the signed permit value, which covers submission fees above the bridged amount", async function () {
-    // inputAmount is 1000000 but the depositor signed over 1000100 to cover a 100-unit fee: a balance of
-    // exactly inputAmount is still short, and comparing against inputAmount alone would miss it.
-    const msg = inWindowMessage();
-    msg.permit.message.value = "1000100";
+  it("measures the requested transfer rather than the Permit2 cap", async function () {
+    // permitted.amount is an upper bound; Permit2 is asked for inputAmount + fee. Requiring the cap
+    // would report a depositor who can cover the requested transfer as underfunded.
+    const msg = inWindowMessage({ permitType: "permit2" });
+    msg.permit.message = { permitted: { token: DUMMY_ADDRESS, amount: "5000000" }, nonce: "0", deadline: NOW + 100 };
+    const permit2 = await smock.fake(["function nonceBitmap(address,uint256) view returns (uint256)"]);
+    permit2.nonceBitmap.returns(ethers.BigNumber.from(0));
 
     const blocker = await findGaslessSubmitBlocker({
       depositMessage: msg,
       currentTime: NOW,
+      permit2: permit2 as unknown as Contract,
       ...(await makeFakes({ balance: REQUIRED })),
     });
 
-    expect(blocker?.code).to.equal("insufficient-balance");
-    expect(blocker?.context.required).to.equal("1000100");
-    expect(blocker?.context.shortfall).to.equal("100");
+    expect(blocker).to.be.undefined;
   });
 
-  it("falls back to the witness swap amount for the EIP-2612 swap-and-bridge flow", async function () {
-    // permitType "permit" carries no permit value, so swapTokenAmount (123) governs.
-    const msg = { ...makeSwapAndBridgeErc3009Message(DUMMY_SIGNATURE), permitType: "permit" };
-    const periphery = await smock.fake(["function permitNonces(address) view returns (uint256)"]);
-    periphery.permitNonces.returns(ethers.BigNumber.from(0));
-
+  it("requires the swap amount plus its submission fee for the EIP-2612 swap-and-bridge flow", async function () {
+    // The permit carries no value of its own, and the periphery pulls swapTokenAmount (123) + fee (100).
     const blocker = await findGaslessSubmitBlocker({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      depositMessage: msg as any,
+      ...(await permitFlowFixture()),
       currentTime: NOW,
-      spokePoolPeriphery: periphery as unknown as Contract,
       ...(await makeFakes({ balance: 100 })),
     });
 
     expect(blocker?.code).to.equal("insufficient-balance");
-    expect(blocker?.context.required).to.equal("123");
-    expect(blocker?.context.shortfall).to.equal("23");
+    expect(blocker?.context.required).to.equal(String(PERMIT_REQUIRED));
+    expect(blocker?.context.shortfall).to.equal("123");
+  });
+
+  it("does not report an expired EIP-2612 approval as blocked while the allowance covers it", async function () {
+    // swapAndBridgeWithPermit try/catches its permit call and pulls with transferFrom regardless, so a
+    // passed approval deadline is not by itself an expiry.
+    const blocker = await findGaslessSubmitBlocker({
+      ...(await permitFlowFixture({ permitApprovalDeadline: NOW - 1 })),
+      currentTime: NOW,
+      ...(await makeFakes({ balance: PERMIT_REQUIRED, allowance: PERMIT_REQUIRED })),
+    });
+
+    expect(blocker).to.be.undefined;
+  });
+
+  it("reports insufficient-allowance once an expired EIP-2612 approval has nothing to fall back on", async function () {
+    const blocker = await findGaslessSubmitBlocker({
+      ...(await permitFlowFixture({ permitApprovalDeadline: NOW - 1 })),
+      currentTime: NOW,
+      ...(await makeFakes({ balance: PERMIT_REQUIRED, allowance: 0 })),
+    });
+
+    expect(blocker?.code).to.equal("insufficient-allowance");
+    // The depositor can still approve the periphery directly, so this is not terminal.
+    expect(blocker?.permanent).to.be.false;
+    expect(blocker?.context.allowance).to.equal("0");
+    expect(blocker?.context.required).to.equal(String(PERMIT_REQUIRED));
+    expect(blocker?.context.permitApprovalDeadline).to.equal(NOW - 1);
+  });
+
+  it("does not read allowance while the EIP-2612 approval is still live", async function () {
+    // Before the deadline the permit grants the allowance itself, so a zero standing allowance is fine.
+    const fakes = await makeFakes({ balance: PERMIT_REQUIRED, allowance: 0 });
+    const blocker = await findGaslessSubmitBlocker({
+      ...(await permitFlowFixture({ permitApprovalDeadline: NOW + 1 })),
+      currentTime: NOW,
+      ...fakes,
+    });
+
+    expect(blocker).to.be.undefined;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect((fakes.amountToken as any).allowance).to.have.callCount(0);
   });
 
   it("returns undefined rather than throwing when an on-chain read fails", async function () {

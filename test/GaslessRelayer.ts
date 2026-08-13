@@ -24,6 +24,7 @@ import {
   toBNWei,
   TOKEN_SYMBOLS_MAP,
   isStablecoin,
+  TransactionSimulationError,
 } from "../src/utils";
 import { MAX_EXCLUSIVITY_PERIOD_SECONDS } from "../src/utils/GaslessUtils";
 import { createSpyLogger, expect, FakeContract, smock, ethers, toBN, spyLogIncludes, spyLogLevel } from "./utils";
@@ -1602,7 +1603,12 @@ describe("GaslessRelayer#_logSubmitFailure", function () {
     "function balanceOf(address) view returns (uint256)",
     "function authorizationState(address,bytes32) view returns (bool)",
   ];
-  const REQUIRED = "1000000";
+  const INPUT_AMOUNT = "1000000";
+  // makeDepositMessage attaches a 100-unit submission fee, which the periphery pulls alongside the input.
+  const REQUIRED = "1000100";
+  // Diagnosis only runs for a failure that predates broadcast; anything else may have a live transaction.
+  const simulationFailure = (reason: string) =>
+    new TransactionSimulationError(`Failed to simulate (${reason})`, reason);
 
   let relayer: TestableGaslessRelayer;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1638,7 +1644,7 @@ describe("GaslessRelayer#_logSubmitFailure", function () {
     token.balanceOf.returns(toBN(REQUIRED));
     token.authorizationState.returns(false);
 
-    message = makeDepositMessage({ inputAmount: REQUIRED }, DUMMY_ADDRESS);
+    message = makeDepositMessage({ inputAmount: INPUT_AMOUNT }, DUMMY_ADDRESS);
   });
 
   const logFailure = (submitError?: unknown) =>
@@ -1649,7 +1655,7 @@ describe("GaslessRelayer#_logSubmitFailure", function () {
     });
 
   it("attaches the swallowed simulation revert reason to the warning", async function () {
-    await logFailure(new Error("Failed to simulate 0xabc.depositWithAuthorization() on 1 (transfer amount exceeds)"));
+    await logFailure(simulationFailure("transfer amount exceeds"));
 
     expect(spyLogLevel(spy, -2)).to.equal("warn");
     expect(spyLogIncludes(spy, -2, "transfer amount exceeds")).to.be.true;
@@ -1658,11 +1664,12 @@ describe("GaslessRelayer#_logSubmitFailure", function () {
   it("names the blocker and its shortfall when the depositor is underfunded", async function () {
     token.balanceOf.returns(toBN("350000"));
 
-    await logFailure(new Error("reverted"));
+    await logFailure(simulationFailure("reverted"));
 
     expect(spyLogLevel(spy, -2)).to.equal("warn");
     expect(spyLogIncludes(spy, -2, "insufficient-balance")).to.be.true;
-    expect(spyLogIncludes(spy, -2, "650000")).to.be.true;
+    // Short of inputAmount + submissionFee, not of inputAmount alone.
+    expect(spyLogIncludes(spy, -2, "650100")).to.be.true;
     // Recoverable: a top-up inside the authorization window still lands the deposit.
     expect(spyLogIncludes(spy, -2, '"permanent":false')).to.be.true;
   });
@@ -1670,11 +1677,11 @@ describe("GaslessRelayer#_logSubmitFailure", function () {
   it("warns once for a repeated blocker, then drops to debug", async function () {
     token.balanceOf.returns(toBN("350000"));
 
-    await logFailure(new Error("reverted"));
+    await logFailure(simulationFailure("reverted"));
     expect(spyLogLevel(spy, -2)).to.equal("warn");
 
     for (let attempt = 0; attempt < 3; attempt++) {
-      await logFailure(new Error("reverted"));
+      await logFailure(simulationFailure("reverted"));
       expect(spyLogLevel(spy, -2)).to.equal("debug");
       expect(spyLogIncludes(spy, -2, "insufficient-balance")).to.be.true;
     }
@@ -1682,13 +1689,13 @@ describe("GaslessRelayer#_logSubmitFailure", function () {
 
   it("warns again when the diagnosis changes", async function () {
     token.balanceOf.returns(toBN("350000"));
-    await logFailure(new Error("reverted"));
+    await logFailure(simulationFailure("reverted"));
     expect(spyLogIncludes(spy, -2, "insufficient-balance")).to.be.true;
 
     // Depositor tops up, but meanwhile the authorization is spent elsewhere.
     token.balanceOf.returns(toBN(REQUIRED));
     token.authorizationState.returns(true);
-    await logFailure(new Error("reverted"));
+    await logFailure(simulationFailure("reverted"));
 
     expect(spyLogLevel(spy, -2)).to.equal("warn");
     expect(spyLogIncludes(spy, -2, "authorization-consumed")).to.be.true;
@@ -1697,11 +1704,11 @@ describe("GaslessRelayer#_logSubmitFailure", function () {
   it("stops re-reading chain state once a permanent blocker is known", async function () {
     token.authorizationState.returns(true);
 
-    await logFailure(new Error("reverted"));
+    await logFailure(simulationFailure("reverted"));
     expect(token.authorizationState).to.have.callCount(1);
 
-    await logFailure(new Error("reverted"));
-    await logFailure(new Error("reverted"));
+    await logFailure(simulationFailure("reverted"));
+    await logFailure(simulationFailure("reverted"));
 
     // A spent authorization cannot un-spend, so the diagnosis is reused rather than re-read.
     expect(token.authorizationState).to.have.callCount(1);
@@ -1712,10 +1719,29 @@ describe("GaslessRelayer#_logSubmitFailure", function () {
   it("keeps warning without a blocker when nothing conclusive is found", async function () {
     // Balance and nonce are both fine: the failure is transient, so every attempt stays visible.
     for (let attempt = 0; attempt < 2; attempt++) {
-      await logFailure(new Error("connection reset"));
+      await logFailure(simulationFailure("connection reset"));
       expect(spyLogLevel(spy, -2)).to.equal("warn");
       expect(spyLogIncludes(spy, -2, "Failed to submit gasless deposit")).to.be.true;
       expect(spyLogIncludes(spy, -2, "connection reset")).to.be.true;
     }
+  });
+
+  it("does not diagnose a failure that may have left a transaction in flight", async function () {
+    // The submission landed and only the receipt lookup timed out, so the consumed authorization the
+    // checks would find is the one this relayer just spent. Reading it as an external redemption would
+    // cache a permanent verdict on a deposit DEPOSIT_CONFIRM is about to locate.
+    token.authorizationState.returns(true);
+
+    await logFailure(new Error("timeout exceeded waiting for receipt"));
+
+    expect(token.authorizationState).to.have.callCount(0);
+    expect(spyLogLevel(spy, -2)).to.equal("warn");
+    expect(spyLogIncludes(spy, -2, "authorization-consumed")).to.be.false;
+    expect(spyLogIncludes(spy, -2, "timeout exceeded waiting for receipt")).to.be.true;
+
+    // Nothing cached, so a later pre-broadcast failure is still diagnosed from scratch.
+    await logFailure(simulationFailure("reverted"));
+    expect(spyLogLevel(spy, -2)).to.equal("warn");
+    expect(spyLogIncludes(spy, -2, "authorization-consumed")).to.be.true;
   });
 });
