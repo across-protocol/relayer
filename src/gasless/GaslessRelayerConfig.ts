@@ -1,4 +1,5 @@
 import assert from "assert";
+import { utils as ethersUtils } from "ethers";
 import { CommonConfig, ProcessEnv } from "../common";
 import { isDefined, parseJson } from "../utils";
 import { normalizeIntegratorId } from "../utils/GaslessUtils";
@@ -46,6 +47,18 @@ export class GaslessRelayerConfig extends CommonConfig {
   readonly allowedIntegratorIds?: Set<string>;
   /** When set, deposits whose integratorId is in this set are discarded. Mutually exclusive with allowedIntegratorIds. */
   readonly blockedIntegratorIds?: Set<string>;
+  /**
+   * When set, only process deposits whose authorizer or depositor is in this set.
+   * Mutually exclusive with blockedAddresses. Addresses stored lowercase.
+   * From `RELAYER_GASLESS_ALLOWED_ADDRESSES` (JSON string array).
+   */
+  readonly allowedAddresses?: Set<string>;
+  /**
+   * When set, discard deposits whose authorizer, depositor, or recipient is in this set.
+   * Mutually exclusive with allowedAddresses. Addresses stored lowercase.
+   * From `RELAYER_GASLESS_BLOCKED_ADDRESSES` (JSON string array).
+   */
+  readonly blockedAddresses?: Set<string>;
 
   constructor(env: ProcessEnv) {
     super(env, { botIdentifier: "across-relayer-gasless" });
@@ -68,6 +81,8 @@ export class GaslessRelayerConfig extends CommonConfig {
       RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD,
       RELAYER_GASLESS_ALLOWED_INTEGRATOR_IDS = "",
       RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS = "",
+      RELAYER_GASLESS_ALLOWED_ADDRESSES = "",
+      RELAYER_GASLESS_BLOCKED_ADDRESSES = "",
     } = env;
     this.apiPollingInterval = Number(API_POLLING_INTERVAL ?? 1); // Default to 1s
     this.apiEndpoint = String(API_GASLESS_ENDPOINT);
@@ -129,6 +144,30 @@ export class GaslessRelayerConfig extends CommonConfig {
           return normalized;
         })
       );
+    }
+
+    const hasAllowedAddressFilter = RELAYER_GASLESS_ALLOWED_ADDRESSES.trim().length > 0;
+    const hasBlockedAddressFilter = RELAYER_GASLESS_BLOCKED_ADDRESSES.trim().length > 0;
+    assert(
+      !(hasAllowedAddressFilter && hasBlockedAddressFilter),
+      "Only one of RELAYER_GASLESS_ALLOWED_ADDRESSES and RELAYER_GASLESS_BLOCKED_ADDRESSES may be set"
+    );
+    const parseAddressList = (raw: string, envName: string): Set<string> =>
+      new Set(
+        parseJson.stringArray(raw).map((address) => {
+          try {
+            // Lowercase first so operators can paste mixed-case strings without EIP-55 checksum failures.
+            return ethersUtils.getAddress(address.toLowerCase()).toLowerCase();
+          } catch {
+            throw new Error(`Invalid address in ${envName}: "${address}"`);
+          }
+        })
+      );
+    if (hasAllowedAddressFilter) {
+      this.allowedAddresses = parseAddressList(RELAYER_GASLESS_ALLOWED_ADDRESSES, "RELAYER_GASLESS_ALLOWED_ADDRESSES");
+    }
+    if (hasBlockedAddressFilter) {
+      this.blockedAddresses = parseAddressList(RELAYER_GASLESS_BLOCKED_ADDRESSES, "RELAYER_GASLESS_BLOCKED_ADDRESSES");
     }
   }
 }
