@@ -157,24 +157,24 @@ export async function arbStackFinalizer(
   const unknownTokenWithdrawals: { l1Token: string; to: string; amount: string; txnRef: string }[] = [];
   const _withdrawalEvents = [
     ...withdrawalErc20Events.map((e) => {
-      const l1Token = EvmAddress.from(e.args.l1Token);
-      const l2Token = getL2TokenAddresses(e.args.l1Token)?.[chainId];
+      const { l1Token, _to: to, _amount: amount } = e.args;
+      const l2Token = getL2TokenAddresses(l1Token)?.[chainId];
       if (!isDefined(l2Token)) {
         unknownTokenWithdrawals.push({
-          l1Token: e.args.l1Token,
-          to: e.args._to,
+          l1Token,
+          to,
           // @dev Stringified deliberately: the logger stringifies BigNumbers itself, but does so via
           // Object.fromEntries(), which would collapse this array into an object keyed "0", "1", ...
-          amount: e.args._amount.toString(),
+          amount: amount.toString(),
           txnRef: e.transactionHash,
         });
       }
       return {
         ...e,
-        amount: e.args._amount,
+        amount,
         // @dev An unmapped token has no known L2 address, so fall back to the L1 address to keep the withdrawal
         // identifiable in logs. Nothing downstream reads this to build the finalization.
-        l2TokenAddress: isDefined(l2Token) ? EvmAddress.from(l2Token) : l1Token,
+        l2TokenAddress: EvmAddress.from(l2Token ?? l1Token),
       };
     }),
     ...withdrawalNativeEvents.map((e) => {
