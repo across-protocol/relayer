@@ -1701,6 +1701,25 @@ describe("GaslessRelayer#_logSubmitFailure", function () {
     expect(spyLogIncludes(spy, -2, "authorization-consumed")).to.be.true;
   });
 
+  it("warns again when a recoverable blocker clears and later recurs", async function () {
+    // The depositor lapses, recovers, then lapses again. Each lapse is a new actionable event, so the
+    // second one must warn -- a diagnosis cached from the first would demote it to debug.
+    token.balanceOf.returns(toBN("350000"));
+    await logFailure(simulationFailure("reverted"));
+    expect(spyLogLevel(spy, -2)).to.equal("warn");
+
+    // Tops up, but the submission still fails for a reason the checks don't cover: no blocker found.
+    token.balanceOf.returns(toBN(REQUIRED));
+    await logFailure(simulationFailure("router reverted"));
+    expect(spyLogLevel(spy, -2)).to.equal("warn");
+    expect(spyLogIncludes(spy, -2, "insufficient-balance")).to.be.false;
+
+    token.balanceOf.returns(toBN("350000"));
+    await logFailure(simulationFailure("reverted"));
+    expect(spyLogLevel(spy, -2)).to.equal("warn");
+    expect(spyLogIncludes(spy, -2, "insufficient-balance")).to.be.true;
+  });
+
   it("stops re-reading chain state once a permanent blocker is known", async function () {
     token.authorizationState.returns(true);
 

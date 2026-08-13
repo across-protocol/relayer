@@ -618,19 +618,26 @@ describe("GaslessUtils#resolveTokenInfoForLog", function () {
 });
 
 describe("GaslessUtils#getGaslessAuthorizationWindow", function () {
-  it("reads validAfter/validBefore from an EIP-3009 authorization", function () {
+  it("narrows an EIP-3009 window to its inclusive bounds", function () {
+    // `_requireValidAuthorization` requires validAfter < now < validBefore, so both signed bounds are
+    // themselves unusable: the redeemable range is [101, 199].
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const msg = makeDepositMessage() as any;
     msg.permit.message.validAfter = 100;
     msg.permit.message.validBefore = 200;
-    expect(getGaslessAuthorizationWindow(msg)).to.deep.equal({ validAfter: 100, validBefore: 200 });
+    expect(getGaslessAuthorizationWindow(msg)).to.deep.equal({
+      earliestValid: 101,
+      latestValid: 199,
+      signed: { validAfter: 100, validBefore: 200 },
+    });
   });
 
-  it("maps the Permit2 deadline onto validBefore", function () {
+  it("keeps the Permit2 deadline itself redeemable", function () {
+    // Permit2 reverts only on now > deadline, so the deadline second is still usable.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const msg = makeDepositMessage({ permitType: "permit2" }) as any;
     msg.permit.message = { nonce: DUMMY_BYTES32, deadline: 4242 };
-    expect(getGaslessAuthorizationWindow(msg)).to.deep.equal({ validBefore: 4242 });
+    expect(getGaslessAuthorizationWindow(msg)).to.deep.equal({ latestValid: 4242, signed: { deadline: 4242 } });
   });
 
   it("reports no window for the EIP-2612 flow, whose approval deadline is not an expiry", function () {
@@ -643,7 +650,7 @@ describe("GaslessUtils#getGaslessAuthorizationWindow", function () {
       permitApprovalDeadline: 777,
     };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(getGaslessAuthorizationWindow(msg as any)).to.deep.equal({});
+    expect(getGaslessAuthorizationWindow(msg as any)).to.deep.equal({ signed: {} });
   });
 });
 
@@ -779,6 +786,88 @@ describe("GaslessUtils#findGaslessSubmitBlocker", function () {
 
     expect(blocker?.code).to.equal("authorization-not-yet-valid");
     expect(blocker?.permanent).to.be.false;
+  });
+
+  // Each flow's contract draws its validity boundaries differently, and an off-by-one here yields a
+  // permanent verdict on a live authorization -- the one verdict that suppresses all later re-diagnosis.
+  describe("validity boundaries", function () {
+    it("treats an EIP-3009 authorization as not-yet-valid at exactly validAfter", async function () {
+      // _requireValidAuthorization requires now > validAfter, so the validAfter second itself is too early.
+      const msg = inWindowMessage();
+      msg.permit.message.validAfter = NOW;
+
+      const blocker = await findGaslessSubmitBlocker({
+        depositMessage: msg,
+        currentTime: NOW,
+        ...(await makeFakes()),
+      });
+
+      expect(blocker?.code).to.equal("authorization-not-yet-valid");
+      expect(blocker?.permanent).to.be.false;
+    });
+
+    it("still accepts an EIP-3009 authorization on its last redeemable second", async function () {
+      // now < validBefore, so validBefore - 1 is the last usable second.
+      const msg = inWindowMessage();
+      msg.permit.message.validBefore = NOW + 1;
+
+      const blocker = await findGaslessSubmitBlocker({
+        depositMessage: msg,
+        currentTime: NOW,
+        ...(await makeFakes()),
+      });
+
+      expect(blocker).to.be.undefined;
+    });
+
+    it("does not call a Permit2 authorization expired at exactly its deadline", async function () {
+      // Permit2 reverts only on now > deadline, so the signature is still usable in that block.
+      const msg = inWindowMessage({ permitType: "permit2" });
+      msg.permit.message = { permitted: { token: DUMMY_ADDRESS, amount: String(REQUIRED) }, nonce: "0", deadline: NOW };
+      const permit2 = await smock.fake(["function nonceBitmap(address,uint256) view returns (uint256)"]);
+      permit2.nonceBitmap.returns(ethers.BigNumber.from(0));
+
+      const blocker = await findGaslessSubmitBlocker({
+        depositMessage: msg,
+        currentTime: NOW,
+        permit2: permit2 as unknown as Contract,
+        ...(await makeFakes()),
+      });
+
+      expect(blocker).to.be.undefined;
+    });
+
+    it("reports a Permit2 authorization expired one second past its deadline", async function () {
+      const msg = inWindowMessage({ permitType: "permit2" });
+      msg.permit.message = { permitted: { token: DUMMY_ADDRESS, amount: String(REQUIRED) }, nonce: "0", deadline: NOW };
+      const permit2 = await smock.fake(["function nonceBitmap(address,uint256) view returns (uint256)"]);
+      permit2.nonceBitmap.returns(ethers.BigNumber.from(0));
+
+      const blocker = await findGaslessSubmitBlocker({
+        depositMessage: msg,
+        currentTime: NOW + 1,
+        permit2: permit2 as unknown as Contract,
+        ...(await makeFakes()),
+      });
+
+      expect(blocker?.code).to.equal("authorization-expired");
+      expect(blocker?.permanent).to.be.true;
+      expect(blocker?.context.deadline).to.equal(NOW);
+    });
+
+    it("does not read allowance while an EIP-2612 approval sits on its deadline", async function () {
+      // Both OZ and Circle accept now == deadline, so the permit can still grant the allowance itself.
+      const fakes = await makeFakes({ balance: PERMIT_REQUIRED, allowance: 0 });
+      const blocker = await findGaslessSubmitBlocker({
+        ...(await permitFlowFixture({ permitApprovalDeadline: NOW })),
+        currentTime: NOW,
+        ...fakes,
+      });
+
+      expect(blocker).to.be.undefined;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((fakes.amountToken as any).allowance).to.have.callCount(0);
+    });
   });
 
   it("reports authorization-consumed as permanent when the EIP-3009 nonce is already spent", async function () {

@@ -555,9 +555,14 @@ export async function isErc3009AuthorizationUsed(
 }
 
 /**
- * The signed validity window, where the flow carries one. EIP-3009 signs an explicit
- * [validAfter, validBefore) range and Permit2 signs a single `deadline`; both bound the authorization
- * itself, so passing either makes the deposit unsubmittable. Fields absent from a flow are undefined.
+ * The window in which the signed authorization can be redeemed, normalized to bounds that are both
+ * *inclusive*, plus the signed fields themselves for the log line. Each flow's contract draws its
+ * boundaries differently, and getting one wrong yields a `permanent` verdict on a live authorization, so
+ * the conversion lives here next to the contract behavior that defines it:
+ *
+ *   - EIP-3009 `_requireValidAuthorization` requires `now > validAfter` *and* `now < validBefore` — both
+ *     signed bounds are exclusive, so the redeemable range is [validAfter + 1, validBefore - 1].
+ *   - Permit2 `SignatureTransfer` reverts only on `now > deadline`, so `deadline` itself is redeemable.
  *
  * The EIP-2612 flow deliberately reports no window. Its `permitApprovalDeadline` bounds only the token's
  * `permit` call, which `SpokePoolPeriphery.swapAndBridgeWithPermit` wraps in try/catch before falling
@@ -565,24 +570,35 @@ export async function isErc3009AuthorizationUsed(
  * allowance the depositor already holds. {@link findGaslessSubmitBlocker} checks that allowance instead.
  */
 export function getGaslessAuthorizationWindow(depositMessage: AnyGaslessDepositMessage): {
-  validAfter?: number;
-  validBefore?: number;
+  /** Earliest timestamp at which the authorization can be redeemed, inclusive. */
+  earliestValid?: number;
+  /** Latest timestamp at which the authorization can be redeemed, inclusive. */
+  latestValid?: number;
+  /** The signed values, reported as-is so a log line quotes what the depositor actually signed. */
+  signed: { validAfter?: number; validBefore?: number; deadline?: number };
 } {
   switch (depositMessage.permitType) {
     case "erc3009": {
       const { validAfter, validBefore } = (depositMessage.permit as ReceiveWithAuthorization).message;
-      return { validAfter: Number(validAfter), validBefore: Number(validBefore) };
+      return {
+        earliestValid: Number(validAfter) + 1,
+        latestValid: Number(validBefore) - 1,
+        signed: { validAfter: Number(validAfter), validBefore: Number(validBefore) },
+      };
     }
     case "permit2": {
       const { deadline } = (depositMessage.permit as Permit2Permit | Permit2SwapAndBridgePermit).message;
-      return { validBefore: Number(deadline) };
+      return { latestValid: Number(deadline), signed: { deadline: Number(deadline) } };
     }
     case "permit":
-      return {};
+      return { signed: {} };
   }
 }
 
-/** The EIP-2612 approval deadline, which only the swap-and-bridge `permit` flow carries. */
+/**
+ * The EIP-2612 approval deadline, which only the swap-and-bridge `permit` flow carries. Inclusive: both
+ * OpenZeppelin's `ERC20Permit` and Circle's `EIP2612` accept `now == deadline`.
+ */
 function getErc2612ApprovalDeadline(depositMessage: AnyGaslessDepositMessage): number | undefined {
   if (depositMessage.permitType !== "permit" || depositMessage.depositFlowType !== "swapAndBridge") {
     return undefined;
@@ -690,21 +706,24 @@ export async function findGaslessSubmitBlocker(params: {
   const nonce = getGaslessPermitNonce(depositMessage);
 
   try {
-    const { validAfter, validBefore } = getGaslessAuthorizationWindow(depositMessage);
-    if (isDefined(validBefore) && currentTime >= validBefore) {
+    // Both bounds are inclusive (see getGaslessAuthorizationWindow), so a deposit sitting exactly on its
+    // last redeemable second is still submittable — calling it expired there would cache a permanent
+    // verdict on a live authorization.
+    const { earliestValid, latestValid, signed } = getGaslessAuthorizationWindow(depositMessage);
+    if (isDefined(latestValid) && currentTime > latestValid) {
       return {
         code: "authorization-expired",
-        detail: `Signed authorization expired at ${validBefore} (now ${currentTime}).`,
+        detail: `Signed authorization was last redeemable at ${latestValid} (now ${currentTime}).`,
         permanent: true,
-        context: { authorizer, nonce, validBefore, currentTime },
+        context: { authorizer, nonce, ...signed, latestValid, currentTime },
       };
     }
-    if (isDefined(validAfter) && currentTime < validAfter) {
+    if (isDefined(earliestValid) && currentTime < earliestValid) {
       return {
         code: "authorization-not-yet-valid",
-        detail: `Signed authorization is not valid until ${validAfter} (now ${currentTime}).`,
+        detail: `Signed authorization is not redeemable until ${earliestValid} (now ${currentTime}).`,
         permanent: false,
-        context: { authorizer, nonce, validAfter, currentTime },
+        context: { authorizer, nonce, ...signed, earliestValid, currentTime },
       };
     }
 
@@ -739,12 +758,20 @@ export async function findGaslessSubmitBlocker(params: {
         };
       }
 
-      // EIP-2612 only, and only once the approval deadline has passed. The periphery wraps its `permit`
-      // call in try/catch — so that a permit already redeemed by somebody else does not brick the
-      // deposit — and pulls the tokens with `transferFrom` regardless. Before the deadline the permit
-      // grants the allowance itself; after it, the deposit lands only on an allowance already in place.
+      // EIP-2612 only, and only once the approval deadline has passed (exclusively: `now == deadline` is
+      // still redeemable). The periphery wraps its `permit` call in try/catch — so that a permit already
+      // redeemed by somebody else does not brick the deposit — and pulls the tokens with `transferFrom`
+      // regardless. Past the deadline the deposit lands only on an allowance already in place.
+      //
+      // @dev Deliberately not checked before the deadline, even though a permit redeemed externally and
+      // then revoked leaves the allowance short while the deadline is still future. A short allowance is
+      // the *normal* pre-permit state (the permit is what grants it), so reading it earlier would report
+      // `insufficient-allowance` for every EIP-2612 deposit that fails simulation for an unrelated
+      // reason — a false blocker on the common case to catch a rare one. Distinguishing the two needs the
+      // signed approval nonce, which the API does not send; were it available, redeemability would be one
+      // `nonces(owner)` comparison, exactly as isErc2612PermitNonceConsumed does for the witness nonce.
       const approvalDeadline = getErc2612ApprovalDeadline(depositMessage);
-      if (isDefined(approvalDeadline) && currentTime >= approvalDeadline && isDefined(spokePoolPeriphery)) {
+      if (isDefined(approvalDeadline) && currentTime > approvalDeadline && isDefined(spokePoolPeriphery)) {
         const spender = spokePoolPeriphery.address;
         const allowance: BigNumber = await amountToken.allowance(authorizer, spender);
         if (allowance.lt(required)) {

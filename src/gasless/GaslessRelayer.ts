@@ -1098,9 +1098,15 @@ export class GaslessRelayer {
         logBlocker(blocker, known?.code === blocker.code ? "debug" : "warn");
         this.submitBlockers.set(depositKey, blocker);
       } else {
+        // The checks ran and came back clean, so a cached (necessarily recoverable) diagnosis has
+        // cleared. Drop it: leaving it in place would make a later recurrence of the same code look like
+        // an unchanged blocker and log it at debug, when the depositor has actually lapsed twice.
+        this.submitBlockers.delete(depositKey);
         warnUndiagnosed();
       }
     } else {
+      // No diagnosis ran, so any cached blocker still stands — an in-flight transaction tells us nothing
+      // about whether the depositor's balance or authorization changed.
       warnUndiagnosed();
     }
 
