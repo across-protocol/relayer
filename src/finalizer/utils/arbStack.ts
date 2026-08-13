@@ -198,13 +198,11 @@ export async function arbStackFinalizer(
   }
 
   // Reduce the discovered events to the fields the finalization path actually reads.
-  const withdrawalEvents: ArbitrumWithdrawal[] = _withdrawalEvents.map(
-    ({ transactionHash, amount, l2TokenAddress }) => ({
-      amountToReturn: amount,
-      l2TokenAddress,
-      txnRef: transactionHash,
-    })
-  );
+  const withdrawalEvents = _withdrawalEvents.map(({ transactionHash, amount, l2TokenAddress }) => ({
+    amountToReturn: amount,
+    l2TokenAddress,
+    txnRef: transactionHash,
+  }));
 
   return await multicallArbitrumFinalizations(withdrawalEvents, signer, hubPoolClient, logger, chainId);
 }
