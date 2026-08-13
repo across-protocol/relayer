@@ -29,6 +29,7 @@ import {
   relayFillStatus,
   sendAndConfirmTransaction,
   TransactionSimulationError,
+  describeTransactionFailure,
   getTokenInfo,
   createFormatFunction,
   toAddressType,
@@ -1046,7 +1047,9 @@ export class GaslessRelayer {
     const { originChainId, depositId } = depositMessage;
     const { destinationChainId, amountToken, submitError } = opts;
     const provider = this.providersByChain[originChainId];
-    const reason = submitError instanceof Error ? submitError.message : submitError && String(submitError);
+    // Not `submitError.message`: for an integrator-tagged deposit that message carries the full signed
+    // calldata. See describeTransactionFailure.
+    const reason = describeTransactionFailure(submitError);
     const depositKey = this._getDepositKeyFromMessage(depositMessage);
 
     const common = {

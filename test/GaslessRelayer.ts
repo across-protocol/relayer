@@ -1661,6 +1661,36 @@ describe("GaslessRelayer#_logSubmitFailure", function () {
     expect(spyLogIncludes(spy, -2, "transfer amount exceeds")).to.be.true;
   });
 
+  it("logs the revert reason without the signed calldata that carried it", async function () {
+    // submitTransaction composes its message from args.join(", "), and an integrator-tagged deposit is a
+    // raw transaction whose single argument is the whole ABI-encoded calldata -- authorization signature
+    // and router calldata included. Only the revert reason belongs in a log line repeated every poll.
+    const signature = "0x" + "ab".repeat(65);
+    const calldata = "0x1234abcd" + "cd".repeat(600) + signature.slice(2);
+    const err = new TransactionSimulationError(
+      `Failed to simulate 0xperiphery.(${calldata}) on 1 (ERC20: transfer amount exceeds balance)`,
+      "ERC20: transfer amount exceeds balance"
+    );
+
+    await logFailure(err);
+
+    expect(spyLogLevel(spy, -2)).to.equal("warn");
+    expect(spyLogIncludes(spy, -2, "ERC20: transfer amount exceeds balance")).to.be.true;
+    expect(spyLogIncludes(spy, -2, signature)).to.be.false;
+    expect(spyLogIncludes(spy, -2, calldata)).to.be.false;
+  });
+
+  it("elides hex payloads from failures that carry no structured reason", async function () {
+    // The post-broadcast path throws a plain Error whose message embeds args the same way.
+    const calldata = "0x1234abcd" + "ef".repeat(400);
+    await logFailure(new Error(`failed to submit onchain to 0xperiphery.(${calldata}) on 1`));
+
+    expect(spyLogIncludes(spy, -2, calldata)).to.be.false;
+    // The leading selector survives, so the entrypoint is still identifiable.
+    expect(spyLogIncludes(spy, -2, "0x1234abcd")).to.be.true;
+    expect(spyLogIncludes(spy, -2, "hex chars elided")).to.be.true;
+  });
+
   it("names the blocker and its shortfall when the depositor is underfunded", async function () {
     token.balanceOf.returns(toBN("350000"));
 

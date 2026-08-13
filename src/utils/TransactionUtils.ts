@@ -283,6 +283,42 @@ export class TransactionSimulationError extends Error {
   }
 }
 
+// Hex runs long enough to be signature or calldata material rather than an address (42 chars incl. the
+// prefix) or a bytes32 (66). A 65-byte signature is 132; ABI-encoded calldata is longer still.
+const LOGGABLE_HEX_LIMIT = 80;
+// Backstop for messages that are long without being hex.
+const LOGGABLE_MESSAGE_LIMIT = 256;
+
+/**
+ * A short, log-safe description of a failure thrown by {@link submitTransaction} or
+ * {@link dispatchTransaction}.
+ *
+ * Both compose their messages from `args.join(", ")`. For a raw transaction — which is what an
+ * integrator-tagged deposit builds, with `method: ""` and the whole ABI-encoded calldata as its single
+ * argument — that message therefore embeds the entire payload, signed authorization and any router
+ * calldata included. Logging it verbatim publishes signature material to every log transport and, for a
+ * failure that repeats each poll, buries everything else in the log.
+ *
+ * A {@link TransactionSimulationError} carries the revert reason by itself, which is the only part worth
+ * reading. Anything else keeps its message, with long hex runs elided (the leading selector survives) and
+ * the result bounded.
+ */
+export function describeTransactionFailure(err: unknown): string | undefined {
+  if (err instanceof TransactionSimulationError) {
+    return err.reason ?? "simulation reverted without a reason";
+  }
+  if (!isDefined(err)) {
+    return undefined;
+  }
+
+  const message = err instanceof Error ? err.message : String(err);
+  const elided = message.replace(
+    new RegExp(`0x[0-9a-fA-F]{${LOGGABLE_HEX_LIMIT},}`, "g"),
+    (hex) => `${hex.slice(0, 10)}…[${hex.length - 2} hex chars elided]`
+  );
+  return elided.length > LOGGABLE_MESSAGE_LIMIT ? `${elided.slice(0, LOGGABLE_MESSAGE_LIMIT)}…` : elided;
+}
+
 export async function submitTransaction(
   transaction: AugmentedTransaction,
   transactionClient: TransactionClient
