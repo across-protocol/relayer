@@ -1193,8 +1193,7 @@ export class GaslessRelayer {
 
     return deposits.filter((deposit) => {
       const authorizer = getGaslessAuthorizerAddress(deposit).toLowerCase();
-      const depositData =
-        deposit.depositFlowType === "swapAndBridge" ? deposit.depositData : deposit.baseDepositData;
+      const depositData = deposit.depositFlowType === "swapAndBridge" ? deposit.depositData : deposit.baseDepositData;
       const depositor = depositData.depositor.toLowerCase();
       const recipient = depositData.recipient.toLowerCase();
       const blockedParty = [authorizer, depositor, recipient].find((address) => blockedAddresses.has(address));
