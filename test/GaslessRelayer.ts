@@ -1514,6 +1514,51 @@ describe("GaslessRelayer", function () {
       expectImmediateTransitions(relayer.stateTransitions[nonce2]);
     });
 
+    it("Releases the fill lock once the deposit is confirmed", async function () {
+      // Both messages carry the same authorizer, so they contend for one fillKey. The lock guards
+      // against filling a depositor's unconfirmed deposits concurrently against the same balance;
+      // once msg1's deposit is confirmed on-chain that risk is gone, so msg2 must not have to wait
+      // behind msg1's (slow) destination fill.
+      const msg1 = makeTestDepositMessage({ inputAmount: "1000000", outputAmount: "1000000" });
+      msg1.depositId = toBN(100);
+      const msg2 = makeTestDepositMessage({ inputAmount: "2000000", outputAmount: "2000000" });
+      msg2.depositId = toBN(200);
+
+      const receipt = makeReceipt();
+      const depositEvent = makeFakeDepositEvent({ inputAmount: "1000000", outputAmount: "1000000" });
+
+      let releaseFirstFill: () => void = () => {};
+      const firstFillGate = new Promise<void>((resolve) => (releaseFirstFill = resolve));
+      let fillsStarted = 0;
+
+      relayer.queryGaslessApiFn = async () => [msg1, msg2];
+      relayer.initiateDepositFn = async () => receipt;
+      relayer.extractDepositFromReceiptFn = (_receipt, _chainId, depositId) => ({ ...depositEvent, depositId });
+      relayer.initiateFillFn = async (deposit) => {
+        fillsStarted++;
+        // Hold msg1's fill open. msg2 must still get through on its own.
+        if (deposit.depositId.eq(100)) {
+          await firstFillGate;
+        }
+        return receipt;
+      };
+
+      const run = relayer.runEvaluateApiSignatures();
+
+      // Wait for both fills to be in flight at once. If the lock were held across the fill, msg2
+      // would stay blocked on msg1 and this would never reach 2.
+      for (let i = 0; i < 100 && fillsStarted < 2; ++i) {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      expect(fillsStarted).to.equal(2);
+
+      releaseFirstFill();
+      await run;
+
+      expect(relayer.getMessageState(depositNonceFor(relayer, msg1))).to.equal(MessageState.FILLED);
+      expect(relayer.getMessageState(depositNonceFor(relayer, msg2))).to.equal(MessageState.FILLED);
+    });
+
     it("Message with existing state is skipped on subsequent polls", async function () {
       const { msg, nonce } = setupScenario(relayer, { inputAmount: "2000000", outputAmount: "1900000" }, (overrides) =>
         makeTestDepositMessage(overrides, { instantFill: true })

@@ -677,17 +677,32 @@ export class GaslessRelayer {
       let fillImmediate = false;
       let deposit: (RelayData & { destinationChainId: number }) | undefined;
       let depositReceiptPromise: Promise<TransactionReceipt | null | undefined> | undefined;
+      // Set once the origin deposit is verified on-chain. The lock exists to stop a depositor's
+      // *unconfirmed* deposits from being filled concurrently against the same balance; a confirmed
+      // deposit has already pulled its funds, so it neither holds nor waits for the lock.
+      let depositConfirmed = false;
+
+      // Only drop the lock if we still own it: once confirmed we release early, so by the time this
+      // runs the key may legitimately be held by a follow-up deposit from the same depositor.
+      const releaseFillLock = () => {
+        if (this.fillLock[fillKey] === depositKey) {
+          delete this.fillLock[fillKey];
+        }
+      };
 
       const bridgeMessage = depositMessage as GaslessDepositMessage;
 
       do {
-        // If we are currently processing a fill for the user, then do not process another fill until the first fill is completed.
-        if (isDefined(this.fillLock[fillKey]) && this.fillLock[fillKey] !== depositKey) {
-          log("debug", `Skipping deposit due to held lock on key ${fillKey} (held by ${this.fillLock[fillKey]})`);
-          await delay(1);
-          continue;
+        // One unconfirmed deposit per depositor at a time: don't process another until the in-flight
+        // one is confirmed on-chain (or gives up). Confirmed deposits bypass the lock entirely.
+        if (!depositConfirmed) {
+          if (isDefined(this.fillLock[fillKey]) && this.fillLock[fillKey] !== depositKey) {
+            log("debug", `Skipping deposit due to held lock on key ${fillKey} (held by ${this.fillLock[fillKey]})`);
+            await delay(1);
+            continue;
+          }
+          this.fillLock[fillKey] ??= depositKey;
         }
-        this.fillLock[fillKey] ??= depositKey;
 
         if (expired()) {
           log("warn", `Skipping expired deposit destined for ${origin}.`);
@@ -815,13 +830,17 @@ export class GaslessRelayer {
                   nextState = MessageState.DONE;
                 } else {
                   log("info", `Verified deposit on ${origin}`);
+                  // Confirmed on-chain, so this deposit can no longer double-spend the depositor's
+                  // balance. Release before filling so their next deposit isn't stuck behind our fill.
+                  depositConfirmed = true;
+                  releaseFillLock();
                   nextState = MessageState.FILL_PENDING;
                 }
               } else {
                 log("info", `Could not locate deposit on ${origin}.`);
                 // It's possible the deposit will always fail in simulation (e.g. insufficient balance). In this
                 // case, drop the lock on the deposit in case there were follow-up requests we need to unblock.
-                delete this.fillLock[fillKey];
+                releaseFillLock();
                 nextState = MessageState.DEPOSIT_SUBMIT;
                 await delay(1);
               }
@@ -873,7 +892,7 @@ export class GaslessRelayer {
           }
         }
       } while (!terminalStates.includes(getState()));
-      delete this.fillLock[fillKey];
+      releaseFillLock();
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
       log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
