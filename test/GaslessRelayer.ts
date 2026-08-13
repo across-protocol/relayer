@@ -122,8 +122,17 @@ class TestableGaslessRelayer extends GaslessRelayer {
     this.spokePoolPeripheries[chainId];
   public queryGaslessApiFn: () => Promise<AnyGaslessDepositMessage[]> = async () => [];
   public initiateDepositFn: (msg: AnyGaslessDepositMessage) => Promise<TransactionReceipt | null> = async () => null;
+  public initiateBatchDepositFn: (
+    originChainId: number,
+    calls: { target: string; callData: string }[]
+  ) => Promise<TransactionReceipt | null> = async () => null;
+  public getMulticall3Fn: (chainId: number) => Contract | undefined = () => undefined;
   public initiateFillFn: (deposit: GaslessDeposit) => Promise<GaslessFillSubmissionResult | null> = async () => null;
-  public extractDepositFromReceiptFn: (receipt: TransactionReceipt, chainId: number) => StrippedDeposit = () => {
+  public extractDepositFromReceiptFn: (
+    receipt: TransactionReceipt,
+    chainId: number,
+    depositId: BigNumber
+  ) => StrippedDeposit | undefined = () => {
     throw new Error("extractDepositFromReceiptFn not configured");
   };
   public findDepositFn: (depositMessage: GaslessDepositMessage) => Promise<StrippedDeposit | undefined> = async () =>
@@ -131,6 +140,8 @@ class TestableGaslessRelayer extends GaslessRelayer {
 
   // Call counters -- incremented by the overrides below.
   public initiateDepositCalls = 0;
+  public initiateBatchDepositCalls = 0;
+  public batchedCalls: { target: string; callData: string }[][] = [];
   public extractDepositFromReceiptCalls = 0;
   public initiateFillCalls = 0;
   public findDepositCalls = 0;
@@ -144,6 +155,18 @@ class TestableGaslessRelayer extends GaslessRelayer {
   protected override async initiateDeposit(msg: AnyGaslessDepositMessage): Promise<TransactionReceipt | null> {
     this.initiateDepositCalls++;
     return this.initiateDepositFn(msg);
+  }
+  protected override _getMulticall3(chainId: number): Contract | undefined {
+    return this.getMulticall3Fn(chainId);
+  }
+  protected override async initiateBatchDeposit(
+    originChainId: number,
+    _multicall3: Contract,
+    calls: { target: string; callData: string }[]
+  ): Promise<TransactionReceipt | null> {
+    this.initiateBatchDepositCalls++;
+    this.batchedCalls.push(calls);
+    return this.initiateBatchDepositFn(originChainId, calls);
   }
   protected override async initiateFill(
     deposit: StrippedDeposit,
@@ -164,10 +187,11 @@ class TestableGaslessRelayer extends GaslessRelayer {
   }
   protected override _extractDepositFromTransactionReceipt(
     receipt: TransactionReceipt,
-    originChainId: number
-  ): StrippedDeposit {
+    originChainId: number,
+    depositId: BigNumber
+  ): StrippedDeposit | undefined {
     this.extractDepositFromReceiptCalls++;
-    return this.extractDepositFromReceiptFn(receipt, originChainId);
+    return this.extractDepositFromReceiptFn(receipt, originChainId, depositId);
   }
   protected override async _findDeposit(depositMessage: GaslessDepositMessage): Promise<StrippedDeposit | undefined> {
     this.findDepositCalls++;
@@ -1082,6 +1106,158 @@ describe("GaslessRelayer", function () {
       expect(depositsOnlyRelayer.getMessageState(nonce)).to.equal(MessageState.DONE);
       expect(depositsOnlyRelayer.initiateDepositCalls).to.equal(1);
       expect(depositsOnlyRelayer.initiateFillCalls).to.equal(0);
+    });
+  });
+
+  describe("Batched deposit submission (RELAYER_GASLESS_DEPOSIT_BATCHING)", function () {
+    let batchingRelayer: TestableGaslessRelayer;
+    let fakeMulticall3Smock: FakeContract;
+
+    const MULTICALL3_ABI = [
+      "function tryAggregate(bool requireSuccess, (address target, bytes callData)[] calls) returns ((bool success, bytes returnData)[] returnData)",
+    ];
+
+    beforeEach(async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_DEPOSIT_BATCHING: "true",
+      });
+
+      batchingRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      fakePeripherySmock = await smock.fake(SPOKE_POOL_PERIPHERY_ABI);
+      const fakePeriphery = new Contract(fakePeripherySmock.address, SPOKE_POOL_PERIPHERY_ABI, signer.provider);
+      const fakeSpokePoolSmock = await smock.fake([]);
+      const fakeSpokePool = new Contract(fakeSpokePoolSmock.address, [], signer.provider);
+      fakeSpokePoolAddress = fakeSpokePool.address;
+
+      const provider = signer.provider;
+      assert(isDefined(provider), "Signer must have a provider in test setup");
+      batchingRelayer.setProvidersByChain({ [ORIGIN_CHAIN_ID]: provider, [DESTINATION_CHAIN_ID]: provider });
+      batchingRelayer.setSpokePoolPeripheries({ [ORIGIN_CHAIN_ID]: fakePeriphery });
+      batchingRelayer.setSpokePools({ [ORIGIN_CHAIN_ID]: fakeSpokePool, [DESTINATION_CHAIN_ID]: fakeSpokePool });
+      batchingRelayer.setObservedDeposits({ [ORIGIN_CHAIN_ID]: new Set() });
+      batchingRelayer.setObservedFills({ [DESTINATION_CHAIN_ID]: new Set() });
+      batchingRelayer.setSignerAddress(EvmAddress.from(signer.address));
+
+      fakeMulticall3Smock = await smock.fake(MULTICALL3_ABI);
+      batchingRelayer.getMulticall3Fn = () => new Contract(fakeMulticall3Smock.address, MULTICALL3_ABI, provider);
+    });
+
+    function makeBatchableMessages() {
+      const msg1 = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
+      msg1.depositId = toBN(100);
+      const msg2 = makeTestDepositMessage({ inputAmount: "30000000", outputAmount: "29000000" });
+      msg2.depositId = toBN(200);
+      return [msg1, msg2] as const;
+    }
+
+    it("batches deposits per origin chain and confirms each from the shared receipt", async function () {
+      const [msg1, msg2] = makeBatchableMessages();
+      const receipt = makeReceipt();
+      const depositEvent1 = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+      depositEvent1.depositId = toBN(100);
+      const depositEvent2 = makeFakeDepositEvent({ inputAmount: "30000000", outputAmount: "29000000" });
+      depositEvent2.depositId = toBN(200);
+
+      fakeMulticall3Smock.tryAggregate.returns([
+        { success: true, returnData: "0x" },
+        { success: true, returnData: "0x" },
+      ]);
+      batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2];
+      batchingRelayer.initiateBatchDepositFn = async () => receipt;
+      batchingRelayer.extractDepositFromReceiptFn = (_receipt, _chainId, depositId) =>
+        depositId.eq(100) ? depositEvent1 : depositEvent2;
+      batchingRelayer.initiateFillFn = async () => receipt;
+
+      await batchingRelayer.runEvaluateApiSignatures();
+
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg1))).to.equal(MessageState.FILLED);
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg2))).to.equal(MessageState.FILLED);
+      expect(batchingRelayer.initiateBatchDepositCalls).to.equal(1);
+      expect(batchingRelayer.batchedCalls[0].length).to.equal(2);
+      expect(batchingRelayer.initiateDepositCalls).to.equal(0);
+    });
+
+    it("releases simulation failures for retry on a later poll", async function () {
+      const [msg1, msg2] = makeBatchableMessages();
+      const receipt = makeReceipt();
+      const depositEvent1 = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+      depositEvent1.depositId = toBN(100);
+
+      fakeMulticall3Smock.tryAggregate.returns([
+        { success: true, returnData: "0x" },
+        { success: false, returnData: "0x" },
+      ]);
+      batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2];
+      batchingRelayer.initiateBatchDepositFn = async () => receipt;
+      batchingRelayer.extractDepositFromReceiptFn = () => depositEvent1;
+      batchingRelayer.initiateFillFn = async () => receipt;
+
+      await batchingRelayer.runEvaluateApiSignatures();
+
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg1))).to.equal(MessageState.FILLED);
+      // The dropped message's claim is released so a later poll can retry it.
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg2))).to.equal(undefined);
+      expect(batchingRelayer.batchedCalls[0].length).to.equal(1);
+      expect(batchingRelayer.initiateDepositCalls).to.equal(0);
+    });
+
+    it("falls back to individual submission for a single batchable message", async function () {
+      const msg = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
+      const receipt = makeReceipt();
+      const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+
+      batchingRelayer.queryGaslessApiFn = async () => [msg];
+      batchingRelayer.initiateDepositFn = async () => receipt;
+      batchingRelayer.extractDepositFromReceiptFn = () => depositEvent;
+      batchingRelayer.initiateFillFn = async () => receipt;
+
+      await batchingRelayer.runEvaluateApiSignatures();
+
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg))).to.equal(MessageState.FILLED);
+      expect(batchingRelayer.initiateBatchDepositCalls).to.equal(0);
+      expect(batchingRelayer.initiateDepositCalls).to.equal(1);
+    });
+
+    it("retries individually when its deposit is missing from the batch receipt", async function () {
+      const [msg1, msg2] = makeBatchableMessages();
+      const receipt = makeReceipt();
+      const depositEvent1 = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+      depositEvent1.depositId = toBN(100);
+      const depositEvent2 = makeFakeDepositEvent({ inputAmount: "30000000", outputAmount: "29000000" });
+      depositEvent2.depositId = toBN(200);
+
+      fakeMulticall3Smock.tryAggregate.returns([
+        { success: true, returnData: "0x" },
+        { success: true, returnData: "0x" },
+      ]);
+      batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2];
+      batchingRelayer.initiateBatchDepositFn = async () => receipt;
+      let msg2Extracts = 0;
+      batchingRelayer.extractDepositFromReceiptFn = (_receipt, _chainId, depositId) => {
+        if (depositId.eq(100)) {
+          return depositEvent1;
+        }
+        // First look-up misses (its slot failed inside the batch); the retry must submit individually.
+        return ++msg2Extracts === 1 ? undefined : depositEvent2;
+      };
+      batchingRelayer.initiateDepositFn = async () => receipt;
+      batchingRelayer.initiateFillFn = async () => receipt;
+
+      await batchingRelayer.runEvaluateApiSignatures();
+
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg1))).to.equal(MessageState.FILLED);
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg2))).to.equal(MessageState.FILLED);
+      expect(batchingRelayer.initiateBatchDepositCalls).to.equal(1);
+      expect(batchingRelayer.initiateDepositCalls).to.equal(1);
     });
   });
 

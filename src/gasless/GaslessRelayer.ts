@@ -1,6 +1,6 @@
 import winston from "winston";
 import { GaslessRelayerConfig } from "./GaslessRelayerConfig";
-import { arch } from "@across-protocol/sdk";
+import { arch, utils as sdkUtils } from "@across-protocol/sdk";
 import {
   Address,
   isDefined,
@@ -63,6 +63,8 @@ import {
   buildGaslessDepositTx,
   buildGaslessFillRelayTx,
   buildSyntheticDeposit,
+  encodeGaslessDepositCalldata,
+  isBatchableGaslessDeposit,
   getGaslessAuthorizerAddress,
   getLegacySpokePoolPeripheryAddresses,
   extractGaslessDepositFields,
@@ -608,7 +610,10 @@ export class GaslessRelayer {
    * @notice Polls the API and creates deposits/fills for all messages which are missing deposits/fills.
    */
   protected async evaluateApiSignatures(): Promise<void> {
-    const processDepositMessage = async (depositMessage: AnyGaslessDepositMessage) => {
+    const processDepositMessage = async (
+      depositMessage: AnyGaslessDepositMessage,
+      inheritedReceipt?: Promise<TransactionReceipt | null | undefined>
+    ) => {
       const isSwap = depositMessage.depositFlowType === "swapAndBridge";
       const { originChainId, depositId, spokePool } = depositMessage;
       const authorizer = getGaslessAuthorizerAddress(depositMessage);
@@ -736,7 +741,9 @@ export class GaslessRelayer {
               }
             }
 
-            depositReceiptPromise = this.initiateDeposit(depositMessage);
+            depositReceiptPromise = inheritedReceipt ?? this.initiateDeposit(depositMessage);
+            // Consume the inherited batch receipt: any retry pass must submit individually.
+            inheritedReceipt = undefined;
             const nextState = fillImmediate ? MessageState.FILL_PENDING : MessageState.DEPOSIT_CONFIRM;
             setState(nextState);
             break;
@@ -915,7 +922,82 @@ export class GaslessRelayer {
     };
 
     const apiMessages = await this._queryGaslessApi();
-    await forEachAsync(apiMessages.filter(messageFilter), processDepositMessage);
+    const pending = apiMessages.filter(messageFilter);
+    // Claim state before the first await so overlapping poll ticks don't re-process these messages.
+    pending.forEach((message) => this._getState(this._getDepositKeyFromMessage(message)));
+
+    // Group deposits eligible for batched submission by origin chain. CCTP deposits confirm via the
+    // receipt hash rather than a FundsDeposited log, so they stay on the individual path.
+    const now = getCurrentTime();
+    const batchGroups: { [chainId: number]: AnyGaslessDepositMessage[] } = {};
+    const individual: AnyGaslessDepositMessage[] = [];
+    for (const message of pending) {
+      const { fillDeadline } = extractGaslessDepositFields(message);
+      const batchable =
+        this.config.depositBatchingEnabled &&
+        fillDeadline > now &&
+        !this._isCctpDeposit(message.originChainId, message.spokePool) &&
+        isBatchableGaslessDeposit(message);
+      if (batchable) {
+        (batchGroups[message.originChainId] ??= []).push(message);
+      } else {
+        individual.push(message);
+      }
+    }
+
+    const processBatch = async (originChainId: number, messages: AnyGaslessDepositMessage[]) => {
+      const multicall3 = this._getMulticall3(originChainId);
+      // Fall back to individual submission when the chain has no Multicall3 or the batch is trivial.
+      if (!isDefined(multicall3) || messages.length < 2) {
+        await forEachAsync(messages, (message) => processDepositMessage(message));
+        return;
+      }
+
+      const calls = messages.map((message) => {
+        const periphery = this.getPeripheryContract(originChainId, message.targetAddress);
+        return {
+          target: periphery.address,
+          callData: encodeGaslessDepositCalldata(buildGaslessDepositTx(message, periphery)),
+        };
+      });
+
+      // Simulation is the batch filter: spent nonces, expired authorizations and underfunded
+      // depositors fail here. Dropped messages are released for retry on a later poll.
+      const results: { success: boolean; returnData: string }[] = await multicall3.callStatic.tryAggregate(
+        false,
+        calls
+      );
+      results.forEach(({ success, returnData }, i) => {
+        if (!success) {
+          this.logger.debug({
+            at: "GaslessRelayer#evaluateApiSignatures",
+            message: "Dropping gasless deposit from batch (simulation failed); retrying on a later poll.",
+            requestId: messages[i].requestId,
+            depositId: messages[i].depositId,
+            originChainId,
+            returnData,
+          });
+          delete this.messageState[this._getDepositKeyFromMessage(messages[i])];
+        }
+      });
+      const live = messages.filter((_, i) => results[i].success);
+      if (live.length === 0) {
+        return;
+      }
+
+      // All live messages share the batch receipt; each state machine verifies its own deposit from it.
+      const receiptPromise = this.initiateBatchDeposit(
+        originChainId,
+        multicall3,
+        calls.filter((_, i) => results[i].success)
+      );
+      await Promise.all(live.map((message) => processDepositMessage(message, receiptPromise)));
+    };
+
+    await Promise.all([
+      ...individual.map((message) => processDepositMessage(message)),
+      ...Object.entries(batchGroups).map(([chainId, messages]) => processBatch(Number(chainId), messages)),
+    ]);
   }
 
   /*
@@ -1013,6 +1095,62 @@ export class GaslessRelayer {
         at: "GaslessRelayer#initiateDeposit",
         message: "Failed to submit gasless deposit. Debug information:",
         depositMessage,
+      });
+    }
+    return txReceipt;
+  }
+
+  /*
+   * @notice Resolves the Multicall3 deployment used for batched deposit submission on a chain.
+   */
+  protected _getMulticall3(chainId: number): Contract | undefined {
+    return sdkUtils.getMulticall3(chainId, this.providersByChain[chainId]);
+  }
+
+  /*
+   * @notice Submits a batch of pre-simulated gasless deposits via Multicall3.tryAggregate on the origin
+   * chain. Inner failures do not revert the batch; each message's state machine verifies its own deposit
+   * against the shared receipt (FundsDeposited selected by depositId).
+   * @returns The batch transaction receipt, or null if skipped or failed.
+   */
+  protected async initiateBatchDeposit(
+    originChainId: number,
+    multicall3: Contract,
+    calls: { target: string; callData: string }[]
+  ): Promise<TransactionReceipt | null | undefined> {
+    if (!this.config.sendingTransactionsEnabled) {
+      this.logger.debug({
+        at: "GaslessRelayer#initiateBatchDeposit",
+        message: "Sending transactions disabled, skipping",
+      });
+      return null;
+    }
+
+    const contract =
+      this.depositSigners.length === 0
+        ? multicall3.connect(this.baseSigner.connect(this.providersByChain[originChainId]))
+        : multicall3;
+    const batchDeposit = {
+      contract,
+      chainId: originChainId,
+      method: "tryAggregate",
+      args: [false, calls],
+      ensureConfirmation: true,
+      message: "Completed gasless deposit batch 😎",
+      mrkdwn: `Submitted ${calls.length} gasless deposits on ${getNetworkName(originChainId)} via Multicall3.tryAggregate`,
+    };
+
+    const txReceipt = await sendAndConfirmTransaction(
+      batchDeposit,
+      this.transactionClient,
+      this.depositSigners.length > 0
+    );
+    if (!isDefined(txReceipt)) {
+      this.logger.warn({
+        at: "GaslessRelayer#initiateBatchDeposit",
+        message: "Failed to submit gasless deposit batch",
+        originChainId,
+        batchSize: calls.length,
       });
     }
     return txReceipt;

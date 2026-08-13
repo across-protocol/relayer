@@ -28,6 +28,12 @@ export class GaslessRelayerConfig extends CommonConfig {
    * Destination fills are not submitted. From `RELAYER_GASLESS_FILLS_ENABLED` (default `true`).
    */
   fillsEnabled: boolean;
+  /**
+   * When true, batchable gasless deposits are grouped per origin chain and submitted through
+   * Multicall3.tryAggregate; each message's state machine confirms its own deposit against the
+   * shared batch receipt. From `RELAYER_GASLESS_DEPOSIT_BATCHING` (default `false`).
+   */
+  depositBatchingEnabled: boolean;
   spokePoolPeripheryOverrides: { [chainId: number]: string };
   /** Gasless-only: allowed input→output token pairs (by L2 symbol). E.g. { "USDT": ["USDC", "USDH", "USDC.e"] }. */
   allowedPeggedPairs: AllowedPeggedPairs;
@@ -61,6 +67,7 @@ export class GaslessRelayerConfig extends CommonConfig {
       INITIALIZATION_RETRY_ATTEMPTS,
       RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED,
       RELAYER_GASLESS_FILLS_ENABLED,
+      RELAYER_GASLESS_DEPOSIT_BATCHING = "false",
       SPOKE_POOL_PERIPHERY_OVERRIDES,
       GASLESS_ALLOWED_PEGGED_PAIRS,
       SWAP_API_KEY,
@@ -87,6 +94,7 @@ export class GaslessRelayerConfig extends CommonConfig {
     this.initializationRetryAttempts = Number(INITIALIZATION_RETRY_ATTEMPTS ?? 3);
     this.refundFlowTestEnabled = String(RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED ?? "").toLowerCase() === "true";
     this.fillsEnabled = String(RELAYER_GASLESS_FILLS_ENABLED ?? "true").toLowerCase() === "true";
+    this.depositBatchingEnabled = RELAYER_GASLESS_DEPOSIT_BATCHING.toLowerCase() === "true";
 
     this.spokePoolPeripheryOverrides = parseJson.stringMap(SPOKE_POOL_PERIPHERY_OVERRIDES);
 
