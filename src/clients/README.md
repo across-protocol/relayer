@@ -15,6 +15,25 @@ EVM and SVM subscribe over websockets and apply quorum in the application layer:
 - After a one-time historical backfill of the look-back-only events (`RequestedSpeedUpDeposit`, `RelayedRootBundle`, `ExecutedRelayerRefundRoot`) up to the startup head, it loops every ~2s (just under TRON's ~3s block time). On each new head it issues one `--blockrange`-paginated `eth_getLogs` for the live events (`FundsDeposited`, `FilledRelay`) over the last `REORG_WINDOW` (64) blocks and diffs the result against what it has posted: events that vanished (re-orged out) are removed, new or re-org-replacement events are added. A re-org is reflected within one poll once quorum converges; a failed query skips the pass and retries on the next poll.
 - On TRON the RPC URL must target QuikNode's eth-JSON-RPC path (`…/jsonrpc`); the bare token URL is the TronGrid API and 404s for `eth_*` calls.
 
+## Config Store Client
+
+The ConfigStoreClient wraps the SDK's `AcrossConfigStoreClient` to add support for `INJECT_CHAIN_ID_INCLUSION` — a testing-only variable that pretends a chain was added to the Config Store's `CHAIN_ID_INDICES` before it actually was, so a bot can be exercised against a chain that isn't onboarded yet. It must not be set in production.
+
+The variable is `{"blockNumber":<n>,"chainId":<n>}`, parsed once at construction. Each `update()` then:
+
+1. Drops the synthetic entry from `chainIdIndicesUpdates` before calling `super.update()`, which would otherwise reject an entry that now predates its search window.
+2. Re-appends it afterwards, as the most recent genuine `CHAIN_ID_INDICES` value plus `chainId` (or the protocol defaults plus `chainId` when there is no genuine update), stamped at `blockNumber` with an empty `txnRef`.
+
+Injection is skipped — at debug level — when `blockNumber` is ahead of the latest searched height, or behind the last genuine update, since neither can be reconciled into the update history.
+
+### On-chain updates override the injection
+
+`CHAIN_ID_INDICES` is append-only on-chain, so a chain can never be appended to it twice. Once the injected chain is genuinely onboarded, the real on-chain update is authoritative: the client leaves it in place, stops injecting, and logs a warning (once per process, not once per update cycle) that `INJECT_CHAIN_ID_INCLUSION` is stale and should be unset.
+
+This is why step 1 identifies the synthetic entry by its marker — an empty `txnRef` at the injected block number — rather than by testing whether the entry contains the injected chain ID. Genuine events always derive `txnRef` from their transaction hash, so the marker distinguishes the two; a membership test does not, and would delete the real on-chain update. `super.update()` cannot restore it, because its search window has already advanced past that block, so the entry would be lost for the lifetime of the process: any chain onboarded in the same update as the injected one would be silently dropped, and the injected chain back-dated to the injected block.
+
+`test/ConfigStoreClient.ts` pins the injection lifecycle, the on-chain override, and the once-per-process warning.
+
 ## Inventory Client
 
 The InventoryClient has several important functions that all use its `InventoryConfig` as input
