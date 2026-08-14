@@ -193,7 +193,7 @@ export const CONTRACT_ADDRESSES: {
       abi: ARBITRUM_OUTBOX_ABI,
     },
     orbitErc20GatewayRouter_4663: {
-      address: "0x6a2E3a1e16FC29f27Ce61429746D558d656975bB", // Is this the right address for Robinhood?
+      address: "0x6a2E3a1e16FC29f27Ce61429746D558d656975bB",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
     },
     orbitErc20Gateway_4663: {
