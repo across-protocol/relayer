@@ -20,7 +20,7 @@ import {
   getProvider,
   paginatedEventQuery,
   getNetworkName,
-  getL2TokenAddresses,
+  getRemoteTokenForL1Token,
   getNativeTokenSymbol,
   getTokenInfo,
   assert,
@@ -158,13 +158,14 @@ export async function arbStackFinalizer(
   const _withdrawalEvents = [
     ...withdrawalErc20Events.map((e) => {
       const { l1Token, _to: to, _amount: amount } = e.args;
-      const l2Token = getL2TokenAddresses(l1Token)?.[chainId];
+      // @dev Resolve against the hub chain, and require a mapping on chainId so the aliased ETH/WETH L1 address
+      // doesn't send a recognised token down the unknown path.
+      const l2Token = getRemoteTokenForL1Token(EvmAddress.from(l1Token), chainId, hubPoolClient.chainId);
       if (!isDefined(l2Token)) {
         unknownTokenWithdrawals.push({
           l1Token,
           to,
-          // @dev Stringified deliberately: the logger stringifies BigNumbers itself, but does so via
-          // Object.fromEntries(), which would collapse this array into an object keyed "0", "1", ...
+          // @dev Keeps this an array; the logger's BigNumber pass rebuilds via Object.fromEntries().
           amount: amount.toString(),
           txnRef: e.transactionHash,
         });
@@ -174,7 +175,7 @@ export async function arbStackFinalizer(
         amount,
         // @dev An unmapped token has no known L2 address, so fall back to the L1 address to keep the withdrawal
         // identifiable in logs. Nothing downstream reads this to build the finalization.
-        l2TokenAddress: EvmAddress.from(l2Token ?? l1Token),
+        l2TokenAddress: l2Token ?? EvmAddress.from(l1Token),
       };
     }),
     ...withdrawalNativeEvents.map((e) => {
