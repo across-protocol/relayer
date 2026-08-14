@@ -71,3 +71,50 @@ describe("GaslessRelayerConfig fillsEnabled", function () {
     expect(config.fillsEnabled).to.equal(false);
   });
 });
+
+describe("GaslessRelayerConfig address filters", function () {
+  it("allows neither allow-list nor block-list to be set", function () {
+    const config = new GaslessRelayerConfig(baseEnv);
+    expect(config.allowedAddresses).to.equal(undefined);
+    expect(config.blockedAddresses).to.equal(undefined);
+  });
+
+  it("parses RELAYER_GASLESS_ALLOWED_ADDRESSES case-insensitively", function () {
+    const config = new GaslessRelayerConfig({
+      ...baseEnv,
+      RELAYER_GASLESS_ALLOWED_ADDRESSES: '["0xAbCdEf0123456789AbCdEf0123456789aBcDeF01"]',
+    });
+    expect(config.allowedAddresses).to.deep.equal(new Set(["0xabcdef0123456789abcdef0123456789abcdef01"]));
+    expect(config.blockedAddresses).to.equal(undefined);
+  });
+
+  it("parses RELAYER_GASLESS_BLOCKED_ADDRESSES case-insensitively", function () {
+    const config = new GaslessRelayerConfig({
+      ...baseEnv,
+      RELAYER_GASLESS_BLOCKED_ADDRESSES: '["0xAbCdEf0123456789AbCdEf0123456789aBcDeF01"]',
+    });
+    expect(config.blockedAddresses).to.deep.equal(new Set(["0xabcdef0123456789abcdef0123456789abcdef01"]));
+    expect(config.allowedAddresses).to.equal(undefined);
+  });
+
+  it("throws for invalid addresses", function () {
+    expect(
+      () =>
+        new GaslessRelayerConfig({
+          ...baseEnv,
+          RELAYER_GASLESS_BLOCKED_ADDRESSES: '["not-an-address"]',
+        })
+    ).to.throw('Invalid address in RELAYER_GASLESS_BLOCKED_ADDRESSES: "not-an-address"');
+  });
+
+  it("throws when both address filter env vars are set", function () {
+    expect(
+      () =>
+        new GaslessRelayerConfig({
+          ...baseEnv,
+          RELAYER_GASLESS_ALLOWED_ADDRESSES: '["0x1111111111111111111111111111111111111111"]',
+          RELAYER_GASLESS_BLOCKED_ADDRESSES: '["0x2222222222222222222222222222222222222222"]',
+        })
+    ).to.throw("Only one of RELAYER_GASLESS_ALLOWED_ADDRESSES and RELAYER_GASLESS_BLOCKED_ADDRESSES may be set");
+  });
+});
