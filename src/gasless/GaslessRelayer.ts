@@ -60,7 +60,11 @@ import {
 } from "../interfaces";
 import { AcrossSwapApiClient, SvmFillerClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
-import { DEFAULT_GASLESS_DEPOSIT_BATCH_SIZE } from "../common";
+import {
+  DEFAULT_GASLESS_DEPOSIT_BATCH_SIZE,
+  MULTICALL3_BATCH_GAS_MULTIPLIER,
+  MULTICALL3_BATCH_GAS_OVERHEAD,
+} from "../common";
 import {
   buildGaslessDepositTx,
   buildGaslessFillRelayTx,
@@ -985,35 +989,39 @@ export class GaslessRelayer {
         };
       });
 
-      // Simulation is the batch filter: spent nonces, expired authorizations and underfunded
-      // depositors fail here. Dropped messages are released for retry on a later poll.
-      const results: { success: boolean; returnData: string }[] = await multicall3.callStatic.tryAggregate(
-        false,
-        calls
-      );
-      results.forEach(({ success, returnData }, i) => {
-        if (!success) {
+      // Per-call estimation both prunes and sizes the batch: spent nonces, expired authorizations and
+      // underfunded depositors fail here, and dropped messages are released for retry on a later poll.
+      // tryAggregate(false) must never be sized by estimating itself — it catches inner failures, so
+      // the estimate can price a batch that executes nothing (see src/clients/README.md).
+      const estimates = await Promise.all(calls.map((call) => this._estimateGaslessDeposit(originChainId, call)));
+      estimates.forEach((estimate, i) => {
+        if (!isDefined(estimate)) {
           this.logger.debug({
             at: "GaslessRelayer#evaluateApiSignatures",
-            message: "Dropping gasless deposit from batch (simulation failed); retrying on a later poll.",
+            message: "Dropping gasless deposit from batch (estimation failed); retrying on a later poll.",
             requestId: messages[i].requestId,
             depositId: messages[i].depositId,
             originChainId,
-            returnData,
           });
           delete this.messageState[this._getDepositKeyFromMessage(messages[i])];
         }
       });
-      const live = messages.filter((_, i) => results[i].success);
+      const live = messages.filter((_, i) => isDefined(estimates[i]));
       if (live.length === 0) {
         return;
       }
+
+      // Size the batch from its calls' own estimates, plus wrapper overhead the estimates don't price.
+      const gasLimit = estimates
+        .filter(isDefined)
+        .reduce((sum, estimate) => sum.add(estimate), BigNumber.from(MULTICALL3_BATCH_GAS_OVERHEAD));
 
       // All live messages share the batch receipt; each state machine verifies its own deposit from it.
       const receiptPromise = this.initiateBatchDeposit(
         originChainId,
         multicall3,
-        calls.filter((_, i) => results[i].success)
+        calls.filter((_, i) => isDefined(estimates[i])),
+        gasLimit
       );
       await Promise.all(live.map((message) => processDepositMessage(message, receiptPromise, validated.get(message))));
     };
@@ -1146,10 +1154,31 @@ export class GaslessRelayer {
    * RPC URLs rather than of `spray`, so this only costs the redundancy, not the privacy.
    * @returns The batch transaction receipt, or null if skipped or failed.
    */
+  /*
+   * @notice Estimates gas for a single gasless deposit call on the origin chain.
+   * @returns The estimate, or undefined when the call fails estimation (spent nonce, expired
+   * authorization, underfunded depositor) — a call with no size must be dropped, not submitted.
+   */
+  protected async _estimateGaslessDeposit(
+    originChainId: number,
+    call: { target: string; callData: string }
+  ): Promise<BigNumber | undefined> {
+    try {
+      return await this.providersByChain[originChainId].estimateGas({
+        to: call.target,
+        data: call.callData,
+        from: this.signerAddress.toNative(),
+      });
+    } catch {
+      return undefined;
+    }
+  }
+
   protected async initiateBatchDeposit(
     originChainId: number,
     multicall3: Contract,
-    calls: { target: string; callData: string }[]
+    calls: { target: string; callData: string }[],
+    gasLimit: BigNumber
   ): Promise<TransactionReceipt | null | undefined> {
     if (!this.config.sendingTransactionsEnabled) {
       this.logger.debug({
@@ -1168,6 +1197,10 @@ export class GaslessRelayer {
       chainId: originChainId,
       method: "tryAggregate",
       args: [false, calls],
+      // @dev A sized limit is a real requirement, not the floor a tryAggregate() estimate gives:
+      // tryAggregate(false) catches inner failures, so estimating the batch itself can price a no-op.
+      gasLimit,
+      gasLimitMultiplier: MULTICALL3_BATCH_GAS_MULTIPLIER,
       ensureConfirmation: true,
       message: "Completed gasless deposit batch 😎",
       mrkdwn: `Submitted ${calls.length} gasless deposits on ${getNetworkName(originChainId)} via Multicall3.tryAggregate`,

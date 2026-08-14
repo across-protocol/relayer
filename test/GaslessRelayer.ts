@@ -127,6 +127,10 @@ class TestableGaslessRelayer extends GaslessRelayer {
     calls: { target: string; callData: string }[]
   ) => Promise<TransactionReceipt | null> = async () => null;
   public getMulticall3Fn: (chainId: number) => Contract | undefined = () => undefined;
+  public estimateGaslessDepositFn: (
+    originChainId: number,
+    call: { target: string; callData: string }
+  ) => Promise<BigNumber | undefined> = async () => toBN(200_000);
   public initiateFillFn: (deposit: GaslessDeposit) => Promise<GaslessFillSubmissionResult | null> = async () => null;
   public extractDepositFromReceiptFn: (
     receipt: TransactionReceipt,
@@ -142,6 +146,7 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public initiateDepositCalls = 0;
   public initiateBatchDepositCalls = 0;
   public batchedCalls: { target: string; callData: string }[][] = [];
+  public batchGasLimits: BigNumber[] = [];
   public extractDepositFromReceiptCalls = 0;
   public initiateFillCalls = 0;
   public findDepositCalls = 0;
@@ -159,13 +164,21 @@ class TestableGaslessRelayer extends GaslessRelayer {
   protected override _getMulticall3(chainId: number): Contract | undefined {
     return this.getMulticall3Fn(chainId);
   }
+  protected override async _estimateGaslessDeposit(
+    originChainId: number,
+    call: { target: string; callData: string }
+  ): Promise<BigNumber | undefined> {
+    return this.estimateGaslessDepositFn(originChainId, call);
+  }
   protected override async initiateBatchDeposit(
     originChainId: number,
     _multicall3: Contract,
-    calls: { target: string; callData: string }[]
+    calls: { target: string; callData: string }[],
+    gasLimit: BigNumber
   ): Promise<TransactionReceipt | null> {
     this.initiateBatchDepositCalls++;
     this.batchedCalls.push(calls);
+    this.batchGasLimits.push(gasLimit);
     return this.initiateBatchDepositFn(originChainId, calls);
   }
   protected override async initiateFill(
@@ -1177,10 +1190,6 @@ describe("GaslessRelayer", function () {
       const depositEvent2 = makeFakeDepositEvent({ inputAmount: "30000000", outputAmount: "29000000" });
       depositEvent2.depositId = toBN(200);
 
-      fakeMulticall3Smock.tryAggregate.returns([
-        { success: true, returnData: "0x" },
-        { success: true, returnData: "0x" },
-      ]);
       batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2];
       batchingRelayer.initiateBatchDepositFn = async () => receipt;
       batchingRelayer.extractDepositFromReceiptFn = (_receipt, _chainId, depositId) =>
@@ -1193,19 +1202,20 @@ describe("GaslessRelayer", function () {
       expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg2))).to.equal(MessageState.FILLED);
       expect(batchingRelayer.initiateBatchDepositCalls).to.equal(1);
       expect(batchingRelayer.batchedCalls[0].length).to.equal(2);
+      // Sized from the calls' own estimates plus wrapper overhead — never from estimating tryAggregate itself.
+      expect(batchingRelayer.batchGasLimits[0].eq(500_000)).to.be.true;
       expect(batchingRelayer.initiateDepositCalls).to.equal(0);
     });
 
-    it("releases simulation failures for retry on a later poll", async function () {
+    it("releases estimation failures for retry on a later poll", async function () {
       const [msg1, msg2] = makeBatchableMessages();
       const receipt = makeReceipt();
       const depositEvent1 = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
       depositEvent1.depositId = toBN(100);
 
-      fakeMulticall3Smock.tryAggregate.returns([
-        { success: true, returnData: "0x" },
-        { success: false, returnData: "0x" },
-      ]);
+      // The second call fails estimation: a call with no size is dropped rather than submitted.
+      const estimates = [toBN(200_000), undefined];
+      batchingRelayer.estimateGaslessDepositFn = async () => estimates.shift();
       batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2];
       batchingRelayer.initiateBatchDepositFn = async () => receipt;
       batchingRelayer.extractDepositFromReceiptFn = () => depositEvent1;
@@ -1245,10 +1255,6 @@ describe("GaslessRelayer", function () {
       const depositEvent2 = makeFakeDepositEvent({ inputAmount: "30000000", outputAmount: "29000000" });
       depositEvent2.depositId = toBN(200);
 
-      fakeMulticall3Smock.tryAggregate.returns([
-        { success: true, returnData: "0x" },
-        { success: true, returnData: "0x" },
-      ]);
       batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2];
       batchingRelayer.initiateBatchDepositFn = async () => receipt;
       let msg2Extracts = 0;
@@ -1284,10 +1290,6 @@ describe("GaslessRelayer", function () {
       const depositEvent2 = makeFakeDepositEvent({ inputAmount: "30000000", outputAmount: "29000000" });
       depositEvent2.depositId = toBN(200);
 
-      fakeMulticall3Smock.tryAggregate.returns([
-        { success: true, returnData: "0x" },
-        { success: true, returnData: "0x" },
-      ]);
       batchingRelayer.queryGaslessApiFn = async () => [msg1, invalid, msg2];
       batchingRelayer.initiateBatchDepositFn = async () => receipt;
       batchingRelayer.extractDepositFromReceiptFn = (_receipt, _chainId, depositId) =>
@@ -1314,10 +1316,6 @@ describe("GaslessRelayer", function () {
       const receipt = makeReceipt();
       const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
 
-      fakeMulticall3Smock.tryAggregate.returns([
-        { success: true, returnData: "0x" },
-        { success: true, returnData: "0x" },
-      ]);
       batchingRelayer.queryGaslessApiFn = async () => messages;
       batchingRelayer.initiateBatchDepositFn = async () => receipt;
       batchingRelayer.extractDepositFromReceiptFn = (_receipt, _chainId, depositId) => ({
