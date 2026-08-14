@@ -16,6 +16,8 @@ import {
   CHAIN_IDs,
   EvmAddress,
   isDefined,
+  Multicall2Call,
+  Multicall3BatchPlan,
   Provider,
   TransactionReceipt,
   getCurrentTime,
@@ -127,11 +129,16 @@ class TestableGaslessRelayer extends GaslessRelayer {
     calls: { target: string; callData: string }[]
   ) => Promise<TransactionReceipt | null> = async () => null;
   public getMulticall3Fn: (chainId: number) => Contract | undefined = () => undefined;
-  public estimateGaslessDepositFn: (
-    originChainId: number,
-    from: string,
-    call: { target: string; callData: string }
-  ) => Promise<BigNumber | Error> = async () => toBN(200_000);
+  // Default plan: everything included at 200k gas per call, plus 100k wrapper overhead.
+  public planDepositBatchFn: (multicall3: Contract, calls: Multicall2Call[]) => Promise<Multicall3BatchPlan> = async (
+    _multicall3,
+    calls
+  ) => ({
+    included: calls.map((_, i) => i),
+    gasLimit: toBN(100_000 + 200_000 * calls.length),
+    failed: [],
+    deferred: [],
+  });
   public initiateFillFn: (deposit: GaslessDeposit) => Promise<GaslessFillSubmissionResult | null> = async () => null;
   public extractDepositFromReceiptFn: (
     receipt: TransactionReceipt,
@@ -165,12 +172,8 @@ class TestableGaslessRelayer extends GaslessRelayer {
   protected override _getMulticall3(chainId: number): Contract | undefined {
     return this.getMulticall3Fn(chainId);
   }
-  protected override async _estimateGaslessDeposit(
-    originChainId: number,
-    from: string,
-    call: { target: string; callData: string }
-  ): Promise<BigNumber | Error> {
-    return this.estimateGaslessDepositFn(originChainId, from, call);
+  protected override _planDepositBatch(multicall3: Contract, calls: Multicall2Call[]): Promise<Multicall3BatchPlan> {
+    return this.planDepositBatchFn(multicall3, calls);
   }
   protected override async initiateBatchDeposit(
     originChainId: number,
@@ -1216,8 +1219,12 @@ describe("GaslessRelayer", function () {
       depositEvent1.depositId = toBN(100);
 
       // The second call fails estimation: a call with no size is dropped rather than submitted.
-      const estimates = [toBN(200_000), new Error("estimation failed")];
-      batchingRelayer.estimateGaslessDepositFn = async () => estimates.shift() ?? new Error("unexpected estimation");
+      batchingRelayer.planDepositBatchFn = async () => ({
+        included: [0],
+        gasLimit: toBN(300_000),
+        failed: [{ index: 1, error: new Error("estimation failed") }],
+        deferred: [],
+      });
       batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2];
       batchingRelayer.initiateBatchDepositFn = async () => receipt;
       batchingRelayer.extractDepositFromReceiptFn = () => depositEvent1;
@@ -1341,9 +1348,14 @@ describe("GaslessRelayer", function () {
       const depositEvent1 = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
       depositEvent1.depositId = toBN(100);
 
-      // Budget is floor(15M ceiling / 1.1 multiplier) - 100k overhead ≈ 13.54M: the first 8M call
-      // fits, the second would exceed it and must defer to a later poll rather than oversize the batch.
-      batchingRelayer.estimateGaslessDepositFn = async () => toBN(8_000_000);
+      // The second call would push the batch over the gas budget (planMulticall3Batch owns that
+      // policy; its own tests pin the arithmetic) and must defer to a later poll.
+      batchingRelayer.planDepositBatchFn = async () => ({
+        included: [0],
+        gasLimit: toBN(8_100_000),
+        failed: [],
+        deferred: [1],
+      });
       batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2];
       batchingRelayer.initiateBatchDepositFn = async () => receipt;
       batchingRelayer.extractDepositFromReceiptFn = () => depositEvent1;
