@@ -1,4 +1,5 @@
 import assert from "assert";
+import { utils as ethersUtils } from "ethers";
 import { CommonConfig, DEFAULT_GASLESS_DEPOSIT_BATCH_SIZE, ProcessEnv } from "../common";
 import { isDefined, parseJson } from "../utils";
 import { normalizeIntegratorId } from "../utils/GaslessUtils";
