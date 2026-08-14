@@ -1,6 +1,7 @@
 import winston from "winston";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
 import {
+  delay,
   isDefined,
   parseJson,
   Signer,
@@ -102,7 +103,12 @@ function expectedNamespaceForChain(chainId: number): "evm" | "tron" | undefined 
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
 export class DepositAddressHandler {
-  private abortController = new AbortController();
+  protected readonly abortController = new AbortController();
+  // Most recent pollAndExecute() tick; waitForDisconnect() drains it (bounded) before the caller
+  // tears down the shared Redis clients.
+  private inFlightTick: Promise<unknown> | undefined;
+  // Post-abort settle window for an in-flight tick before Redis teardown.
+  protected shutdownDrainSeconds = 5;
   private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
   private consecutiveHeartbeatFailures = 0;
@@ -382,17 +388,29 @@ export class DepositAddressHandler {
    */
   public pollAndExecute(): void {
     scheduleTask(
-      () => this.evaluateDepositAddresses(),
+      () => (this.inFlightTick = this.evaluateDepositAddresses()),
       this.config.indexerPollingInterval,
       this.abortController.signal,
       // A rejected poll skips the whole batch for that tick; without this log the failure is
       // invisible (scheduleTask otherwise swallows rejections) while fills silently stall.
-      (err) =>
+      (err) => {
+        const error = err instanceof Error ? err.message : String(err);
+        // After abort (handover or shutdown), Redis teardown makes in-flight provider calls fail
+        // with client-closed errors. The successor instance owns the batch by then, so don't page.
+        if (this.abortController.signal.aborted) {
+          this.logger.debug({
+            at: "DepositAddressHandler#pollAndExecute",
+            message: "evaluateDepositAddresses failed during shutdown; batch abandoned to successor instance.",
+            error,
+          });
+          return;
+        }
         this.logger.error({
           at: "DepositAddressHandler#pollAndExecute",
           message: "evaluateDepositAddresses failed; batch skipped this tick",
-          error: err instanceof Error ? err.message : String(err),
-        })
+          error,
+        });
+      }
     );
     scheduleTask(() => this.kickWatchdog(), this.config.watchdogInterval, this.abortController.signal);
   }
@@ -440,6 +458,10 @@ export class DepositAddressHandler {
   public async waitForDisconnect(): Promise<void> {
     await this.instanceCoordinator.subscribe();
     this.abortController.abort();
+
+    // Give an in-flight tick a bounded window to observe the abort and settle before the caller
+    // disconnects the shared Redis clients out from under it.
+    await Promise.race([this.inFlightTick?.catch(() => undefined), delay(this.shutdownDrainSeconds)]);
   }
 
   private async evaluateDepositAddresses(): Promise<void> {

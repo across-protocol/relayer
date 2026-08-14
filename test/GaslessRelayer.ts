@@ -14,7 +14,9 @@ import PERMIT2_ABI from "../src/common/abi/Permit2.json";
 import {
   assert,
   CHAIN_IDs,
+  delay,
   EvmAddress,
+  InstanceCoordinator,
   isDefined,
   Provider,
   TransactionReceipt,
@@ -192,6 +194,17 @@ class TestableGaslessRelayer extends GaslessRelayer {
 
   public runFilterDepositsByAddress(messages: AnyGaslessDepositMessage[]): AnyGaslessDepositMessage[] {
     return this._filterDepositsByAddress(messages);
+  }
+
+  public triggerAbort(): void {
+    this.abortController.abort();
+  }
+  public setShutdownDrainSeconds(seconds: number): void {
+    this.shutdownDrainSeconds = seconds;
+  }
+  // Coordinator that hands over immediately, so waitForDisconnect() proceeds straight to the drain.
+  public setImmediateHandoverCoordinator(): void {
+    this.instanceCoordinator = { subscribe: async () => undefined } as unknown as InstanceCoordinator;
   }
 }
 
@@ -1585,6 +1598,71 @@ describe("GaslessRelayer", function () {
         );
         expect(result).to.be.true;
       });
+    });
+  });
+
+  describe("shutdown / handover", function () {
+    it("skips the batch when abort fires before message processing", async function () {
+      const msg = makeTestDepositMessage();
+      relayer.queryGaslessApiFn = async () => {
+        relayer.triggerAbort();
+        return [msg];
+      };
+
+      await relayer.runEvaluateApiSignatures();
+
+      expect(relayer.initiateDepositCalls).to.equal(0);
+      expect(relayer.stateTransitions).to.deep.equal({});
+    });
+
+    it("abandons an in-flight state machine on abort instead of retrying forever", async function () {
+      // A deposit that can never confirm: no receipt and no on-chain deposit, so the machine
+      // cycles DEPOSIT_SUBMIT <-> DEPOSIT_CONFIRM until shutdown.
+      const msg = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
+      relayer.queryGaslessApiFn = async () => [msg];
+      relayer.initiateDepositFn = async () => null;
+      relayer.findDepositFn = async () => undefined;
+
+      const run = relayer.runEvaluateApiSignatures();
+      // Let the machine spin through at least one full retry cycle before aborting.
+      await delay(1.5);
+      relayer.triggerAbort();
+      await run; // Resolves at the next loop-boundary abort check instead of looping.
+
+      const state = relayer.getMessageState(depositNonceFor(relayer, msg));
+      expect([MessageState.DEPOSIT_SUBMIT, MessageState.DEPOSIT_CONFIRM]).to.include(state);
+    });
+
+    it("waitForDisconnect drains the in-flight tick before resolving", async function () {
+      relayer.setImmediateHandoverCoordinator();
+      let release: (() => void) | undefined;
+      relayer.queryGaslessApiFn = () => new Promise((resolve) => (release = () => resolve([])));
+
+      relayer.pollAndExecute(); // Default 1s polling interval.
+      await delay(1.2); // Let the first tick start and block on the gated API query.
+      expect(release).to.not.be.undefined;
+
+      let disconnected = false;
+      const disconnect = relayer.waitForDisconnect().then(() => (disconnected = true));
+      await delay(0.2);
+      expect(disconnected).to.be.false; // Still draining the gated tick.
+
+      release?.();
+      await disconnect;
+      expect(disconnected).to.be.true;
+    });
+
+    it("waitForDisconnect resolves after the drain bound when the tick hangs", async function () {
+      relayer.setImmediateHandoverCoordinator();
+      relayer.setShutdownDrainSeconds(0.2);
+      relayer.queryGaslessApiFn = () => new Promise(() => undefined); // Never settles.
+
+      relayer.pollAndExecute();
+      await delay(1.2);
+
+      const tStart = performance.now();
+      await relayer.waitForDisconnect();
+      expect(performance.now() - tStart).to.be.lessThan(1000);
     });
   });
 });
