@@ -14,7 +14,7 @@ Full env parsing lives in `GaslessRelayerConfig.ts`. Runtime state machine is in
 
 CCTP deposits (and swap-and-bridge that uses a non-default `spokePool`) end in `DONE`. Standard bridge deposits submit a fill and end in `FILLED`, unless fills are disabled (see below).
 
-Integrator filtering runs inside `_queryGaslessApi` immediately after API responses are restructured — discarded messages never enter the state machine.
+Integrator and address filtering run inside `_queryGaslessApi` immediately after API responses are restructured — discarded messages never enter the state machine.
 
 ### Deposit log token resolution (`resolveTokenInfoForLog`)
 
@@ -101,6 +101,33 @@ RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS='["0xdead"]'
 ```
 
 Filtered-out deposits log at debug: `GaslessRelayer#_queryGaslessApi`.
+
+### Address filters (mutually exclusive)
+
+Filter API messages by authorizer / depositor / recipient. Addresses are normalized to lowercase (`ethers.getAddress` after lowercasing, so mixed-case paste is fine).
+
+**Only one** of these may be set; setting both causes config construction to throw.
+
+| Variable | Behavior |
+|----------|----------|
+| `RELAYER_GASLESS_ALLOWED_ADDRESSES` | JSON string array. **Only** process deposits whose authorizer or depositor is in the list. |
+| `RELAYER_GASLESS_BLOCKED_ADDRESSES` | JSON string array. **Discard** deposits whose authorizer, depositor, or recipient is in the list. |
+
+Neither set → no address filtering.
+
+Example allow-list:
+
+```bash
+RELAYER_GASLESS_ALLOWED_ADDRESSES='["0x1111111111111111111111111111111111111111"]'
+```
+
+Example block-list:
+
+```bash
+RELAYER_GASLESS_BLOCKED_ADDRESSES='["0x2222222222222222222222222222222222222222"]'
+```
+
+Invalid addresses cause config construction to throw. Filtered-out deposits log at debug: `GaslessRelayer#_queryGaslessApi`.
 
 ## Related code
 

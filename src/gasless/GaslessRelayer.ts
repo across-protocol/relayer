@@ -1307,7 +1307,7 @@ export class GaslessRelayer {
       return retriesRemaining > 0 ? this._queryGaslessApi(--retriesRemaining) : [];
     }
     const deposits = restructureGaslessDeposits(apiResponseData.deposits, this.logger);
-    return this._filterDepositsByIntegratorId(deposits);
+    return this._filterDepositsByAddress(this._filterDepositsByIntegratorId(deposits));
   }
 
   protected _filterDepositsByIntegratorId(deposits: AnyGaslessDepositMessage[]): AnyGaslessDepositMessage[] {
@@ -1342,6 +1342,60 @@ export class GaslessRelayer {
           ...depositLogFields,
         });
         return false;
+      }
+
+      return true;
+    });
+  }
+
+  /**
+   * Filter deposits by authorizer / depositor / recipient against `allowedAddresses` or `blockedAddresses`.
+   * - Allow-list: keep only if authorizer or depositor is in the set.
+   * - Block-list: discard if authorizer, depositor, or recipient is in the set.
+   * Matching is case-insensitive (lowercase).
+   */
+  protected _filterDepositsByAddress(deposits: AnyGaslessDepositMessage[]): AnyGaslessDepositMessage[] {
+    const { allowedAddresses, blockedAddresses } = this.config;
+    if (!isDefined(allowedAddresses) && !isDefined(blockedAddresses)) {
+      return deposits;
+    }
+
+    return deposits.filter((deposit) => {
+      const authorizer = getGaslessAuthorizerAddress(deposit).toLowerCase();
+      const depositData = deposit.depositFlowType === "swapAndBridge" ? deposit.depositData : deposit.baseDepositData;
+      const depositor = depositData.depositor.toLowerCase();
+      const recipient = depositData.recipient.toLowerCase();
+      const depositLogFields = {
+        requestId: deposit.requestId,
+        depositId: deposit.depositId,
+        authorizer,
+        depositor,
+        recipient,
+      };
+
+      if (isDefined(allowedAddresses)) {
+        const allowed = allowedAddresses.has(authorizer) || allowedAddresses.has(depositor);
+        if (!allowed) {
+          this.logger.debug({
+            at: "GaslessRelayer#_queryGaslessApi",
+            message: "Skipping gasless deposit with address outside allow-list",
+            ...depositLogFields,
+          });
+        }
+        return allowed;
+      }
+
+      if (isDefined(blockedAddresses)) {
+        const blockedParty = [authorizer, depositor, recipient].find((address) => blockedAddresses.has(address));
+        if (isDefined(blockedParty)) {
+          this.logger.debug({
+            at: "GaslessRelayer#_queryGaslessApi",
+            message: "Skipping gasless deposit with blocked address",
+            ...depositLogFields,
+            blockedAddress: blockedParty,
+          });
+          return false;
+        }
       }
 
       return true;
