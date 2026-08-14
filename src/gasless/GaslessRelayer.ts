@@ -25,6 +25,7 @@ import {
   EvmAddress,
   SvmAddress,
   BigNumber,
+  bnZero,
   blockExplorerLink,
   getNetworkName,
   relayFillStatus,
@@ -62,6 +63,7 @@ import { AcrossSwapApiClient, SvmFillerClient, TransactionClient } from "../clie
 import EIP3009_ABI from "../common/abi/EIP3009.json";
 import {
   DEFAULT_GASLESS_DEPOSIT_BATCH_SIZE,
+  MULTICALL3_BATCH_GAS_CEILING,
   MULTICALL3_BATCH_GAS_MULTIPLIER,
   MULTICALL3_BATCH_GAS_OVERHEAD,
 } from "../common";
@@ -990,40 +992,68 @@ export class GaslessRelayer {
       });
 
       // Per-call estimation both prunes and sizes the batch: spent nonces, expired authorizations and
-      // underfunded depositors fail here, and dropped messages are released for retry on a later poll.
-      // tryAggregate(false) must never be sized by estimating itself — it catches inner failures, so
-      // the estimate can price a batch that executes nothing (see src/clients/README.md).
-      const estimates = await Promise.all(calls.map((call) => this._estimateGaslessDeposit(originChainId, call)));
+      // (per-deposit) underfunded depositors fail here, and dropped messages are released for retry on
+      // a later poll. Each call is estimated independently against pre-batch state, so cross-deposit
+      // interactions (e.g. one depositor funding only one of two deposits) are not caught here —
+      // requireSuccess=false absorbs those in the batch and the state machine retries the loser
+      // individually. tryAggregate(false) must never be sized by estimating itself — it catches inner
+      // failures, so the estimate can price a batch that executes nothing (see src/clients/README.md).
+      const estimates = await Promise.all(
+        calls.map((call) => this._estimateGaslessDeposit(originChainId, multicall3.address, call))
+      );
+
+      // Budget under the per-transaction ceiling for the padding applied at submission and the wrapper
+      // allowance added below. The batch is capped by count (depositBatchSize), not by gas, so a
+      // generous operator setting must not build a batch the chain won't accept.
+      const budget = BigNumber.from(
+        Math.floor(MULTICALL3_BATCH_GAS_CEILING / MULTICALL3_BATCH_GAS_MULTIPLIER) - MULTICALL3_BATCH_GAS_OVERHEAD
+      );
+      let callGas = bnZero;
+      const live: number[] = [];
       estimates.forEach((estimate, i) => {
-        if (!isDefined(estimate)) {
-          this.logger.debug({
+        const { requestId, depositId } = messages[i];
+        if (estimate instanceof Error) {
+          // The primary signal that batching is misbehaving, hence warn.
+          this.logger.warn({
             at: "GaslessRelayer#evaluateApiSignatures",
             message: "Dropping gasless deposit from batch (estimation failed); retrying on a later poll.",
-            requestId: messages[i].requestId,
-            depositId: messages[i].depositId,
+            requestId,
+            depositId,
+            originChainId,
+            error: estimate.message,
+          });
+          delete this.messageState[this._getDepositKeyFromMessage(messages[i])];
+        } else if (callGas.add(estimate).gt(budget)) {
+          this.logger.debug({
+            at: "GaslessRelayer#evaluateApiSignatures",
+            message: "Deferring gasless deposit to a later poll (batch gas budget reached).",
+            requestId,
+            depositId,
             originChainId,
           });
           delete this.messageState[this._getDepositKeyFromMessage(messages[i])];
+        } else {
+          callGas = callGas.add(estimate);
+          live.push(i);
         }
       });
-      const live = messages.filter((_, i) => isDefined(estimates[i]));
       if (live.length === 0) {
         return;
       }
 
       // Size the batch from its calls' own estimates, plus wrapper overhead the estimates don't price.
-      const gasLimit = estimates
-        .filter(isDefined)
-        .reduce((sum, estimate) => sum.add(estimate), BigNumber.from(MULTICALL3_BATCH_GAS_OVERHEAD));
+      const gasLimit = callGas.add(MULTICALL3_BATCH_GAS_OVERHEAD);
 
       // All live messages share the batch receipt; each state machine verifies its own deposit from it.
       const receiptPromise = this.initiateBatchDeposit(
         originChainId,
         multicall3,
-        calls.filter((_, i) => isDefined(estimates[i])),
+        live.map((i) => calls[i]),
         gasLimit
       );
-      await Promise.all(live.map((message) => processDepositMessage(message, receiptPromise, validated.get(message))));
+      await Promise.all(
+        live.map((i) => processDepositMessage(messages[i], receiptPromise, validated.get(messages[i])))
+      );
     };
 
     await Promise.all([
@@ -1146,6 +1176,25 @@ export class GaslessRelayer {
   }
 
   /*
+   * @notice Estimates gas for a single gasless deposit call on the origin chain.
+   * @dev Estimate as Multicall3, matching the calls' real sender at execution — each call executes
+   * from the batcher, not from the signer.
+   * @returns The estimate, or the estimation error (spent nonce, expired authorization, underfunded
+   * depositor) — a call with no size must be dropped, not submitted.
+   */
+  protected async _estimateGaslessDeposit(
+    originChainId: number,
+    from: string,
+    call: { target: string; callData: string }
+  ): Promise<BigNumber | Error> {
+    try {
+      return await this.providersByChain[originChainId].estimateGas({ to: call.target, data: call.callData, from });
+    } catch (err) {
+      return err instanceof Error ? err : new Error(String(err));
+    }
+  }
+
+  /*
    * @notice Submits a batch of pre-simulated gasless deposits via Multicall3.tryAggregate on the origin
    * chain. Inner failures do not revert the batch; each message's state machine verifies its own deposit
    * against the shared receipt (FundsDeposited selected by depositId).
@@ -1154,26 +1203,6 @@ export class GaslessRelayer {
    * RPC URLs rather than of `spray`, so this only costs the redundancy, not the privacy.
    * @returns The batch transaction receipt, or null if skipped or failed.
    */
-  /*
-   * @notice Estimates gas for a single gasless deposit call on the origin chain.
-   * @returns The estimate, or undefined when the call fails estimation (spent nonce, expired
-   * authorization, underfunded depositor) — a call with no size must be dropped, not submitted.
-   */
-  protected async _estimateGaslessDeposit(
-    originChainId: number,
-    call: { target: string; callData: string }
-  ): Promise<BigNumber | undefined> {
-    try {
-      return await this.providersByChain[originChainId].estimateGas({
-        to: call.target,
-        data: call.callData,
-        from: this.signerAddress.toNative(),
-      });
-    } catch {
-      return undefined;
-    }
-  }
-
   protected async initiateBatchDeposit(
     originChainId: number,
     multicall3: Contract,
