@@ -297,7 +297,7 @@ export function restructureGaslessDeposits(
         {
           depositFlowType: "swapAndBridge",
           originChainId,
-          depositId,
+          depositId: BigNumber.from(depositId),
           requestId,
           signature,
           permitType,
@@ -329,7 +329,7 @@ export function restructureGaslessDeposits(
       {
         depositFlowType: "bridge",
         originChainId,
-        depositId,
+        depositId: BigNumber.from(depositId),
         requestId,
         signature,
         permitType,
@@ -752,7 +752,7 @@ export function buildSyntheticDeposit(msg: GaslessDepositMessage): RelayData & {
     originChainId,
     depositor: toAddressType(bdd.depositor, originChainId),
     recipient: toAddressType(bdd.recipient, destinationChainId),
-    depositId: BigNumber.from(msg.depositId),
+    depositId: msg.depositId,
     inputToken: toAddressType(bdd.inputToken, originChainId),
     inputAmount: BigNumber.from(bdd.inputAmount),
     outputToken: toAddressType(bdd.outputToken, destinationChainId),

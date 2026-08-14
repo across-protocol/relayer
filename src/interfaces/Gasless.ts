@@ -1,3 +1,5 @@
+import { BigNumber } from "ethers";
+
 /** EIP-712 typed data for ReceiveWithAuthorization (used in swapTx.typedData) */
 export interface TypedDataReceiveWithAuthorizationEIP712 {
   types: {
@@ -290,7 +292,8 @@ export type GaslessPermitType = (typeof GASLESS_TYPES)[number];
 export interface GaslessDepositMessage {
   depositFlowType: "bridge";
   originChainId: number;
-  depositId: string;
+  /** Normalized to BigNumber on ingestion (restructureGaslessDeposits); raw API carries a string. */
+  depositId: BigNumber;
   requestId: string;
   signature: string;
   permitType: GaslessPermitType;
@@ -321,7 +324,8 @@ export interface GaslessDepositMessage {
 export interface SwapAndBridgeGaslessDepositMessage {
   depositFlowType: "swapAndBridge";
   originChainId: number;
-  depositId: string;
+  /** See {@link GaslessDepositMessage.depositId}. */
+  depositId: BigNumber;
   requestId: string;
   signature: string;
   permitType: GaslessPermitType;
