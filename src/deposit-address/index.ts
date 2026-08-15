@@ -13,10 +13,13 @@ export async function runDepositAddressHandler(_logger: winston.Logger, baseSign
   await relayer.initialize();
 
   try {
+    // Exclude swapApiKey from the logged config: it is a live bearer credential and must not be
+    // serialized into log transports at startup.
+    const { swapApiKey: _swapApiKey, ...loggedConfig } = config;
     logger[startupLogLevel(config)]({
       at: "DepositAddressHandler#index",
       message: "Deposit address handler started",
-      config,
+      config: loggedConfig,
     });
     const start = Date.now();
 
