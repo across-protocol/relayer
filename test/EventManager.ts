@@ -32,11 +32,12 @@ describe("EventManager: Event Handling ", function () {
 
   // Retention is only exercised above the combined retention + lag window, so anchor test blocks well clear of it.
   const baseBlockNumber = 10 * (MAX_EVENT_RETENTION_BLOCKS + MAX_PROVIDER_LAG_BLOCKS);
-  const makeEvent = (blockNumber: number): Log => ({
+  const makeEvent = (blockNumber: number, event = eventTemplate.event): Log => ({
     ...eventTemplate,
     blockNumber,
     blockHash: makeHash(),
     transactionHash: makeHash(),
+    event,
   });
 
   let logger: winston.Logger;
@@ -174,6 +175,54 @@ describe("EventManager: Event Handling ", function () {
     expect(eventMgr.events[key]).to.be.undefined;
     expect(eventMgr.blockHashes[event.blockHash]).to.be.undefined;
     expect(lastSpyLogIncludes(spy, "Ignoring stalled")).to.be.true;
+  });
+
+  it("Tracks provider progress per subscription", async function () {
+    const [provider1, provider2] = providers;
+    const deposit = makeEvent(baseBlockNumber, "FundsDeposited");
+    const key = eventMgr.getEventKey(deposit);
+
+    // Both providers start out current on both subscriptions.
+    ["FundsDeposited", "FilledRelay"].forEach((eventName) => {
+      const priorEvent = makeEvent(baseBlockNumber - 1, eventName);
+      [provider1, provider2].forEach((provider) => eventMgr.add(priorEvent, provider));
+    });
+    expect(eventMgr.add(deposit, provider1)).to.be.false;
+
+    // Each event descriptor is a separate stream, so provider2's FilledRelay stream racing ahead says
+    // nothing about the progress of its (stalled) FundsDeposited stream.
+    const fill = makeEvent(baseBlockNumber + 10 * MAX_EVENT_RETENTION_BLOCKS, "FilledRelay");
+    [provider1, provider2].forEach((provider) => eventMgr.add(fill, provider));
+
+    // provider1's deposit vote must survive, so provider2's late deposit still reaches quorum.
+    expect(eventMgr.getEventQuorum(key)).to.equal(1);
+    expect(eventMgr.add(deposit, provider2)).to.be.true;
+  });
+
+  it("Evicts events individually when logs share a blockHash bucket", async function () {
+    const [provider1, provider2] = providers;
+    // SVM logs carry no blockHash, so a bucket can't be assumed to correspond to a single block.
+    const svmEvent = (blockNumber: number): Log => ({ ...makeEvent(blockNumber), blockHash: "" });
+
+    const staleEvent = svmEvent(baseBlockNumber);
+    const staleKey = eventMgr.getEventKey(staleEvent);
+    [provider1, provider2].forEach((provider) => eventMgr.add(staleEvent, provider));
+
+    // A recent event, still awaiting a second vote.
+    const recentEvent = svmEvent(baseBlockNumber + MAX_EVENT_RETENTION_BLOCKS);
+    expect(eventMgr.add(recentEvent, provider1)).to.be.false;
+
+    // Both providers advance past the stale event's retention window.
+    const head = svmEvent(baseBlockNumber + MAX_EVENT_RETENTION_BLOCKS + 1);
+    [provider1, provider2].forEach((provider) => eventMgr.add(head, provider));
+
+    // Only the stale event is evicted; the recent event keeps its vote and can still reach quorum.
+    expect(eventMgr.events[staleKey]).to.be.undefined;
+    expect(eventMgr.getEventQuorum(eventMgr.getEventKey(recentEvent))).to.equal(1);
+    expect(eventMgr.add(recentEvent, provider2)).to.be.true;
+
+    // Logs without a blockHash are never bucketed; re-org removal is keyed on blockHash.
+    expect(eventMgr.blockHashes).to.deep.equal({});
   });
 
   it("Keys events correctly: uniqueness", async function () {

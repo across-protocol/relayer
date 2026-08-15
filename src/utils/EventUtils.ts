@@ -76,14 +76,15 @@ export function getUniqueLogIndex(events: { txnRef: string }[]): number[] {
 
 type QuorumEvent = Log & { providers: string[] };
 
-// Retain events for at most this many blocks behind the slowest provider that is still keeping up. This
-// must comfortably exceed any monitored chain's re-org depth — the only window in which a 'removed'
-// notification can arrive — so pruning can never drop an event that could still be reorged out.
+// Retain events for at most this many blocks behind the slowest provider that is still keeping up with
+// the same subscription. This must comfortably exceed any monitored chain's re-org depth — the only
+// window in which a 'removed' notification can arrive — so pruning can never drop an event that could
+// still be reorged out.
 export const MAX_EVENT_RETENTION_BLOCKS = 5000;
 
-// A provider lagging further than this behind the highest observed block is treated as stalled and no
-// longer holds up eviction. This caps retention at MAX_PROVIDER_LAG_BLOCKS + MAX_EVENT_RETENTION_BLOCKS
-// blocks behind the head, so a single dead provider can't reinstate unbounded growth.
+// A provider lagging further than this behind the highest block observed on the same subscription is
+// treated as stalled and no longer holds up eviction. This caps retention at MAX_PROVIDER_LAG_BLOCKS +
+// MAX_EVENT_RETENTION_BLOCKS blocks, so a single dead subscription can't reinstate unbounded growth.
 export const MAX_PROVIDER_LAG_BLOCKS = 5000;
 
 /**
@@ -95,9 +96,10 @@ export class EventManager {
   public readonly chain: string;
   public readonly events: { [eventKey: string]: QuorumEvent } = {};
   public readonly blockHashes: { [blockHash: string]: string[] } = {};
-  private highestBlockNumber = 0;
-  private readonly providerBlockNumbers: { [provider: string]: number } = {};
-  private nextLagWarningBlock = 0;
+  // Highest block observed per subscription, per provider. Each (address, event name) pair is a separate
+  // stream that can stall independently, so they must not share a watermark.
+  private readonly subscriptions: { [subscription: string]: { [provider: string]: number } } = {};
+  private readonly nextLagWarningBlock: { [subscription: string]: number } = {};
 
   constructor(
     private readonly logger: winston.Logger,
@@ -136,6 +138,13 @@ export class EventManager {
    */
   protected _addEvent(eventKey: string, event: QuorumEvent): void {
     this.events[eventKey] = event;
+
+    // The blockHash bucket exists only to service re-org removals, which are keyed on blockHash. SVM logs
+    // carry no blockHash, so skip bucketing them; an empty key would otherwise collect every event on the
+    // chain and drop all of them together.
+    if (event.blockHash === "") {
+      return;
+    }
     this.blockHashes[event.blockHash] ??= [];
     this.blockHashes[event.blockHash].push(eventKey);
   }
@@ -152,7 +161,7 @@ export class EventManager {
 
     // Bound retention: drop event/blockHash records that no longer need to be tracked, so the maps don't
     // grow unbounded for the process lifetime.
-    this._pruneStaleEvents(event.blockNumber, provider);
+    this._pruneStaleEvents(event, provider);
 
     const eventKey = this.getEventKey(event);
 
@@ -202,63 +211,96 @@ export class EventManager {
   }
 
   /**
-   * Evict event/blockHash records that can no longer be reorged out or receive a late quorum vote.
-   * Eviction is anchored on the slowest provider that is still keeping up, so a lagging stream can always
-   * cast its vote on an event that another provider reported earlier; the anchor is clamped to
-   * MAX_PROVIDER_LAG_BLOCKS behind the head so a stalled provider can't hold retention open forever. Only
-   * scans when the reporting provider advances, so amortised cost stays low and the maps stay bounded.
-   * @param blockNumber Block number of the event currently being processed.
+   * Identify the subscription that supplies an event. Both listeners open one stream per (address, event
+   * name) pair - see EventListener.onEvents() - and each stream can stall independently of the others, so
+   * progress on one must never be read as progress on another.
+   * @param event Event to identify.
+   * @returns A key uniquely identifying the subscription.
+   */
+  protected getSubscriptionKey(event: Log): string {
+    return `${event.address}-${event.event}`;
+  }
+
+  /**
+   * Evict event records that can no longer be reorged out or receive a late quorum vote. Eviction is
+   * anchored on the slowest provider that is still keeping up with the same subscription, so a lagging
+   * stream can always cast its vote on an event that another provider reported earlier; the anchor is
+   * clamped to MAX_PROVIDER_LAG_BLOCKS behind that subscription's highest block, so a stalled provider
+   * can't hold retention open forever. Only scans when the subscription advances, so amortised cost stays
+   * low and the maps stay bounded.
+   * @param event Event currently being processed.
    * @param provider A string uniquely identifying the provider that supplied the event.
    */
-  private _pruneStaleEvents(blockNumber: number, provider: string): void {
-    if (!(blockNumber > (this.providerBlockNumbers[provider] ?? 0))) {
-      return; // This provider hasn't advanced, so the cutoff can't have moved.
+  private _pruneStaleEvents(event: Log, provider: string): void {
+    const { blockNumber } = event;
+    const subscription = this.getSubscriptionKey(event);
+    const blockNumbers = (this.subscriptions[subscription] ??= {});
+    if (!(blockNumber > (blockNumbers[provider] ?? 0))) {
+      return; // This subscription hasn't advanced, so its cutoff can't have moved.
     }
-    this.providerBlockNumbers[provider] = blockNumber;
-    this.highestBlockNumber = Math.max(this.highestBlockNumber, blockNumber);
+    blockNumbers[provider] = blockNumber;
 
-    // Providers that have stalled - or that haven't reported anything yet - are pinned at
-    // MAX_PROVIDER_LAG_BLOCKS behind the head rather than being permitted to defeat the memory bound.
-    const blockNumbers = Object.values(this.providerBlockNumbers);
-    const slowestBlockNumber = blockNumbers.length >= this.quorum ? Math.min(...blockNumbers) : 0;
-    const stalledBlockNumber = this.highestBlockNumber - MAX_PROVIDER_LAG_BLOCKS;
-    this._warnOnStalledProviders(stalledBlockNumber);
+    // Providers that have stalled on this subscription - or that haven't reported on it yet - are pinned
+    // at MAX_PROVIDER_LAG_BLOCKS behind, rather than being permitted to defeat the memory bound.
+    const observed = Object.values(blockNumbers);
+    const highestBlockNumber = Math.max(...observed);
+    const stalledBlockNumber = highestBlockNumber - MAX_PROVIDER_LAG_BLOCKS;
+    this._warnOnStalledProviders(subscription, highestBlockNumber, stalledBlockNumber);
 
+    const slowestBlockNumber = observed.length >= this.quorum ? Math.min(...observed) : 0;
     const cutoff = Math.max(slowestBlockNumber, stalledBlockNumber) - MAX_EVENT_RETENTION_BLOCKS;
     if (cutoff <= 0) {
       return;
     }
-    for (const [blockHash, eventKeys] of Object.entries(this.blockHashes)) {
-      // All events in a bucket share the block number; read it from the first still-present event.
-      const bucketBlockNumber = eventKeys.map((eventKey) => this.events[eventKey]?.blockNumber).find(isDefined);
-      if (!isDefined(bucketBlockNumber) || bucketBlockNumber < cutoff) {
-        eventKeys.forEach((eventKey) => delete this.events[eventKey]);
-        delete this.blockHashes[blockHash];
+
+    // Evict per event, not per blockHash bucket: SVM logs carry no blockHash, so a bucket does not
+    // reliably correspond to a single block, and the events within it don't share a block number.
+    const staleKeys = new Set<string>();
+    Object.entries(this.events).forEach(([eventKey, storedEvent]) => {
+      if (storedEvent.blockNumber < cutoff && this.getSubscriptionKey(storedEvent) === subscription) {
+        staleKeys.add(eventKey);
+        delete this.events[eventKey];
       }
+    });
+    if (staleKeys.size === 0) {
+      return;
     }
+
+    // Compact the affected blockHash buckets in a single pass; splicing per key would be quadratic.
+    Object.entries(this.blockHashes).forEach(([blockHash, eventKeys]) => {
+      const retained = eventKeys.filter((eventKey) => !staleKeys.has(eventKey));
+      if (retained.length === 0) {
+        delete this.blockHashes[blockHash];
+      } else if (retained.length < eventKeys.length) {
+        this.blockHashes[blockHash] = retained;
+      }
+    });
   }
 
   /**
-   * Warn about providers lagging so far behind that their votes are no longer being retained. Events they
-   * subsequently report can no longer reach quorum, so surface it instead of silently dropping events.
-   * Rate-limited to one warning per MAX_PROVIDER_LAG_BLOCKS of head progression.
+   * Warn about providers lagging so far behind on a subscription that their votes are no longer being
+   * retained. Events they subsequently report can no longer reach quorum, so surface it instead of
+   * silently dropping events. Rate-limited to one warning per MAX_PROVIDER_LAG_BLOCKS of progression.
+   * @param subscription Subscription being evaluated.
+   * @param highestBlockNumber Highest block observed on this subscription, across all providers.
    * @param stalledBlockNumber Block number below which a provider is considered stalled.
    */
-  private _warnOnStalledProviders(stalledBlockNumber: number): void {
-    if (this.highestBlockNumber < this.nextLagWarningBlock) {
+  private _warnOnStalledProviders(subscription: string, highestBlockNumber: number, stalledBlockNumber: number): void {
+    if (highestBlockNumber < (this.nextLagWarningBlock[subscription] ?? 0)) {
       return;
     }
-    const providers = Object.entries(this.providerBlockNumbers)
+    const providers = Object.entries(this.subscriptions[subscription])
       .filter(([, blockNumber]) => blockNumber < stalledBlockNumber)
       .map(([provider, blockNumber]) => ({ provider, blockNumber }));
     if (providers.length === 0) {
       return;
     }
-    this.nextLagWarningBlock = this.highestBlockNumber + MAX_PROVIDER_LAG_BLOCKS;
+    this.nextLagWarningBlock[subscription] = highestBlockNumber + MAX_PROVIDER_LAG_BLOCKS;
     this.logger.warn({
       at: "EventManager::_pruneStaleEvents",
       message: `Ignoring stalled ${this.chain} provider(s) when evicting stale events.`,
-      highestBlockNumber: this.highestBlockNumber,
+      subscription,
+      highestBlockNumber,
       providers,
     });
   }
