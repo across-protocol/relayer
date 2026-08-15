@@ -291,6 +291,121 @@ describe("Cross Chain Adapter: BridgeApi", function () {
       expect(events).to.deep.equal({});
     });
   });
+
+  // The escrow address returned here becomes the recipient of a real ERC20 transfer from the hot wallet,
+  // and funding it commits the transfer to whatever destination the response names, so the whole route
+  // has to be echoed back before we hand the address out.
+  describe("createTransferRouteEscrowAddress response validation", function () {
+    const escrowAddress = randomAddress();
+    const recipient = randomAddress();
+    const amount = "100.0000";
+
+    let client: BridgeApiClient;
+
+    const stubResponse = (overrides: Record<string, unknown> = {}) =>
+      sinon.stub(BridgeApiClient.prototype, "postWithRetry").resolves({
+        state: "awaiting_funds",
+        created_at: "2024-01-01T00:00:00Z",
+        updated_at: "2024-01-01T00:00:00Z",
+        destination: {
+          payment_rail: "tempo",
+          currency: "path_usd",
+          to_address: recipient,
+        },
+        source_deposit_instructions: {
+          payment_rail: "ethereum",
+          currency: "usdc",
+          to_address: escrowAddress,
+          from_address: randomAddress(),
+        },
+        amount,
+        receipt: undefined,
+        ...overrides,
+      } as never);
+
+    const createEscrow = () =>
+      client.createTransferRouteEscrowAddress(toAddress(recipient), "USDC", "path_usd", amount);
+
+    const expectRejection = async (expectedMessage: string) => {
+      try {
+        await createEscrow();
+        expect.fail("Should have thrown");
+      } catch (e: unknown) {
+        expect((e as Error).message).to.include(expectedMessage);
+      }
+    };
+
+    beforeEach(function () {
+      client = new BridgeApiClient(
+        "https://mock-bridge-api.test",
+        "test-api-key",
+        "test-customer-id",
+        hubChainId,
+        l2ChainId,
+        logger
+      );
+    });
+
+    it("returns the checksummed escrow address when the response echoes the request", async function () {
+      stubResponse();
+      expect(await createEscrow()).to.equal(ethers.utils.getAddress(escrowAddress));
+    });
+
+    it("tolerates trailing-zero differences in the echoed amount", async function () {
+      stubResponse({ amount: "100" });
+      expect(await createEscrow()).to.equal(ethers.utils.getAddress(escrowAddress));
+    });
+
+    it("rejects a response that redirects the destination recipient", async function () {
+      stubResponse({
+        destination: { payment_rail: "tempo", currency: "path_usd", to_address: randomAddress() },
+      });
+      await expectRejection("destination does not match the request");
+    });
+
+    it("rejects a response with an unexpected destination currency", async function () {
+      stubResponse({
+        destination: { payment_rail: "tempo", currency: "usdt", to_address: recipient },
+      });
+      await expectRejection("destination does not match the request");
+    });
+
+    it("rejects a response with an unexpected destination payment rail", async function () {
+      stubResponse({
+        destination: { payment_rail: "tron", currency: "path_usd", to_address: recipient },
+      });
+      await expectRejection("destination does not match the request");
+    });
+
+    it("rejects a response with an unexpected source route", async function () {
+      stubResponse({
+        source_deposit_instructions: {
+          payment_rail: "tron",
+          currency: "usdc",
+          to_address: escrowAddress,
+          from_address: randomAddress(),
+        },
+      });
+      await expectRejection("source route does not match the request");
+    });
+
+    it("rejects a response whose amount differs from the request", async function () {
+      stubResponse({ amount: "1000.0000" });
+      await expectRejection("does not match the requested");
+    });
+
+    it("rejects a response with a malformed escrow address", async function () {
+      stubResponse({
+        source_deposit_instructions: {
+          payment_rail: "ethereum",
+          currency: "usdc",
+          to_address: "not-an-address",
+          from_address: randomAddress(),
+        },
+      });
+      await expectRejection("invalid escrow to_address");
+    });
+  });
 });
 
 function makeBridgeResponse(params: {

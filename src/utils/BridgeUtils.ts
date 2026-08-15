@@ -78,6 +78,17 @@ export type BridgeResponse = {
     | undefined;
 };
 
+// Destination addresses aren't always EVM hex -- Tron uses case-sensitive base58 -- so only relax to a
+// case-insensitive comparison when both sides are hex addresses.
+function destinationAddressesMatch(returned: string, requested: string): boolean {
+  if (!isDefined(returned) || !isDefined(requested)) {
+    return false;
+  }
+  return ethers.utils.isAddress(returned) && ethers.utils.isAddress(requested)
+    ? returned.toLowerCase() === requested.toLowerCase()
+    : returned === requested;
+}
+
 export class BridgeApiClient {
   protected srcNetwork: string;
   protected dstNetwork: string;
@@ -142,15 +153,32 @@ export class BridgeApiClient {
     };
     const transferRequestData = await this.postWithRetry<BridgeResponse>("v0/transfers", data, headers);
     // The returned escrow address is used verbatim as the on-chain ERC20 transfer recipient from the
-    // rebalancer's hot wallet, and postWithRetry does no runtime validation of the response body. Verify
-    // the response echoes the requested route and that the escrow address is a well-formed EVM address
-    // before returning it, so a corrupted/incorrect response can't send funds to a non-bridge address.
+    // rebalancer's hot wallet, and postWithRetry does no runtime validation of the response body. Funding
+    // an escrow commits the transfer to whatever destination that transfer carries, so a response echoing
+    // the source route while naming a different destination would still settle the funds somewhere we
+    // never asked for. Verify the response echoes the whole requested route -- source rail/currency,
+    // destination rail/currency/recipient, and amount -- and that the escrow is a well-formed EVM address
+    // before returning it.
     const escrowInstructions = transferRequestData?.source_deposit_instructions;
+    const destination = transferRequestData?.destination;
     assert(
       isDefined(escrowInstructions) &&
         escrowInstructions.payment_rail === this.srcNetwork &&
         escrowInstructions.currency === srcTokenSymbol,
-      "BridgeApi transfer response route does not match the request"
+      "BridgeApi transfer response source route does not match the request"
+    );
+    assert(
+      isDefined(destination) &&
+        destination.payment_rail === this.dstNetwork &&
+        destination.currency === dstTokenSymbol &&
+        destinationAddressesMatch(destination.to_address, toAddress.toNative()),
+      "BridgeApi transfer response destination does not match the request"
+    );
+    // Amounts are decimal strings, so compare numerically to tolerate trailing-zero normalisation.
+    const returnedAmount = Number(transferRequestData.amount);
+    assert(
+      Number.isFinite(returnedAmount) && returnedAmount === Number(normalizedAmount),
+      `BridgeApi transfer response amount ${transferRequestData.amount} does not match the requested ${normalizedAmount}`
     );
     assert(
       ethers.utils.isAddress(escrowInstructions.to_address),
