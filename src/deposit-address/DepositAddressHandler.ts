@@ -1,11 +1,11 @@
 import winston from "winston";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
 import {
-  delay,
   isDefined,
   parseJson,
   Signer,
   scheduleTask,
+  trackInFlight,
   Provider,
   EvmAddress,
   InstanceCoordinator,
@@ -104,10 +104,11 @@ function expectedNamespaceForChain(chainId: number): "evm" | "tron" | undefined 
  */
 export class DepositAddressHandler {
   protected readonly abortController = new AbortController();
-  // Most recent pollAndExecute() tick; waitForDisconnect() drains it (bounded) before the caller
-  // tears down the shared Redis clients.
-  private inFlightTick: Promise<unknown> | undefined;
-  // Post-abort settle window for an in-flight tick before Redis teardown.
+  // pollAndExecute() ticks in flight. A tick outliving indexerPollingInterval overlaps with its
+  // successors, so all of them are tracked: waitForDisconnect() drains every one (bounded) before
+  // the caller tears down the shared Redis clients.
+  private readonly pollTicks = trackInFlight(() => this.evaluateDepositAddresses());
+  // Post-abort settle window for the in-flight ticks before Redis teardown.
   protected shutdownDrainSeconds = 5;
   private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
@@ -388,7 +389,7 @@ export class DepositAddressHandler {
    */
   public pollAndExecute(): void {
     scheduleTask(
-      () => (this.inFlightTick = this.evaluateDepositAddresses()),
+      this.pollTicks.run,
       this.config.indexerPollingInterval,
       this.abortController.signal,
       // A rejected poll skips the whole batch for that tick; without this log the failure is
@@ -459,13 +460,40 @@ export class DepositAddressHandler {
     await this.instanceCoordinator.subscribe();
     this.abortController.abort();
 
-    // Give an in-flight tick a bounded window to observe the abort and settle before the caller
+    // Give every in-flight tick a bounded window to observe the abort and settle before the caller
     // disconnects the shared Redis clients out from under it.
-    await Promise.race([this.inFlightTick?.catch(() => undefined), delay(this.shutdownDrainSeconds)]);
+    if (!(await this.pollTicks.drain(this.shutdownDrainSeconds))) {
+      this.logger.warn({
+        at: "DepositAddressHandler#waitForDisconnect",
+        message: "Proceeding to disconnect with a poll tick still in flight.",
+        shutdownDrainSeconds: this.shutdownDrainSeconds,
+      });
+    }
+  }
+
+  /**
+   * Guard for the abort signal, placed before each new on-chain submission (and after the indexer
+   * query). Once handover is signalled the successor instance owns the batch, so work started here
+   * would duplicate its submissions and outlive the shared Redis clients the runner disconnects as
+   * soon as {@link waitForDisconnect} returns.
+   */
+  private handedOver(at: string, context: Record<string, unknown> = {}): boolean {
+    const { aborted } = this.abortController.signal;
+    if (aborted) {
+      this.logger.debug({
+        at,
+        message: "Handover signalled; abandoning work to successor instance.",
+        ...context,
+      });
+    }
+    return aborted;
   }
 
   private async evaluateDepositAddresses(): Promise<void> {
     const depositMessages = await this._queryIndexerApi();
+    if (this.handedOver("DepositAddressHandler#evaluateDepositAddresses", { messages: depositMessages.length })) {
+      return;
+    }
 
     // We want to remove all executed deposits from the in-memory set if they are not returned by the indexer.
     // This is because the indexer will stop sending the deposit once it has been "expired" (internal TTL).
@@ -689,6 +717,12 @@ export class DepositAddressHandler {
           refTxHash,
           depositAddress,
         });
+        return;
+      }
+
+      // The balance check and signed-withdraw fetch above can span a handover; the finally below
+      // releases the in-flight lock, so the successor re-derives a fresh signed payload for this key.
+      if (this.handedOver("DepositAddressHandler#initiateWithdraw", { depositKey, refTxHash, chainId })) {
         return;
       }
 
@@ -1023,6 +1057,13 @@ export class DepositAddressHandler {
       return;
     }
 
+    // The deployment and balance checks above can span a handover. Release the in-flight lock and
+    // leave both the deploy and the execute below to the successor instance.
+    if (this.handedOver("DepositAddressHandler#initiateDeposit", { depositKey, refTxHash })) {
+      this.observedExecutedDeposits[originChainId].delete(depositKey);
+      return;
+    }
+
     if (!isDepositAddressDeployed) {
       const _deployTx = buildDeployTx(
         factoryContract,
@@ -1066,6 +1107,12 @@ export class DepositAddressHandler {
         cctpExecutionFee,
         spokePoolExecutionFee,
       });
+      this.observedExecutedDeposits[originChainId].delete(depositKey);
+      return;
+    }
+
+    // Re-check: the deploy submission and swap-API quote above can each span a handover.
+    if (this.handedOver("DepositAddressHandler#initiateDeposit", { depositKey, refTxHash })) {
       this.observedExecutedDeposits[originChainId].delete(depositKey);
       return;
     }
@@ -1220,6 +1267,12 @@ export class DepositAddressHandler {
         return;
       }
       if (!this._validateExecuteResponse(executeResponse, depositMessage, originChainId, depositKey)) {
+        return;
+      }
+
+      // The balance check and execute-endpoint call above can span a handover; the finally below
+      // releases the in-flight lock, so the successor re-requests fresh (perishable) calldata.
+      if (this.handedOver("DepositAddressHandler#initiateDepositV3", { depositKey, refTxHash })) {
         return;
       }
 
@@ -1581,6 +1634,12 @@ export class DepositAddressHandler {
           depositAddress,
           chainId,
         });
+        return;
+      }
+
+      // The balance check and sign-withdraw call above can span a handover; the finally below
+      // releases the in-flight lock, so the successor re-derives a fresh signed payload.
+      if (this.handedOver("DepositAddressHandler#initiateWithdrawV3", { depositKey, refTxHash, chainId })) {
         return;
       }
 
