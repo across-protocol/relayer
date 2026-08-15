@@ -270,82 +270,92 @@ export function restructureGaslessDeposits(
   logger: winston.Logger
 ): AnyGaslessDepositMessage[] {
   return depositMessages.flatMap((msg): AnyGaslessDepositMessage[] => {
-    const { swapTx, requestId, signature } = msg;
-    const { chainId: originChainId, to: targetAddress, data } = swapTx;
-    const { depositId, witness, integratorId, metadata, type: permitType } = data;
-    if (!isGaslessPermitType(permitType)) {
-      logger.warn({
-        at: "GaslessUtils#restructureGaslessDeposits",
-        message: "Skipping gasless deposit with unsupported permit type.",
-        requestId,
-        depositId,
-        permitType,
-      });
-      return [];
-    }
+    try {
+      const { swapTx, requestId, signature } = msg;
+      const { chainId: originChainId, to: targetAddress, data } = swapTx;
+      const { depositId, witness, integratorId, metadata, type: permitType } = data;
+      if (!isGaslessPermitType(permitType)) {
+        logger.warn({
+          at: "GaslessUtils#restructureGaslessDeposits",
+          message: "Skipping gasless deposit with unsupported permit type.",
+          requestId,
+          depositId,
+          permitType,
+        });
+        return [];
+      }
 
-    if ("BridgeAndSwapWitness" in witness) {
-      const raw = witness.BridgeAndSwapWitness.data;
-      const swapMsg = msg as APIGaslessSwapAndBridgeDepositResponse;
-      // Unwrap protobuf-style objects to plain primitives.
-      const transferType = typeof raw.transferType === "number" ? raw.transferType : raw.transferType.long;
-      const enableProportionalAdjustment =
-        typeof raw.enableProportionalAdjustment === "boolean"
-          ? raw.enableProportionalAdjustment
-          : raw.enableProportionalAdjustment.boolean;
+      if ("BridgeAndSwapWitness" in witness) {
+        const raw = witness.BridgeAndSwapWitness.data;
+        const swapMsg = msg as APIGaslessSwapAndBridgeDepositResponse;
+        // Unwrap protobuf-style objects to plain primitives.
+        const transferType = typeof raw.transferType === "number" ? raw.transferType : raw.transferType.long;
+        const enableProportionalAdjustment =
+          typeof raw.enableProportionalAdjustment === "boolean"
+            ? raw.enableProportionalAdjustment
+            : raw.enableProportionalAdjustment.boolean;
+        return [
+          {
+            depositFlowType: "swapAndBridge",
+            originChainId,
+            depositId: BigNumber.from(depositId),
+            requestId,
+            signature,
+            permitType,
+            // permit type for this branch is erc3009 | Permit2SwapAndBridgePermit | EIP-2612 witness.
+            // Cast required because data is still the union type after narrowing witness.
+            permit: data.permit as SwapAndBridgeGaslessDepositMessage["permit"],
+            permitApprovalSignature: swapMsg.permitApprovalSignature,
+            permitApprovalDeadline: swapMsg.permitApprovalDeadline,
+            targetAddress,
+            depositData: raw.depositData,
+            submissionFees: raw.submissionFees,
+            swapToken: raw.swapToken,
+            exchange: raw.exchange,
+            transferType,
+            swapTokenAmount: raw.swapTokenAmount,
+            minExpectedInputTokenAmount: raw.minExpectedInputTokenAmount,
+            routerCalldata: raw.routerCalldata,
+            enableProportionalAdjustment,
+            spokePool: raw.spokePool,
+            nonce: raw.nonce,
+            integratorId,
+            metadata,
+          },
+        ];
+      }
+
+      const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witness.BridgeWitness.data;
       return [
         {
-          depositFlowType: "swapAndBridge",
+          depositFlowType: "bridge",
           originChainId,
           depositId: BigNumber.from(depositId),
           requestId,
           signature,
           permitType,
-          // permit type for this branch is erc3009 | Permit2SwapAndBridgePermit | EIP-2612 witness.
+          // permit type for this branch is erc3009 | Permit2Permit.
           // Cast required because data is still the union type after narrowing witness.
-          permit: data.permit as SwapAndBridgeGaslessDepositMessage["permit"],
-          permitApprovalSignature: swapMsg.permitApprovalSignature,
-          permitApprovalDeadline: swapMsg.permitApprovalDeadline,
+          permit: data.permit as GaslessDepositMessage["permit"],
           targetAddress,
-          depositData: raw.depositData,
-          submissionFees: raw.submissionFees,
-          swapToken: raw.swapToken,
-          exchange: raw.exchange,
-          transferType,
-          swapTokenAmount: raw.swapTokenAmount,
-          minExpectedInputTokenAmount: raw.minExpectedInputTokenAmount,
-          routerCalldata: raw.routerCalldata,
-          enableProportionalAdjustment,
-          spokePool: raw.spokePool,
-          nonce: raw.nonce,
+          inputAmount,
+          baseDepositData,
+          submissionFees,
+          spokePool,
+          nonce,
           integratorId,
           metadata,
         },
       ];
+    } catch (err) {
+      logger.warn({
+        at: "GaslessUtils#restructureGaslessDeposits",
+        message: "Dropping gasless deposit that failed to restructure",
+        requestId: msg?.requestId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return [];
     }
-
-    const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witness.BridgeWitness.data;
-    return [
-      {
-        depositFlowType: "bridge",
-        originChainId,
-        depositId: BigNumber.from(depositId),
-        requestId,
-        signature,
-        permitType,
-        // permit type for this branch is erc3009 | Permit2Permit.
-        // Cast required because data is still the union type after narrowing witness.
-        permit: data.permit as GaslessDepositMessage["permit"],
-        targetAddress,
-        inputAmount,
-        baseDepositData,
-        submissionFees,
-        spokePool,
-        nonce,
-        integratorId,
-        metadata,
-      },
-    ];
   });
 }
 
