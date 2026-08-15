@@ -1,6 +1,7 @@
 import {
   CHAIN_IDs,
   Address,
+  ethers,
   delay,
   TOKEN_SYMBOLS_MAP,
   toBN,
@@ -140,7 +141,22 @@ export class BridgeApiClient {
       "Idempotency-Key": idempotencyKey,
     };
     const transferRequestData = await this.postWithRetry<BridgeResponse>("v0/transfers", data, headers);
-    return transferRequestData.source_deposit_instructions.to_address;
+    // The returned escrow address is used verbatim as the on-chain ERC20 transfer recipient from the
+    // rebalancer's hot wallet, and postWithRetry does no runtime validation of the response body. Verify
+    // the response echoes the requested route and that the escrow address is a well-formed EVM address
+    // before returning it, so a corrupted/incorrect response can't send funds to a non-bridge address.
+    const escrowInstructions = transferRequestData?.source_deposit_instructions;
+    assert(
+      isDefined(escrowInstructions) &&
+        escrowInstructions.payment_rail === this.srcNetwork &&
+        escrowInstructions.currency === srcTokenSymbol,
+      "BridgeApi transfer response route does not match the request"
+    );
+    assert(
+      ethers.utils.isAddress(escrowInstructions.to_address),
+      `BridgeApi returned an invalid escrow to_address: ${escrowInstructions.to_address}`
+    );
+    return ethers.utils.getAddress(escrowInstructions.to_address);
   }
 
   async filterInitiatedTransfers(

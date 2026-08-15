@@ -6,8 +6,10 @@ import {
   assert,
   BigNumber,
   bnZero,
+  compareAddressesSimple,
   ConvertDecimals,
   delay,
+  ethers,
   fetchWithTimeout,
   FetchHeaders,
   isDefined,
@@ -378,6 +380,54 @@ async function submitPaxosTransitApproval(
   await provider.waitForTransaction(tx.hash);
 }
 
+const ERC20_APPROVE_INTERFACE = new ethers.utils.Interface(["function approve(address spender, uint256 amount)"]);
+
+// The Paxos Transit API returns raw approval calldata / EIP-712 permit data that we sign or submit from
+// the rebalancer's hot wallet. Validate both against the parameters we requested before acting on them, so
+// a compromised/misbehaving endpoint cannot redirect an approval to an arbitrary spender, target an
+// unexpected token, or authorize an unbounded amount.
+function assertValidPaxosTransitApprove(approvalCalldata: string, expectedSpender: string): void {
+  let decoded: ethers.utils.TransactionDescription;
+  try {
+    decoded = ERC20_APPROVE_INTERFACE.parseTransaction({ data: approvalCalldata });
+  } catch {
+    throw new Error("Paxos Transit approval calldata is not a valid ERC-20 approve(spender, amount) call");
+  }
+  assert(decoded.name === "approve", "Paxos Transit authorization method is not an approve call");
+  assert(
+    compareAddressesSimple(decoded.args.spender, expectedSpender),
+    `Paxos Transit approve spender ${decoded.args.spender} does not match the requested spender ${expectedSpender}`
+  );
+  assert(
+    BigNumber.from(decoded.args.amount).lte(toBN(MAX_SAFE_ALLOWANCE)),
+    "Paxos Transit approve amount exceeds the maximum allowance"
+  );
+}
+
+function assertValidPaxosTransitPermit(
+  permitData: PaxosTransitPermitData,
+  params: { spenderAddress: string; tokenAddress: string; userAddress: string; chainId: number }
+): void {
+  const { domain, value } = permitData;
+  assert(
+    isDefined(domain?.verifyingContract) && compareAddressesSimple(domain.verifyingContract, params.tokenAddress),
+    "Paxos Transit permit verifyingContract does not match the requested token"
+  );
+  assert(Number(domain?.chainId) === params.chainId, "Paxos Transit permit chainId does not match the requested chain");
+  assert(
+    isDefined(value?.owner) && compareAddressesSimple(value.owner, params.userAddress),
+    "Paxos Transit permit owner does not match the requested user"
+  );
+  assert(
+    isDefined(value?.spender) && compareAddressesSimple(value.spender, params.spenderAddress),
+    "Paxos Transit permit spender does not match the requested spender"
+  );
+  assert(
+    isDefined(value?.value) && BigNumber.from(value.value).lte(toBN(MAX_SAFE_ALLOWANCE)),
+    "Paxos Transit permit value exceeds the maximum allowance"
+  );
+}
+
 export async function resolvePaxosTransitAuthorization(
   client: PaxosTransitClient,
   signer: Signer,
@@ -406,12 +456,14 @@ export async function resolvePaxosTransitAuthorization(
 
   const approve = auth.methods.find((method) => method.type === "erc20_approve");
   if (isDefined(approve?.transaction?.encoded)) {
+    assertValidPaxosTransitApprove(approve.transaction.encoded, params.spenderAddress);
     await submitPaxosTransitApproval(signer, params.tokenAddress, approve.transaction.encoded);
     return {};
   }
 
   const permit = auth.methods.find((method) => method.type === "eip2612_permit");
   if (isDefined(permit?.permitData)) {
+    assertValidPaxosTransitPermit(permit.permitData, params);
     const { domain, types, value, deadline } = permit.permitData;
     assert(isTypedDataSigner(signer), "Signer must support EIP-712 signing for Paxos Transit permit flow");
     const permitSignature = await signer._signTypedData(domain as TypedDataDomain, permitTypesForSigning(types), value);
