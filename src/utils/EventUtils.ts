@@ -76,21 +76,28 @@ export function getUniqueLogIndex(events: { txnRef: string }[]): number[] {
 
 type QuorumEvent = Log & { providers: string[] };
 
+// Retain events for at most this many blocks behind the slowest provider that is still keeping up. This
+// must comfortably exceed any monitored chain's re-org depth — the only window in which a 'removed'
+// notification can arrive — so pruning can never drop an event that could still be reorged out.
+export const MAX_EVENT_RETENTION_BLOCKS = 5000;
+
+// A provider lagging further than this behind the highest observed block is treated as stalled and no
+// longer holds up eviction. This caps retention at MAX_PROVIDER_LAG_BLOCKS + MAX_EVENT_RETENTION_BLOCKS
+// blocks behind the head, so a single dead provider can't reinstate unbounded growth.
+export const MAX_PROVIDER_LAG_BLOCKS = 5000;
+
 /**
  * EventManager can be used to obtain basic quorum validation of events emitted by multiple providers.
  * This can be useful with WebSockets, where events are emitted asynchronously.
  * This feature should eventually evolve into a wrapper for the Ethers WebSocketProvider type.
  */
-// Retain events for at most this many blocks behind the highest observed block. This must comfortably
-// exceed any monitored chain's re-org depth — the only window in which a 'removed' notification can
-// arrive — so pruning can never drop an event that could still be reorged out or reach quorum late.
-const MAX_EVENT_RETENTION_BLOCKS = 5000;
-
 export class EventManager {
   public readonly chain: string;
   public readonly events: { [eventKey: string]: QuorumEvent } = {};
   public readonly blockHashes: { [blockHash: string]: string[] } = {};
   private highestBlockNumber = 0;
+  private readonly providerBlockNumbers: { [provider: string]: number } = {};
+  private nextLagWarningBlock = 0;
 
   constructor(
     private readonly logger: winston.Logger,
@@ -143,9 +150,9 @@ export class EventManager {
   add(event: Log, provider: string): boolean {
     assert(!event.removed);
 
-    // Bound retention: drop event/blockHash records that have fallen outside the re-org window so the
-    // maps don't grow unbounded for the process lifetime.
-    this._pruneStaleEvents(event.blockNumber);
+    // Bound retention: drop event/blockHash records that no longer need to be tracked, so the maps don't
+    // grow unbounded for the process lifetime.
+    this._pruneStaleEvents(event.blockNumber, provider);
 
     const eventKey = this.getEventKey(event);
 
@@ -195,16 +202,29 @@ export class EventManager {
   }
 
   /**
-   * Evict event/blockHash records older than MAX_EVENT_RETENTION_BLOCKS behind the highest observed
-   * block. Only scans when the head advances, so amortised cost stays low and the maps stay bounded.
+   * Evict event/blockHash records that can no longer be reorged out or receive a late quorum vote.
+   * Eviction is anchored on the slowest provider that is still keeping up, so a lagging stream can always
+   * cast its vote on an event that another provider reported earlier; the anchor is clamped to
+   * MAX_PROVIDER_LAG_BLOCKS behind the head so a stalled provider can't hold retention open forever. Only
+   * scans when the reporting provider advances, so amortised cost stays low and the maps stay bounded.
    * @param blockNumber Block number of the event currently being processed.
+   * @param provider A string uniquely identifying the provider that supplied the event.
    */
-  private _pruneStaleEvents(blockNumber: number): void {
-    if (!(blockNumber > this.highestBlockNumber)) {
-      return;
+  private _pruneStaleEvents(blockNumber: number, provider: string): void {
+    if (!(blockNumber > (this.providerBlockNumbers[provider] ?? 0))) {
+      return; // This provider hasn't advanced, so the cutoff can't have moved.
     }
-    this.highestBlockNumber = blockNumber;
-    const cutoff = blockNumber - MAX_EVENT_RETENTION_BLOCKS;
+    this.providerBlockNumbers[provider] = blockNumber;
+    this.highestBlockNumber = Math.max(this.highestBlockNumber, blockNumber);
+
+    // Providers that have stalled - or that haven't reported anything yet - are pinned at
+    // MAX_PROVIDER_LAG_BLOCKS behind the head rather than being permitted to defeat the memory bound.
+    const blockNumbers = Object.values(this.providerBlockNumbers);
+    const slowestBlockNumber = blockNumbers.length >= this.quorum ? Math.min(...blockNumbers) : 0;
+    const stalledBlockNumber = this.highestBlockNumber - MAX_PROVIDER_LAG_BLOCKS;
+    this._warnOnStalledProviders(stalledBlockNumber);
+
+    const cutoff = Math.max(slowestBlockNumber, stalledBlockNumber) - MAX_EVENT_RETENTION_BLOCKS;
     if (cutoff <= 0) {
       return;
     }
@@ -216,6 +236,31 @@ export class EventManager {
         delete this.blockHashes[blockHash];
       }
     }
+  }
+
+  /**
+   * Warn about providers lagging so far behind that their votes are no longer being retained. Events they
+   * subsequently report can no longer reach quorum, so surface it instead of silently dropping events.
+   * Rate-limited to one warning per MAX_PROVIDER_LAG_BLOCKS of head progression.
+   * @param stalledBlockNumber Block number below which a provider is considered stalled.
+   */
+  private _warnOnStalledProviders(stalledBlockNumber: number): void {
+    if (this.highestBlockNumber < this.nextLagWarningBlock) {
+      return;
+    }
+    const providers = Object.entries(this.providerBlockNumbers)
+      .filter(([, blockNumber]) => blockNumber < stalledBlockNumber)
+      .map(([provider, blockNumber]) => ({ provider, blockNumber }));
+    if (providers.length === 0) {
+      return;
+    }
+    this.nextLagWarningBlock = this.highestBlockNumber + MAX_PROVIDER_LAG_BLOCKS;
+    this.logger.warn({
+      at: "EventManager::_pruneStaleEvents",
+      message: `Ignoring stalled ${this.chain} provider(s) when evicting stale events.`,
+      highestBlockNumber: this.highestBlockNumber,
+      providers,
+    });
   }
 
   // Key on canonical on-chain identity; avoids drift between viem/ethers parsings of the same log.

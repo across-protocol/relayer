@@ -1,9 +1,10 @@
 import { utils as ethersUtils } from "ethers";
+import sinon from "sinon";
 import winston from "winston";
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { Log } from "../src/interfaces";
-import { EventManager } from "../src/utils";
-import { createSpyLogger, expect, randomAddress } from "./utils";
+import { EventManager, MAX_EVENT_RETENTION_BLOCKS, MAX_PROVIDER_LAG_BLOCKS } from "../src/utils";
+import { createSpyLogger, expect, lastSpyLogIncludes, randomAddress } from "./utils";
 
 describe("EventManager: Event Handling ", function () {
   const chainId = CHAIN_IDs.MAINNET;
@@ -29,12 +30,22 @@ describe("EventManager: Event Handling ", function () {
   };
   let eventKey: string;
 
+  // Retention is only exercised above the combined retention + lag window, so anchor test blocks well clear of it.
+  const baseBlockNumber = 10 * (MAX_EVENT_RETENTION_BLOCKS + MAX_PROVIDER_LAG_BLOCKS);
+  const makeEvent = (blockNumber: number): Log => ({
+    ...eventTemplate,
+    blockNumber,
+    blockHash: makeHash(),
+    transactionHash: makeHash(),
+  });
+
   let logger: winston.Logger;
+  let spy: sinon.SinonSpy;
   let eventMgr: EventManager;
   let quorum: number;
 
   beforeEach(async function () {
-    ({ spyLogger: logger } = createSpyLogger());
+    ({ spy, spyLogger: logger } = createSpyLogger());
     quorum = 2;
     eventMgr = new EventManager(logger, chainId, quorum);
     eventKey = eventMgr.getEventKey(eventTemplate);
@@ -106,6 +117,63 @@ describe("EventManager: Event Handling ", function () {
     // Add the same event from provider2. There should be no quorum.
     metQuorum = eventMgr.add(eventTemplate, provider2);
     expect(eventQuorum).to.equal(0);
+  });
+
+  it("Evicts events that have fallen outside the retention window", async function () {
+    const [provider1, provider2] = providers;
+    const event = makeEvent(baseBlockNumber);
+    const key = eventMgr.getEventKey(event);
+
+    expect(eventMgr.add(event, provider1)).to.be.false;
+    expect(eventMgr.add(event, provider2)).to.be.true;
+
+    // Both providers advance past the retention window, so the event can no longer be reorged out.
+    const head = makeEvent(baseBlockNumber + MAX_EVENT_RETENTION_BLOCKS + 1);
+    [provider1, provider2].forEach((provider) => eventMgr.add(head, provider));
+
+    expect(eventMgr.getEventQuorum(key)).to.equal(0);
+    expect(eventMgr.events[key]).to.be.undefined;
+    expect(eventMgr.blockHashes[event.blockHash]).to.be.undefined;
+
+    // The event at the head is retained.
+    expect(eventMgr.getEventQuorum(eventMgr.getEventKey(head))).to.equal(quorum);
+  });
+
+  it("Retains events for lagging providers, so late votes still reach quorum", async function () {
+    const [provider1, provider2] = providers;
+    const event = makeEvent(baseBlockNumber);
+    const key = eventMgr.getEventKey(event);
+
+    // Both providers are keeping up; provider2 then stalls just short of the maximum permitted lag.
+    const priorEvent = makeEvent(baseBlockNumber - 1);
+    [provider1, provider2].forEach((provider) => eventMgr.add(priorEvent, provider));
+    expect(eventMgr.add(event, provider1)).to.be.false;
+
+    // provider1 races ahead beyond the retention window, but provider2 is still eligible to vote.
+    const head = makeEvent(baseBlockNumber + MAX_EVENT_RETENTION_BLOCKS + MAX_PROVIDER_LAG_BLOCKS - 1);
+    eventMgr.add(head, provider1);
+    expect(eventMgr.getEventQuorum(key)).to.equal(1);
+
+    // provider2's stream resumes and supplies the event late; it must still reach quorum.
+    expect(eventMgr.add(event, provider2)).to.be.true;
+  });
+
+  it("Bounds retention when a provider stalls indefinitely", async function () {
+    const [provider1, provider2] = providers;
+    const event = makeEvent(baseBlockNumber);
+    const key = eventMgr.getEventKey(event);
+
+    const priorEvent = makeEvent(baseBlockNumber - 1);
+    [provider1, provider2].forEach((provider) => eventMgr.add(priorEvent, provider));
+    expect(eventMgr.add(event, provider1)).to.be.false;
+
+    // provider2 never advances again; retention must not be held open indefinitely on its behalf.
+    const head = makeEvent(baseBlockNumber + MAX_EVENT_RETENTION_BLOCKS + MAX_PROVIDER_LAG_BLOCKS + 1);
+    eventMgr.add(head, provider1);
+
+    expect(eventMgr.events[key]).to.be.undefined;
+    expect(eventMgr.blockHashes[event.blockHash]).to.be.undefined;
+    expect(lastSpyLogIncludes(spy, "Ignoring stalled")).to.be.true;
   });
 
   it("Keys events correctly: uniqueness", async function () {
