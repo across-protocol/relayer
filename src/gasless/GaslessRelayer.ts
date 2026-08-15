@@ -208,6 +208,12 @@ export class GaslessRelayer {
       const provider = await getProvider(chainId);
       this.providersByChain[chainId] = provider;
       this.observedDeposits[chainId] = new Set<string>();
+      if (chainIsEvm(chainId)) {
+        // Populate the default SpokePool for EVM origin chains too (not only destinations). Without this,
+        // an origin-only chain leaves this.spokePools[originChainId] undefined and _isCctpDeposit fails
+        // open (treats CCTP deposits as fillable) / later dereferences throw and abort the poll tick.
+        this.spokePools[chainId] ??= getSpokePool(chainId).connect(this.baseSigner.connect(provider));
+      }
       this.spokePoolPeripheries[chainId] = getSpokePoolPeriphery(
         chainId,
         this.config.spokePoolPeripheryOverrides[chainId]
@@ -248,6 +254,14 @@ export class GaslessRelayer {
       this.observedFills[chainId] = new Set<string>();
       this.spokePools[chainId] = getSpokePool(chainId).connect(this.baseSigner.connect(this.providersByChain[chainId]));
     });
+
+    // Fail fast at startup if any EVM origin chain is missing a default SpokePool, so _isCctpDeposit can
+    // never silently fail open on a live message.
+    this.config.relayerOriginChains
+      .filter(chainIsEvm)
+      .forEach((chainId) =>
+        assert(isDefined(this.spokePools[chainId]), `GaslessRelayer: missing SpokePool for EVM origin chain ${chainId}`)
+      );
 
     // Exit if OS instructs us to do so.
     process.on("SIGHUP", () => {
@@ -1135,6 +1149,15 @@ export class GaslessRelayer {
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryGaslessApi(--retriesRemaining) : [];
     }
+    if (!Array.isArray(apiResponseData.deposits)) {
+      // Shape drift (e.g. an error envelope or a renamed field) rather than a transient failure:
+      // skip this batch instead of letting a downstream dereference throw and halt polling.
+      this.logger.warn({
+        at: "GaslessRelayer#_queryGaslessApi",
+        message: "Gasless API response missing a deposits array; skipping batch",
+      });
+      return [];
+    }
     const deposits = restructureGaslessDeposits(apiResponseData.deposits, this.logger);
     return this._filterDepositsByAddress(this._filterDepositsByIntegratorId(deposits));
   }
@@ -1373,7 +1396,10 @@ export class GaslessRelayer {
   private _isCctpDeposit(originChainId: number, spokePool: string): boolean {
     const defaultSpokePool = this.spokePools[originChainId];
     if (!defaultSpokePool) {
-      return false;
+      // Fail closed: an unknown origin SpokePool must not be classified as "not CCTP" (fillable). With
+      // EVM origin chains populated and asserted at startup this is unreachable for a valid config, but
+      // if it is ever hit (misconfiguration), treating the deposit as CCTP keeps it off the normal fill path.
+      return true;
     }
     return !compareAddressesSimple(spokePool, defaultSpokePool.address);
   }
