@@ -81,10 +81,16 @@ type QuorumEvent = Log & { providers: string[] };
  * This can be useful with WebSockets, where events are emitted asynchronously.
  * This feature should eventually evolve into a wrapper for the Ethers WebSocketProvider type.
  */
+// Retain events for at most this many blocks behind the highest observed block. This must comfortably
+// exceed any monitored chain's re-org depth — the only window in which a 'removed' notification can
+// arrive — so pruning can never drop an event that could still be reorged out or reach quorum late.
+const MAX_EVENT_RETENTION_BLOCKS = 5000;
+
 export class EventManager {
   public readonly chain: string;
   public readonly events: { [eventKey: string]: QuorumEvent } = {};
   public readonly blockHashes: { [blockHash: string]: string[] } = {};
+  private highestBlockNumber = 0;
 
   constructor(
     private readonly logger: winston.Logger,
@@ -137,6 +143,10 @@ export class EventManager {
   add(event: Log, provider: string): boolean {
     assert(!event.removed);
 
+    // Bound retention: drop event/blockHash records that have fallen outside the re-org window so the
+    // maps don't grow unbounded for the process lifetime.
+    this._pruneStaleEvents(event.blockNumber);
+
     const eventKey = this.getEventKey(event);
 
     // If `eventKey` is not recorded then it's presumed to be a new event. If it is already found,
@@ -170,7 +180,7 @@ export class EventManager {
   remove(event: Log, provider: string): void {
     assert(event.removed);
 
-    const eventKeys = this.blockHashes[event.blockHash];
+    const eventKeys = this.blockHashes[event.blockHash] ?? [];
     const nEvents = eventKeys.length;
     if (nEvents > 0) {
       eventKeys.forEach((eventKey) => delete this.events[eventKey]);
@@ -179,6 +189,32 @@ export class EventManager {
         message: `Dropped ${nEvents} event(s) at ${this.chain} block ${event.blockNumber}.`,
         provider,
       });
+    }
+    // Also drop the now-stale blockHash bucket; previously only the events were removed, leaking this key.
+    delete this.blockHashes[event.blockHash];
+  }
+
+  /**
+   * Evict event/blockHash records older than MAX_EVENT_RETENTION_BLOCKS behind the highest observed
+   * block. Only scans when the head advances, so amortised cost stays low and the maps stay bounded.
+   * @param blockNumber Block number of the event currently being processed.
+   */
+  private _pruneStaleEvents(blockNumber: number): void {
+    if (!(blockNumber > this.highestBlockNumber)) {
+      return;
+    }
+    this.highestBlockNumber = blockNumber;
+    const cutoff = blockNumber - MAX_EVENT_RETENTION_BLOCKS;
+    if (cutoff <= 0) {
+      return;
+    }
+    for (const [blockHash, eventKeys] of Object.entries(this.blockHashes)) {
+      // All events in a bucket share the block number; read it from the first still-present event.
+      const bucketBlockNumber = eventKeys.map((eventKey) => this.events[eventKey]?.blockNumber).find(isDefined);
+      if (!isDefined(bucketBlockNumber) || bucketBlockNumber < cutoff) {
+        eventKeys.forEach((eventKey) => delete this.events[eventKey]);
+        delete this.blockHashes[blockHash];
+      }
     }
   }
 
