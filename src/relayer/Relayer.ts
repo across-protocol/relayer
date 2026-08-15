@@ -422,8 +422,13 @@ export class Relayer {
     }
 
     // Skip deposits that contain invalid fills from the same relayer. This prevents potential corrupted data from
-    // making the same relayer fill a deposit multiple times.
-    if (!acceptInvalidFills && invalidFills.some((fill) => fill.relayer.eq(relayer))) {
+    // making the same relayer fill a deposit multiple times. fill.relayer is decoded in the repayment chain's
+    // address family, so compare it against our address on the fill's repayment chain — not the destination
+    // chain, which would never match on cross-family (e.g. EVM<->SVM) routes.
+    if (
+      !acceptInvalidFills &&
+      invalidFills.some((fill) => fill.relayer.eq(this.getRelayerAddrOn(fill.repaymentChainId)))
+    ) {
       this.logger.error({
         ...common,
         message: "👨‍👧‍👦 Skipping deposit with invalid fills from the same relayer",
@@ -645,7 +650,10 @@ export class Relayer {
     const commitment = deposits.reduce((acc, deposit) => {
       const fill = spokePoolClients[deposit.destinationChainId]
         ?.getFillsForDeposit(deposit)
-        ?.find((f) => f.relayer.eq(this.getRelayerAddrOn(f.destinationChainId)));
+        // f.relayer is decoded in the repayment chain's address family, so match it against our address
+        // on the fill's repayment chain; comparing against the destination chain never matches on
+        // cross-family routes and silently undercounts this chain's fill commitment.
+        ?.find((f) => f.relayer.eq(this.getRelayerAddrOn(f.repaymentChainId)));
       if (!isDefined(fill)) {
         return acc;
       }

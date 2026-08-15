@@ -33,7 +33,6 @@ export class BundleDataApproxClient {
   private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } | undefined = undefined;
   private readonly spokePoolManager: SpokePoolManager;
 
-  private readonly protocolChainIdIndices: number[];
   constructor(
     spokePoolClients: SpokePoolClientsByChain,
     private readonly hubPoolClient: HubPoolClient,
@@ -42,7 +41,6 @@ export class BundleDataApproxClient {
     private readonly logger: winston.Logger
   ) {
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
-    this.protocolChainIdIndices = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock();
   }
 
   /**
@@ -187,6 +185,13 @@ export class BundleDataApproxClient {
         // Step 3. Find the next bundle start blocks following the proposed root bundle for all chains.
         // This returns the bundle's end blocks for every chain, not just this chain, so that callers
         // can look up the correct boundary for cross-chain refund scenarios.
+        // Resolve the chain-index list at the matched bundle's proposal height rather than reusing a
+        // single client-lifetime 'latest' snapshot: getBundleEndBlockForChain indexes positionally into
+        // the bundle's fixed-size bundleEvaluationBlockNumbers, so a chain onboarded after that bundle
+        // must not be looked up against a newer index list (it would resolve to 0 / no boundary).
+        const bundleChainIdIndices = this.hubPoolClient.configStoreClient.getChainIdIndicesForBlock(
+          correspondingProposedRootBundle.blockNumber
+        );
         return [
           chainId,
           Object.fromEntries(
@@ -194,7 +199,7 @@ export class BundleDataApproxClient {
               const bundleEndBlock = this.hubPoolClient.getBundleEndBlockForChain(
                 correspondingProposedRootBundle,
                 c,
-                this.protocolChainIdIndices
+                bundleChainIdIndices
               );
               return [c, bundleEndBlock > 0 ? bundleEndBlock + 1 : 0];
             })
