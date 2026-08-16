@@ -28,7 +28,7 @@ export class MockBundleDataApproxClient extends BundleDataApproxClient {
   override getApproximateRefundsForToken(
     l1Token: EvmAddress,
     fromBlocks: { [chainId: number]: { [chainId: number]: number } }
-  ): { [repaymentChainId: number]: { [relayer: string]: BigNumber } } {
+  ): { [repaymentChainId: number]: { [relayer: string]: { [repaymentToken: string]: BigNumber } } } {
     return super.getApproximateRefundsForToken(l1Token, fromBlocks);
   }
 

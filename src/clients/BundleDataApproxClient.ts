@@ -4,11 +4,12 @@
  */
 
 import { SpokePoolManager } from ".";
-import { SpokePoolClientsByChain } from "../interfaces";
+import { FillWithBlock, SpokePoolClientsByChain } from "../interfaces";
 import {
   assert,
   BigNumber,
   isDefined,
+  isSlowFill,
   winston,
   ConvertDecimals,
   getTokenInfo,
@@ -23,13 +24,20 @@ export type BundleDataState = {
   upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } };
 };
 
+// Internally, refunds are additionally keyed by the L2 token the refund leaf will pay out in.
+// The exported/serialized BundleDataState keeps the flat per-relayer sums for cross-version stability.
+type RefundsByChain = { [chainId: number]: { [relayer: string]: { [repaymentToken: string]: BigNumber } } };
+
+// Imported (deserialized) state carries no per-repayment-token breakdown, so its chain-level sums are
+// keyed under this sentinel. Chain-level queries — the only consumers of imported state — are unaffected.
+const UNKNOWN_REPAYMENT_TOKEN = "unknown";
+
 // This client is used to approximate running balances and the refunds and deposits for a given L1 token. Running balances
 // can easily be estimated by taking the last validated running balance for a chain and subtracting the total deposit amount
 // on that chain since the last validated end block and adding the total refund amount on that chain since the last validated
 // end block.
 export class BundleDataApproxClient {
-  private upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } } | undefined =
-    undefined;
+  private upcomingRefunds: { [l1Token: string]: RefundsByChain } | undefined = undefined;
   private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } | undefined = undefined;
   private readonly spokePoolManager: SpokePoolManager;
 
@@ -55,7 +63,24 @@ export class BundleDataApproxClient {
       isDefined(upcomingDeposits) && isDefined(upcomingRefunds),
       "BundleDataApproxClient#export: client not initialized"
     );
-    return { upcomingDeposits, upcomingRefunds };
+    // Flatten the per-repayment-token breakdown so the serialized shape is stable across versions.
+    const flattenedRefunds = Object.fromEntries(
+      Object.entries(upcomingRefunds).map(([l1Token, byChain]) => [
+        l1Token,
+        Object.fromEntries(
+          Object.entries(byChain).map(([chainId, byRelayer]) => [
+            chainId,
+            Object.fromEntries(
+              Object.entries(byRelayer).map(([relayer, byToken]) => [
+                relayer,
+                Object.values(byToken).reduce((acc, amount) => acc.add(amount), bnZero),
+              ])
+            ),
+          ])
+        ),
+      ])
+    );
+    return { upcomingDeposits, upcomingRefunds: flattenedRefunds };
   }
 
   /**
@@ -66,25 +91,39 @@ export class BundleDataApproxClient {
   import(state: BundleDataState): void {
     const { upcomingDeposits, upcomingRefunds } = state;
     this.upcomingDeposits = upcomingDeposits;
-    this.upcomingRefunds = upcomingRefunds;
+    this.upcomingRefunds = Object.fromEntries(
+      Object.entries(upcomingRefunds).map(([l1Token, byChain]) => [
+        l1Token,
+        Object.fromEntries(
+          Object.entries(byChain).map(([chainId, byRelayer]) => [
+            chainId,
+            Object.fromEntries(
+              Object.entries(byRelayer).map(([relayer, amount]) => [relayer, { [UNKNOWN_REPAYMENT_TOKEN]: amount }])
+            ),
+          ])
+        ),
+      ])
+    );
   }
 
   /**
    * Return sum of refunds for all fills sent after the fromBlocks.
    * Makes a simple assumption that all fills that were sent by this relayer after the last executed bundle
-   * are valid and will be refunded on the repayment chain selected.
+   * are valid and will be repaid on the resolved repayment chain: the requested repayment chain when it
+   * is valid for the fill, otherwise the origin chain (see resolveRepaymentInformation()).
    * @param l1Token L1 token to get refunds for all inventory-equivalent L2 tokens on each chain.
    * @param fromBlocks 2D block mapping indexed by [referenceChainId][fillChainId]. For refund counting, each fill
    * is filtered using fromBlocks[repaymentChainId][fillChainId] so that a fill is only excluded when the
    * repayment chain's refund leaf has been executed — not when the fill chain's own refund leaf was executed.
    * This prevents under-counting refunds when cross-chain relay propagation is delayed.
-   * @returns Refunds grouped by relayer for each chain. Refunds are denominated in L1 token decimals.
+   * @returns Refunds grouped by relayer and repayment token for each chain. Refunds are denominated in
+   * L1 token decimals, but keyed by the L2 token that the refund leaf will pay out in.
    */
   protected getApproximateRefundsForToken(
     l1Token: Address,
     fromBlocks: { [chainId: number]: { [chainId: number]: number } }
-  ): { [repaymentChainId: number]: { [relayer: string]: BigNumber } } {
-    const refundsForChain: { [repaymentChainId: number]: { [relayer: string]: BigNumber } } = {};
+  ): RefundsByChain {
+    const refundsForChain: RefundsByChain = {};
     for (const chainId of this.chainIdList) {
       refundsForChain[chainId] ??= {};
       const spokePoolClient = this.spokePoolManager.getClient(chainId);
@@ -92,10 +131,9 @@ export class BundleDataApproxClient {
         continue;
       }
       spokePoolClient.getFills().forEach((fill) => {
-        const { inputAmount: _refundAmount, originChainId, repaymentChainId, relayer, inputToken, blockNumber } = fill;
-        // Filter based on the repayment chain's execution state: a fill on chain X with repayment on
-        // chain Y should only be excluded when chain Y's refund leaf has been executed.
-        if (blockNumber < (fromBlocks[repaymentChainId]?.[chainId] ?? 0)) {
+        const { inputAmount: _refundAmount, originChainId, relayer, inputToken, blockNumber } = fill;
+        // Slow fills pay the recipient out of a slow fill leaf and produce no relayer repayment.
+        if (isSlowFill(fill)) {
           return;
         }
 
@@ -109,18 +147,52 @@ export class BundleDataApproxClient {
           return;
         }
 
+        // Resolve the chain and token the repayment will actually pay out in, applying the dataworker's
+        // fallback to origin-chain repayment when the fill's requested repayment chain is invalid.
+        const { repaymentChainId, repaymentToken } = this.resolveRepaymentInformation(fill);
+
+        // Filter based on the repayment chain's execution state: a fill on chain X with repayment on
+        // chain Y should only be excluded when chain Y's refund leaf has been executed.
+        if (blockNumber < (fromBlocks[repaymentChainId]?.[chainId] ?? 0)) {
+          return;
+        }
+
         const { decimals: inputTokenDecimals } = getTokenInfo(inputToken, originChainId);
         const refundAmount = ConvertDecimals(
           inputTokenDecimals,
           getTokenInfo(l1Token, this.hubPoolClient.chainId).decimals
         )(_refundAmount);
         refundsForChain[repaymentChainId] ??= {};
-        refundsForChain[repaymentChainId][relayer.toNative()] ??= bnZero;
-        refundsForChain[repaymentChainId][relayer.toNative()] =
-          refundsForChain[repaymentChainId][relayer.toNative()].add(refundAmount);
+        const relayerRepayments = (refundsForChain[repaymentChainId][relayer.toNative()] ??= {});
+        const repaymentTokenKey = repaymentToken.toNative();
+        relayerRepayments[repaymentTokenKey] = (relayerRepayments[repaymentTokenKey] ?? bnZero).add(refundAmount);
       });
     }
     return refundsForChain;
+  }
+
+  /**
+   * Resolve the chain and token that a fill's repayment will pay out in, mirroring the SDK's
+   * getRefundInformationFromFill()/_getRepaymentChainId(): the requested repayment chain is honored only
+   * when the input token has a pool rebalance route on its origin chain, that route's L1 token is also
+   * routed to the repayment chain, and the repayment chain is not disabled. Otherwise the dataworker
+   * falls back to repaying on the origin chain in the input token.
+   */
+  protected resolveRepaymentInformation(fill: FillWithBlock): { repaymentChainId: number; repaymentToken: Address } {
+    const { originChainId, inputToken, repaymentChainId } = fill;
+    if (
+      repaymentChainId !== originChainId &&
+      !this.hubPoolClient.configStoreClient.getDisabledChainsForBlock().includes(repaymentChainId)
+    ) {
+      const l1TokenCounterpart = this.hubPoolClient.getL1TokenForL2TokenAtBlock(inputToken, originChainId);
+      const repaymentToken = isDefined(l1TokenCounterpart)
+        ? this.hubPoolClient.getL2TokenForL1TokenAtBlock(l1TokenCounterpart, repaymentChainId)
+        : undefined;
+      if (isDefined(repaymentToken)) {
+        return { repaymentChainId, repaymentToken };
+      }
+    }
+    return { repaymentChainId: originChainId, repaymentToken: inputToken };
   }
 
   // For each chain, find the last executed (or relayed) bundle and return a 2D mapping of start blocks:
@@ -293,23 +365,24 @@ export class BundleDataApproxClient {
    * @param chainId Chain ID to get refunds for.
    * @param l1Token L1 token to get refunds for.
    * @param relayer Optional relayer to get refunds for. If not provided, returns the sum of refunds for all relayers.
+   * @param repaymentToken Optional L2 token the refund leaf will pay out in. If provided, returns only refunds paid
+   * in that token. The breakdown is not available on imported state, which only carries chain-level sums.
    * @returns Refunds for the given L1 token on the given chain for all inventory-equivalent L2 tokens on that chain. Refunds are denominated in L1 token decimals.
    */
-  getUpcomingRefunds(chainId: number, l1Token: Address, relayer?: Address): BigNumber {
+  getUpcomingRefunds(chainId: number, l1Token: Address, relayer?: Address, repaymentToken?: Address): BigNumber {
     assert(
       isDefined(this.upcomingRefunds),
       "BundleDataApproxClient#getUpcomingRefunds: Upcoming refunds not initialized"
     );
-    if (!this.upcomingRefunds[l1Token.toNative()]) {
-      return bnZero;
-    }
-    if (isDefined(relayer)) {
-      return this.upcomingRefunds[l1Token.toNative()][chainId]?.[relayer.toNative()] ?? bnZero;
-    }
-    return Object.values(this.upcomingRefunds[l1Token.toNative()][chainId] ?? {}).reduce(
-      (acc, curr) => acc.add(curr),
-      bnZero
-    );
+    const refundsByRelayer = this.upcomingRefunds[l1Token.toNative()]?.[chainId] ?? {};
+    const relayerRefunds = isDefined(relayer)
+      ? [refundsByRelayer[relayer.toNative()] ?? {}]
+      : Object.values(refundsByRelayer);
+    return relayerRefunds
+      .flatMap((byToken) =>
+        isDefined(repaymentToken) ? [byToken[repaymentToken.toNative()] ?? bnZero] : Object.values(byToken)
+      )
+      .reduce((acc, amount) => acc.add(amount), bnZero);
   }
 
   /**
