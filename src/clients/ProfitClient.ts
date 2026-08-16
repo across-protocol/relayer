@@ -109,16 +109,28 @@ const TEST_RECIPIENT = "0xBb23Cd0210F878Ea4CcA50e9dC307fb0Ed65Cf6B";
 
 type PolicyRoute = { destinations: Set<number>; origins?: Set<number> };
 
+// A profitability policy. `routes` is the per-(token-pair, destination, optional-origin)
+// allowlist; an empty `routes` Map is the catch-all (default) policy, conventionally named
+// `default` and appended to the registry at construct time. `minFeePct` / `gasMultiplier` may be
+// undefined on a named policy — when so the next matching policy in the registry supplies that
+// knob. The default policy has both knobs defined, so iteration is total.
 type RelayerPolicy = {
   name: string;
   routes: Map<string, PolicyRoute>;
-  minFeePct?: BigNumber;
-  gasMultiplier?: BigNumber;
+  readonly minFeePct?: BigNumber;
+  readonly gasMultiplier?: BigNumber;
+};
+
+// The resolved profitability configuration applied to a single deposit. Every deposit matches at
+// least the default policy, so `policy` is always defined.
+type ResolvedPolicy = {
+  policy: RelayerPolicy;
+  minRelayerFeePct: BigNumber;
+  gasMultiplier: BigNumber;
 };
 
 export class ProfitClient {
   private readonly priceClient: PriceClient;
-  protected minRelayerFees: { [route: string]: BigNumber } = {};
   protected tokenSymbolMap: { [symbol: string]: string } = {};
   protected tokenPrices: { [address: string]: BigNumber } = {};
   private unprofitableFills: { [chainId: number]: UnprofitableFill[] } = {};
@@ -131,8 +143,9 @@ export class ProfitClient {
 
   private readonly isTestnet: boolean;
 
-  // Cached configuration for the `RELAYER_POLICIES` registry — decoded once at construct time so
-  // resolveGasMultiplier / minRelayerFeePct don't re-parse env vars on every call.
+  // The `RELAYER_POLICIES` registry, decoded once at construct time, with a synthesized default
+  // policy appended as the tail entry so `resolvePolicy` is guaranteed to find a match for every
+  // deposit.
   private readonly policies: RelayerPolicy[];
 
   // @todo: Consolidate this set of args before it grows legs and runs away from us.
@@ -165,6 +178,9 @@ export class ProfitClient {
       this.gasMultiplier.gte(bnZero) && this.gasMultiplier.lte(toBNWei(4)),
       `Gas multiplier out of range (${this.gasMultiplier})`
     );
+    // gasMessageMultiplier is still validated for backwards-compatibility with operator configs,
+    // but it is no longer applied automatically to message-bearing deposits. Operators who need
+    // a non-empty-message-specific multiplier should define a `RELAYER_POLICIES` entry for it.
     assert(
       this.gasMessageMultiplier.gte(bnZero) && this.gasMessageMultiplier.lte(toBNWei(4)),
       `Gas message multiplier out of range (${this.gasMessageMultiplier})`
@@ -190,37 +206,29 @@ export class ProfitClient {
 
     this.isTestnet = this.hubPoolClient.chainId !== CHAIN_IDs.MAINNET;
 
-    this.policies = this.decodePolicies();
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const self = this;
+    this.policies = [
+      ...this.decodePolicies(),
+      // Catch-all default policy. Empty `routes` is the universal-match signal. The knob getters
+      // read live instance state so test setters (e.g. `setGasMultiplier`) flow through.
+      {
+        name: "default",
+        routes: new Map(),
+        get minFeePct() {
+          return self.defaultMinRelayerFeePct;
+        },
+        get gasMultiplier() {
+          return self.gasMultiplier;
+        },
+      },
+    ];
   }
 
-  resolveGasMultiplier(deposit: Deposit): BigNumber {
-    const { inputToken, originChainId, outputToken, destinationChainId } = deposit;
-    const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
-    const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
-
-    const policy = this.matchingPolicy(srcSymbol, dstSymbol, originChainId, destinationChainId, inputToken);
-    if (isDefined(policy?.gasMultiplier)) {
-      return policy.gasMultiplier;
-    }
-
-    const effectiveSrcSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
-    const effectiveDstSymbol =
-      dstSymbol !== "UNKNOWN" ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
-
-    const routeKey = effectiveDstSymbol
-      ? `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}_${effectiveDstSymbol}_${destinationChainId}`
-      : `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}_${destinationChainId}`;
-    const tokenKey = `RELAYER_GAS_MULTIPLIER_${effectiveSrcSymbol}`;
-    const chainKey = `RELAYER_GAS_MULTIPLIER_${destinationChainId}`;
-
-    const envVal = process.env[routeKey] ?? process.env[tokenKey] ?? process.env[chainKey];
-    if (isDefined(envVal)) {
-      const override = toBNWei(envVal);
-      assert(override.gte(bnZero) && override.lte(toBNWei(4)), `Gas multiplier override out of range (${override})`);
-      return override;
-    }
-
-    return isMessageEmpty(resolveDepositMessage(deposit)) ? this.gasMultiplier : this.gasMessageMultiplier;
+  resolveGasMultiplier(
+    deposit: Pick<Deposit, "inputToken" | "originChainId" | "outputToken" | "destinationChainId">
+  ): BigNumber {
+    return this.resolvePolicy(deposit).gasMultiplier;
   }
 
   resolveNativeToken(chainId: number): { symbol: string; decimals: number; address: string } {
@@ -439,35 +447,55 @@ export class ProfitClient {
   minRelayerFeePct(
     deposit: Pick<Deposit, "inputToken" | "originChainId" | "outputToken" | "destinationChainId">
   ): BigNumber {
+    return this.resolvePolicy(deposit).minRelayerFeePct;
+  }
+
+  /**
+   * Central pivot for per-deposit profitability configuration. Iterates the policy registry once
+   * — the tail entry is the synthesized default policy, so every deposit ends up matched to some
+   * policy. For each knob, the first matching policy that provides a value wins; if a named
+   * policy matches but doesn't define a knob, resolution continues to the default policy.
+   */
+  resolvePolicy(
+    deposit: Pick<Deposit, "inputToken" | "originChainId" | "outputToken" | "destinationChainId">
+  ): ResolvedPolicy {
     const { inputToken, originChainId, outputToken, destinationChainId } = deposit;
     const srcSymbol = this.getTokenSymbol(inputToken, originChainId);
     const dstSymbol = this.getTokenSymbol(outputToken, destinationChainId);
 
-    const policy = this.matchingPolicy(srcSymbol, dstSymbol, originChainId, destinationChainId, inputToken);
-    if (isDefined(policy?.minFeePct)) {
-      return policy.minFeePct;
+    let policy: RelayerPolicy | undefined;
+    let minRelayerFeePct: BigNumber | undefined;
+    let gasMultiplier: BigNumber | undefined;
+
+    const pair = `${srcSymbol}_${dstSymbol}`;
+    for (const candidate of this.policies) {
+      // Empty `routes` is the catch-all (default policy); otherwise check the (src, dst, origin,
+      // dest) tuple. When `origins` is unset, fall back to the unmetered-fast-rebalance heuristic.
+      if (candidate.routes.size > 0) {
+        const route = candidate.routes.get(pair);
+        if (!isDefined(route) || !route.destinations.has(destinationChainId)) {
+          continue;
+        }
+        const originOk = isDefined(route.origins)
+          ? route.origins.has(originChainId)
+          : isUnmeteredFastRebalance(originChainId, inputToken, this.hubPoolClient.chainId);
+        if (!originOk) {
+          continue;
+        }
+      }
+      policy ??= candidate;
+      minRelayerFeePct ??= candidate.minFeePct;
+      gasMultiplier ??= candidate.gasMultiplier;
+      if (isDefined(minRelayerFeePct) && isDefined(gasMultiplier)) {
+        break;
+      }
     }
 
-    const effectiveSourceSymbol = this._getRemappedTokenSymbol(srcSymbol) ?? srcSymbol;
-    const effectiveDestinationSymbol =
-      dstSymbol !== "UNKNOWN" ? (this._getRemappedTokenSymbol(dstSymbol) ?? dstSymbol) : undefined;
-
-    const tokenKey = effectiveDestinationSymbol
-      ? `MIN_RELAYER_FEE_PCT_${effectiveSourceSymbol}_${effectiveDestinationSymbol}`
-      : `MIN_RELAYER_FEE_PCT_${effectiveSourceSymbol}`;
-    const routeKey = `${tokenKey}_${originChainId}_${destinationChainId}`;
-    const destinationChainKey = `MIN_RELAYER_FEE_PCT_${destinationChainId}`;
-    let minRelayerFeePct = this.minRelayerFees[routeKey] ?? this.minRelayerFees[tokenKey];
-
-    if (!minRelayerFeePct) {
-      const _minRelayerFeePct = process.env[routeKey] ?? process.env[destinationChainKey] ?? process.env[tokenKey];
-      minRelayerFeePct = _minRelayerFeePct ? toBNWei(_minRelayerFeePct) : this.defaultMinRelayerFeePct;
-
-      // Save the route for next time.
-      this.minRelayerFees[routeKey] = minRelayerFeePct;
-    }
-
-    return minRelayerFeePct;
+    assert(
+      isDefined(policy) && isDefined(minRelayerFeePct) && isDefined(gasMultiplier),
+      "ProfitClient: policy registry must match every deposit"
+    );
+    return { policy, minRelayerFeePct, gasMultiplier };
   }
 
   /**
@@ -585,40 +613,21 @@ export class ProfitClient {
   }
 
   /**
-   * Per-(token-pair) override: returns the first policy in the cached `RELAYER_POLICIES` registry
-   * whose `DESTINATIONS_<srcSymbol>_<dstSymbol>` route includes `destinationChainId`, and whose
-   * optional `ORIGINS_<srcSymbol>_<dstSymbol>` includes `originChainId` (or, when unset, whose
-   * origin chain supports unmetered fast rebalance for the input token). Callers additionally gate
-   * on the relevant override env var being defined (`MIN_FEE_PCT` / `GAS_MULTIPLIER`); if it isn't,
-   * they fall through to the standard per-route/token/chain lookup and global defaults.
+   * Emit a debug log whenever a named policy matches a deposit. Silent for default-policy matches.
    */
-  protected matchingPolicy(
-    srcSymbol: string,
-    dstSymbol: string,
-    originChainId: number,
-    destinationChainId: number,
-    inputToken: Address
-  ): RelayerPolicy | undefined {
-    if (this.policies.length === 0) {
-      return undefined;
+  private logPolicyMatch(deposit: Deposit, resolved: ResolvedPolicy): void {
+    const { policy } = resolved;
+    if (policy.name === "default") {
+      return;
     }
-    const pair = `${srcSymbol}_${dstSymbol}`;
-    for (const policy of this.policies) {
-      const route = policy.routes.get(pair);
-      if (!isDefined(route) || !route.destinations.has(destinationChainId)) {
-        continue;
-      }
-      if (isDefined(route.origins)) {
-        if (route.origins.has(originChainId)) {
-          return policy;
-        }
-        continue;
-      }
-      if (isUnmeteredFastRebalance(originChainId, inputToken, this.hubPoolClient.chainId)) {
-        return policy;
-      }
-    }
-    return undefined;
+    this.logger.debug({
+      at: "ProfitClient#policyMatch",
+      message: `Policy ${policy.name} matched deposit #${deposit.depositId.toString()}.`,
+      deposit: this.formatDepositForLog(deposit),
+      policy: policy.name,
+      minRelayerFeePct: `${formatFeePct(resolved.minRelayerFeePct)}%`,
+      gasMultiplier: formatEther(resolved.gasMultiplier),
+    });
   }
 
   /**
@@ -636,7 +645,7 @@ export class ProfitClient {
       .map((s) => s.trim().toUpperCase())
       .filter((s) => s.length > 0);
 
-    return names.map((name) => {
+    return names.map((name): RelayerPolicy => {
       const routes = new Map<string, PolicyRoute>();
       const destinationsPrefix = `RELAYER_POLICY_${name}_DESTINATIONS_`;
       const originsPrefix = `RELAYER_POLICY_${name}_ORIGINS_`;
@@ -676,9 +685,16 @@ export class ProfitClient {
     });
   }
 
+  /**
+   * Synthesize the catch-all default policy at construction time. `routes` is empty so it matches
+   * every deposit, and `minFeePct` / `gasMultiplier` are getters reading the live instance state
+   * so test setters and ops mutations are reflected automatically.
+   */
   async getFillProfitability(deposit: Deposit, lpFeePct: BigNumber, repaymentChainId: number): Promise<FillProfit> {
-    const minRelayerFeePct = this.minRelayerFeePct(deposit);
+    const resolved = this.resolvePolicy(deposit);
+    this.logPolicyMatch(deposit, resolved);
 
+    const { minRelayerFeePct } = resolved;
     const fill = await this.calculateFillProfitability(deposit, lpFeePct, minRelayerFeePct);
     if (!fill.profitable || this.debugProfitability) {
       const { depositId, destinationChainId } = deposit;
@@ -702,7 +718,7 @@ export class ProfitClient {
         tokenGasCost: formatEther(fill.tokenGasCost),
         gasPrice: formatGwei(fill.gasPrice.toString()),
         gasPadding: this.gasPadding,
-        gasMultiplier: formatEther(this.resolveGasMultiplier(deposit)),
+        gasMultiplier: formatEther(fill.gasMultiplier),
         gasTokenPriceUsd: formatEther(fill.gasTokenPriceUsd),
         grossRelayerFeeUsd: formatEther(fill.grossRelayerFeeUsd),
         gasCostUsd: formatEther(fill.gasCostUsd),
