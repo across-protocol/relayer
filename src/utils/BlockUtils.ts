@@ -1,6 +1,8 @@
 import { arch, interfaces, utils } from "@across-protocol/sdk";
 import { getRedisCache } from "../cache/Redis";
-import { fireAndForget, isDefined, winston } from "./";
+import winston from "winston";
+import { fireAndForget } from "./Tasks";
+import { isDefined } from "./TypeGuards";
 import {
   BlockFinderHints,
   EVMBlockFinder,

@@ -15,7 +15,7 @@ import * as hl from "@nktkas/hyperliquid";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { ethers } from "ethers";
 import { getContractEntry } from "../common/ContractAddresses";
-import { TransactionClient } from "../clients";
+import { TransactionClient } from "../clients/TransactionClient";
 
 export function getHlExchangeClient(
   signer: Signer,

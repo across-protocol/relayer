@@ -1,5 +1,6 @@
 import { utils as sdkUtils } from "@across-protocol/sdk";
-import { isDefined, sortEventsAscending } from "../../utils";
+import { sortEventsAscending } from "../../utils/EventUtils";
+import { isDefined } from "../../utils/TypeGuards";
 import { Log, ListenerMessage } from "./../types";
 
 /**
