@@ -4,7 +4,7 @@ import "../utils/extensions";
 import assert from "assert";
 import minimist from "minimist";
 import { Contract } from "ethers";
-import { Log } from "../interfaces";
+import type { Log } from "../interfaces";
 import winston from "winston";
 import { Logger } from "@risk-labs/logger";
 import type { Provider } from "@ethersproject/abstract-provider";

@@ -1,5 +1,8 @@
 import assert from "assert";
 import { arch } from "@across-protocol/sdk";
+// Deliberate exception to the libexec barrel ban: this file is only reachable from the SVM
+// listener, which measured worse on leaf imports (see RelayerSpokePoolListenerSVM.ts).
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports
 import { Profiler, winston } from "../../../utils";
 import { ScraperOpts } from "../../types";
 

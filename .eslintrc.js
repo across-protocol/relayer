@@ -87,5 +87,45 @@ module.exports = {
         "@typescript-eslint/no-unused-expressions": "off", // Chai assertions are "unused expressions"
       },
     },
+    {
+      // libexec runs as one forked subprocess per chain, so its module graph is resident
+      // ~35 times over on a full deployment. Barrel imports pull the whole re-export graph
+      // (src/utils/index.ts alone re-exports 46 modules and the @across-protocol/sdk root),
+      // which is why these entrypoints cost ~250MB each. Import the defining module instead.
+      // Everywhere else the barrels remain the convenient default.
+      files: ["src/libexec/**/*.ts"],
+      rules: {
+        // The TS variant so `allowTypeImports` is available: `import type` is erased at compile
+        // time and costs nothing at runtime, so only value imports of the barrels are worth
+        // banning. The base no-restricted-imports config is inherited unchanged.
+        "@typescript-eslint/no-restricted-imports": [
+          "error",
+          {
+            // `paths` matches the specifier exactly, so only the barrels themselves are caught;
+            // '../utils/TypeGuards' and friends stay allowed. (`patterns` would prefix-match and
+            // reject the leaf imports too.)
+            paths: [
+              "../utils",
+              "../clients",
+              "../interfaces",
+              "../common",
+              "../../utils",
+              "../../clients",
+              "../../interfaces",
+              "../../common",
+              "../../../utils",
+              "../../../clients",
+              "../../../interfaces",
+              "../../../common",
+            ].map((name) => ({
+              name,
+              allowTypeImports: true,
+              message:
+                "libexec is forked per-chain; barrel imports load the whole graph. Import the defining module, e.g. '../utils/TypeGuards'.",
+            })),
+          },
+        ],
+      },
+    },
   ],
 };
