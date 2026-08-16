@@ -6,10 +6,9 @@ import { TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { utils as sdkUtils } from "@across-protocol/sdk";
 import { getDeployedContract, getProvider, CHAIN_IDs, resolveAcrossToken } from "../src/utils";
 
-// https://nodejs.org/api/process.html#exit-codes
-export const NODE_SUCCESS = 0;
-export const NODE_INPUT_ERR = 9;
-export const NODE_APP_ERR = 127; // user-defined
+// Defined in src/utils/ExecutionUtils so that libexec listener entrypoints can pick them up
+// without pulling this module's CLI dependencies into every subprocess.
+export { NODE_SUCCESS, NODE_INPUT_ERR, NODE_APP_ERR } from "../src/utils/ExecutionUtils";
 
 export type ERC20 = {
   address: string;

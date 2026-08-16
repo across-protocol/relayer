@@ -1,4 +1,7 @@
-import { BigNumber, EvmAddress, SvmAddress, isDefined, resolveAcrossToken } from "../utils";
+import { BigNumber } from "../utils/BNUtils";
+import { EvmAddress, SvmAddress } from "../utils/SDKUtils";
+import { resolveAcrossToken } from "../utils/TokenUtils";
+import { isDefined } from "../utils/TypeGuards";
 
 export type TokenBalanceConfig = {
   targetOverageBuffer: BigNumber; // Max multiplier for targetPct, to give flexibility in repayment chain selection.

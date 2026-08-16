@@ -1,19 +1,18 @@
+// Installs Set/BigInt toJSON, which the IPC messages below rely on. Previously pulled in as a
+// side effect of importing the src/utils barrel; imported explicitly now that we import leaves.
+import "../utils/extensions";
 import assert from "assert";
 import minimist from "minimist";
 import { Contract, utils as ethersUtils } from "ethers";
-import { EventListener } from "../clients";
-import {
-  isDefined,
-  getBlockForTimestamp,
-  getChainQuorum,
-  getDeploymentBlockNumber,
-  getNetworkName,
-  getProvider,
-  getSpokePool,
-  Logger,
-  Provider,
-  winston,
-} from "../utils";
+import winston from "winston";
+import { Logger } from "@risk-labs/logger";
+import type { Provider } from "@ethersproject/abstract-provider";
+import { EventListener } from "../clients/EventListener";
+import { getBlockForTimestamp } from "../utils/BlockUtils";
+import { getDeploymentBlockNumber, getSpokePool } from "../utils/ContractUtils";
+import { getNetworkName } from "../utils/NetworkUtils";
+import { getChainQuorum, getProvider } from "../utils/ProviderUtils";
+import { isDefined } from "../utils/TypeGuards";
 import { getRedisCache } from "../cache/Redis";
 import { ScraperOpts } from "./types";
 import { bootstrap, waitForAbort } from "./util/bootstrap";

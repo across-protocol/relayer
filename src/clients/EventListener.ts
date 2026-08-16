@@ -2,17 +2,11 @@ import assert from "assert";
 import { EventEmitter } from "node:events";
 import { AbiEvent, BaseError, Block, createPublicClient, http, Log as viemLog, parseAbiItem, webSocket } from "viem";
 import { Log } from "../interfaces";
-import {
-  EventManager,
-  getNetworkName,
-  getNodeUrlList,
-  getOriginFromURL,
-  getProviderHeaders,
-  getViemChain,
-  isDefined,
-  viemLogToEthersLog,
-  winston,
-} from "../utils";
+import winston from "winston";
+import { EventManager, viemLogToEthersLog } from "../utils/EventUtils";
+import { getNetworkName, getOriginFromURL, getViemChain } from "../utils/NetworkUtils";
+import { getNodeUrlList, getProviderHeaders } from "../utils/ProviderUtils";
+import { isDefined } from "../utils/TypeGuards";
 
 // parseAbiItem() returns a union over all ABI item kinds; narrow it to AbiEvent via the type discriminant.
 function parseEventDescriptor(eventDescriptor: string | AbiEvent): AbiEvent {

@@ -1,4 +1,10 @@
-import { delay, winston } from "./";
+import winston from "winston";
+import { delay } from "./SDKUtils";
+
+// https://nodejs.org/api/process.html#exit-codes
+export const NODE_SUCCESS = 0;
+export const NODE_INPUT_ERR = 9;
+export const NODE_APP_ERR = 127; // user-defined
 
 export function exit(code: number): void {
   // eslint-disable-next-line no-process-exit

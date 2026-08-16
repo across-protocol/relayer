@@ -1,7 +1,7 @@
-import { disconnectRedisClients, exit, Logger, winston } from "../../utils";
-import * as utils from "../../../scripts/utils";
-
-const { NODE_SUCCESS, NODE_APP_ERR } = utils;
+import winston from "winston";
+import { Logger } from "@risk-labs/logger";
+import { exit, NODE_APP_ERR, NODE_SUCCESS } from "../../utils/ExecutionUtils";
+import { disconnectRedisClients } from "../../utils/Redis";
 
 type Run = (argv: string[]) => Promise<void>;
 
