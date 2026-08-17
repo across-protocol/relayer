@@ -19,18 +19,18 @@ import { Address, bnZero } from "../utils/SDKUtils";
 import { HubPoolClient } from "./HubPoolClient";
 
 export type BundleDataState = {
+  // Deposit tracking was removed when its last consumer went away, but the field is retained (exported empty)
+  // so the serialized shape stays compatible across relayer versions.
   upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } };
   upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } };
 };
 
-// This client is used to approximate running balances and the refunds and deposits for a given L1 token. Running balances
-// can easily be estimated by taking the last validated running balance for a chain and subtracting the total deposit amount
-// on that chain since the last validated end block and adding the total refund amount on that chain since the last validated
-// end block.
+// This client approximates the upcoming refunds owed to a set of tracked relayers for a given L1 token:
+// every fill sent by a tracked relayer since the last executed bundle is assumed to be valid and refunded
+// on its selected repayment chain. Fills from other relayers are ignored.
 export class BundleDataApproxClient {
   private upcomingRefunds: { [l1Token: string]: { [chainId: number]: { [relayer: string]: BigNumber } } } | undefined =
     undefined;
-  private upcomingDeposits: { [l1Token: string]: { [chainId: number]: BigNumber } } | undefined = undefined;
   private readonly spokePoolManager: SpokePoolManager;
 
   private readonly protocolChainIdIndices: number[];
@@ -39,6 +39,7 @@ export class BundleDataApproxClient {
     private readonly hubPoolClient: HubPoolClient,
     private readonly chainIdList: number[],
     private readonly l1Tokens: Address[],
+    private readonly relayers: Address[],
     private readonly logger: winston.Logger
   ) {
     this.spokePoolManager = new SpokePoolManager(logger, spokePoolClients);
@@ -50,12 +51,9 @@ export class BundleDataApproxClient {
    * @returns BundleData(Approx)Client state. This can be subsequently ingested by BundleDataApproxClient.import().
    */
   export(): BundleDataState {
-    const { upcomingDeposits, upcomingRefunds } = this;
-    assert(
-      isDefined(upcomingDeposits) && isDefined(upcomingRefunds),
-      "BundleDataApproxClient#export: client not initialized"
-    );
-    return { upcomingDeposits, upcomingRefunds };
+    const { upcomingRefunds } = this;
+    assert(isDefined(upcomingRefunds), "BundleDataApproxClient#export: client not initialized");
+    return { upcomingDeposits: {}, upcomingRefunds };
   }
 
   /**
@@ -64,14 +62,12 @@ export class BundleDataApproxClient {
    * @returns void
    */
   import(state: BundleDataState): void {
-    const { upcomingDeposits, upcomingRefunds } = state;
-    this.upcomingDeposits = upcomingDeposits;
-    this.upcomingRefunds = upcomingRefunds;
+    this.upcomingRefunds = state.upcomingRefunds;
   }
 
   /**
-   * Return sum of refunds for all fills sent after the fromBlocks.
-   * Makes a simple assumption that all fills that were sent by this relayer after the last executed bundle
+   * Return sum of refunds for all tracked relayers' fills sent after the fromBlocks.
+   * Makes a simple assumption that all fills that were sent by a tracked relayer after the last executed bundle
    * are valid and will be refunded on the repayment chain selected.
    * @param l1Token L1 token to get refunds for all inventory-equivalent L2 tokens on each chain.
    * @param fromBlocks 2D block mapping indexed by [referenceChainId][fillChainId]. For refund counting, each fill
@@ -93,6 +89,11 @@ export class BundleDataApproxClient {
       }
       spokePoolClient.getFills().forEach((fill) => {
         const { inputAmount: _refundAmount, originChainId, repaymentChainId, relayer, inputToken, blockNumber } = fill;
+        // Only tracked relayers' refunds are of interest; skip everyone else's fills.
+        if (!this.relayers.some((trackedRelayer) => trackedRelayer.eq(relayer))) {
+          return;
+        }
+
         // Filter based on the repayment chain's execution state: a fill on chain X with repayment on
         // chain Y should only be excluded when chain Y's refund leaf has been executed.
         if (blockNumber < (fromBlocks[repaymentChainId]?.[chainId] ?? 0)) {
@@ -123,16 +124,13 @@ export class BundleDataApproxClient {
     return refundsForChain;
   }
 
-  // For each chain, find the last executed (or relayed) bundle and return a 2D mapping of start blocks:
+  // For each chain, find the last executed bundle and return a 2D mapping of start blocks:
   // result[chainId][c] = the start block on chain c derived from the last executed bundle on chainId.
   // This 2D structure is needed because a bundle executed on chain A may not yet be relayed to chain B
   // (due to cross-chain propagation delays), so the correct start block for counting fills depends on
   // which chain's execution state is being used as the reference. For refunds, the reference chain is
-  // the repayment chain; for deposits, it is the deposit's own chain (the diagonal: result[chainId][chainId]).
-  protected getUnexecutedBundleStartBlocks(
-    l1Token: Address,
-    requireExecution: boolean
-  ): { [chainId: number]: { [chainId: number]: number } } {
+  // the repayment chain.
+  protected getUnexecutedBundleStartBlocks(l1Token: Address): { [chainId: number]: { [chainId: number]: number } } {
     assert(l1Token.isEVM());
     return Object.fromEntries(
       this.chainIdList.map((chainId) => {
@@ -143,12 +141,6 @@ export class BundleDataApproxClient {
         const lastRelayedRootToChain = spokePoolClient.getRootBundleRelays().findLast((relay) => {
           if (!isDefined(relay)) {
             return false;
-          }
-
-          // If we don't require execution verification, return the last relayed root bundle directly.
-          // This is used for deposit counting where the boundary is bundle validation/relay, not leaf execution.
-          if (!requireExecution) {
-            return true;
           }
 
           const l2Tokens = getInventoryBalanceContributorTokens(l1Token, chainId, this.hubPoolClient.chainId);
@@ -205,62 +197,9 @@ export class BundleDataApproxClient {
   }
 
   private getApproximateUpcomingRefunds(l1Token: Address): ReturnType<typeof this.getApproximateRefundsForToken> {
-    const fromBlocks = this.getUnexecutedBundleStartBlocks(l1Token, true);
+    const fromBlocks = this.getUnexecutedBundleStartBlocks(l1Token);
     const refundsForChain = this.getApproximateRefundsForToken(l1Token, fromBlocks);
     return refundsForChain;
-  }
-
-  /**
-   * Return sum of deposits for all deposits sent after the fromBlocks.
-   * @param l1Token L1 token to get deposits for all inventory-equivalent L2 tokens on each chain.
-   * @param fromBlocks 2D block mapping indexed by [referenceChainId][depositChainId]. For deposit counting,
-   * only the diagonal is used: fromBlocks[chainId][chainId], since deposits are counted per origin chain.
-   * @returns Deposits grouped by chain. Deposits are denominated in L1 token decimals.
-   */
-  private getApproximateDepositsForToken(
-    l1Token: Address,
-    fromBlocks: { [chainId: number]: { [chainId: number]: number } }
-  ): { [chainId: number]: BigNumber } {
-    const depositsForChain: { [chainId: number]: BigNumber } = {};
-    for (const chainId of this.chainIdList) {
-      depositsForChain[chainId] ??= bnZero;
-      const spokePoolClient = this.spokePoolManager.getClient(chainId);
-      if (!isDefined(spokePoolClient)) {
-        continue;
-      }
-      spokePoolClient
-        .getDeposits()
-        .filter((deposit) => {
-          if (deposit.blockNumber < (fromBlocks[chainId]?.[chainId] ?? 0)) {
-            return false;
-          }
-          // We are ok to group together deposits for inventory-equivalent tokens because these approximate
-          // deposits and refunds are usually computed and summed together to approximate running balances. So we should
-          // use the same methodology for equating input and l1 tokens as we do in the getApproximateRefundsForToken method.
-          const expectedL1Token = this.getL1TokenAddress(deposit.inputToken, deposit.originChainId);
-          if (!isDefined(expectedL1Token)) {
-            return false;
-          }
-          return l1Token.eq(expectedL1Token);
-        })
-        .forEach((deposit) => {
-          const depositAmount = ConvertDecimals(
-            getTokenInfo(deposit.inputToken, deposit.originChainId).decimals,
-            getTokenInfo(l1Token, this.hubPoolClient.chainId).decimals
-          )(deposit.inputAmount);
-          depositsForChain[chainId] = depositsForChain[chainId].add(depositAmount);
-        });
-    }
-    return depositsForChain;
-  }
-
-  private getApproximateUpcomingDepositsForToken(
-    l1Token: Address
-  ): ReturnType<typeof this.getApproximateDepositsForToken> {
-    // Deposits don't need to be executed following a root bundle validation so we pass in `false` for `requireExecution`.
-    const fromBlocks = this.getUnexecutedBundleStartBlocks(l1Token, false);
-    const depositsForChain = this.getApproximateDepositsForToken(l1Token, fromBlocks);
-    return depositsForChain;
   }
 
   protected getL1TokenAddress(l2Token: Address, chainId: number): Address | undefined {
@@ -273,17 +212,14 @@ export class BundleDataApproxClient {
 
   initialize(): void {
     this.upcomingRefunds = {};
-    this.upcomingDeposits = {};
     for (const l1Token of this.l1Tokens) {
       this.upcomingRefunds[l1Token.toNative()] = this.getApproximateUpcomingRefunds(l1Token);
-      this.upcomingDeposits[l1Token.toNative()] = this.getApproximateUpcomingDepositsForToken(l1Token);
     }
     this.logger.debug({
       at: "BundleDataApproxClient#initialize",
       message: "Initialized BundleDataApproxClient",
       l1Tokens: this.l1Tokens.map((l1Token) => l1Token.toNative()),
       upcomingRefunds: this.upcomingRefunds,
-      upcomingDeposits: this.upcomingDeposits,
     });
   }
 
@@ -292,7 +228,8 @@ export class BundleDataApproxClient {
    * Refunds are denominated in L1 token decimals.
    * @param chainId Chain ID to get refunds for.
    * @param l1Token L1 token to get refunds for.
-   * @param relayer Optional relayer to get refunds for. If not provided, returns the sum of refunds for all relayers.
+   * @param relayer Optional relayer to get refunds for. If not provided, returns the sum of refunds for all tracked
+   * relayers. Refunds are only tracked for the relayers supplied at construction; other relayers return zero.
    * @returns Refunds for the given L1 token on the given chain for all inventory-equivalent L2 tokens on that chain. Refunds are denominated in L1 token decimals.
    */
   getUpcomingRefunds(chainId: number, l1Token: Address, relayer?: Address): BigNumber {
@@ -310,23 +247,5 @@ export class BundleDataApproxClient {
       (acc, curr) => acc.add(curr),
       bnZero
     );
-  }
-
-  /**
-   * Return deposits for a given L1 token on a given chain for all inventory-equivalent L2 tokens on that chain.
-   * Deposits are denominated in L1 token decimals.
-   * @param chainId Chain ID to get deposits for.
-   * @param l1Token L1 token to get deposits for.
-   * @returns Deposits for the given L1 token on the given chain for all inventory-equivalent L2 tokens on that chain. Deposits are denominated in L1 token decimals.
-   */
-  getUpcomingDeposits(chainId: number, l1Token: Address): BigNumber {
-    assert(
-      isDefined(this.upcomingDeposits),
-      "BundleDataApproxClient#getUpcomingDeposits: Upcoming deposits not initialized"
-    );
-    if (!this.upcomingDeposits[l1Token.toNative()]) {
-      return bnZero;
-    }
-    return this.upcomingDeposits[l1Token.toNative()][chainId] ?? bnZero;
   }
 }
