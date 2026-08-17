@@ -120,14 +120,32 @@ export class LockContentionError extends DepositAddressServiceError {
 }
 
 /**
- * A `mis_route` transfer, which routes to a refund withdraw that does not exist yet.
- *
- * NACK rather than ACK so the transfer is not discarded. Permanently-retriable would normally be the no-DLQ
- * trap; it is unreachable while `EXECUTION_ENABLED` is false, and the withdrawal PR removes this branch.
+ * The v3 refund-withdraw path is off (`ENABLE_V3_WITHDRAWALS` unset). NACK, same shape as
+ * {@link ExecutionDisabledError}: the gate is an operator switch, the funds are still on the deposit
+ * address, and an ACK would discard the only delivery that could ever refund them.
  */
-export class WithdrawRouteNotImplementedError extends DepositAddressServiceError {
+export class WithdrawalsDisabledError extends DepositAddressServiceError {
   readonly retriable = true;
-  readonly code = "WITHDRAW_ROUTE_NOT_IMPLEMENTED";
+  readonly code = "V3_WITHDRAWALS_DISABLED";
+}
+
+/**
+ * The message carries no usable withdraw leaf in `counterfactualMaterials`. Deterministic — the leaves
+ * were fixed when the deposit address was created — so ACK; no redelivery can grow one.
+ */
+export class MissingWithdrawMaterialsError extends DepositAddressServiceError {
+  readonly retriable = false;
+  readonly code = "MISSING_WITHDRAW_MATERIALS";
+}
+
+/**
+ * The sign-withdraw response failed validation — signed for a different chain than the refund chain, or a
+ * signature deadline too close to expiry. NACK, like {@link InvalidExecuteResponseError}: the calldata is
+ * perishable, so a fresh response on the next delivery may well pass.
+ */
+export class InvalidWithdrawResponseError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "INVALID_WITHDRAW_RESPONSE";
 }
 
 /**
@@ -157,7 +175,8 @@ export class OriginChainDisabledError extends DepositAddressServiceError {
 /**
  * A namespace that is not native to the origin chain's family (e.g. `tron` on an EVM chain). A data
  * anomaly, deterministic, so ACK. Note zkSync-family chains are EVM here, so a `zksync`-namespaced message
- * is dropped — the same outcome the polling bot produces.
+ * is dropped — the same outcome the polling bot produces. The withdraw path raises this more strictly:
+ * v3 withdrawals are EVM-only, so even a chain-native `tron` namespace fails there.
  */
 export class UnsupportedNamespaceError extends DepositAddressServiceError {
   readonly retriable = false;
@@ -207,20 +226,6 @@ export class InsufficientBalanceError extends DepositAddressServiceError {
 export class InvalidExecuteResponseError extends DepositAddressServiceError {
   readonly retriable = true;
   readonly code = "INVALID_EXECUTE_RESPONSE";
-}
-
-/**
- * The execute endpoint rejected the amount as below the minimum deposit.
- *
- * Terminal at the API — the amount is whatever landed on the address, so no retry changes it — but NACK
- * here rather than ACK, because the correct handling is a refund withdraw and that path does not exist yet.
- * A permanently-retriable condition would normally be the no-DLQ trap; it is unreachable while
- * `EXECUTION_ENABLED` is false, and the withdrawal PR replaces this throw with the fallback at its call
- * site.
- */
-export class BelowMinimumDepositError extends DepositAddressServiceError {
-  readonly retriable = true;
-  readonly code = "AMOUNT_BELOW_MINIMUM";
 }
 
 /**

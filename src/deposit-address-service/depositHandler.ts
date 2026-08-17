@@ -1,5 +1,9 @@
 import { AcrossApiHttpError } from "../clients/AcrossApiBaseClient";
-import { AcrossSwapApiClient, DepositAddressExecuteResponse } from "../clients/AcrossSwapApiClient";
+import {
+  AcrossSwapApiClient,
+  DepositAddressExecuteResponse,
+  DepositAddressSignWithdrawResponse,
+} from "../clients/AcrossSwapApiClient";
 import { AugmentedTransaction, TransactionClient } from "../clients/TransactionClient";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 import { DepositAddressMessageV3 } from "../interfaces/DepositAddress";
@@ -15,6 +19,7 @@ import {
   getEthersCompatibleAddress,
   getNetworkName,
   getProvider as getProviderDefault,
+  isHttpError,
   isNativeTokenSentinel,
   submitTransaction,
   toAddressType,
@@ -24,23 +29,25 @@ import {
 import { isDefined } from "../utils/TypeGuards";
 import { DepositAddressServiceConfig } from "./config";
 import {
-  BelowMinimumDepositError,
   InsufficientBalanceError,
   LockContentionError,
   NonCanonicalTransferError,
   TransientDependencyError,
-  WithdrawRouteNotImplementedError,
+  WithdrawalsDisabledError,
 } from "./errors";
 import {
+  assertEvmWithdrawNamespaces,
   assertIntegratorId,
   assertSupportedNamespace,
   assertSupportedOriginChain,
   assertValidExecuteResponse,
+  assertValidWithdrawResponse,
+  assertWithdrawMaterials,
 } from "./guards";
 import { HandlerResult, MessageHandler, RequestContext, assertBeforeDeadline } from "./handler";
 import { ParsedTransfer, parseTransfer } from "./message";
 import { resolvePendingTransaction } from "./pendingTransaction";
-import { BroadcastPendingState, TransferLock, TransferStore } from "./transferState";
+import { BroadcastPendingState, TerminalState, TransferLock, TransferStore } from "./transferState";
 
 /** The API's stable discriminator for an amount under the minimum deposit; a 422 with any other code is not this. */
 const AMOUNT_BELOW_MINIMUM_ERROR_CODE = "AMOUNT_BELOW_MINIMUM";
@@ -143,11 +150,11 @@ async function processUnderLock(
   // Switched on the indexer's own classification rather than a deposit/withdraw label decided at parse time:
   // a `correct_transfer` the execute endpoint rejects as below the minimum becomes a refund withdraw too, so
   // the action is not knowable here. `intent_refund` was already rejected by `parseTransfer`.
+  //
+  // Note `originChainId` is `erc20Transfer.chainId` — where the funds landed — which is the refund chain the
+  // withdraw path needs. For a `mis_route` that is *not* the route's origin chain, which is the whole point.
   if (transferClassification === "mis_route") {
-    throw new WithdrawRouteNotImplementedError(
-      `transfer ${transferId} is a ${transferClassification} and needs a refund withdraw, which is not ` +
-        "implemented in this build"
-    );
+    return executeWithdraw(deps, context, parsed, lock, await getProvider(originChainId), originChainId);
   }
 
   return executeDeposit(deps, context, parsed, lock, await getProvider(originChainId), originChainId);
@@ -189,6 +196,13 @@ async function executeDeposit(
 
   const quotedAtMs = Date.now();
   const response = await requestExecuteTx(deps, message, originChainId, integratorId);
+  if (response === "below_minimum") {
+    // Terminal at the API — the amount is whatever landed on the address, so no retry changes it. The
+    // correct handling is a refund withdraw, run under the **same lock**, exactly as the polling bot holds
+    // its in-flight lock across `initiateWithdrawV3`. No `refund_only` marker is recorded: a redelivery
+    // re-calls `/execute`, gets the same rejection, and falls through here again.
+    return executeWithdraw(deps, context, parsed, lock, provider, originChainId);
+  }
   assertValidExecuteResponse(response, message, originChainId, Math.floor(Date.now() / 1000));
 
   // The point of no return. The deadline check is what makes an un-renewed lock safe against a Cloud Run 504,
@@ -198,13 +212,155 @@ async function executeDeposit(
     throw new LockContentionError(`lock for ${transferId} is no longer held; refusing to broadcast`);
   }
 
-  const pending = await broadcast(deps, context, parsed, response, originChainId, provider);
+  const destinationChainId = Number(message.routeParams.destinationChainId);
+  const pending = await broadcast(deps, context, transferId, originChainId, provider, {
+    operation: "deposit",
+    to: response.executeTx.to,
+    data: response.executeTx.data,
+    value: response.executeTx.value,
+    message: "Completed Deposit Execution Successfully 🎯",
+    mrkdwn:
+      `Completed execution of v3 Deposit on ${getNetworkName(originChainId)} to ` +
+      `${getNetworkName(destinationChainId)}, using deposit address ` +
+      `${blockExplorerLink(message.depositAddress, originChainId)}`,
+  });
   const result = await resolvePendingTransaction({ logger, store, provider }, transferId, pending);
   return { outcome: result.outcome, fields: { ...result.fields, quoteMs: Date.now() - quotedAtMs, integratorId } };
 }
 
 /**
- * Broadcasts the execute and returns the `broadcast_pending` record that was persisted for it.
+ * v3 refund withdrawal — the path for a `mis_route`, and for a `correct_transfer` the execute endpoint
+ * rejected as below the minimum. Both callers already hold the transfer's lock, and it is held across the
+ * whole withdraw, so the two actions can never interleave with another consumer.
+ *
+ * Not the deposit path with a different verb. Withdrawals are **EVM-only** (stricter than the deposit
+ * path's chain-native namespaces), they need the message's withdraw leaf materials, and a terminal
+ * sign-withdraw rejection is *recorded* as `withdraw_failed` and ACKed rather than retried. The refund is
+ * gas-deducted (`deductGasFromRefund: true`) — deliberate, and different from v1's full-amount refund.
+ *
+ * `withdraw_executed` is recorded but not yet announced; lifecycle publishing and its recovery follow in a
+ * later change, before execution is enabled anywhere.
+ */
+async function executeWithdraw(
+  deps: DepositHandlerDeps,
+  context: RequestContext,
+  parsed: ParsedTransfer,
+  lock: TransferLock,
+  provider: Provider,
+  refundChainId: number
+): Promise<HandlerResult> {
+  const { config, store, logger } = deps;
+  const { transferId, message } = parsed;
+  const { depositAddress, erc20Transfer } = message;
+
+  if (!config.v3WithdrawalsEnabled) {
+    throw new WithdrawalsDisabledError(`refund withdraw for ${transferId} refused: ENABLE_V3_WITHDRAWALS is not set`);
+  }
+
+  assertEvmWithdrawNamespaces(message);
+  const withdrawLeaf = assertWithdrawMaterials(message);
+
+  // Canonicality before balance, for the deposit path's reason: only this ordering lets the balance guard's
+  // ACK mean "the funds genuinely left" rather than "possibly our node is behind". Re-run even when the
+  // below-minimum fallback already passed both — the guards are cheap reads, and the polling bot's withdraw
+  // path re-checks its balance too.
+  await assertCanonicalFundingTransfer(provider, message, refundChainId);
+  const onchainBalance = await readDepositAddressBalance(
+    provider,
+    refundChainId,
+    erc20Transfer.contractAddress,
+    depositAddress
+  );
+  if (onchainBalance.lt(toBN(erc20Transfer.amount))) {
+    throw new InsufficientBalanceError(
+      `deposit address ${depositAddress} holds ${onchainBalance.toString()} of ${erc20Transfer.contractAddress}, ` +
+        `below the transfer amount ${erc20Transfer.amount}`
+    );
+  }
+
+  const quotedAtMs = Date.now();
+  let signed: DepositAddressSignWithdrawResponse;
+  try {
+    signed = await deps.api.signWithdrawDepositAddressV3({
+      chainId: refundChainId,
+      depositAddress,
+      initialRoot: message.initialRoot,
+      salt: message.salt,
+      token: erc20Transfer.contractAddress,
+      amount: erc20Transfer.amount,
+      user: message.refundAddress.address,
+      proof: withdrawLeaf.merkleProof,
+      counterfactualDepositFactory: message.counterfactualFactoryContractAddress,
+      counterfactualBeacon: message.counterfactualBeaconContractAddress,
+      adminWithdrawManager: message.adminWithdrawManagerContractAddress,
+      withdrawImplementation: withdrawLeaf.implementationAddress,
+      // Deliberate, and different from v1: the v3 refund is net of execution gas, and the response reports
+      // requestedAmount / appliedGasFee / netAmount. Do not unify with v1's full-amount refund.
+      deductGasFromRefund: true,
+    });
+  } catch (err) {
+    // Terminal per product decision — gas exceeds the refund, or the refund token is unpriceable — and
+    // classified on the HTTP status alone, exactly as the polling bot does. The client posts through
+    // `_postOrThrow`, which discards the API's error code, so none is recorded.
+    if (isHttpError(err) && err.status === 422) {
+      const failed: TerminalState = { status: "withdraw_failed", reason: err.message, recordedAtMs: Date.now() };
+      await store.recordTerminal(transferId, failed);
+      return { outcome: "withdraw_failed", fields: { transferId, chainId: refundChainId, reason: err.message } };
+    }
+    throw new TransientDependencyError(
+      `sign-withdraw request failed for ${depositAddress} on chain ${refundChainId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+      err
+    );
+  }
+  assertValidWithdrawResponse(signed, refundChainId, Math.floor(Date.now() / 1000));
+
+  // The point of no return, same as the deposit path: deadline first, then lock ownership.
+  assertBeforeDeadline(context);
+  if (!(await lock.isHeld())) {
+    throw new LockContentionError(`lock for ${transferId} is no longer held; refusing to broadcast`);
+  }
+
+  const pending = await broadcast(deps, context, transferId, refundChainId, provider, {
+    operation: "withdraw",
+    to: signed.signedWithdrawTx.to,
+    data: signed.signedWithdrawTx.data,
+    value: signed.signedWithdrawTx.value,
+    message: "Completed Refund Withdraw 💸",
+    mrkdwn:
+      `v3 refund withdraw on ${getNetworkName(refundChainId)} for deposit address ` +
+      `${blockExplorerLink(depositAddress, refundChainId)} (requestedAmount: ${signed.requestedAmount}, ` +
+      `appliedGasFee: ${signed.appliedGasFee}, netAmount: ${signed.netAmount}, ` +
+      `bundledDeploy: ${signed.bundledDeploy})`,
+  });
+  const result = await resolvePendingTransaction({ logger, store, provider }, transferId, pending);
+  return {
+    outcome: result.outcome,
+    fields: {
+      ...result.fields,
+      quoteMs: Date.now() - quotedAtMs,
+      requestedAmount: signed.requestedAmount,
+      appliedGasFee: signed.appliedGasFee,
+      netAmount: signed.netAmount,
+    },
+  };
+}
+
+/** Raw calldata for one broadcast, plus the Slack-facing lines the shared client logs on success. */
+interface BroadcastRequest {
+  operation: BroadcastPendingState["operation"];
+  to: string;
+  data: string;
+  value: string;
+  message: string;
+  mrkdwn: string;
+}
+
+/**
+ * Broadcasts a transaction and returns the `broadcast_pending` record that was persisted for it. Shared by
+ * the execute and refund-withdraw paths — the record-keeping is identical, only the calldata and the
+ * `operation` it records differ.
  *
  * `sendAndConfirmTransaction` is deliberately not used: it submits *and* confirms in one call and returns
  * `undefined` with no hash on every failure path, so the earliest a caller could see a hash is *after* the wait
@@ -218,16 +374,13 @@ async function executeDeposit(
 async function broadcast(
   deps: DepositHandlerDeps,
   context: RequestContext,
-  parsed: ParsedTransfer,
-  response: DepositAddressExecuteResponse,
-  originChainId: number,
-  provider: Provider
+  transferId: string,
+  chainId: number,
+  provider: Provider,
+  request: BroadcastRequest
 ): Promise<BroadcastPendingState> {
   const { store, transactionClient, config, logger } = deps;
-  const { transferId, message } = parsed;
-  const { executeTx } = response;
   const useDispatcher = deps.dispatcherSigners.length > 0;
-  const destinationChainId = Number(message.routeParams.destinationChainId);
 
   // Assigned **before** the Redis write, not after. The hook's rejection is swallowed by
   // `TransactionClient`, so a write failure that also lost the hash would leave a confirmed transaction with
@@ -239,27 +392,24 @@ async function broadcast(
   // the stale variant makes the terminal write unacceptable to `canReplace`.
   let recordedTxHash: string | undefined;
   const txn: AugmentedTransaction = {
-    contract: executeContract(deps.baseSigner, provider, executeTx.to, originChainId, useDispatcher),
+    contract: executeContract(deps.baseSigner, provider, request.to, chainId, useDispatcher),
     method: "",
-    args: [executeTx.data],
-    value: toBN(executeTx.value),
-    chainId: originChainId,
+    args: [request.data],
+    value: toBN(request.value),
+    chainId,
     ensureConfirmation: true,
     maxTries: config.confirmationTries,
-    message: "Completed Deposit Execution Successfully 🎯",
-    mrkdwn:
-      `Completed execution of v3 Deposit on ${getNetworkName(originChainId)} to ` +
-      `${getNetworkName(destinationChainId)}, using deposit address ` +
-      `${blockExplorerLink(message.depositAddress, originChainId)}`,
+    message: request.message,
+    mrkdwn: request.mrkdwn,
     onBroadcast: async (tx) => {
       // Re-entered on every hash change, so the record always names the transaction `TransactionClient` is
       // currently tracking rather than one it replaced. `persisted` resets per entry: a hash that persisted
       // does not vouch for the replacement that followed it.
       pending = {
         status: "broadcast_pending",
-        operation: "deposit",
+        operation: request.operation,
         txHash: tx.hash,
-        chainId: originChainId,
+        chainId,
         submittedAtMs: Date.now(),
       };
       await store.recordBroadcast(transferId, pending);
@@ -275,7 +425,7 @@ async function broadcast(
     // there is nothing to classify — if a hash exists the chain is asked, and if not, nothing was broadcast.
     if (!isDefined(pending)) {
       throw new TransientDependencyError(
-        `execute submission for ${transferId} failed before any transaction was broadcast: ${
+        `${request.operation} submission for ${transferId} failed before any transaction was broadcast: ${
           err instanceof Error ? err.message : String(err)
         }`,
         err
@@ -293,7 +443,7 @@ async function broadcast(
   if (!isDefined(pending)) {
     // A hash-less success should be impossible — `submitTransaction` throws on an empty response — but the
     // record is what makes a broadcast recoverable, so treat its absence as "did not happen" rather than assume.
-    throw new TransientDependencyError(`execute for ${transferId} produced no transaction hash`);
+    throw new TransientDependencyError(`${request.operation} for ${transferId} produced no transaction hash`);
   }
 
   if (recordedTxHash !== pending.txHash) {
@@ -439,13 +589,18 @@ async function readDepositAddressBalance(
  * `erc20Transfer` is **always** sent. The service relies on the resulting on-chain provenance event — it never
  * publishes `deposit_executed` itself, the indexer ingests the event — so this is a service requirement, not
  * the optional flag it is in the polling bot. An API without the schema change would reject the whole request.
+ *
+ * Answers `"below_minimum"` rather than throwing for an `AMOUNT_BELOW_MINIMUM` rejection: that outcome is not
+ * a failure to propagate but the signal to fall through to the refund withdraw, under the lock the caller
+ * already holds. Matched on the error **code**, not the bare 422 — `executeDepositAddress` posts through
+ * `_postOrThrowWithErrorCode` precisely so several 422s stay distinguishable.
  */
 async function requestExecuteTx(
   deps: DepositHandlerDeps,
   message: DepositAddressMessageV3,
   originChainId: number,
   integratorId: string
-): Promise<DepositAddressExecuteResponse> {
+): Promise<DepositAddressExecuteResponse | "below_minimum"> {
   const { routeParams, refundAddress, erc20Transfer, depositAddress } = message;
 
   try {
@@ -473,12 +628,8 @@ async function requestExecuteTx(
       },
     });
   } catch (err) {
-    // Terminal at the API: the amount is whatever landed on the address, so no retry changes it. The correct
-    // handling is a refund withdraw, which is not implemented yet, so NACK to preserve the transfer.
     if (err instanceof AcrossApiHttpError && err.code === AMOUNT_BELOW_MINIMUM_ERROR_CODE) {
-      throw new BelowMinimumDepositError(
-        `execute rejected amount ${erc20Transfer.amount} as below the minimum deposit: ${err.message}`
-      );
+      return "below_minimum";
     }
     throw new TransientDependencyError(
       `execute request failed for ${depositAddress} on chain ${originChainId}: ${

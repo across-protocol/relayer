@@ -2,7 +2,12 @@ import { AddressInfo } from "net";
 import { Server } from "http";
 import { expect, winston } from "./utils";
 import { AcrossApiHttpError } from "../src/clients/AcrossApiBaseClient";
-import { AcrossSwapApiClient, DepositAddressExecuteResponse } from "../src/clients/AcrossSwapApiClient";
+import {
+  AcrossSwapApiClient,
+  DepositAddressExecuteResponse,
+  DepositAddressSignWithdrawRequest,
+  DepositAddressSignWithdrawResponse,
+} from "../src/clients/AcrossSwapApiClient";
 import { AugmentedTransaction, TransactionClient } from "../src/clients/TransactionClient";
 import {
   CHAIN_IDs,
@@ -21,12 +26,12 @@ import { RequestLifecycle } from "../src/deposit-address-service/lifecycle";
 import { TransferStore, TransferStoreRedis } from "../src/deposit-address-service/transferState";
 
 /**
- * The v3 deposit execute path over the real Express boundary and the real store, with only the chain, the
- * quote-api and the submission client faked. Every case below is a failure point from the plan's verification
- * list, and each asserts the **queue disposition** as well as the state left in Redis, because those two
- * together are what stop a transfer being swept twice.
+ * The v3 deposit execute and refund-withdraw paths over the real Express boundary and the real store, with
+ * only the chain, the quote-api and the submission client faked. Every case below is a failure point from the
+ * plan's verification list, and each asserts the **queue disposition** as well as the state left in Redis,
+ * because those two together are what stop a transfer being swept — or refunded — twice.
  */
-describe("DepositAddressService v3 deposit execution", function () {
+describe("DepositAddressService v3 execution", function () {
   const ARBITRUM = CHAIN_IDs.ARBITRUM;
   const FUNDING_TX = "0xa3f1c7d40e9b6852f1ad0c3b7e94f628a1d5c09e3b7a2d8f4c6e1b0a9d8c7f6e5";
   const FUNDING_BLOCK = 312884201;
@@ -40,6 +45,13 @@ describe("DepositAddressService v3 deposit execution", function () {
   const ORIGINAL_HASH = "0xaa22c7d40e9b6852f1ad0c3b7e94f628a1d5c09e3b7a2d8f4c6e1b0a9d8c7f611";
   const SIGNER_NONCE = 41;
   const METADATA_TOPIC = ethers.utils.id("MetadataEmitted(bytes)");
+  const WITHDRAW_LEAF = {
+    kind: "withdraw",
+    implementationAddress: "0x00000000000000000000000000000000000000e1",
+    encodedParams: "0x",
+    leafHash: "0x01",
+    merkleProof: ["0x0000000000000000000000000000000000000000000000000000000000000002"],
+  };
 
   let server: Server;
   let baseUrl: string;
@@ -68,6 +80,20 @@ describe("DepositAddressService v3 deposit execution", function () {
   /** What the quote-api answers. */
   let quote: { response?: Partial<DepositAddressExecuteResponse>; error?: Error };
 
+  /** What the sign-withdraw endpoint answers, plus every request it received. */
+  let withdraw: {
+    response?: Partial<DepositAddressSignWithdrawResponse>;
+    error?: Error;
+    requests: DepositAddressSignWithdrawRequest[];
+  };
+
+  /**
+   * The lock value observed inside each quote-api call. Asserting the two are the same defined token is what
+   * pins "one lock held across both actions" for the below-minimum fallback — a release-and-reacquire (or a
+   * release-then-withdraw) would be invisible to the state assertions alone.
+   */
+  let lockSeen: { atExecute?: string; atSignWithdraw?: string };
+
   function message(over: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       depositAddress: DEPOSIT_ADDRESS,
@@ -78,7 +104,7 @@ describe("DepositAddressService v3 deposit execution", function () {
       counterfactualFactoryContractAddress: "0x00000000000000000000000000000000000000f1",
       adminWithdrawManagerContractAddress: "0x00000000000000000000000000000000000000a1",
       shouldSponsorAccountCreation: false,
-      counterfactualMaterials: [],
+      counterfactualMaterials: [WITHDRAW_LEAF],
       depositAddressNamespace: "evm",
       refundAddress: { namespace: "evm", address: "0x9A6e5F1B8C7D0E3a2b4c5D6e7F8A9b0c1D2E3f40" },
       routeParams: {
@@ -219,6 +245,7 @@ describe("DepositAddressService v3 deposit execution", function () {
   function fakeApi(): AcrossSwapApiClient {
     return {
       async executeDepositAddress(): Promise<DepositAddressExecuteResponse> {
+        lockSeen.atExecute = redisStore.get(LOCK_KEY);
         if (quote.error) {
           throw quote.error;
         }
@@ -235,6 +262,31 @@ describe("DepositAddressService v3 deposit execution", function () {
           signatureDeadline: Math.floor(Date.now() / 1000) + 600,
           isPlaceholder: false,
           ...quote.response,
+        };
+      },
+      async signWithdrawDepositAddressV3(
+        request: DepositAddressSignWithdrawRequest
+      ): Promise<DepositAddressSignWithdrawResponse> {
+        withdraw.requests.push(request);
+        lockSeen.atSignWithdraw = redisStore.get(LOCK_KEY);
+        if (withdraw.error) {
+          throw withdraw.error;
+        }
+        return {
+          signedWithdrawTx: {
+            ecosystem: "evm",
+            chainId: ARBITRUM,
+            to: "0x0000000000000000000000000000000000000ca1",
+            data: "0xfeedface",
+            value: "0",
+          },
+          bundledDeploy: false,
+          signer: signerAddress,
+          deadline: Math.floor(Date.now() / 1000) + 600,
+          requestedAmount: AMOUNT,
+          appliedGasFee: "2000",
+          netAmount: "9998000",
+          ...withdraw.response,
         };
       },
     } as unknown as AcrossSwapApiClient;
@@ -288,7 +340,14 @@ describe("DepositAddressService v3 deposit execution", function () {
     };
     submission = { mode: "broadcast", hash: EXECUTE_HASH };
     quote = {};
+    withdraw = { requests: [] };
+    lockSeen = {};
 
+    await startServer({ ENABLE_V3_WITHDRAWALS: "true" });
+  });
+
+  /** Builds the handler and binds the app. Re-callable inside a test that needs different env, e.g. the withdraw gate off. */
+  async function startServer(env: Record<string, string>): Promise<void> {
     const baseSigner = Wallet.createRandom();
     signerAddress = await baseSigner.getAddress();
 
@@ -296,6 +355,7 @@ describe("DepositAddressService v3 deposit execution", function () {
     const config = new DepositAddressServiceConfig({
       EXECUTION_ENABLED: "true",
       RELAYER_ORIGIN_CHAINS: `[${ARBITRUM}]`,
+      ...env,
     } as never);
 
     const handler = createDepositHandler({
@@ -323,7 +383,7 @@ describe("DepositAddressService v3 deposit execution", function () {
     server = app.listen(0, "127.0.0.1");
     await new Promise((resolve) => server.once("listening", resolve));
     baseUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
-  });
+  }
 
   afterEach(function () {
     server?.close();
@@ -622,16 +682,6 @@ describe("DepositAddressService v3 deposit execution", function () {
   });
 
   describe("quote-api outcomes", function () {
-    it("NACKs a below-minimum rejection until the withdraw fallback exists", async function () {
-      quote.error = new AcrossApiHttpError("amount below minimum", 422, "AMOUNT_BELOW_MINIMUM");
-
-      const response = await post(message());
-
-      expect(response.status).to.equal(500);
-      expect(state()).to.equal(undefined);
-      expect(failure()).to.include({ code: "AMOUNT_BELOW_MINIMUM" });
-    });
-
     it("NACKs any other quote failure", async function () {
       quote.error = new Error("gateway timeout");
 
@@ -653,18 +703,6 @@ describe("DepositAddressService v3 deposit execution", function () {
   });
 
   describe("routing", function () {
-    it("NACKs a mis_route until the withdraw path exists", async function () {
-      const misRoute = message({
-        erc20Transfer: { ...(message().erc20Transfer as object), transferClassification: "mis_route" },
-      });
-
-      const response = await post(misRoute);
-
-      expect(response.status).to.equal(500);
-      expect(state()).to.equal(undefined);
-      expect(failure()).to.include({ code: "WITHDRAW_ROUTE_NOT_IMPLEMENTED" });
-    });
-
     // NACK, not ACK. The chain may be re-enabled and the funds are still on the deposit address, so ACKing
     // would destroy the only delivery that could ever sweep them — the polling bot skipped and revisited.
     it("NACKs an origin chain that is not enabled", async function () {
@@ -704,6 +742,252 @@ describe("DepositAddressService v3 deposit execution", function () {
       expect(response.status).to.equal(204);
       expect(failure()).to.include({ code: "MESSAGE_VALIDATION_FAILED" });
       expect(redisStore.size).to.equal(0);
+    });
+  });
+
+  describe("the v3 refund withdrawal", function () {
+    function misRoute(over: Record<string, unknown> = {}): Record<string, unknown> {
+      return message({
+        erc20Transfer: { ...(message().erc20Transfer as object), transferClassification: "mis_route" },
+        ...over,
+      });
+    }
+
+    beforeEach(function () {
+      // Withdraw transactions carry no provenance event — only executes do — so the default receipt here has
+      // no metadata topic, and the tests assert that never produces a warning.
+      chain.executeReceipt = receipt({ blockNumber: FUNDING_BLOCK + 10 });
+    });
+
+    it("refunds a mis_route, records withdraw_executed and ACKs", async function () {
+      const response = await post(misRoute());
+
+      expect(response.status).to.equal(204);
+      expect(state()).to.deep.include({
+        status: "withdraw_executed",
+        txHash: EXECUTE_HASH,
+        chainId: ARBITRUM,
+        blockNumber: FUNDING_BLOCK + 10,
+      });
+      expect(redisStore.has(LOCK_KEY)).to.equal(false);
+      expect(lastLine()).to.include({ outcome: "withdraw_executed" });
+    });
+
+    it("relays the funding context and deducts gas from the refund", async function () {
+      await post(misRoute());
+
+      expect(withdraw.requests).to.have.length(1);
+      // The refund chain is erc20Transfer.chainId — where the funds landed — and the amount, token and user
+      // are the funded ones. `deductGasFromRefund: true` is deliberate and differs from v1's full refund.
+      expect(withdraw.requests[0]).to.deep.include({
+        chainId: ARBITRUM,
+        depositAddress: DEPOSIT_ADDRESS,
+        token: USDC,
+        amount: AMOUNT,
+        user: (message().refundAddress as { address: string }).address,
+        proof: WITHDRAW_LEAF.merkleProof,
+        withdrawImplementation: WITHDRAW_LEAF.implementationAddress,
+        deductGasFromRefund: true,
+      });
+    });
+
+    // A confirmed withdraw never carries the MetadataEmitted event, so warning about its absence — as the
+    // deposit path must — would fire on every successful refund.
+    it("does not warn about missing provenance metadata on a confirmed withdraw", async function () {
+      const response = await post(misRoute());
+
+      expect(response.status).to.equal(204);
+      expect(logs.some((l) => l.level === "warn")).to.equal(false);
+      expect(lastLine()).to.not.have.property("metadataEmitted");
+    });
+
+    it("falls through to the withdraw when the execute endpoint rejects the amount as below minimum", async function () {
+      quote.error = new AcrossApiHttpError(422, "amount below minimum", "AMOUNT_BELOW_MINIMUM");
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(204);
+      expect(state()).to.include({ status: "withdraw_executed", txHash: EXECUTE_HASH });
+    });
+
+    // The review focus: one lock held across both actions. The fake API records the lock value it observed
+    // inside each call — a release between the execute rejection and the withdraw would show up here as a
+    // missing or different token, invisible to the state assertions alone.
+    it("holds the same lock across the execute rejection and the withdraw", async function () {
+      quote.error = new AcrossApiHttpError(422, "amount below minimum", "AMOUNT_BELOW_MINIMUM");
+
+      await post(message());
+
+      expect(lockSeen.atExecute, "execute ran without the lock").to.not.equal(undefined);
+      expect(lockSeen.atSignWithdraw, "sign-withdraw ran without the lock").to.not.equal(undefined);
+      expect(lockSeen.atSignWithdraw).to.equal(lockSeen.atExecute);
+    });
+
+    // Only the AMOUNT_BELOW_MINIMUM code falls through — any other 422 from /execute stays a NACK, since
+    // nothing says a refund is the right handling for it.
+    it("does not fall through on a 422 with a different code", async function () {
+      quote.error = new AcrossApiHttpError(422, "unprocessable", "SOMETHING_ELSE");
+
+      const response = await post(message());
+
+      expect(response.status).to.equal(500);
+      expect(withdraw.requests).to.have.length(0);
+      expect(failure()).to.include({ code: "TRANSIENT_DEPENDENCY_FAILURE" });
+    });
+
+    it("NACKs while v3 withdrawals are disabled", async function () {
+      server.close();
+      await startServer({});
+
+      const response = await post(misRoute());
+
+      // NACK: the gate is an operator switch and the funds are still on the deposit address, so an ACK
+      // would discard the only delivery that could ever refund them.
+      expect(response.status).to.equal(500);
+      expect(state()).to.equal(undefined);
+      expect(withdraw.requests).to.have.length(0);
+      expect(failure()).to.include({ code: "V3_WITHDRAWALS_DISABLED" });
+    });
+
+    // Stricter than the deposit path: withdrawals are EVM-only, so even a namespace the deposit path would
+    // accept as chain-native has no route here. Deterministic, so ACK.
+    it("ACKs a non-EVM refund namespace", async function () {
+      const tron = misRoute({ refundAddress: { namespace: "tron", address: "TQ5NMqJjW8sSjhWkrGheJHnWvpJPMdKMzn" } });
+
+      const response = await post(tron);
+
+      expect(response.status).to.equal(204);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "UNSUPPORTED_NAMESPACE" });
+    });
+
+    it("ACKs a message carrying no withdraw leaf", async function () {
+      const response = await post(misRoute({ counterfactualMaterials: [] }));
+
+      expect(response.status).to.equal(204);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "MISSING_WITHDRAW_MATERIALS" });
+    });
+
+    // Same order as the deposit path, for the same reason: only canonicality can tell "this funding
+    // transfer is real" from "there happens to be money at this address".
+    it("does not reach the balance check when canonicality fails", async function () {
+      chain.fundingReceipt = receipt({ blockNumber: FUNDING_BLOCK + 1 });
+      chain.balance = "0";
+
+      const response = await post(misRoute());
+
+      expect(response.status).to.equal(204);
+      expect(failure()).to.include({ code: "NON_CANONICAL_TRANSFER" });
+    });
+
+    it("NACKs when the funding transaction is not yet visible", async function () {
+      chain.fundingReceipt = null;
+
+      const response = await post(misRoute());
+
+      expect(response.status).to.equal(500);
+      expect(failure()).to.include({ code: "TRANSIENT_DEPENDENCY_FAILURE" });
+    });
+
+    it("ACKs and writes no state when the balance is short", async function () {
+      chain.balance = "9999999";
+
+      const response = await post(misRoute());
+
+      expect(response.status).to.equal(204);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "INSUFFICIENT_BALANCE" });
+    });
+
+    describe("the sign-withdraw response decides on the HTTP status alone", function () {
+      it("records withdraw_failed and ACKs on a terminal 422", async function () {
+        withdraw.error = new AcrossApiHttpError(422, "gas exceeds refund");
+
+        const response = await post(misRoute());
+
+        expect(response.status).to.equal(204);
+        // No `code`: the client posts through `_postOrThrow`, which discards the API's discriminator.
+        expect(state()).to.include({ status: "withdraw_failed", reason: "gas exceeds refund" });
+        expect(state()).to.not.have.property("code");
+        expect(lastLine()).to.include({ outcome: "withdraw_failed" });
+      });
+
+      it("NACKs any non-422 failure without writing state", async function () {
+        for (const error of [new Error("gateway timeout"), new AcrossApiHttpError(500, "upstream error")]) {
+          withdraw.error = error;
+
+          const response = await post(misRoute());
+
+          expect(response.status, error.message).to.equal(500);
+          expect(state(), error.message).to.equal(undefined);
+          expect(failure()).to.include({ code: "TRANSIENT_DEPENDENCY_FAILURE" });
+        }
+      });
+
+      it("ACKs a redelivery after withdraw_failed without calling the API again", async function () {
+        redisStore.set(
+          STATE_KEY,
+          JSON.stringify({ status: "withdraw_failed", reason: "gas exceeds refund", recordedAtMs: 1_700_000_000_000 })
+        );
+
+        const response = await post(misRoute());
+
+        expect(response.status).to.equal(204);
+        expect(withdraw.requests).to.have.length(0);
+        expect(lastLine()).to.include({ outcome: "already_withdraw_failed" });
+      });
+    });
+
+    it("NACKs a response signed for a different chain than the refund chain", async function () {
+      withdraw.response = {
+        signedWithdrawTx: {
+          ecosystem: "evm",
+          chainId: CHAIN_IDs.BASE,
+          to: "0x0000000000000000000000000000000000000ca1",
+          data: "0xfeedface",
+          value: "0",
+        },
+      };
+
+      const response = await post(misRoute());
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "INVALID_WITHDRAW_RESPONSE" });
+    });
+
+    it("records broadcast_pending with the withdraw operation before the confirmation wait", async function () {
+      chain.executeReceipt = null;
+
+      const response = await post(misRoute());
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.deep.include({
+        status: "broadcast_pending",
+        operation: "withdraw",
+        txHash: EXECUTE_HASH,
+        chainId: ARBITRUM,
+      });
+    });
+
+    it("resolves a pending withdraw on redelivery instead of re-signing", async function () {
+      redisStore.set(
+        STATE_KEY,
+        JSON.stringify({
+          status: "broadcast_pending",
+          operation: "withdraw",
+          txHash: EXECUTE_HASH,
+          chainId: ARBITRUM,
+          submittedAtMs: 1_700_000_000_000,
+        })
+      );
+
+      const response = await post(misRoute());
+
+      expect(response.status).to.equal(204);
+      expect(state()).to.include({ status: "withdraw_executed", txHash: EXECUTE_HASH });
+      expect(withdraw.requests).to.have.length(0);
     });
   });
 });
