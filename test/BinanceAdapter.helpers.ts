@@ -1,4 +1,4 @@
-import { ethers, expect, sinon, toBNWei } from "./utils";
+import { ethers, expect, makeFakeBinanceApi, sinon, toBNWei } from "./utils";
 import winston from "winston";
 import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance";
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
@@ -117,10 +117,10 @@ describe("Binance adapter helpers", function () {
     });
     const symbolAdapter = adapter as unknown as {
       _getSymbol(sourceToken: string, destinationToken: string): Promise<{ symbol: string }>;
-      binanceApiClient: { exchangeInfo: typeof exchangeInfoStub };
+      binanceApiClient: unknown;
       exchangeInfoPromise?: Promise<unknown>;
     };
-    symbolAdapter.binanceApiClient = { exchangeInfo: exchangeInfoStub };
+    symbolAdapter.binanceApiClient = makeFakeBinanceApi({ exchangeInfo: exchangeInfoStub });
     symbolAdapter.exchangeInfoPromise = undefined;
 
     try {
@@ -143,9 +143,9 @@ describe("Binance adapter helpers", function () {
     tradeFeeStub.onCall(1).resolves([{ symbol: "USDCUSDT", takerCommission: "0.1" }]);
     const feeAdapter = adapter as unknown as {
       _getTradeFees(): Promise<Array<{ symbol: string; takerCommission: string }>>;
-      binanceApiClient: { tradeFee: typeof tradeFeeStub };
+      binanceApiClient: unknown;
     };
-    feeAdapter.binanceApiClient = { tradeFee: tradeFeeStub };
+    feeAdapter.binanceApiClient = makeFakeBinanceApi({ tradeFee: tradeFeeStub });
 
     try {
       await feeAdapter._getTradeFees();
@@ -202,10 +202,7 @@ describe("Binance adapter helpers", function () {
         minimumOrderSize: number;
         isBuy: boolean;
       }>;
-      binanceApiClient: {
-        allOrders: sinon.SinonStub;
-        myTrades: sinon.SinonStub;
-      };
+      binanceApiClient: unknown;
     };
     sinon.stub(internals, "_redisGetOrderDetails").resolves({ sourceToken: "USDT", destinationToken: "USDC" });
     sinon.stub(internals, "_getSpotMarketMetaForRoute").resolves({
@@ -217,10 +214,10 @@ describe("Binance adapter helpers", function () {
       minimumOrderSize: 1,
       isBuy: true,
     });
-    internals.binanceApiClient = {
+    internals.binanceApiClient = makeFakeBinanceApi({
       allOrders: allOrdersStub,
       myTrades: myTradesStub,
-    };
+    });
 
     const result = await internals._getMatchingFillForCloid("cloid", EvmAddress.from(await signer.getAddress()));
 
@@ -230,6 +227,7 @@ describe("Binance adapter helpers", function () {
       symbol: "USDCUSDT",
       orderId: 123,
       limit: 1000,
+      recvWindow: BINANCE_READ_RECV_WINDOW_MS,
     });
   });
 
@@ -245,28 +243,27 @@ describe("Binance adapter helpers", function () {
     );
     const internals = adapter as unknown as {
       baseSignerAddress: EvmAddress;
-      binanceApiClient: { withdraw: sinon.SinonStub };
+      binanceApiClient: unknown;
       _withdraw(cloid: string, quantity: number, destinationToken: string, destinationChain: number): Promise<boolean>;
       _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
       _getTokenInfo(token: string, chainId: number): { decimals: number };
     };
     internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
-    internals.binanceApiClient = {
-      withdraw: sinon
-        .stub()
-        .rejects(
-          new Error(
-            "[RW00441] Your deposits of 2.13569561 BTC in value have not met the required unlock confirmations for withdrawal."
-          )
-        ),
-    };
+    const unlockWithdrawStub = sinon
+      .stub()
+      .rejects(
+        new Error(
+          "[RW00441] Your deposits of 2.13569561 BTC in value have not met the required unlock confirmations for withdrawal."
+        )
+      );
+    internals.binanceApiClient = makeFakeBinanceApi({ withdraw: unlockWithdrawStub });
     sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.MAINNET);
     sinon.stub(internals, "_getTokenInfo").returns({ decimals: 6 });
 
     const result = await internals._withdraw("cloid", 100, "USDC", CHAIN_IDs.MAINNET);
 
     expect(result).to.equal(false);
-    expect(internals.binanceApiClient.withdraw.calledOnce).to.equal(true);
+    expect(unlockWithdrawStub.calledOnce).to.equal(true);
     expect(debug.calledOnce).to.equal(true);
     expect(debug.getCall(0).args[0].error).to.include("[RW00441]");
     expect(debug.getCall(0).args[0].error).to.include("required unlock confirmations for withdrawal");
@@ -284,15 +281,16 @@ describe("Binance adapter helpers", function () {
     );
     const internals = adapter as unknown as {
       baseSignerAddress: EvmAddress;
-      binanceApiClient: { withdraw: sinon.SinonStub };
+      binanceApiClient: unknown;
       _withdraw(cloid: string, quantity: number, destinationToken: string, destinationChain: number): Promise<boolean>;
       _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
       _getTokenInfo(token: string, chainId: number): { decimals: number };
     };
     internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
-    internals.binanceApiClient = {
-      withdraw: sinon.stub().rejects(new Error("[031026] Withdrawal is not available for this currency.")),
-    };
+    const suspendedWithdrawStub = sinon
+      .stub()
+      .rejects(new Error("[031026] Withdrawal is not available for this currency."));
+    internals.binanceApiClient = makeFakeBinanceApi({ withdraw: suspendedWithdrawStub });
     sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.AVALANCHE);
     sinon.stub(internals, "_getTokenInfo").returns({ decimals: 6 });
 
@@ -301,7 +299,7 @@ describe("Binance adapter helpers", function () {
     const result = await internals._withdraw("cloid", 100, "USDT", CHAIN_IDs.AVALANCHE);
 
     expect(result).to.equal(false);
-    expect(internals.binanceApiClient.withdraw.calledOnce).to.equal(true);
+    expect(suspendedWithdrawStub.calledOnce).to.equal(true);
     expect(warn.calledOnce).to.equal(true);
     expect(warn.getCall(0).args[0].error).to.include("[031026]");
     expect(warn.getCall(0).args[0].destinationNetwork).to.equal(BINANCE_NETWORKS[CHAIN_IDs.AVALANCHE]);
@@ -479,13 +477,13 @@ describe("Binance adapter helpers", function () {
     );
     const internals = adapter as unknown as {
       baseSignerAddress: EvmAddress;
-      binanceApiClient: { withdraw: sinon.SinonStub };
+      binanceApiClient: unknown;
       _withdraw(cloid: string, quantity: number, destinationToken: string, destinationChain: number): Promise<boolean>;
       _getEntrypointNetwork(chainId: number, token: string): Promise<number>;
       _getTokenInfo(token: string, chainId: number): { decimals: number };
     };
     internals.baseSignerAddress = EvmAddress.from(await signer.getAddress());
-    internals.binanceApiClient = { withdraw: withdrawStub };
+    internals.binanceApiClient = makeFakeBinanceApi({ withdraw: withdrawStub });
     sinon.stub(internals, "_getEntrypointNetwork").resolves(CHAIN_IDs.TRON);
     sinon.stub(internals, "_getTokenInfo").returns({ decimals: 6 });
 
@@ -530,7 +528,7 @@ describe("Binance adapter helpers", function () {
       },
     ]);
     const internals = adapter as unknown as {
-      binanceApiClient: { withdrawHistory: sinon.SinonStub };
+      binanceApiClient: unknown;
       _getInitiatedBinanceWithdrawals(
         token: string,
         chain: number,
@@ -538,7 +536,7 @@ describe("Binance adapter helpers", function () {
         account: string
       ): Promise<Array<{ id: string; recipient: string }>>;
     };
-    internals.binanceApiClient = { withdrawHistory: withdrawHistoryStub };
+    internals.binanceApiClient = makeFakeBinanceApi({ withdrawHistory: withdrawHistoryStub });
 
     const withdrawals = await internals._getInitiatedBinanceWithdrawals(
       "USDT",

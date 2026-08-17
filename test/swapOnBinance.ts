@@ -23,7 +23,7 @@ import {
   waitForBinanceOrderFillAndBalance,
   waitForBinanceWithdrawalCompletion,
 } from "../scripts/swapOnBinance";
-import { expect, sinon } from "./utils";
+import { expect, makeFakeBinanceApi, sinon } from "./utils";
 
 const tokenAddress = (symbol: string, chainId: number): string => resolveAcrossToken(symbol, chainId, true);
 
@@ -191,7 +191,7 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("rejects same-coin routes because the script only supports swaps", async function () {
-    const venue = new BinanceSwapVenue({} as never);
+    const venue = new BinanceSwapVenue(makeFakeBinanceApi({}));
     const source = makeResolvedAsset({
       tokenSymbol: "USDC",
       chainId: CHAIN_IDs.POLYGON,
@@ -214,21 +214,23 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("computes swapped-route quote components with trade, slippage, and withdrawal fees", async function () {
-    const venue = new BinanceSwapVenue({
-      exchangeInfo: sinon.stub().resolves({
-        symbols: [makeStablecoinMarketSymbol()],
-      }),
-      book: sinon.stub().resolves(
-        makeOrderBook({
-          asks: [
-            { price: "1.0000", quantity: "100" },
-            { price: "1.0100", quantity: "100" },
-          ],
-          bids: [],
-        })
-      ),
-      tradeFee: sinon.stub().resolves([{ symbol: "USDCUSDT", takerCommission: "0.1" }]),
-    } as never);
+    const venue = new BinanceSwapVenue(
+      makeFakeBinanceApi({
+        exchangeInfo: sinon.stub().resolves({
+          symbols: [makeStablecoinMarketSymbol()],
+        }),
+        depth: sinon.stub().resolves(
+          makeOrderBook({
+            asks: [
+              { price: "1.0000", quantity: "100" },
+              { price: "1.0100", quantity: "100" },
+            ],
+            bids: [],
+          })
+        ),
+        tradeFee: sinon.stub().resolves([{ symbol: "USDCUSDT", takerCommission: "0.1" }]),
+      })
+    );
     const source = makeResolvedAsset({
       tokenSymbol: "USDT",
       chainId: CHAIN_IDs.POLYGON,
@@ -257,25 +259,27 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("rejects orders that are smaller than Binance minimum size", async function () {
-    const venue = new BinanceSwapVenue({
-      exchangeInfo: sinon.stub().resolves({
-        symbols: [
-          {
-            ...makeStablecoinMarketSymbol(),
-            filters: [
-              { filterType: "PRICE_FILTER", tickSize: "0.0001" },
-              { filterType: "LOT_SIZE", stepSize: "0.01", minQty: "200.00" },
-            ],
-          },
-        ],
-      }),
-      book: sinon.stub().resolves(
-        makeOrderBook({
-          asks: [{ price: "1.0000", quantity: "1000" }],
-          bids: [],
-        })
-      ),
-    } as never);
+    const venue = new BinanceSwapVenue(
+      makeFakeBinanceApi({
+        exchangeInfo: sinon.stub().resolves({
+          symbols: [
+            {
+              ...makeStablecoinMarketSymbol(),
+              filters: [
+                { filterType: "PRICE_FILTER", tickSize: "0.0001" },
+                { filterType: "LOT_SIZE", stepSize: "0.01", minQty: "200.00" },
+              ],
+            },
+          ],
+        }),
+        depth: sinon.stub().resolves(
+          makeOrderBook({
+            asks: [{ price: "1.0000", quantity: "1000" }],
+            bids: [],
+          })
+        ),
+      })
+    );
 
     await expectRejected(
       venue.getQuantityForOrder(
@@ -298,17 +302,19 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("fails when order-book depth is insufficient for the requested size", async function () {
-    const venue = new BinanceSwapVenue({
-      exchangeInfo: sinon.stub().resolves({
-        symbols: [makeStablecoinMarketSymbol()],
-      }),
-      book: sinon.stub().resolves(
-        makeOrderBook({
-          asks: [{ price: "1.0010", quantity: "10" }],
-          bids: [],
-        })
-      ),
-    } as never);
+    const venue = new BinanceSwapVenue(
+      makeFakeBinanceApi({
+        exchangeInfo: sinon.stub().resolves({
+          symbols: [makeStablecoinMarketSymbol()],
+        }),
+        depth: sinon.stub().resolves(
+          makeOrderBook({
+            asks: [{ price: "1.0010", quantity: "10" }],
+            bids: [],
+          })
+        ),
+      })
+    );
 
     await expectRejected(
       venue.getLatestPrice("USDT", "USDC", 6, toBNWei("1000", 6)),
@@ -343,13 +349,15 @@ describe("swapOnBinance script helpers", function () {
       { id: 1, commissionAsset: "USDC", commission: "0.25" },
       { id: 2, commissionAsset: "BNB", commission: "0.10" },
     ]);
-    const venue = new BinanceSwapVenue({
-      exchangeInfo: sinon.stub().resolves({
-        symbols: [makeStablecoinMarketSymbol()],
-      }),
-      allOrders,
-      myTrades,
-    } as never);
+    const venue = new BinanceSwapVenue(
+      makeFakeBinanceApi({
+        exchangeInfo: sinon.stub().resolves({
+          symbols: [makeStablecoinMarketSymbol()],
+        }),
+        allOrders,
+        myTrades,
+      })
+    );
 
     const expectedAmountToReceive = await venue.getExpectedAmountToReceiveForFilledOrder(
       42,
@@ -373,18 +381,20 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("throws a clear error when Binance trade fees are missing for the market symbol", async function () {
-    const venue = new BinanceSwapVenue({
-      exchangeInfo: sinon.stub().resolves({
-        symbols: [makeStablecoinMarketSymbol()],
-      }),
-      book: sinon.stub().resolves(
-        makeOrderBook({
-          asks: [{ price: "1.0000", quantity: "100" }],
-          bids: [],
-        })
-      ),
-      tradeFee: sinon.stub().resolves([]),
-    } as never);
+    const venue = new BinanceSwapVenue(
+      makeFakeBinanceApi({
+        exchangeInfo: sinon.stub().resolves({
+          symbols: [makeStablecoinMarketSymbol()],
+        }),
+        depth: sinon.stub().resolves(
+          makeOrderBook({
+            asks: [{ price: "1.0000", quantity: "100" }],
+            bids: [],
+          })
+        ),
+        tradeFee: sinon.stub().resolves([]),
+      })
+    );
 
     await expectRejected(
       venue.getQuote(
@@ -407,7 +417,7 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("waits for a Binance deposit record even if free balance is already sufficient", async function () {
-    const venue = new BinanceSwapVenue({} as never);
+    const venue = new BinanceSwapVenue(makeFakeBinanceApi({}));
     sinon
       .stub(BinanceUtils, "getBinanceDeposits")
       .onCall(0)
@@ -438,7 +448,7 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("waits for a filled order until the destination balance is withdrawable", async function () {
-    const venue = new BinanceSwapVenue({} as never);
+    const venue = new BinanceSwapVenue(makeFakeBinanceApi({}));
     sinon
       .stub(venue, "getMatchingFillForCloid")
       .onCall(0)
@@ -479,7 +489,7 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("waits for Binance withdrawals to complete", async function () {
-    const venue = new BinanceSwapVenue({} as never);
+    const venue = new BinanceSwapVenue(makeFakeBinanceApi({}));
     sinon
       .stub(BinanceUtils, "getBinanceWithdrawals")
       .onCall(0)
@@ -512,7 +522,7 @@ describe("swapOnBinance script helpers", function () {
   });
 
   it("surfaces rejected Binance withdrawals immediately", async function () {
-    const venue = new BinanceSwapVenue({} as never);
+    const venue = new BinanceSwapVenue(makeFakeBinanceApi({}));
     sinon
       .stub(BinanceUtils, "getBinanceWithdrawals")
       .resolves([makeWithdrawal({ id: "withdraw-2", status: BINANCE_WITHDRAWAL_STATUS.REJECTED })]);
@@ -687,7 +697,10 @@ function makeOrderBook({
   asks: Array<{ price: string; quantity: string }>;
   bids: Array<{ price: string; quantity: string }>;
 }) {
-  return { asks, bids };
+  // The REST depth endpoint reports levels as [price, quantity] tuples.
+  const toTuples = (levels: Array<{ price: string; quantity: string }>) =>
+    levels.map(({ price, quantity }) => [price, quantity]);
+  return { asks: toTuples(asks), bids: toTuples(bids) };
 }
 
 function makeDeposit({ txId, status, network, coin }: { txId: string; status: number; network: string; coin: string }) {

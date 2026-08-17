@@ -116,6 +116,20 @@ Every batch is therefore sized, and none is submitted unsized. Batches also set 
 
 `test/Finalizer.BatchBuilding.test.ts` and `test/MultiCallerClient.TryAggregateGas.test.ts` pin these properties against real Multicall3 bytecode.
 
+## Binance Client
+
+The BinanceClient wraps the shared Binance account used by the CEX rebalance paths. It is constructed from `BINANCE_API_KEY` plus a secret key sourced either from GCKMS (`--binanceSecretKey`, cached across calls) or `BINANCE_HMAC_KEY`, and construction asserts if either is missing. `BINANCE_API_BASE` overrides the default `https://api.binance.com` host and applies to every request the client issues.
+
+Binance splits its REST surface per product, so the client holds Binance's official `@binance/spot` and `@binance/wallet` connectors against that same host and credentials, exposed together as one `BinanceApi` bundle via `rawApi()`. Spot market and trading endpoints (`exchangeInfo`, `depth`, `allOrders`, `myTrades`, `newOrder`) come from the spot connector; capital and asset endpoints (`tradeFee`, `depositAddress`, `depositHistory`, `withdrawHistory`, `allCoinsInformation`, `withdraw`, `fetchWithdrawQuota`) from the wallet connector.
+
+These replaced `binance-api-node`, which is community-maintained and whose hand-written typings had drifted from the wire: it neither wrapped nor typed `/sapi/v1/capital/withdraw/quota` (reaching it required the untyped `privateRequest` escape hatch and a hand-written cast), typed `withdrawHistory.applyTime` and `tradeFee.takerCommission` as numbers when both arrive as strings, and omitted `recvWindow` from several signed endpoints. The official connectors are generated from Binance's OpenAPI spec and match the wire.
+
+The quota response is the clearest case: it declares `wdQuota?: string; usedWdQuota?: string`, both arriving as strings and either possibly absent. `getBinanceWithdrawalLimits` returns it unvalidated, and `getWithdrawalLimits()` is the single coercion boundary — a superstruct `type()` that coerces both fields to numbers and throws if either is missing.
+
+Two connector behaviours are configured explicitly. They default to a 1s request timeout, which a proxied SAPI read can exceed (a 1.5s response fails on the default), so both are constructed with `BINANCE_TIMEOUT_MS` (30s). They also retry idempotent requests internally, so the deposit/withdrawal history helpers no longer add a retry layer of their own — stacking the two would have multiplied to nine requests per logical call rather than adding. Non-idempotent requests are not retried by the connector: against a 503, a quota `GET` retries while `POST /sapi/v1/capital/withdraw/apply` is sent exactly once.
+
+Quota state is strict-fail and fails closed. `refresh()` clears the cached remaining quota before each read, so a timeout, an HTTP error, or a response missing either field leaves it undefined and logs at warn level rather than throwing — the caller's update loop continues. `canWithdraw()` returns false whenever the quota is unknown, so a failed read makes `InventoryClient#canFastRebalanceFill` reject origin repayment for every metered Binance route until a later refresh succeeds; it never falls back to a stale or assumed limit.
+
 ## Across API Client
 
 The AcrossApiClient polls the Across API `/liquid-reserves` endpoint for the HubPool liquidity available per enabled L1 token; the relayer skips deposits whose input amount exceeds the limit for their token (hub-chain origins are exempt, since funds can be JIT-bridged from mainnet). `update()` reports whether the limits are current instead of throwing, and a failed query retains the last known values rather than zeroing them, so transient API outages don't halt filling. Limits are not enforced until a query has succeeded, so `Relayer.init()` retries the initial update and, if it never succeeds, logs at error level and proceeds — the relayer then fills without a HubPool liquidity constraint.

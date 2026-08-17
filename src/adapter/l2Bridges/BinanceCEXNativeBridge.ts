@@ -51,6 +51,7 @@ export class BinanceCEXNativeBridge extends BinanceCEXBridge {
       mrkdwn: `Unwrapped ${formatter(amount)} ${l2TokenInfo.symbol} before withdrawing from ${network} to L1`,
     };
     // Convert the deposit address into an ethers contract.
+    assert(isDefined(depositAddress.address), "Binance returned no deposit address.");
     const depositAddressContract = new Contract(depositAddress.address, [], l2Signer);
 
     // Get the cost of executing a transaction with no data. Here we just call the zero address.

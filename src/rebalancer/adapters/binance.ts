@@ -1,4 +1,3 @@
-import { Binance, NewOrderSpot, OrderType, QueryOrderResult } from "binance-api-node";
 import {
   assert,
   BigNumber,
@@ -18,8 +17,17 @@ import {
   getAtomicDepositorContracts,
   getAccountCoins,
   getBinanceAllOrders,
+  BINANCE_ORDER_BOOK_DEPTH,
+  BinanceApi,
+  BinanceExchangeInfo,
+  BinanceOrderBook,
+  BinanceOrderRecord,
+  BinanceOrderRequest,
+  BinanceTradeFees,
   getBinanceApiClient,
   getBinanceDepositAddress,
+  getBinanceExchangeInfo,
+  getBinanceOrderBook,
   getBinanceTradeFees,
   getFillCommission,
   getBinanceTransactionTypeKey,
@@ -64,26 +72,23 @@ import { OftAdapter, getOftPreDepositOrderTtlOverride } from "./oftAdapter";
 import WETH_ABI from "../../common/abi/Weth.json";
 
 export class BinanceStablecoinSwapAdapter extends BaseAdapter {
-  private _binanceApiClient?: Binance;
-  private exchangeInfoPromise?: ReturnType<Binance["exchangeInfo"]>;
+  private _binanceApiClient?: BinanceApi;
+  private exchangeInfoPromise?: Promise<BinanceExchangeInfo>;
 
   // binanceApiClient is populated by initialize(); reads pre-init throw, writes go through the setter.
-  private get binanceApiClient(): Binance {
+  private get binanceApiClient(): BinanceApi {
     assert(
       isDefined(this._binanceApiClient),
       "BinanceStablecoinSwapAdapter: binanceApiClient accessed before initialize()"
     );
     return this._binanceApiClient;
   }
-  private set binanceApiClient(value: Binance) {
+  private set binanceApiClient(value: BinanceApi) {
     this._binanceApiClient = value;
   }
-  private orderBookPromiseBySymbol = new Map<string, Promise<Awaited<ReturnType<Binance["book"]>>>>();
-  private orderBookSnapshotBySymbol = new Map<
-    string,
-    { fetchedAtMs: number; book: Awaited<ReturnType<Binance["book"]>> }
-  >();
-  private tradeFeesPromise?: ReturnType<Binance["tradeFee"]>;
+  private orderBookPromiseBySymbol = new Map<string, Promise<BinanceOrderBook>>();
+  private orderBookSnapshotBySymbol = new Map<string, { fetchedAtMs: number; book: BinanceOrderBook }>();
+  private tradeFeesPromise?: Promise<BinanceTradeFees>;
   private spotMarketMetaPromiseByRoute = new Map<string, Promise<SpotMarketMeta>>();
 
   REDIS_PREFIX = "binance-stablecoin-swap:";
@@ -458,7 +463,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const { unfinalizedWithdrawals, finalizedWithdrawals, failedWithdrawals } = await this._getBinanceWithdrawals(
         orderDetails.destinationToken,
         binanceWithdrawalNetwork,
-        isDefined(matchingFill) ? Math.floor(matchingFill.time / 1000) - 5 * 60 : getCurrentTime() - 6 * 60 * 60,
+        isDefined(matchingFill?.time)
+          ? Math.floor(Number(matchingFill.time) / 1000) - 5 * 60
+          : getCurrentTime() - 6 * 60 * 60,
         // If there is a matching fill, then look up withdrawals after the fill time. If there is no fill because
         // it's not a swap route, then use a conservative lookback period. If the withdrawal is older than this
         // lookback period then it should have already been deleted from Redis.
@@ -704,7 +711,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       const { unfinalizedWithdrawals, finalizedWithdrawals } = await this._getBinanceWithdrawals(
         destinationToken,
         binanceWithdrawalNetwork,
-        isDefined(matchingFill) ? Math.floor(matchingFill.time / 1000) - 5 * 60 : getCurrentTime() - 6 * 60 * 60,
+        isDefined(matchingFill?.time)
+          ? Math.floor(Number(matchingFill.time) / 1000) - 5 * 60
+          : getCurrentTime() - 6 * 60 * 60,
         // If there is a matching fill, then look up withdrawals after the fill time. If there is no fill because
         // it's not a swap route, then use a conservative lookback period. If the withdrawal is older than this
         // lookback period then it should have already been deleted from Redis.
@@ -1315,6 +1324,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       coin: resolveBinanceCoinSymbol(sourceToken),
       network: BINANCE_NETWORKS[sourceChain],
     });
+    assert(isDefined(depositAddress.address), "Binance returned no deposit address.");
+    const binanceDepositAddress = depositAddress.address;
     const sourceProvider = await getProvider(sourceChain);
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
     const amountReadable = fromWei(amountToDeposit, sourceTokenInfo.decimals);
@@ -1324,7 +1335,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     if (usesBinanceAtomicDepositorTransfer(sourceToken, sourceChain)) {
       txnHash = await this._depositNativeEthToBinanceViaAtomicDepositor(
         sourceChain,
-        depositAddress.address,
+        binanceDepositAddress,
         amountToDeposit
       );
     } else {
@@ -1333,7 +1344,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         sourceChain,
         sourceTokenInfo.address.toNative(),
         connectedSigner,
-        depositAddress.address,
+        binanceDepositAddress,
         amountToDeposit,
         amountReadable
       );
@@ -1424,8 +1435,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return Number(coin.balance);
   }
 
-  private async _getExchangeInfo(): Promise<ReturnType<Binance["exchangeInfo"]>> {
-    this.exchangeInfoPromise ??= this.binanceApiClient.exchangeInfo();
+  private async _getExchangeInfo(): Promise<BinanceExchangeInfo> {
+    this.exchangeInfoPromise ??= getBinanceExchangeInfo(this.binanceApiClient);
     try {
       return await this.exchangeInfoPromise;
     } catch (error) {
@@ -1438,7 +1449,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const sourceAsset = resolveBinanceCoinSymbol(sourceToken);
     const destinationAsset = resolveBinanceCoinSymbol(destinationToken);
     const exchangeInfo = await this._getExchangeInfo();
-    const symbol = exchangeInfo.symbols.find((symbols) => {
+    const symbol = (exchangeInfo.symbols ?? []).find((symbols) => {
       return (
         symbols.symbol === `${sourceAsset}${destinationAsset}` || symbols.symbol === `${destinationAsset}${sourceAsset}`
       );
@@ -1458,6 +1469,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     }
     const symbol = await this._getSymbol(sourceToken, destinationToken);
     const sourceTokenInfo = this._getTokenInfo(sourceToken, sourceChain);
+    assert(isDefined(symbol.symbol), "Binance market is missing a symbol.");
     const book = await this._getOrderBook(symbol.symbol);
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(sourceToken, destinationToken);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
@@ -1486,7 +1498,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return { latestPrice, slippagePct };
   }
 
-  private async _getOrderBook(symbol: string): Promise<Awaited<ReturnType<Binance["book"]>>> {
+  private async _getOrderBook(symbol: string): Promise<BinanceOrderBook> {
     const cachedBook = this.orderBookSnapshotBySymbol.get(symbol);
     if (cachedBook && Date.now() - cachedBook.fetchedAtMs <= BinanceStablecoinSwapAdapter.ORDER_BOOK_CACHE_TTL_MS) {
       return cachedBook.book;
@@ -1514,13 +1526,9 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     return promise;
   }
 
-  private async _fetchOrderBook(
-    symbol: string,
-    nRetries = 0,
-    maxRetries = 3
-  ): Promise<Awaited<ReturnType<Binance["book"]>>> {
+  private async _fetchOrderBook(symbol: string, nRetries = 0, maxRetries = 3): Promise<BinanceOrderBook> {
     try {
-      return await this.binanceApiClient.book({ symbol, limit: 5000 });
+      return await getBinanceOrderBook(this.binanceApiClient, symbol, BINANCE_ORDER_BOOK_DEPTH);
     } catch (error) {
       if (nRetries >= maxRetries) {
         throw error;
@@ -1649,7 +1657,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     });
   }
 
-  private async _getTradeFees(): Promise<ReturnType<Binance["tradeFee"]>> {
+  private async _getTradeFees(): Promise<BinanceTradeFees> {
     this.tradeFeesPromise ??= getBinanceTradeFees(this.binanceApiClient);
     try {
       return await this.tradeFeesPromise;
@@ -1662,7 +1670,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   private async _getMatchingFillForCloid(
     cloid: string,
     account: EvmAddress
-  ): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: number } | undefined> {
+  ): Promise<{ matchingFill: BinanceOrderRecord; expectedAmountToReceive: number } | undefined> {
     const orderDetails = await this._redisGetOrderDetailsRequired(cloid, account);
     const spotMarketMeta = await this._getSpotMarketMetaForRoute(
       orderDetails.sourceToken,
@@ -1681,7 +1689,8 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     if (!Number.isFinite(grossExpectedAmountToReceive) || grossExpectedAmountToReceive < 0) {
       return undefined;
     }
-    const fillCommission = await getFillCommission(this.binanceApiClient, spotMarketMeta, matchingFill.orderId);
+    assert(isDefined(matchingFill.orderId), "Binance fill is missing an orderId.");
+    const fillCommission = await getFillCommission(this.binanceApiClient, spotMarketMeta, Number(matchingFill.orderId));
     const expectedAmountToReceive = grossExpectedAmountToReceive - fillCommission;
     if (!Number.isFinite(expectedAmountToReceive) || expectedAmountToReceive < 0) {
       return undefined;
@@ -1707,7 +1716,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       symbol: spotMarketMeta.symbol,
       newClientOrderId: cloid,
       side: spotMarketMeta.isBuy ? "BUY" : "SELL",
-      type: OrderType.MARKET,
+      type: "MARKET",
       quantity: szForOrder.toString(),
     };
     this.logger.debug({
@@ -1717,7 +1726,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       } with size ${szForOrder}`,
       orderStruct,
     });
-    const response = await submitBinanceOrder(this.binanceApiClient, orderStruct as NewOrderSpot);
+    const response = await submitBinanceOrder(this.binanceApiClient, orderStruct as unknown as BinanceOrderRequest);
     assert(response.status == "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._placeMarketOrder",
@@ -1841,7 +1850,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     const amountToWithdraw = truncate(quantity, destinationTokenInfo.decimals);
     const binanceDestinationCoin = resolveBinanceCoinSymbol(destinationToken);
 
-    let withdrawalId: { id: string };
+    let withdrawalId: { id?: string };
     try {
       withdrawalId = await submitBinanceWithdrawal(this.binanceApiClient, {
         coin: binanceDestinationCoin,
@@ -1883,16 +1892,18 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       }
       throw error;
     }
+    assert(isDefined(withdrawalId.id), "Binance withdrawal returned no id.");
+    const submittedWithdrawalId = withdrawalId.id;
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
-    await this.redisCache.set(initiatedWithdrawalKey, withdrawalId.id);
-    await setBinanceWithdrawalType(destinationEntrypointNetwork, withdrawalId.id, BinanceTransactionType.SWAP);
+    await this.redisCache.set(initiatedWithdrawalKey, submittedWithdrawalId);
+    await setBinanceWithdrawalType(destinationEntrypointNetwork, submittedWithdrawalId, BinanceTransactionType.SWAP);
     this.logger.debug({
       at: "BinanceStablecoinSwapAdapter._withdraw",
       message: `🏧 Withdrew ${quantity} ${destinationToken} from Binance to withdrawal network ${getNetworkName(
         destinationEntrypointNetwork
       )} for order cloid ${cloid}`,
       redisWithdrawalIdKey: initiatedWithdrawalKey,
-      redisWithdrawalTypeKey: getBinanceTransactionTypeKey(destinationEntrypointNetwork, withdrawalId.id),
+      redisWithdrawalTypeKey: getBinanceTransactionTypeKey(destinationEntrypointNetwork, submittedWithdrawalId),
       finalDestinationChain: destinationChain,
     });
     return true;

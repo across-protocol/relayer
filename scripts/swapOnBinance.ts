@@ -26,14 +26,30 @@ and we don't want the user to be able to accidentally spend funds that are not i
 import assert from "assert";
 import minimist from "minimist";
 import winston from "winston";
-import { Binance, DepositAddress, NewOrderSpot, OrderType, QueryOrderResult } from "binance-api-node";
 import { askYesNoQuestion } from "./utils";
 import { BinanceClient } from "../src/clients/BinanceClient";
 import { AugmentedTransaction, TransactionClient } from "../src/clients";
 import {
   BINANCE_NETWORKS,
+  BINANCE_ORDER_BOOK_DEPTH,
   BINANCE_WITHDRAWAL_STATUS,
+  BinanceApi,
   BinanceDeposit,
+  BinanceDepositAddress,
+  BinanceExchangeInfo,
+  BinanceOrderBook,
+  BinanceOrderRecord,
+  BinanceOrderRequest,
+  BinanceTradeFees,
+  BinanceOrderResult,
+  SpotSymbolInfo,
+  getBinanceAllOrders,
+  getBinanceDepositAddress,
+  getBinanceExchangeInfo,
+  getBinanceOrderBook,
+  getBinanceTradeFees,
+  submitBinanceOrder,
+  submitBinanceWithdrawal,
   BinanceTransactionType,
   BinanceWithdrawal,
   BigNumber,
@@ -162,7 +178,7 @@ export interface BinanceDepositAvailability {
 export interface BinanceOrderFillAvailability {
   attempts: number;
   freeBalance: number;
-  matchingFill: QueryOrderResult;
+  matchingFill: BinanceOrderRecord;
   expectedAmountToReceive: string;
 }
 
@@ -594,8 +610,8 @@ async function gatherRecipientBalances(
 async function getDepositAddressOrThrow(
   venue: BinanceSwapVenue,
   source: ResolvedBinanceAsset
-): Promise<DepositAddress> {
-  const depositAddress = await venue.rawApi().depositAddress({
+): Promise<BinanceDepositAddress> {
+  const depositAddress = await getBinanceDepositAddress(venue.rawApi(), {
     coin: source.binanceCoin,
     network: source.network.name,
   });
@@ -610,10 +626,12 @@ async function getDepositAddressOrThrow(
 async function buildDepositExecutionPlan(
   source: ResolvedBinanceAsset,
   signer: Signer,
-  depositAddress: DepositAddress,
+  depositAddress: BinanceDepositAddress,
   amount: BigNumber
 ): Promise<DepositExecutionPlan> {
   const chainId = source.chainId;
+  assert(isDefined(depositAddress.address), "Binance returned no deposit address.");
+  const binanceDepositAddress = depositAddress.address;
   if (source.isNativeAsset) {
     const contracts = getAtomicDepositorContracts(chainId);
     if (!contracts) {
@@ -641,7 +659,7 @@ async function buildDepositExecutionPlan(
     }
     const atomicDepositor = new Contract(contracts.atomicDepositorAddress, contracts.atomicDepositorAbi, signer);
     const transferProxy = new Contract(contracts.transferProxyAddress, contracts.transferProxyAbi);
-    const bridgeCalldata = transferProxy.interface.encodeFunctionData("transfer", [depositAddress.address]);
+    const bridgeCalldata = transferProxy.interface.encodeFunctionData("transfer", [binanceDepositAddress]);
     steps.push({
       label: `Deposit ${formatAmount(amount, source.tokenDecimals)} ${source.tokenSymbol} into Binance via AtomicWethDepositor`,
       transaction: {
@@ -667,7 +685,7 @@ async function buildDepositExecutionPlan(
         transaction: {
           contract: tokenContract,
           method: "transfer",
-          args: [getEthersCompatibleAddress(chainId, depositAddress.address), amount],
+          args: [getEthersCompatibleAddress(chainId, binanceDepositAddress), amount],
           chainId,
           nonMulticall: true,
           unpermissioned: false,
@@ -1309,39 +1327,41 @@ export function resolveBinanceAsset(params: {
 }
 
 export class BinanceSwapVenue {
-  private exchangeInfo?: Awaited<ReturnType<Binance["exchangeInfo"]>>;
-  private tradeFees?: Awaited<ReturnType<Binance["tradeFee"]>>;
-  private orderBookBySymbol = new Map<string, Awaited<ReturnType<Binance["book"]>>>();
+  private exchangeInfo?: BinanceExchangeInfo;
+  private tradeFees?: BinanceTradeFees;
+  private orderBookBySymbol = new Map<string, BinanceOrderBook>();
 
-  constructor(private readonly binanceApiClient: Binance) {}
+  constructor(private readonly binanceApiClient: BinanceApi) {}
 
-  rawApi(): Binance {
+  rawApi(): BinanceApi {
     return this.binanceApiClient;
   }
 
   async getSpotFreeBalance(binanceCoin: string): Promise<number> {
-    const accountInfo = await this.binanceApiClient.accountInfo();
-    const balance = accountInfo.balances.find((candidate) => resolveBinanceCoinSymbol(candidate.asset) === binanceCoin);
+    const accountInfo = await (await this.binanceApiClient.spot.restAPI.getAccount()).data();
+    const balance = (accountInfo.balances ?? []).find(
+      (candidate) => resolveBinanceCoinSymbol(candidate.asset ?? "") === binanceCoin
+    );
     return Number(balance?.free ?? "0");
   }
 
-  async getExchangeInfo(): Promise<Awaited<ReturnType<Binance["exchangeInfo"]>>> {
+  async getExchangeInfo(): Promise<BinanceExchangeInfo> {
     if (!this.exchangeInfo) {
-      this.exchangeInfo = await this.binanceApiClient.exchangeInfo();
+      this.exchangeInfo = await getBinanceExchangeInfo(this.binanceApiClient);
     }
     return this.exchangeInfo;
   }
 
-  async getTradeFees(): Promise<Awaited<ReturnType<Binance["tradeFee"]>>> {
+  async getTradeFees(): Promise<BinanceTradeFees> {
     if (!this.tradeFees) {
-      this.tradeFees = await this.binanceApiClient.tradeFee();
+      this.tradeFees = await getBinanceTradeFees(this.binanceApiClient);
     }
     return this.tradeFees;
   }
 
-  async getSymbol(sourceBinanceCoin: string, destinationBinanceCoin: string) {
+  async getSymbol(sourceBinanceCoin: string, destinationBinanceCoin: string): Promise<SpotSymbolInfo> {
     const exchangeInfo = await this.getExchangeInfo();
-    const symbol = exchangeInfo.symbols.find(
+    const symbol = (exchangeInfo.symbols ?? []).find(
       (candidate) =>
         candidate.symbol === `${sourceBinanceCoin}${destinationBinanceCoin}` ||
         candidate.symbol === `${destinationBinanceCoin}${sourceBinanceCoin}`
@@ -1355,7 +1375,7 @@ export class BinanceSwapVenue {
     return deriveBinanceSpotMarketMeta(sourceBinanceCoin, destinationBinanceCoin, symbol);
   }
 
-  async getOrderBook(symbol: string, skipCache = false): Promise<Awaited<ReturnType<Binance["book"]>>> {
+  async getOrderBook(symbol: string, skipCache = false): Promise<BinanceOrderBook> {
     const cachedBook = this.orderBookBySymbol.get(symbol);
     if (cachedBook && !skipCache) {
       return cachedBook;
@@ -1366,9 +1386,9 @@ export class BinanceSwapVenue {
     return book;
   }
 
-  async fetchOrderBook(symbol: string, nRetries = 0, maxRetries = 3): Promise<Awaited<ReturnType<Binance["book"]>>> {
+  async fetchOrderBook(symbol: string, nRetries = 0, maxRetries = 3): Promise<BinanceOrderBook> {
     try {
-      return await this.binanceApiClient.book({ symbol, limit: 5000 });
+      return await getBinanceOrderBook(this.binanceApiClient, symbol, BINANCE_ORDER_BOOK_DEPTH);
     } catch (error) {
       if (nRetries >= maxRetries) {
         throw error;
@@ -1390,6 +1410,7 @@ export class BinanceSwapVenue {
     }
 
     const symbol = await this.getSymbol(sourceBinanceCoin, destinationBinanceCoin);
+    assert(isDefined(symbol.symbol), "Binance market is missing a symbol.");
     const book = await this.getOrderBook(symbol.symbol, skipCache);
     const spotMarketMeta = await this.getSpotMarketMeta(sourceBinanceCoin, destinationBinanceCoin);
     const sideOfBookToTraverse = spotMarketMeta.isBuy ? book.asks : book.bids;
@@ -1556,7 +1577,7 @@ export class BinanceSwapVenue {
     source: ResolvedBinanceAsset,
     destination: ResolvedBinanceAsset,
     sourceAmount: BigNumber
-  ): Promise<Awaited<ReturnType<Binance["order"]>>> {
+  ): Promise<BinanceOrderResult> {
     const spotMarketMeta = await this.getSpotMarketMeta(source.binanceCoin, destination.binanceCoin);
     let nRetries = 0;
     const maxRetries = 3;
@@ -1569,14 +1590,13 @@ export class BinanceSwapVenue {
       // Alternatively, we could add a buffer and decrease the quantity by a small amount but that more likely leaves
       // dust in the account balance.
       try {
-        const response = await this.binanceApiClient.order({
+        const response = await submitBinanceOrder(this.binanceApiClient, {
           symbol: spotMarketMeta.symbol,
           newClientOrderId: cloid,
           side: spotMarketMeta.isBuy ? "BUY" : "SELL",
-          type: OrderType.MARKET,
-          quantity: quantity.toString(),
-          recvWindow: 60_000,
-        } as NewOrderSpot);
+          type: "MARKET",
+          quantity: Number(quantity),
+        } as unknown as BinanceOrderRequest);
         assert(response.status === "FILLED", `Market order was not filled: ${JSON.stringify(response)}`);
         return response;
       } catch (error) {
@@ -1605,7 +1625,7 @@ export class BinanceSwapVenue {
     destination: ResolvedBinanceAsset
   ): Promise<number | undefined> {
     const spotMarketMeta = await this.getSpotMarketMeta(source.binanceCoin, destination.binanceCoin);
-    const allOrders = await this.binanceApiClient.allOrders({
+    const allOrders = await getBinanceAllOrders(this.binanceApiClient, {
       orderId: fillOrderId,
       symbol: spotMarketMeta.symbol,
     });
@@ -1613,7 +1633,12 @@ export class BinanceSwapVenue {
     if (!matchingFill) {
       return undefined;
     }
-    const totalCommission = await getFillCommission(this.binanceApiClient, spotMarketMeta, matchingFill.orderId);
+    assert(isDefined(matchingFill.orderId), "Binance fill is missing an orderId.");
+    const totalCommission = await getFillCommission(
+      this.binanceApiClient,
+      spotMarketMeta,
+      Number(matchingFill.orderId)
+    );
     const expectedAmountToReceive =
       matchingFill.side === "BUY" ? matchingFill.executedQty : matchingFill.cummulativeQuoteQty;
     return Number(expectedAmountToReceive) - totalCommission;
@@ -1631,14 +1656,19 @@ export class BinanceSwapVenue {
     cloid: string,
     source: ResolvedBinanceAsset,
     destination: ResolvedBinanceAsset
-  ): Promise<{ matchingFill: QueryOrderResult; expectedAmountToReceive: string } | undefined> {
+  ): Promise<{ matchingFill: BinanceOrderRecord; expectedAmountToReceive: string } | undefined> {
     const spotMarketMeta = await this.getSpotMarketMeta(source.binanceCoin, destination.binanceCoin);
-    const allOrders = await this.binanceApiClient.allOrders({ symbol: spotMarketMeta.symbol });
+    const allOrders = await getBinanceAllOrders(this.binanceApiClient, { symbol: spotMarketMeta.symbol });
     const matchingFill = allOrders.find((order) => order.clientOrderId === cloid && order.status === "FILLED");
     if (!matchingFill) {
       return undefined;
     }
-    const totalCommission = await getFillCommission(this.binanceApiClient, spotMarketMeta, matchingFill.orderId);
+    assert(isDefined(matchingFill.orderId), "Binance fill is missing an orderId.");
+    const totalCommission = await getFillCommission(
+      this.binanceApiClient,
+      spotMarketMeta,
+      Number(matchingFill.orderId)
+    );
     const grossExpectedAmountToReceive = spotMarketMeta.isBuy
       ? Number(matchingFill.executedQty)
       : Number(matchingFill.cummulativeQuoteQty);
@@ -1648,13 +1678,14 @@ export class BinanceSwapVenue {
   async initiateWithdrawal(destination: ResolvedBinanceAsset, recipient: string, amount: BigNumber): Promise<string> {
     const amountReadable = Number(fromWei(amount, destination.tokenDecimals));
     const withdrawalAmount = truncate(amountReadable, destination.tokenDecimals);
-    const response = await this.binanceApiClient.withdraw({
+    const response = await submitBinanceWithdrawal(this.binanceApiClient, {
       coin: destination.binanceCoin,
       address: recipient,
       amount: withdrawalAmount,
       network: destination.network.name,
       transactionFeeFlag: false,
     });
+    assert(isDefined(response.id), "Binance withdrawal returned no id.");
     return response.id;
   }
 }
@@ -1721,7 +1752,7 @@ export async function waitForBinanceOrderFillAndBalance(params: {
     attempts: number;
     freeBalance: number;
     requiredBalance?: number;
-    matchingFill?: QueryOrderResult;
+    matchingFill?: BinanceOrderRecord;
   }) => void;
 }): Promise<BinanceOrderFillAvailability> {
   const pollDelayMs = params.pollDelayMs ?? POLL_DELAY_MS;
