@@ -149,6 +149,20 @@ export class InvalidWithdrawResponseError extends DepositAddressServiceError {
 }
 
 /**
+ * The withdrawal settled on-chain but its `withdraw_executed` announcement could not be published. NACK, and
+ * the redelivery retries **the publication only** — `withdraw_executed` is preserved, so no path re-withdraws.
+ *
+ * Its own code rather than {@link TransientDependencyError}'s: the dispositions coincide, but the conditions
+ * do not. This one means the funds have already moved and the indexer has not been told, which is the state an
+ * operator needs to be able to find on the outcome line. The polling bot instead swallows this failure and
+ * logs it, so a dropped publish is never replayed; that is the gap this service closes.
+ */
+export class WithdrawPublicationError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "WITHDRAW_PUBLICATION_FAILED";
+}
+
+/**
  * The origin chain's family has no v3 execute path at all — not EVM, not TVM. ACK: this is a property of the
  * code, not of configuration, so no redelivery can change it while this build is deployed.
  */
