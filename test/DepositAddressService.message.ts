@@ -70,26 +70,62 @@ describe("transferId", function () {
 });
 
 describe("parseTransfer", function () {
-  it("routes correct_transfer to deposit and returns the transferId", function () {
+  it("returns the transferId and the message as the indexer stated it", function () {
     const parsed = parseTransfer(v3());
-    expect(parsed.route).to.equal("deposit");
     expect(parsed.transferId).to.equal("42161:0xa3f1c7d40e9b6852f1ad0c3b7e94f628a1d5c09e:7");
     expect(parsed.message.erc20Transfer.amount).to.equal("25000000");
+    expect(parsed.message.erc20Transfer.transferClassification).to.equal("correct_transfer");
   });
 
-  it("routes mis_route to withdraw", function () {
-    expect(parseTransfer(v3({}, { transferClassification: "mis_route" })).route).to.equal("withdraw");
+  it("passes an actionable classification through untranslated", function () {
+    // Deliberately no deposit/withdraw label here: a correct_transfer the execute endpoint rejects as below
+    // the minimum becomes a refund withdraw, so the action is not knowable at parse time.
+    const parsed = parseTransfer(v3({}, { transferClassification: "mis_route" }));
+    expect(parsed.message.erc20Transfer.transferClassification).to.equal("mis_route");
+    expect("route" in parsed).to.equal(false);
   });
 
   it("drops classifications v3 does not support", function () {
     // intent_refund is unsupported on v3, matching the polling bot.
-    expect(() => parseTransfer(v3({}, { transferClassification: "intent_refund" }))).to.throw(/no v3 route/);
+    expect(() => parseTransfer(v3({}, { transferClassification: "intent_refund" }))).to.throw(/does not support/);
   });
 
   it("drops unsupported versions before validating the rest", function () {
     for (const version of [1, 2, undefined, "3"]) {
       expect(() => parseTransfer(v3({ version })), String(version)).to.throw(/unsupported message version/);
     }
+  });
+
+  it("rejects a chainId that does not convert to a chain id", function () {
+    // `Number()` on these is NaN or nonsense. Caught here rather than at first use, because NaN also flows
+    // into transferId() and would make two malformed messages share one lock and state key.
+    for (const chainId of ["bogus", "", "1.5", "-1", "0"]) {
+      expect(() => parseTransfer(v3({}, { chainId })), JSON.stringify(chainId)).to.throw(/erc20Transfer.chainId/);
+    }
+  });
+
+  it("rejects an amount that is not a non-negative integer", function () {
+    // "-1" is the dangerous one: it does not throw, so `onchainBalance.lt(-1)` is false and the balance guard
+    // — the only check between the message and the execute call — passes.
+    for (const amount of ["bogus", "", "1.5", "-1", "  10  "]) {
+      expect(() => parseTransfer(v3({}, { amount })), JSON.stringify(amount)).to.throw(/erc20Transfer.amount/);
+    }
+  });
+
+  it("accepts a well-formed amount", function () {
+    expect(parseTransfer(v3({}, { amount: "0" })).message.erc20Transfer.amount).to.equal("0");
+    expect(parseTransfer(v3({}, { amount: "25000000" })).message.erc20Transfer.amount).to.equal("25000000");
+  });
+
+  it("rejects a destinationChainId that does not convert to a chain id", function () {
+    const bad = JSON.parse(v3()) as { routeParams: Record<string, unknown> };
+    bad.routeParams.destinationChainId = "bogus";
+    expect(() => parseTransfer(JSON.stringify(bad))).to.throw(/routeParams.destinationChainId/);
+  });
+
+  it("accepts a chainId in any encoding Number() understands", function () {
+    // Not pattern-matched on the string, so a legitimate non-decimal encoding is not rejected cosmetically.
+    expect(parseTransfer(v3({}, { chainId: "0xa4b1" })).transferId).to.match(/^42161:/);
   });
 
   it("rejects payloads that are not JSON", function () {
@@ -108,12 +144,12 @@ describe("parseTransfer", function () {
 
   it("accepts a message with no integrator", function () {
     // Pre-integrator deposit addresses omit it; the execute path validates the id separately.
-    expect(parseTransfer(v3({ integrator: undefined })).route).to.equal("deposit");
-    expect(parseTransfer(v3({ integrator: null })).route).to.equal("deposit");
+    expect(parseTransfer(v3({ integrator: undefined })).message.integrator).to.equal(undefined);
+    expect(parseTransfer(v3({ integrator: null })).message.integrator).to.equal(null);
   });
 
   it("tolerates unknown fields so an indexer addition cannot break the service", function () {
     const parsed = parseTransfer(v3({ someFutureField: { nested: true } }));
-    expect(parsed.route).to.equal("deposit");
+    expect(parsed.transferId).to.equal("42161:0xa3f1c7d40e9b6852f1ad0c3b7e94f628a1d5c09e:7");
   });
 });

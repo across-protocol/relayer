@@ -1,9 +1,16 @@
 import { Server } from "http";
-import { config, Logger, waitForLogger } from "../utils";
+import minimist from "minimist";
+import { getRedisCache } from "../cache/Redis";
+import { AcrossSwapApiClient } from "../clients/AcrossSwapApiClient";
+import { TransactionClient } from "../clients/TransactionClient";
+import { EvmAddress, assert, config, getDispatcherKeys, getSigner, isDefined, Logger, waitForLogger } from "../utils";
 import { safeStringifyThrownValue } from "./errors";
 import { createApp } from "./app";
 import { DepositAddressServiceConfig } from "./config";
+import { createDepositHandler } from "./depositHandler";
+import { MessageHandler } from "./handler";
 import { RequestLifecycle } from "./lifecycle";
+import { TransferStore } from "./transferState";
 
 config();
 
@@ -13,7 +20,7 @@ const AT = "DepositAddressService#bootstrap";
  * Run directly, not through the repo's `index.ts` bot dispatcher — `scripts/runCommand.sh` executes
  * `$COMMAND`, so no Dockerfile change is needed:
  *
- *   COMMAND="exec node ./dist/src/deposit-address-service/index.js"
+ *   COMMAND="exec node ./dist/src/deposit-address-service/index.js --wallet gckms --keys <key-name>"
  *
  * The `exec` is **required**. `runCommand.sh` runs `$COMMAND` without it, so the shell stays PID 1 and
  * Node is a child; Cloud Run signals PID 1 only, so the SIGTERM handler below would never fire and the
@@ -22,22 +29,67 @@ const AT = "DepositAddressService#bootstrap";
  * Uses the shared `Logger`, not a local winston instance, so `notificationPath` routing works and
  * `botIdentifier` / `runIdentifier` are injected.
  */
-function main(): void {
+async function main(): Promise<void> {
   const logger = Logger;
   const serviceConfig = new DepositAddressServiceConfig(process.env);
   const lifecycle = new RequestLifecycle();
-  const app = createApp({ logger, config: serviceConfig, lifecycle });
+
+  // Built before `listen()`, so a missing key or unreachable Redis fails startup rather than answering 500 to
+  // every delivery. Constructed once and closed over by the handler: the nonce cache lives on
+  // `TransactionClient`, so a per-request client would turn the accepted nonce race into a guaranteed one.
+  const handler = await buildHandler(logger, serviceConfig);
+
+  const app = createApp({ logger, config: serviceConfig, lifecycle, handler });
 
   const server = app.listen(serviceConfig.port, "0.0.0.0", () => {
     logger.debug({
       at: AT,
       message: "Deposit-address service listening",
       port: serviceConfig.port,
+      originChains: serviceConfig.originChains,
+      executionEnabled: serviceConfig.executionEnabled,
     });
   });
 
   installFatalHandlers(logger);
   installShutdownHandlers(logger, server, lifecycle, serviceConfig);
+}
+
+/**
+ * Signer construction follows the repo's existing convention rather than inventing env vars for it: `--wallet`
+ * and `--keys` through `minimist`, exactly as the bot dispatcher does, and `getDispatcherKeys()` which already
+ * falls back to `DISPATCHER_KEYS` when no argument is passed.
+ */
+async function buildHandler(
+  logger: typeof Logger,
+  serviceConfig: DepositAddressServiceConfig
+): Promise<MessageHandler> {
+  const args = minimist(process.argv.slice(2), {
+    string: ["wallet", "keys", "address"],
+    default: { wallet: "secret" },
+  });
+
+  const baseSigner = await getSigner({ keyType: args.wallet, gckmsKeys: [args.keys], cleanEnv: true });
+  const dispatcherSigners = await getDispatcherKeys();
+  const signerAddress = EvmAddress.from(await baseSigner.getAddress());
+
+  const redis = await getRedisCache(logger);
+  assert(isDefined(redis), "DepositAddressService: a Redis cache is required for the lock and durable state");
+
+  const { SWAP_API_KEY, API_TIMEOUT_OVERRIDE } = process.env;
+  const swapApiKey = SWAP_API_KEY?.trim();
+  assert(isDefined(swapApiKey) && swapApiKey.length > 0, "DepositAddressService: SWAP_API_KEY is required");
+
+  return createDepositHandler({
+    logger,
+    config: serviceConfig,
+    store: new TransferStore(redis),
+    api: new AcrossSwapApiClient(logger, Number(API_TIMEOUT_OVERRIDE ?? 3000), swapApiKey),
+    transactionClient: new TransactionClient(logger, dispatcherSigners),
+    baseSigner,
+    signerAddress,
+    dispatcherSigners,
+  });
 }
 
 function installFatalHandlers(logger: typeof Logger): void {
@@ -118,4 +170,9 @@ async function exitAfterFlush(logger: typeof Logger, exitCode: number): Promise<
   process.exit(exitCode);
 }
 
-main();
+void main().catch((error) => {
+  // Startup failed, so nothing is listening and there is nothing to drain. At `error` because a service that
+  // cannot start is silent otherwise — Cloud Run would just report a failed revision.
+  Logger.error({ at: AT, message: "Failed to start deposit-address service", err: safeStringifyThrownValue(error) });
+  void exitAfterFlush(Logger, 1);
+});

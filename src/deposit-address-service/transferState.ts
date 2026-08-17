@@ -10,8 +10,20 @@ import {
   TransientDependencyError,
 } from "./errors";
 
-/** Long enough that a dead consumer's lock lapses, short enough that the transfer is not stuck for long. */
-const LOCK_TTL_MS = 600_000;
+/**
+ * Long enough that a worker always holds its lock for its whole life, short enough that a transfer is not
+ * stuck behind a dead consumer for long.
+ *
+ * It must cover the application deadline **plus** the confirmation that runs after it:
+ * `assertBeforeDeadline` bounds when a broadcast *begins*, so a broadcast starting just inside the 480s
+ * deadline still has its confirmation ahead of it. `DepositAddressServiceConfig` asserts
+ * `lockTtlMs >= applicationDeadlineMs + confirmBudgetMs` at startup so the two cannot drift apart.
+ *
+ * Deliberately larger than the 600s Pub/Sub ack deadline (its maximum): a redelivery arriving as Cloud Run
+ * returns 504 finds the lock still held, NACKs on contention and backs off, by which time the original has
+ * written terminal state.
+ */
+export const LOCK_TTL_MS = 900_000;
 
 /** Beyond the 31-day Pub/Sub retention, so a replayed message cannot outlive the record saying it is done. */
 const TERMINAL_TTL_SECONDS = 90 * 24 * 60 * 60;
@@ -19,6 +31,15 @@ const TERMINAL_TTL_SECONDS = 90 * 24 * 60 * 60;
 /** Milliseconds, matching `RequestContext`. Seconds elsewhere in the repo is a trap worth not repeating. */
 const timestampMs = () => min(integer(), 0);
 
+/**
+ * Deliberately just the hash, the chain and when.
+ *
+ * No signer or nonce: nonce management belongs to `TransactionClient`, whose confirmation wait already
+ * refuses to resubmit a consumed nonce and re-notifies `onBroadcast` when it replaces a transaction, so the
+ * record follows the live hash on its own. Recording them here to second-guess that would buy only one
+ * narrow recovery — a worker that died mid-confirm during a nonce collision — and cost a chain-family gate
+ * that clears a **live** record if it is ever wrong (TVM reports `nonce: 0` unconditionally).
+ */
 const BroadcastPending = type({
   status: literal("broadcast_pending"),
   operation: enums(["deposit", "withdraw"]),
@@ -102,6 +123,12 @@ export function classifyReceipt(
 /** Held while a transfer is being worked. The token stays inside, so no caller can supply or reuse one. */
 export interface TransferLock {
   readonly transferId: string;
+  /**
+   * Whether this attempt still owns the lock. Called immediately before broadcasting, since the lock is not
+   * renewed: a request that reached the point of no return with a lapsed lock must stop, because another
+   * consumer may already be working the same transfer.
+   */
+  isHeld(): Promise<boolean>;
   release(): Promise<boolean>;
 }
 
@@ -143,6 +170,7 @@ export class TransferStore {
     // Token-checked, so a lapsed attempt cannot delete the lock a later one now holds.
     return {
       transferId,
+      isHeld: async () => (await this.command("get", transferId, () => this.redis.get<string>(key))) === token,
       release: () => this.command("releaseLock", transferId, () => this.redis.releaseLock(key, token)),
     };
   }
