@@ -27,6 +27,8 @@ import {
   isBinanceSweepWithdrawal,
   getOutstandingBinanceDeposits,
   isDefined,
+  getAttributedBinanceDeposits,
+  isTerminalFailedBinanceDeposit,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -34,6 +36,7 @@ import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 
 export class BinanceCEXBridge extends BaseL2BridgeAdapter {
+  protected nativeDeposit = false;
   // Store the promise to be evaluated when needed so that we can construct the bridge synchronously.
   protected readonly binanceApiClientPromise;
   protected binanceApiClient: BinanceApi | undefined;
@@ -115,6 +118,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       return (
         deposit.network === this.depositNetwork &&
         deposit.coin === this.l1TokenInfo.symbol &&
+        !isTerminalFailedBinanceDeposit(deposit.status) &&
         depositType !== BinanceTransactionType.SWAP
       );
     });
@@ -129,11 +133,15 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       );
     });
 
-    // FilterMap to remove all deposits from this L2 which originated from another EOA.
-    const filteredDepositHistory = await filterAsync(depositHistory, async (deposit) => {
-      const txnReceipt = await this.getL2Bridge().provider.getTransactionReceipt(deposit.txId);
-      return isDefined(txnReceipt) && compareAddressesSimple(txnReceipt.from, fromAddress.toNative());
-    });
+    const attributedDeposits = await getAttributedBinanceDeposits(
+      depositHistory,
+      this.getL2Bridge().provider,
+      l2EventConfig,
+      this.nativeDeposit ? undefined : l2Token.toNative()
+    );
+    const filteredDepositHistory = attributedDeposits.filter((deposit) =>
+      compareAddressesSimple(deposit.depositor, fromAddress.toNative())
+    );
 
     const unmatchedDeposits = getOutstandingBinanceDeposits(
       filteredDepositHistory,
@@ -148,8 +156,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   }
 
   public pendingWithdrawalLookbackPeriodSeconds(): number {
-    // Binance withdrawals are fast, we can shorten the lookback period to also reduce the number
-    // of provider.getTransactionReceipt we have to make for each deposit event.
-    return 1 * 60 * 60;
+    // Binance deposit confirmation has exceeded one hour in production.
+    return 4 * 60 * 60;
   }
 }

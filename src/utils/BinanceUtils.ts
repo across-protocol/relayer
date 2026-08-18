@@ -9,11 +9,14 @@ import Binance, {
 export type { BinanceApi };
 import minimist from "minimist";
 import { JsonFragment } from "@ethersproject/abi";
+import { Contract, providers, utils as ethersUtils } from "ethers";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, CHAIN_IDs, truncate } from "./";
 import { getRedisCache } from "../cache/Redis";
 import { CONTRACT_ADDRESSES, isJsonAbi } from "../common";
 import { BigNumber } from "./BNUtils";
-import { fromWei, retry, toBNWei } from "./SDKUtils";
+import { EvmAddress, fromWei, retry, toBNWei } from "./SDKUtils";
+import { EventSearchConfig, getPaginatedBlockRanges, paginatedEventQuery } from "./EventUtils";
+import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
@@ -115,6 +118,14 @@ export type BinanceDeposit = {
   status?: number;
 };
 
+export type AttributedBinanceDeposit = BinanceDeposit & { depositor: string };
+export type QueryBinanceErc20Transfers = (
+  provider: providers.Provider,
+  eventSearchConfig: EventSearchConfig,
+  tokenAddress: string,
+  recipient: string
+) => Promise<Array<{ transactionHash: string; from: string }>>;
+
 // A BinanceWithdrawal is a simplified element of the return type of the Binance API's `withdrawHistory`.
 export type BinanceWithdrawal = Omit<BinanceDeposit, "insertTime" | "address"> & {
   // The recipient of `coin` on the destination network.
@@ -141,6 +152,93 @@ export enum BINANCE_WITHDRAWAL_STATUS {
   PROCESSING = 4,
   FAILURE = 5,
   COMPLETED = 6,
+}
+
+export enum BINANCE_DEPOSIT_STATUS {
+  PENDING = 0,
+  CONFIRMED = 1,
+  REJECTED = 2,
+  CREDITED = 6,
+  WRONG_DEPOSIT = 7,
+  WAITING_USER_CONFIRM = 8,
+}
+
+export function isTerminalFailedBinanceDeposit(status?: number): boolean {
+  return status === BINANCE_DEPOSIT_STATUS.REJECTED || status === BINANCE_DEPOSIT_STATUS.WRONG_DEPOSIT;
+}
+
+/** Attributes a same-network, same-coin deposit batch by ERC20 transfers, or by receipts for native tokens. */
+export async function getAttributedBinanceDeposits(
+  deposits: BinanceDeposit[],
+  provider: providers.Provider,
+  eventSearchConfig: EventSearchConfig,
+  tokenAddress?: string,
+  queryErc20Transfers: QueryBinanceErc20Transfers = getBinanceErc20Transfers
+): Promise<AttributedBinanceDeposit[]> {
+  assert(
+    deposits.every(({ network, coin }) => network === deposits[0]?.network && coin === deposits[0]?.coin),
+    "Binance deposits must share a network and coin"
+  );
+  const depositors = new Map<string, string>();
+  const receiptDeposits: BinanceDeposit[] = [];
+  const depositKey = ({ network, txId }: BinanceDeposit) => `${network}:${txId.toLowerCase()}`;
+
+  if (isDefined(tokenAddress)) {
+    const groups = deposits.reduce<Map<string, BinanceDeposit[]>>((groups, deposit) => {
+      const key = deposit.address.toLowerCase();
+      const group = groups.get(key) ?? [];
+      group.push(deposit);
+      groups.set(key, group);
+      return groups;
+    }, new Map());
+    const logQueryCount = getPaginatedBlockRanges(eventSearchConfig).length;
+    await Promise.all(
+      Array.from(groups.values()).map(async (group) => {
+        // BSC's short log range can make pagination more expensive than one receipt per deposit.
+        if (logQueryCount > group.length) {
+          receiptDeposits.push(...group);
+          return;
+        }
+        const transfers = await queryErc20Transfers(provider, eventSearchConfig, tokenAddress, group[0].address);
+        const senders = new Map(transfers.map(({ transactionHash, from }) => [transactionHash.toLowerCase(), from]));
+        group.forEach((deposit) => {
+          const sender = senders.get(deposit.txId.toLowerCase());
+          if (isDefined(sender)) {
+            depositors.set(depositKey(deposit), EvmAddress.from(sender).toNative());
+          }
+        });
+      })
+    );
+  } else {
+    receiptDeposits.push(...deposits);
+  }
+
+  await Promise.all(
+    receiptDeposits.map(async (deposit) => {
+      const receipt = await provider.getTransactionReceipt(deposit.txId);
+      if (isDefined(receipt) && ethersUtils.isAddress(receipt.from)) {
+        depositors.set(depositKey(deposit), EvmAddress.from(receipt.from).toNative());
+      }
+    })
+  );
+  return deposits
+    .map((deposit) => {
+      const depositor = depositors.get(depositKey(deposit));
+      return isDefined(depositor) ? { ...deposit, depositor } : undefined;
+    })
+    .filter(isDefined);
+}
+
+async function getBinanceErc20Transfers(
+  provider: providers.Provider,
+  eventSearchConfig: EventSearchConfig,
+  tokenAddress: string,
+  recipient: string
+): Promise<Array<{ transactionHash: string; from: string }>> {
+  const token = new Contract(tokenAddress, ERC20_ABI, provider);
+  return (await paginatedEventQuery(token, token.filters.Transfer(null, recipient), eventSearchConfig)).map(
+    ({ transactionHash, args }) => ({ transactionHash, from: args?.from })
+  );
 }
 
 export function readableBinanceWithdrawalStatus(status?: number): string {

@@ -106,7 +106,7 @@ describe("Binance finalizer helpers", function () {
         insertTime: 3,
       },
     ];
-    const queryTransfers = sinon.stub().callsFake(async (_client, _token, recipient) => [
+    const queryTransfers = sinon.stub().callsFake(async (_provider, _eventConfig, _token, recipient) => [
       {
         transactionHash: recipient === deposits[0].address ? "l1" : "l2",
         from: recipient === deposits[0].address ? l1Depositor : l2Depositor,
@@ -174,7 +174,7 @@ describe("Binance finalizer helpers", function () {
     expect(queryTransfers.callCount).to.equal(0);
   });
 
-  it("fails closed when a native Binance deposit receipt cannot be resolved", async function () {
+  it("propagates receipt errors and fails closed when a native receipt is missing", async function () {
     const deposits: BinanceDeposit[] = [
       {
         amount: 10,
@@ -187,10 +187,14 @@ describe("Binance finalizer helpers", function () {
     ];
     const client = getDepositAttributionTestClient(CHAIN_IDs.MAINNET);
     client.provider.getTransactionReceipt = sinon.stub().rejects(new Error("RPC unavailable"));
+    await expect(
+      getOwnedBinanceDeposits(deposits, { [BINANCE_NETWORKS[CHAIN_IDs.MAINNET]]: client })
+    ).to.be.rejectedWith("RPC unavailable");
+
+    client.provider.getTransactionReceipt = sinon.stub().resolves(null);
     const ownedDeposits = await getOwnedBinanceDeposits(deposits, {
       [BINANCE_NETWORKS[CHAIN_IDs.MAINNET]]: client,
     });
-
     expect(ownedDeposits).to.deep.equal([]);
     expect(() => assertAllConfirmedBinanceDepositsAttributed([{ ...deposits[0], status: 1 }], ownedDeposits)).to.throw(
       "Cannot safely finalize 1 confirmed Binance deposit"
