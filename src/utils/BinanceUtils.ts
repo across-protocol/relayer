@@ -22,7 +22,6 @@ import ERC20_ABI from "../common/abi/MinimalERC20.json";
 let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
 const BINANCE_TRADES_FETCH_LIMIT = 1000;
-const BINANCE_RECEIPT_BATCH_SIZES = [50, 25];
 export const BINANCE_SWEEP_WITHDRAW_ORDER_ID_PREFIX = "across-finalizer-sweep-";
 
 // Binance only accepts a signed request while its timestamp remains within recvWindow.
@@ -164,10 +163,6 @@ export enum BINANCE_DEPOSIT_STATUS {
   WAITING_USER_CONFIRM = 8,
 }
 
-export function isTerminalFailedBinanceDeposit(status?: number): boolean {
-  return status === BINANCE_DEPOSIT_STATUS.REJECTED || status === BINANCE_DEPOSIT_STATUS.WRONG_DEPOSIT;
-}
-
 /** Attributes a same-network, same-coin deposit batch by ERC20 transfers, or by receipts for native tokens. */
 export async function getAttributedBinanceDeposits(
   deposits: BinanceDeposit[],
@@ -185,22 +180,18 @@ export async function getAttributedBinanceDeposits(
   const depositKey = ({ network, txId }: BinanceDeposit) => `${network}:${txId.toLowerCase()}`;
 
   if (isDefined(tokenAddress)) {
-    const groups = deposits.reduce<Map<string, BinanceDeposit[]>>((groups, deposit) => {
-      const key = deposit.address.toLowerCase();
-      const group = groups.get(key) ?? [];
-      group.push(deposit);
-      groups.set(key, group);
-      return groups;
-    }, new Map());
+    const groups = Object.values(Object.groupBy(deposits, ({ address }) => address.toLowerCase())).filter(isDefined);
     const logQueryCount = getPaginatedBlockRanges(eventSearchConfig).length;
     await Promise.all(
-      Array.from(groups.values()).map(async (group) => {
+      groups.map(async (group) => {
         // BSC's short log range can make pagination more expensive than one receipt per deposit.
         if (logQueryCount > group.length) {
           receiptDeposits.push(...group);
           return;
         }
-        const transfers = await queryErc20Transfers(provider, eventSearchConfig, tokenAddress, group[0].address);
+        const transfers = await queryErc20Transfers(provider, eventSearchConfig, tokenAddress, group[0].address).catch(
+          () => []
+        );
         const senders = new Map(transfers.map(({ transactionHash, from }) => [transactionHash.toLowerCase(), from]));
         group.forEach((deposit) => {
           const sender = senders.get(deposit.txId.toLowerCase());
@@ -216,7 +207,7 @@ export async function getAttributedBinanceDeposits(
     receiptDeposits.push(...deposits);
   }
 
-  for (const batchSize of BINANCE_RECEIPT_BATCH_SIZES) {
+  for (const batchSize of [50, 25]) {
     const unattributed = receiptDeposits.filter((deposit) => !depositors.has(depositKey(deposit)));
     for (const batch of chunk(unattributed, batchSize)) {
       await Promise.all(

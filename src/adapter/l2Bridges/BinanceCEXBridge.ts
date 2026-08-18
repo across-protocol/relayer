@@ -28,7 +28,7 @@ import {
   getOutstandingBinanceDeposits,
   isDefined,
   getAttributedBinanceDeposits,
-  isTerminalFailedBinanceDeposit,
+  BINANCE_DEPOSIT_STATUS,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -118,7 +118,8 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       return (
         deposit.network === this.depositNetwork &&
         deposit.coin === this.l1TokenInfo.symbol &&
-        !isTerminalFailedBinanceDeposit(deposit.status) &&
+        deposit.status !== BINANCE_DEPOSIT_STATUS.REJECTED &&
+        deposit.status !== BINANCE_DEPOSIT_STATUS.WRONG_DEPOSIT &&
         depositType !== BinanceTransactionType.SWAP
       );
     });

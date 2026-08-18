@@ -11,7 +11,6 @@ import {
   bnZero,
   getTokenInfo,
   getTokenInfoFromSymbol,
-  groupObjectCountsByProp,
   isEVMSpokePoolClient,
   assert,
   EvmAddress,
@@ -100,6 +99,10 @@ export async function binanceFinalizer(
       tokensToFinalize,
     ])
   );
+  const configuredSymbols = new Set(Object.values(senderAddresses).flat());
+  if (configuredSymbols.size === 0) {
+    return { callData: [], crossChainMessages: [] };
+  }
   const hubChainId = l1SpokePoolClient.chainId;
   const l2ChainId = l2SpokePoolClient.chainId;
   const l1EventSearchConfig = l1SpokePoolClient.eventSearchConfig;
@@ -128,7 +131,10 @@ export async function binanceFinalizer(
     return true;
   });
   const supportedNetworks = new Set([BINANCE_NETWORKS[hubChainId], BINANCE_NETWORKS[l2ChainId]]);
-  const supportedBinanceBridgeDeposits = _binanceBridgeDeposits.filter(({ network }) => supportedNetworks.has(network));
+  const supportedBinanceBridgeDeposits = _binanceBridgeDeposits.filter(
+    ({ coin, network, status }) =>
+      configuredSymbols.has(coin) && supportedNetworks.has(network) && status === BINANCE_DEPOSIT_STATUS.CONFIRMED
+  );
 
   const ownedBinanceBridgeDeposits = await dependencies.getOwnedBinanceDeposits(supportedBinanceBridgeDeposits, {
     [BINANCE_NETWORKS[hubChainId]]: {
@@ -149,28 +155,14 @@ export async function binanceFinalizer(
     },
   });
   assertAllConfirmedBinanceDepositsAttributed(supportedBinanceBridgeDeposits, ownedBinanceBridgeDeposits);
-  const statusesGrouped = groupObjectCountsByProp(ownedBinanceBridgeDeposits, (deposit: { status: number }) => {
-    switch (deposit.status) {
-      case BINANCE_DEPOSIT_STATUS.CONFIRMED:
-        return "ready-to-finalize";
-      case BINANCE_DEPOSIT_STATUS.REJECTED:
-        return "deposit-rejected";
-      case BINANCE_DEPOSIT_STATUS.WRONG_DEPOSIT:
-        return "wrong-deposit";
-      default:
-        return "waiting-to-finalize";
-    }
-  });
   logger.debug({
     at: "BinanceFinalizer",
     message: `Found ${ownedBinanceBridgeDeposits.length} attributable historical Binance deposits.`,
-    statusesGrouped,
+    statusesGrouped: { "ready-to-finalize": ownedBinanceBridgeDeposits.length },
     fromTimestamp: fromTimestamp,
     unattributedDeposits: supportedBinanceBridgeDeposits.length - ownedBinanceBridgeDeposits.length,
   });
-  const binanceDeposits = ownedBinanceBridgeDeposits.filter(
-    (deposit) => deposit.status === BINANCE_DEPOSIT_STATUS.CONFIRMED
-  );
+  const binanceDeposits = ownedBinanceBridgeDeposits;
   // Reserve all credited deposits, including ones whose receipt could not be resolved, so unattributed funds cannot
   // become sweepable merely because an RPC lookup failed.
   const creditedDeposits = _binanceBridgeDeposits.filter(
@@ -268,7 +260,6 @@ export async function binanceFinalizer(
         let amountToFinalize = _amountToFinalize.gt(bnZero) ? Number(formatUnits(_amountToFinalize, l1Decimals)) : 0;
         remainingAttributedBalances[symbol] = (remainingAttributedBalances[symbol] ?? 0) + amountToFinalize;
         const pendingRebalanceDeduction = pendingBinanceRebalanceDeductions[resolveBinanceCoinSymbol(symbol)] ?? 0;
-
         logger.debug({
           at: "BinanceFinalizer",
           message: `(X -> ${withdrawNetwork}) ${symbol} withdrawals for ${address}.`,
@@ -338,9 +329,6 @@ export async function binanceFinalizer(
     }
   }
 
-  // Sweep only after attributable finalizations consume their balances. Configuration order selects the first EOA
-  // authorizing each symbol.
-  const configuredSymbols = new Set(Object.values(senderAddresses).flat());
   for (const symbol of configuredSymbols) {
     const coin = accountCoins.find((coin) => coin.symbol === symbol);
     const networkLimits = coin?.networkList.find((network) => network.name === BINANCE_NETWORKS[hubChainId]);
@@ -368,7 +356,8 @@ export async function binanceFinalizer(
     if (amountToSweep < Number(networkLimits.withdrawMin)) {
       continue;
     }
-    const sweepRecipient = getBinanceSweepRecipient(senderAddresses, symbol);
+    const sweepRecipient = Object.entries(senderAddresses).find(([_address, symbols]) => symbols.includes(symbol))?.[0];
+    assert(isDefined(sweepRecipient));
     const withdrawalId = await dependencies.submitBinanceWithdrawal(binanceApi, {
       coin: symbol,
       address: sweepRecipient,
@@ -395,20 +384,15 @@ export async function getOwnedBinanceDeposits(
   clientsByNetwork: Record<string, DepositAttributionClient>,
   queryErc20Transfers?: QueryBinanceErc20Transfers
 ): Promise<AttributedBinanceDeposit[]> {
-  const groups = deposits.reduce<Map<string, BinanceDeposit[]>>((groups, deposit) => {
-    const client = clientsByNetwork[deposit.network];
-    if (!isDefined(client)) {
-      return groups;
-    }
-    const key = `${deposit.network}:${deposit.coin}`;
-    const group = groups.get(key) ?? [];
-    group.push(deposit);
-    groups.set(key, group);
-    return groups;
-  }, new Map());
+  const groups = Object.values(
+    Object.groupBy(
+      deposits.filter(({ network }) => isDefined(clientsByNetwork[network])),
+      ({ network, coin }) => `${network}:${coin}`
+    )
+  ).filter(isDefined);
   return (
     await Promise.all(
-      Array.from(groups.values()).map((group) => {
+      groups.map((group) => {
         const client = clientsByNetwork[group[0].network];
         const tokenAddress =
           group[0].coin === "ETH" && client.chainId === CHAIN_IDs.MAINNET
@@ -439,12 +423,6 @@ export function assertAllConfirmedBinanceDepositsAttributed(
     unattributed.length === 0,
     `Cannot safely finalize ${unattributed.length} confirmed Binance deposit(s) without depositor attribution`
   );
-}
-
-export function getBinanceSweepRecipient(senderAddresses: Record<string, string[]>, symbol: string): string {
-  const recipient = Object.entries(senderAddresses).find(([_address, symbols]) => symbols.includes(symbol))?.[0];
-  assert(isDefined(recipient), `No finalizer withdrawal address configured for ${symbol}`);
-  return EvmAddress.from(recipient).toNative();
 }
 
 export function getSweepableOrphanBinanceBalance(
