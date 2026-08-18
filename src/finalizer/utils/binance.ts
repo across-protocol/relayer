@@ -127,8 +127,10 @@ export async function binanceFinalizer(
     }
     return true;
   });
+  const supportedNetworks = new Set([BINANCE_NETWORKS[hubChainId], BINANCE_NETWORKS[l2ChainId]]);
+  const supportedBinanceBridgeDeposits = _binanceBridgeDeposits.filter(({ network }) => supportedNetworks.has(network));
 
-  const ownedBinanceBridgeDeposits = await dependencies.getOwnedBinanceDeposits(_binanceBridgeDeposits, {
+  const ownedBinanceBridgeDeposits = await dependencies.getOwnedBinanceDeposits(supportedBinanceBridgeDeposits, {
     [BINANCE_NETWORKS[hubChainId]]: {
       chainId: hubChainId,
       provider: l1SpokePoolClient.spokePool.provider,
@@ -146,7 +148,7 @@ export async function binanceFinalizer(
       },
     },
   });
-  assertAllConfirmedBinanceDepositsAttributed(_binanceBridgeDeposits, ownedBinanceBridgeDeposits);
+  assertAllConfirmedBinanceDepositsAttributed(supportedBinanceBridgeDeposits, ownedBinanceBridgeDeposits);
   const statusesGrouped = groupObjectCountsByProp(ownedBinanceBridgeDeposits, (deposit: { status: number }) => {
     switch (deposit.status) {
       case BINANCE_DEPOSIT_STATUS.CONFIRMED:
@@ -164,7 +166,7 @@ export async function binanceFinalizer(
     message: `Found ${ownedBinanceBridgeDeposits.length} attributable historical Binance deposits.`,
     statusesGrouped,
     fromTimestamp: fromTimestamp,
-    unattributedDeposits: _binanceBridgeDeposits.length - ownedBinanceBridgeDeposits.length,
+    unattributedDeposits: supportedBinanceBridgeDeposits.length - ownedBinanceBridgeDeposits.length,
   });
   const binanceDeposits = ownedBinanceBridgeDeposits.filter(
     (deposit) => deposit.status === BINANCE_DEPOSIT_STATUS.CONFIRMED
@@ -182,15 +184,20 @@ export async function binanceFinalizer(
   );
 
   const coinBalances = Object.fromEntries(accountCoins.map((coin) => [coin.symbol, Number(coin.balance)]));
-  const remainingAttributedBalances = binanceDeposits.reduce<Record<string, number>>((balances, deposit) => {
+  const remainingAttributedBalances = _binanceBridgeDeposits
+    .filter(({ network, status }) => status === BINANCE_DEPOSIT_STATUS.CONFIRMED && !supportedNetworks.has(network))
+    .reduce<Record<string, number>>((balances, deposit) => {
+      balances[deposit.coin] = (balances[deposit.coin] ?? 0) + deposit.amount;
+      return balances;
+    }, {});
+  binanceDeposits.forEach((deposit) => {
     const authorized = Object.entries(senderAddresses).some(
       ([address, symbols]) => symbols.includes(deposit.coin) && compareAddressesSimple(address, deposit.depositor)
     );
     if (!authorized) {
-      balances[deposit.coin] = (balances[deposit.coin] ?? 0) + deposit.amount;
+      remainingAttributedBalances[deposit.coin] = (remainingAttributedBalances[deposit.coin] ?? 0) + deposit.amount;
     }
-    return balances;
-  }, {});
+  });
   const withdrawalsBySymbol = new Map<string, Awaited<ReturnType<typeof getBinanceWithdrawals>>>();
 
   // All EOAs consume the same Binance balances, so process them serially and decrement one shared balance per coin.

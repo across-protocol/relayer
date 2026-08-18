@@ -14,7 +14,7 @@ import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, CHAIN_IDs, trunca
 import { getRedisCache } from "../cache/Redis";
 import { CONTRACT_ADDRESSES, isJsonAbi } from "../common";
 import { BigNumber } from "./BNUtils";
-import { EvmAddress, fromWei, retry, toBNWei } from "./SDKUtils";
+import { chunk, EvmAddress, fromWei, retry, toBNWei } from "./SDKUtils";
 import { EventSearchConfig, getPaginatedBlockRanges, paginatedEventQuery } from "./EventUtils";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
@@ -22,6 +22,7 @@ import ERC20_ABI from "../common/abi/MinimalERC20.json";
 let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
 const BINANCE_TRADES_FETCH_LIMIT = 1000;
+const BINANCE_RECEIPT_BATCH_SIZES = [50, 25];
 export const BINANCE_SWEEP_WITHDRAW_ORDER_ID_PREFIX = "across-finalizer-sweep-";
 
 // Binance only accepts a signed request while its timestamp remains within recvWindow.
@@ -205,6 +206,8 @@ export async function getAttributedBinanceDeposits(
           const sender = senders.get(deposit.txId.toLowerCase());
           if (isDefined(sender)) {
             depositors.set(depositKey(deposit), EvmAddress.from(sender).toNative());
+          } else {
+            receiptDeposits.push(deposit);
           }
         });
       })
@@ -213,14 +216,22 @@ export async function getAttributedBinanceDeposits(
     receiptDeposits.push(...deposits);
   }
 
-  await Promise.all(
-    receiptDeposits.map(async (deposit) => {
-      const receipt = await provider.getTransactionReceipt(deposit.txId);
-      if (isDefined(receipt) && ethersUtils.isAddress(receipt.from)) {
-        depositors.set(depositKey(deposit), EvmAddress.from(receipt.from).toNative());
-      }
-    })
-  );
+  for (const batchSize of BINANCE_RECEIPT_BATCH_SIZES) {
+    const unattributed = receiptDeposits.filter((deposit) => !depositors.has(depositKey(deposit)));
+    for (const batch of chunk(unattributed, batchSize)) {
+      await Promise.all(
+        batch.map(async (deposit) => {
+          const receipt = await provider.getTransactionReceipt(deposit.txId);
+          if (isDefined(receipt) && ethersUtils.isAddress(receipt.from)) {
+            depositors.set(depositKey(deposit), EvmAddress.from(receipt.from).toNative());
+          }
+        })
+      );
+    }
+    if (unattributed.every((deposit) => depositors.has(depositKey(deposit)))) {
+      break;
+    }
+  }
   return deposits
     .map((deposit) => {
       const depositor = depositors.get(depositKey(deposit));
