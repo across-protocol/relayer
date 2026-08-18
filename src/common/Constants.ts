@@ -761,13 +761,12 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
  * reachability or per-coin withdrawal status; a future change may layer a `getAccountCoins()` snapshot
  * over this static check.
  */
-export function isBinanceRoute(chainId: number, l1Token: Address): boolean {
+export function hasBinanceRoute(chainId: number, l1Token: Address): boolean {
+  if (!binanceCredentialsConfigured()) {
+    return false;
+  }
   const bridge = CUSTOM_L2_BRIDGE[chainId]?.[l1Token.toNative()] ?? CANONICAL_L2_BRIDGE[chainId];
   return bridge === L2BinanceCEXBridge || bridge === L2BinanceCEXNativeBridge;
-}
-
-export function hasBinanceRoute(chainId: number, l1Token: Address): boolean {
-  return binanceCredentialsConfigured() && isBinanceRoute(chainId, l1Token);
 }
 
 // Path to the external SpokePool indexer. Must be updated if src/libexec/* files are relocated or if the `outputDir` on TSC has been modified.

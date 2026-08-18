@@ -38,10 +38,11 @@ import {
   EventSearchConfig,
   Provider,
   BINANCE_DEPOSIT_STATUS,
+  getProvider,
+  getBlockForTimestamp,
 } from "../../utils";
-import { EVMSpokePoolClient, HubPoolClient, SpokePoolClient } from "../../clients";
-import { isBinanceRoute } from "../../common";
-import { SpokePoolClientsByChain } from "../../interfaces";
+import { HubPoolClient, SpokePoolClient } from "../../clients";
+import { CHAIN_MAX_BLOCK_LOOKBACK, hasBinanceRoute } from "../../common";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
 import { constructAdapter } from "../../rebalancer/RebalancerClientHelper";
 
@@ -63,7 +64,9 @@ export type BinanceFinalizerDependencies = {
   getBinanceWithdrawals: typeof getBinanceWithdrawals;
   getBinanceWithdrawalType: typeof getBinanceWithdrawalType;
   getTimestampForBlock: typeof getTimestampForBlock;
-  isBinanceRoute: typeof isBinanceRoute;
+  getBlockForTimestamp: typeof getBlockForTimestamp;
+  getProvider: typeof getProvider;
+  hasBinanceRoute: typeof hasBinanceRoute;
   isEVMSpokePoolClient: typeof isEVMSpokePoolClient;
   submitBinanceWithdrawal: typeof submitBinanceWithdrawal;
 };
@@ -77,7 +80,9 @@ const defaultDependencies: BinanceFinalizerDependencies = {
   getBinanceWithdrawals,
   getBinanceWithdrawalType,
   getTimestampForBlock,
-  isBinanceRoute,
+  getBlockForTimestamp,
+  getProvider,
+  hasBinanceRoute,
   isEVMSpokePoolClient,
   submitBinanceWithdrawal,
 };
@@ -93,7 +98,6 @@ export async function binanceFinalizer(
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
   _senderAddresses: AddressesToFinalize,
-  spokePoolClients: SpokePoolClientsByChain,
   dependencies: BinanceFinalizerDependencies = defaultDependencies
 ): Promise<FinalizerPromise> {
   assert(dependencies.isEVMSpokePoolClient(l1SpokePoolClient) && dependencies.isEVMSpokePoolClient(l2SpokePoolClient));
@@ -135,41 +139,40 @@ export async function binanceFinalizer(
     }
     return true;
   });
-  const clientsByNetwork = Object.values(spokePoolClients)
-    .filter(dependencies.isEVMSpokePoolClient)
-    .reduce<Record<string, EVMSpokePoolClient>>((clients, client) => {
-      const network = BINANCE_NETWORKS[client.chainId];
-      if (isDefined(network)) {
-        clients[network] = client;
-      }
-      return clients;
-    }, {});
+  const chainIdsByNetwork = Object.fromEntries(
+    Object.entries(BINANCE_NETWORKS).map(([chainId, network]) => [network, Number(chainId)])
+  );
   const supportedBinanceBridgeDeposits = _binanceBridgeDeposits.filter(({ coin, network, status }) => {
-    const client = clientsByNetwork[network];
+    const chainId = chainIdsByNetwork[network];
     return (
       configuredSymbols.has(coin) &&
       status === BINANCE_DEPOSIT_STATUS.CONFIRMED &&
-      isDefined(client) &&
-      (client.chainId === hubChainId ||
-        dependencies.isBinanceRoute(client.chainId, EvmAddress.from(resolveAcrossToken(coin, hubChainId, true))))
+      isDefined(chainId) &&
+      (chainId === hubChainId ||
+        dependencies.hasBinanceRoute(chainId, EvmAddress.from(resolveAcrossToken(coin, hubChainId, true))))
     );
   });
+  const networks = new Set(supportedBinanceBridgeDeposits.map(({ network }) => network));
+  const clientsByNetwork = Object.fromEntries(
+    await Promise.all(
+      Array.from(networks).map(async (network) => {
+        const chainId = chainIdsByNetwork[network];
+        const provider = await dependencies.getProvider(chainId);
+        const [from, to] = await Promise.all([
+          dependencies.getBlockForTimestamp(logger, chainId, _fromTimestamp),
+          provider.getBlockNumber(),
+        ]);
+        return [
+          network,
+          { chainId, provider, eventSearchConfig: { from, to, maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[chainId] } },
+        ];
+      })
+    )
+  );
 
   const ownedBinanceBridgeDeposits = await dependencies.getOwnedBinanceDeposits(
     supportedBinanceBridgeDeposits,
-    Object.fromEntries(
-      Object.entries(clientsByNetwork).map(([network, client]) => [
-        network,
-        {
-          chainId: client.chainId,
-          provider: client.spokePool.provider,
-          eventSearchConfig: {
-            ...client.eventSearchConfig,
-            to: client.eventSearchConfig.to ?? client.latestHeightSearched,
-          },
-        },
-      ])
-    )
+    clientsByNetwork
   );
   assertAllConfirmedBinanceDepositsAttributed(supportedBinanceBridgeDeposits, ownedBinanceBridgeDeposits);
   logger.debug({
