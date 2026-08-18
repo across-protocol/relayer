@@ -27,6 +27,7 @@ import {
   BinanceTransactionType,
   getBinanceWithdrawalType,
   isCompletedBinanceWithdrawal,
+  isBinanceSweepWithdrawal,
   toAddressType,
 } from "../../utils";
 import { BaseBridgeAdapter, BridgeTransactionDetails, BridgeEvents, BridgeEvent } from "./BaseBridgeAdapter";
@@ -163,7 +164,8 @@ export class BinanceCEXBridge extends BaseBridgeAdapter {
         isCompletedBinanceWithdrawal(withdrawal.status) &&
         withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.BSC] &&
         compareAddressesSimple(withdrawal.recipient, toAddress.toNative()) &&
-        withdrawalType !== BinanceTransactionType.SWAP
+        withdrawalType !== BinanceTransactionType.SWAP &&
+        !isBinanceSweepWithdrawal(withdrawal)
       );
     });
     const l2TokenAddress = this.resolveL2TokenAddress(l1Token);
