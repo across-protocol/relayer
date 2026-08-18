@@ -116,3 +116,29 @@ export const FIXTURES: Fixture[] = [
     note: "still inside the 7-day window at time of recording",
   },
 ];
+
+/**
+ * Oracle fixtures for the non-OP families. Each pins a value that was verified on-chain, and each
+ * pair deliberately includes a true AND a false case so a stuck-at-one-value oracle cannot pass.
+ */
+export type OracleFixture =
+  | { kind: "polygon"; label: string; block: number; txIndex: number; logIndex: number; expect: boolean }
+  | { kind: "linea"; label: string; messageNumber: number; expect: boolean }
+  | { kind: "zksync"; label: string; chainId: number; batch: number; index: number; expect: boolean }
+  | { kind: "orbit-classic"; label: string; batchNumber: number; expect: boolean };
+
+export const ORACLE_FIXTURES: OracleFixture[] = [
+  // Polygon: proves the exit key is derivable offline from (block, txIndex, receiptLogIndex).
+  { kind: "polygon", label: "processed exit (block 92225980, tx 0, log 0)", block: 92225980, txIndex: 0, logIndex: 0, expect: true },
+  { kind: "polygon", label: "bogus exit (block 1, tx 0, log 0)", block: 1, txIndex: 0, logIndex: 0, expect: false },
+
+  // Linea: guards against reverting to inboxL2L1MessageStatus, which returns 0 for everything.
+  { kind: "linea", label: "message 108140 claimed", messageNumber: 108140, expect: true },
+  { kind: "linea", label: "message 108139 claimed", messageNumber: 108139, expect: true },
+  { kind: "linea", label: "message 108141 unclaimed", messageNumber: 108141, expect: false },
+
+  // zkSync: chainId is part of the key, so a wrong chainId must read false.
+  { kind: "zksync", label: "(324, 514000, 5) finalized", chainId: 324, batch: 514000, index: 5, expect: true },
+  { kind: "zksync", label: "(324, 514000, 4) not finalized", chainId: 324, batch: 514000, index: 4, expect: false },
+  { kind: "zksync", label: "(300, 514000, 5) wrong chain", chainId: 300, batch: 514000, index: 5, expect: false },
+];

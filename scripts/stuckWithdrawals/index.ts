@@ -18,8 +18,14 @@ import {
   opFinalized,
   opProofSubmitter,
   opProvenAt,
+  orbitNitroSpent,
   orbitSpent,
   legacyRelayed,
+  polygonExitHash,
+  polygonExitProcessed,
+  polygonLastCheckpointedBlock,
+  lineaMessageClaimed,
+  zkWithdrawalFinalized,
   Control,
 } from "./oracles";
 import {
@@ -27,11 +33,12 @@ import {
   scanOpLegacy,
   scanOrbit,
   scanTokensBridged,
+  scanPolygonBurns,
   Candidate,
   Coverage,
 
 } from "./scanners";
-import { FIXTURES } from "./fixtures";
+import { FIXTURES, ORACLE_FIXTURES } from "./fixtures";
 
 const args = parseArgs(process.argv.slice(2));
 
@@ -90,6 +97,36 @@ async function verifyFixtures(): Promise<number> {
         f.note ? `\n        (${f.note})` : ""
       }`
     );
+  }
+
+  // --- non-OP oracle fixtures ---------------------------------------------------------
+  for (const f of ORACLE_FIXTURES) {
+    let actual: boolean | undefined;
+    try {
+      if (f.kind === "polygon") {
+        const cfg = chainById(137);
+        actual = cfg.l1.rootChainManager
+          ? await polygonExitProcessed(l1, cfg.l1.rootChainManager, polygonExitHash(f.block, f.txIndex, f.logIndex))
+          : undefined;
+      } else if (f.kind === "linea") {
+        const cfg = chainById(59144);
+        actual = cfg.l1.l1Messenger ? await lineaMessageClaimed(l1, cfg.l1.l1Messenger, f.messageNumber) : undefined;
+      } else if (f.kind === "zksync") {
+        const cfg = chainById(324);
+        actual = cfg.l1.l1Nullifier
+          ? await zkWithdrawalFinalized(l1, cfg.l1.l1Nullifier, f.chainId, f.batch, f.index)
+          : undefined;
+      }
+    } catch (e) {
+      actual = undefined;
+    }
+    if (actual === undefined) {
+      console.log(`  SKIP  [${f.kind}] ${f.label}: oracle not configured`);
+      continue;
+    }
+    const ok = actual === f.expect;
+    if (!ok) fails++;
+    console.log(`  ${ok ? "PASS" : "FAIL"}  [${f.kind}] ${f.label}  expected=${f.expect} got=${actual}`);
   }
 
   // The fixture set deliberately contains both outcomes; assert that, else a stuck-at-false
@@ -222,8 +259,54 @@ async function scanChain(
       const r = await scanOrbit(l2, cfg, start, end, { classic, chunk });
       coverage.push(r.coverage);
       for (const c of r.candidates) {
-        const { spent } = await orbitSpent(l1, cfg.l1.outbox ?? [], c.key);
-        findings.push({ ...c, finalized: (cfg.l1.outbox ?? []).length ? spent : "unknown" });
+        if (classic) {
+          // Deliberately NOT resolved against the Nitro outbox. The index spaces overlap
+          // numerically, so a cross-era isSpent() returns plausible garbage in both directions
+          // (measured: false negative on the real position, false positives on neighbours).
+          // Classic status needs outboxEntryExists(batchNumber) + L1 OutBoxTransactionExecuted logs.
+          findings.push({ ...c, finalized: "unknown" });
+          continue;
+        }
+        const nitro = (cfg.l1.outbox ?? [])[0];
+        const { spent } = nitro ? await orbitNitroSpent(l1, nitro, c.key) : { spent: false };
+        findings.push({ ...c, finalized: nitro ? spent : "unknown" });
+      }
+      if (classic && r.candidates.length)
+        warnings.push(
+          `${cfg.name}: ${r.candidates.length} pre-Nitro candidate(s) left UNRESOLVED by design — resolve via outboxEntryExists + L1 OutBoxTransactionExecuted logs`
+        );
+    } else if (fam === "polygon-pos") {
+      const tokens = String(args.tokens ?? "")
+        .split(",")
+        .map((t) => t.trim())
+        .filter((t) => t.length === 42);
+      if (!tokens.length) {
+        warnings.push(`${cfg.name}: polygon-pos needs --tokens <csv of child token addresses>`);
+        continue;
+      }
+      const checkpointed = cfg.l1.rootChain
+        ? await polygonLastCheckpointedBlock(l1, cfg.l1.rootChain)
+        : undefined;
+      const r = await scanPolygonBurns(l2, cfg, tokens, from, head, chunk);
+      coverage.push(...r.coverage);
+      for (const c of r.candidates) {
+        const txIndex = Number(c.extra?.txIndex);
+        const logIdx = c.extra?.receiptLogIndex !== undefined ? Number(c.extra.receiptLogIndex) : undefined;
+        // Not a PoS exit unless the tx actually called withdraw/withdrawTo (OFT sends also burn).
+        if (c.extra?.isWithdrawCall === "false") continue;
+        let finalized: boolean | "unknown" = "unknown";
+        if (cfg.l1.rootChainManager && Number.isFinite(txIndex) && logIdx !== undefined) {
+          const h = polygonExitHash(c.l2Block, txIndex, logIdx);
+          finalized = await polygonExitProcessed(l1, cfg.l1.rootChainManager, h);
+          c.extra = { ...c.extra, exitHash: h };
+        }
+        // A burn whose block is not yet checkpointed cannot be exited; do not call it stuck.
+        if (finalized === false && checkpointed !== undefined && c.l2Block > checkpointed) {
+          c.extra = { ...c.extra, awaitingCheckpoint: "true", lastCheckpointedBlock: String(checkpointed) };
+          findings.push({ ...c, finalized: "unknown" });
+          continue;
+        }
+        findings.push({ ...c, finalized });
       }
     }
   }

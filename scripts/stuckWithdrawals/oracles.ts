@@ -216,17 +216,52 @@ export async function assertLegacyDiscriminates(
 // ---------------------------------------------------------------------------
 // Orbit
 // ---------------------------------------------------------------------------
-/** Checks every known Outbox (Nitro + classic); spent in any one means claimed. */
+/**
+ * Nitro-era claim check. MUST be era-routed — do NOT fan out across classic outboxes.
+ *
+ * The classic and Nitro index spaces overlap numerically, so querying the wrong outbox returns
+ * plausible garbage rather than an error. Measured on a real classic withdrawal
+ * (uniqueId 81359, batchNumber 15531): NitroOutbox.isSpent(81359) = false (false negative),
+ * isSpent(15531) = true and isSpent(81360) = true (false positives). Route strictly on
+ * Arbitrum block 22207817.
+ */
+export async function orbitNitroSpent(
+  l1: ethers.providers.JsonRpcProvider,
+  nitroOutbox: string,
+  position: ethers.BigNumberish
+): Promise<{ spent: boolean; via?: string }> {
+  const key = pad32(ethers.utils.hexlify(ethers.BigNumber.from(position)));
+  if (isTrue(await ethCall(l1, nitroOutbox, SELECTORS.isSpent + key)))
+    return { spent: true, via: nitroOutbox };
+  return { spent: false };
+}
+
+/**
+ * Classic (pre-Nitro) claim check. `isSpent` DOES NOT EXIST on the classic outboxes — it reverts,
+ * which ethCall swallows into `undefined`, i.e. a silent "not claimed" for every query. Use
+ * outboxEntryExists(batchNumber) plus L1 OutBoxTransactionExecuted logs instead.
+ *
+ * Classic claims are still arriving: 481 OutBoxTransactionExecuted on Outbox2 in the last 500k L1
+ * blocks, for batch numbers as low as 881. An L2ToL1Tx-only scan sees none of it.
+ */
+export async function orbitClassicEntryExists(
+  l1: ethers.providers.JsonRpcProvider,
+  classicOutbox: string,
+  batchNumber: ethers.BigNumberish
+): Promise<boolean> {
+  const sel = ethers.utils.id("outboxEntryExists(uint256)").slice(0, 10);
+  return isTrue(
+    await ethCall(l1, classicOutbox, sel + pad32(ethers.utils.hexlify(ethers.BigNumber.from(batchNumber))))
+  );
+}
+
+/** Back-compat shim for the fixture harness; Nitro only. */
 export async function orbitSpent(
   l1: ethers.providers.JsonRpcProvider,
   outboxes: string[],
   position: ethers.BigNumberish
 ): Promise<{ spent: boolean; via?: string }> {
-  const key = pad32(ethers.utils.hexlify(ethers.BigNumber.from(position)));
-  for (const o of outboxes) {
-    if (isTrue(await ethCall(l1, o, SELECTORS.isSpent + key))) return { spent: true, via: o };
-  }
-  return { spent: false };
+  return outboxes.length ? orbitNitroSpent(l1, outboxes[0], position) : { spent: false };
 }
 
 export async function assertOrbitDiscriminates(
@@ -248,15 +283,73 @@ export async function assertOrbitDiscriminates(
 // Polygon PoS
 // ---------------------------------------------------------------------------
 /**
- * Honest limitation. A PoS exit is keyed on a Merkle proof of the burn receipt against a
- * checkpointed block root; the key for RootChainManager.processedExits() cannot be derived
- * from the burn log alone without building that proof. So this returns `unknown` and the
- * scanner falls back to reconciliation: match burn amounts on L2 against
- * predicate-exit transfers on L1. Treat Polygon output as "candidates needing review",
- * not as a definitive stuck list.
+ * Polygon PoS exit key — computable entirely offline from the burn receipt.
+ *
+ * exitHash = keccak256(abi.encodePacked(uint256 l2BlockNumber,
+ *                                      bytes nibbles(rlp(txIndex)),
+ *                                      uint256 receiptLocalLogIndex))
+ *
+ * `branchMask` in the exit payload is just the HP-encoded receipts-trie key, which is
+ * rlp(txIndex) — so no Merkle proof and no proof-generator API is needed to DETECT an
+ * unclaimed exit (you still need the proof to SUBMIT one).
+ *
+ * Verified: (92225980, txIdx 0, logIdx 0) -> 0xdd87f9ea… -> processedExits = true, with a
+ * zero-key negative control returning false.
+ *
+ * CAVEAT: receiptLogIndex is the index within THAT RECEIPT's log array, not the block-global
+ * logIndex. Every verified sample had 0, so the nonzero case is structurally certain but not
+ * empirically confirmed.
  */
-export async function polygonExitStatus(): Promise<"unknown"> {
-  return "unknown";
+export function polygonNibbles(buf: Uint8Array): string {
+  const out: number[] = [];
+  for (const b of buf) out.push(b >> 4, b & 0x0f);
+  return ethers.utils.hexlify(Uint8Array.from(out));
+}
+
+export function polygonExitHash(l2BlockNumber: number, txIndex: number, receiptLogIndex: number): string {
+  const key = ethers.utils.arrayify(
+    ethers.utils.RLP.encode(txIndex === 0 ? "0x" : ethers.utils.hexlify(txIndex))
+  );
+  return ethers.utils.solidityKeccak256(
+    ["uint256", "bytes", "uint256"],
+    [l2BlockNumber, polygonNibbles(key), receiptLogIndex]
+  );
+}
+
+export async function polygonExitProcessed(
+  l1: ethers.providers.JsonRpcProvider,
+  rootChainManager: string,
+  exitHash: string
+): Promise<boolean> {
+  return isTrue(await ethCall(l1, rootChainManager, SELECTORS.processedExits + pad32(exitHash)));
+}
+
+/**
+ * Polygon checkpoint gate. A burn cannot be exited until its L2 block is checkpointed, and the
+ * lag runs 15-40 minutes. Without this gate every recent burn reads as "stuck".
+ */
+export async function polygonLastCheckpointedBlock(
+  l1: ethers.providers.JsonRpcProvider,
+  rootChain: string
+): Promise<number | undefined> {
+  const ret = await ethCall(l1, rootChain, ethers.utils.id("getLastChildBlock()").slice(0, 10));
+  return ret === undefined ? undefined : Number(BigInt(ret));
+}
+
+export async function assertPolygonDiscriminates(
+  l1: ethers.providers.JsonRpcProvider,
+  rootChainManager: string,
+  knownProcessed: { block: number; txIndex: number; logIndex: number }
+): Promise<Control> {
+  const neg = (await polygonExitProcessed(l1, rootChainManager, ethers.constants.HashZero)) ? "fail" : "pass";
+  const pos = (await polygonExitProcessed(
+    l1,
+    rootChainManager,
+    polygonExitHash(knownProcessed.block, knownProcessed.txIndex, knownProcessed.logIndex)
+  ))
+    ? "pass"
+    : "fail";
+  return { ok: neg === "pass" && pos === "pass", positive: pos, negative: neg, detail: "processedExits round trip" };
 }
 
 export async function polygonExitedAmounts(
@@ -302,6 +395,19 @@ export async function zkWithdrawalFinalized(
   return isTrue(await ethCall(l1, l1Nullifier, sel + args));
 }
 
+/** Scroll L2->L1 message key: keccak(relayMessage selector ++ abi.encode(sender,target,value,nonce,message)). */
+export function scrollMessageHash(
+  sender: string, target: string, value: ethers.BigNumberish,
+  messageNonce: ethers.BigNumberish, message: string
+): string {
+  const iface = new ethers.utils.Interface([
+    "function relayMessage(address from, address to, uint256 value, uint256 nonce, bytes message)",
+  ]);
+  return ethers.utils.keccak256(
+    iface.encodeFunctionData("relayMessage", [sender, target, value, messageNonce, message])
+  );
+}
+
 export async function scrollExecuted(
   l1: ethers.providers.JsonRpcProvider,
   l1Messenger: string,
@@ -311,14 +417,39 @@ export async function scrollExecuted(
   return isTrue(await ethCall(l1, l1Messenger, sel + pad32(messageHash)));
 }
 
-export async function lineaClaimed(
+/**
+ * Linea claim check.
+ *
+ * DO NOT USE inboxL2L1MessageStatus(bytes32). It exists and is callable but returns 0 for every
+ * real message, including confirmed-claimed ones — it is the dead pre-Merkle-proof path, and its
+ * output is indistinguishable from a random hash. That is a silent all-stuck oracle.
+ *
+ * The live oracle is a nonce-keyed bitmap: isMessageClaimed(uint256 _messageNumber), keyed on the
+ * `_nonce` field of the L2 MessageSent event. Verified: 108140 = true, 108139 = true,
+ * 108141 = false, 99999999 = false.
+ */
+export async function lineaMessageClaimed(
   l1: ethers.providers.JsonRpcProvider,
-  l1Messenger: string,
-  messageHash: string
-): Promise<number | undefined> {
-  const sel = ethers.utils.id("inboxL2L1MessageStatus(bytes32)").slice(0, 10);
-  const ret = await ethCall(l1, l1Messenger, sel + pad32(messageHash));
-  return ret === undefined ? undefined : Number(BigInt(ret));
+  lineaRollup: string,
+  messageNumber: ethers.BigNumberish
+): Promise<boolean> {
+  const sel = ethers.utils.id("isMessageClaimed(uint256)").slice(0, 10);
+  return isTrue(
+    await ethCall(l1, lineaRollup, sel + pad32(ethers.utils.hexlify(ethers.BigNumber.from(messageNumber))))
+  );
+}
+
+/** Linea message hash, verified byte-identical to the on-chain MessageClaimed topic1. */
+export function lineaMessageHash(
+  from: string, to: string, fee: ethers.BigNumberish, value: ethers.BigNumberish,
+  nonce: ethers.BigNumberish, calldata: string
+): string {
+  return ethers.utils.keccak256(
+    ethers.utils.defaultAbiCoder.encode(
+      ["address", "address", "uint256", "uint256", "uint256", "bytes"],
+      [from, to, fee, value, nonce, calldata]
+    )
+  );
 }
 
 export const extractWithdrawalHash = (log: Log): string => {

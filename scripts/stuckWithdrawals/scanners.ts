@@ -320,6 +320,24 @@ export async function scanPolygonBurns(
         { chunk: chunk ?? 100_000 }
       );
       for (const l of logs) {
+        // The exit key needs txIndex and the RECEIPT-LOCAL log index (not the block-global
+        // logIndex), so pull the receipt for candidates only — the set is small.
+        let receiptLogIndex: number | undefined;
+        let isWithdrawCall: boolean | undefined;
+        try {
+          const rc = await l2.send("eth_getTransactionReceipt", [l.transactionHash]);
+          const idx = (rc?.logs ?? []).findIndex(
+            (x: Log) => Number(x.logIndex) === Number(l.logIndex)
+          );
+          if (idx >= 0) receiptLogIndex = idx;
+          const tx = await l2.send("eth_getTransactionByHash", [l.transactionHash]);
+          // Burn->0x0 is necessary but NOT sufficient: LayerZero OFT sends also burn. Require the
+          // tx to have called withdraw(uint256)=0x2e1a7d4d or withdrawTo.
+          const inp = String(tx?.input ?? "").toLowerCase();
+          isWithdrawCall = inp.startsWith("0x2e1a7d4d") || inp.startsWith("0x205c2878");
+        } catch {
+          /* leave undefined; index.ts treats missing pieces as unresolved rather than claimed */
+        }
         candidates.push({
           chainId: cfg.chainId,
           family: "polygon-pos",
@@ -327,7 +345,13 @@ export async function scanPolygonBurns(
           l2Block: Number(l.blockNumber),
           key: `${token}:${BigInt(l.data).toString()}`,
           matched: [from],
-          extra: { token, amount: BigInt(l.data).toString() },
+          extra: {
+            token,
+            amount: BigInt(l.data).toString(),
+            txIndex: String(Number(l.transactionIndex)),
+            ...(receiptLogIndex !== undefined ? { receiptLogIndex: String(receiptLogIndex) } : {}),
+            ...(isWithdrawCall !== undefined ? { isWithdrawCall: String(isWithdrawCall) } : {}),
+          },
         });
       }
       coverage.push({

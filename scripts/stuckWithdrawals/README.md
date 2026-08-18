@@ -13,27 +13,17 @@ document is mostly about those reasons.
 
 ## Running it
 
-The only runtime dependency is `ethers` v5, which this repo already provides. The directory also
-carries its own `package.json`/`tsconfig.json`, so it runs standalone in a bare directory without
-installing the relayer's full dependency tree — handy if you only want to run a scan.
-
 ```bash
-# inside this repo
-yarn tsx scripts/stuckWithdrawals/index.ts --verify-fixtures
+npm install
 
-# or standalone: copy the directory anywhere, then
-npm install && npm run scan -- --verify-fixtures
-```
-
-```bash
 export NODE_URL_1=<mainnet>            # required
 export NODE_URL_10=<optimism>          # per-chain, see registry.ts for the full list
 
-# Prove the tool still works. Reproduces known stuck/claimed cases. Run this FIRST.
+# 1. Prove the tool still works. Reproduces known stuck/claimed cases. Run this FIRST.
 npm run scan -- --verify-fixtures
 
-# Scans
-npm run scan -- --chains 10 --era both --since 400            # Optimism, both eras
+# 2. Scan
+npm run scan -- --chains 10 --era both --since 400          # Optimism, both eras
 npm run scan -- --chains 42161,137 --since 90 --out out.json
 npm run scan -- --chains 10 --from-block 0 --to-block 105235062 --era legacy   # pre-Bedrock only
 ```
@@ -142,7 +132,35 @@ for recent activity.
 `finalizeWithdrawalTransactionExternalProof(_tx, thatProver)`. `proofSubmitters[hash][0]` tells you
 who to name. The scanner reports `proofSubmitter` for this reason.
 
-### 12. Getting the outbox position wrong inverts the answer
+### 12. An oracle can exist, be callable, and still be the wrong one
+Linea's `inboxL2L1MessageStatus(bytes32)` is callable and returns `0` for **every** real message,
+including confirmed-claimed ones — it is the dead pre-Merkle-proof path, and its output is
+indistinguishable from a random hash. I shipped it in the first cut of this tool; it would have
+reported every Linea message as stuck. The live oracle is the nonce-keyed bitmap
+`isMessageClaimed(uint256 _messageNumber)`. Same shape on zkSync: the Era diamond's
+`isEthWithdrawalFinalized` and `L1ERC20Bridge.isWithdrawalFinalized` both return false for
+known-true keys.
+
+### 13. Cross-era outbox queries return plausible garbage, not errors
+Arbitrum's classic and Nitro outbox index spaces overlap numerically. For a real classic withdrawal
+(`uniqueId 81359`, `batchNumber 15531`): `NitroOutbox.isSpent(81359)` = false (false negative), while
+`isSpent(15531)` and `isSpent(81360)` both = true (false positives). Worse, `isSpent` **does not
+exist** on the classic outboxes — it reverts, which a permissive `eth_call` wrapper turns into a
+silent "not claimed". Route strictly on block 22207817; classic status needs
+`outboxEntryExists(batchNumber)` plus L1 `OutBoxTransactionExecuted` logs. Classic claims are still
+arriving in 2026 (481 in the last 500k L1 blocks, batch numbers as low as 881), so this is live.
+
+### 14. Optimism has an era boundary *below* the legacy era
+The Nov-2021 regenesis seeded `messageNonce` at **100000**. Legacy nonces `0…99999` belong to the
+pre-regenesis OVM 1.0 chain, whose logs are **not in the current chain at all** — undiscoverable by
+any `eth_getLogs` scan, at any depth, and they would need the archived pre-regenesis chain. The SNX
+nonces (137k) are safely above this, but a zero below 100000 is meaningless rather than reassuring.
+
+### 15. `cast logs` silently drops results when given a `null` topic placeholder
+It returns zero hits rather than erroring. This produced a false "no burns exist" reading mid-
+investigation. Use raw `eth_getLogs` for anything load-bearing.
+
+### 16. Getting the outbox position wrong inverts the answer
 An Orbit `isSpent(position)` on the wrong position happily returns `true` for some unrelated spent
 message, i.e. "already claimed". Read `position` from the `L2ToL1Tx` log's topic3, not from a
 secondary source. A reported position of 164110 vs the true 164622 nearly produced exactly this.
@@ -167,17 +185,30 @@ chunk counting cannot:
 
 ## Known gaps — read before trusting a zero
 
-- **Polygon PoS is candidates-only.** An exit is keyed on a Merkle proof of the burn receipt against
-  a checkpointed root, so `RootChainManager.processedExits()` cannot be keyed from the burn log
-  alone. `polygonExitStatus()` returns `unknown` by design and the scanner falls back to
-  reconciling burn amounts against L1 predicate transfers. Treat Polygon output as a review queue.
-- **Pre-Nitro Arbitrum is wired but unverified.** The classic `L2ToL1Transaction` topic0 and the
-  classic Outbox addresses are from documentation, not confirmed by a passing control.
+- **Polygon PoS is a real oracle** (corrected — an earlier version of this file said otherwise).
+  The exit key is `keccak256(abi.encodePacked(blockNumber, nibbles(rlp(txIndex)), receiptLogIndex))`
+  and is fully computable from the burn receipt: no Merkle proof, no proof-generator API. Verified
+  round trip plus negative control, and pinned as a fixture. Two live caveats: `receiptLogIndex` is
+  the index within *that receipt's* log array (every verified sample was 0, so nonzero is
+  structurally certain but not empirically confirmed), and a burn to `0x0` is **necessary but not
+  sufficient** — LayerZero OFT sends also burn, so the scanner requires the tx to have called
+  `withdraw(uint256)`/`withdrawTo`. Recent burns are gated on `rootChain.getLastChildBlock()`;
+  the checkpoint lag runs 15–40 minutes and without the gate every fresh burn reads as stuck.
+- **Pre-Nitro Arbitrum is discovered but deliberately left unresolved.** The classic topic0 is now
+  confirmed against real logs (and independently recomputed — both agree), and the classic outboxes
+  are verified on-chain. But `isSpent` does not exist there, so the scanner reports classic
+  candidates as `unknown` rather than guessing. Resolving them needs `outboxEntryExists` plus L1
+  `OutBoxTransactionExecuted` log matching — worth building, given claims are still arriving.
 - **Redstone (690) and Aleph Zero (41455)** SpokePool addresses could not be confirmed on-chain —
   both chains are sunset and their public RPCs are dead. Marked `verified: false`; a zero there is
   unproven until run against an archive node.
-- **zkSync / Scroll / Linea** have oracle implementations but no control harness and no fixtures.
-  Lower priority per the original request, but that means lower confidence too.
+- **zkSync and Linea oracles are now verified and fixture-pinned** (zkSync via `L1Nullifier`
+  `0xD7f9f541…` — note this is the upgraded L1SharedBridge, *not* the AssetRouter; Linea via
+  `isMessageClaimed`). **Scroll** has a verified oracle and key derivation but no fixture yet.
+- **Boba (288)** is an OVM 1.0 fork and so has a legacy era, but no RPC was available: its L1
+  messenger address and migration parameters are entirely unconfirmed. Open item.
+- **Arbitrum classic `path` derivation** (`2^proofLen − 1 − indexInBatch`) held 4/4 across two
+  batches, but `proofLen` is not in the L2 event, so prefer L1 log-scanning over storage reads.
 - **Solana** is out of scope; `SvmSpoke` emits Anchor/Borsh events with no EVM topic0. It is,
   however, *why* the EVM `TokensBridged` field became `bytes32`.
 - **Non-EVM and CCTP/OFT paths** are not withdrawals in this sense and are excluded. Note that
