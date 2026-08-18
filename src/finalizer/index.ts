@@ -13,6 +13,7 @@ import {
   MULTICALL3_BATCH_GAS_OVERHEAD,
   updateSpokePoolClients,
   UNIVERSAL_CHAINS,
+  isBinanceRoute,
 } from "../common";
 import { SpokePoolClientsByChain } from "../interfaces";
 import {
@@ -34,6 +35,7 @@ import {
   getProvider,
   chunk,
   isPromiseFulfilled,
+  resolveAcrossToken,
 } from "../utils";
 import { ChainFinalizer, CrossChainMessage, Finalizer, isAugmentedTransaction } from "./types";
 import {
@@ -390,7 +392,8 @@ export async function finalize(
               hubPoolClient,
               client,
               spokePoolClients[hubChainId],
-              addressesToFinalize
+              addressesToFinalize,
+              spokePoolClients
             ));
           } else {
             ({ callData, crossChainMessages } = await finalizer(logger, client, addressesToFinalize));
@@ -609,17 +612,24 @@ export async function constructFinalizerClients(
     config.chainsToFinalize = commonClients.configStoreClient.getChainIdIndicesForBlock();
   }
 
-  config.validate(config.chainsToFinalize, _logger);
-
   // Make sure we have at least one chain to finalize and that we include the mainnet chain if it's not already
   // included. Note, we deep copy so that we don't modify config.chainsToFinalize accidentally.
-  const configuredChainIds = [...config.chainsToFinalize];
+  const binanceSymbols = Array.from(config.userAddresses.values()).flat();
+  const binanceChainIds = Object.keys(PRODUCTION_NETWORKS)
+    .map(Number)
+    .filter((chainId) =>
+      binanceSymbols.some((symbol) =>
+        isBinanceRoute(chainId, EvmAddress.from(resolveAcrossToken(symbol, config.hubPoolChainId, true)))
+      )
+    );
+  const configuredChainIds = Array.from(new Set([...config.chainsToFinalize, ...binanceChainIds]));
   if (configuredChainIds.length === 0) {
     throw new Error("No chains configured for finalizer");
   }
   if (!configuredChainIds.includes(config.hubPoolChainId)) {
     configuredChainIds.push(config.hubPoolChainId);
   }
+  config.validate(configuredChainIds, _logger);
   const spokePoolClients = await constructSpokePoolClientsWithLookback(
     logger,
     commonClients.hubPoolClient,

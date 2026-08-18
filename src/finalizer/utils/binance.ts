@@ -39,7 +39,9 @@ import {
   Provider,
   BINANCE_DEPOSIT_STATUS,
 } from "../../utils";
-import { HubPoolClient, SpokePoolClient } from "../../clients";
+import { EVMSpokePoolClient, HubPoolClient, SpokePoolClient } from "../../clients";
+import { isBinanceRoute } from "../../common";
+import { SpokePoolClientsByChain } from "../../interfaces";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
 import { constructAdapter } from "../../rebalancer/RebalancerClientHelper";
 
@@ -61,6 +63,7 @@ export type BinanceFinalizerDependencies = {
   getBinanceWithdrawals: typeof getBinanceWithdrawals;
   getBinanceWithdrawalType: typeof getBinanceWithdrawalType;
   getTimestampForBlock: typeof getTimestampForBlock;
+  isBinanceRoute: typeof isBinanceRoute;
   isEVMSpokePoolClient: typeof isEVMSpokePoolClient;
   submitBinanceWithdrawal: typeof submitBinanceWithdrawal;
 };
@@ -74,6 +77,7 @@ const defaultDependencies: BinanceFinalizerDependencies = {
   getBinanceWithdrawals,
   getBinanceWithdrawalType,
   getTimestampForBlock,
+  isBinanceRoute,
   isEVMSpokePoolClient,
   submitBinanceWithdrawal,
 };
@@ -89,6 +93,7 @@ export async function binanceFinalizer(
   l2SpokePoolClient: SpokePoolClient,
   l1SpokePoolClient: SpokePoolClient,
   _senderAddresses: AddressesToFinalize,
+  spokePoolClients: SpokePoolClientsByChain,
   dependencies: BinanceFinalizerDependencies = defaultDependencies
 ): Promise<FinalizerPromise> {
   assert(dependencies.isEVMSpokePoolClient(l1SpokePoolClient) && dependencies.isEVMSpokePoolClient(l2SpokePoolClient));
@@ -130,30 +135,42 @@ export async function binanceFinalizer(
     }
     return true;
   });
-  const supportedNetworks = new Set([BINANCE_NETWORKS[hubChainId], BINANCE_NETWORKS[l2ChainId]]);
-  const supportedBinanceBridgeDeposits = _binanceBridgeDeposits.filter(
-    ({ coin, network, status }) =>
-      configuredSymbols.has(coin) && supportedNetworks.has(network) && status === BINANCE_DEPOSIT_STATUS.CONFIRMED
-  );
-
-  const ownedBinanceBridgeDeposits = await dependencies.getOwnedBinanceDeposits(supportedBinanceBridgeDeposits, {
-    [BINANCE_NETWORKS[hubChainId]]: {
-      chainId: hubChainId,
-      provider: l1SpokePoolClient.spokePool.provider,
-      eventSearchConfig: {
-        ...l1SpokePoolClient.eventSearchConfig,
-        to: l1SpokePoolClient.eventSearchConfig.to ?? l1SpokePoolClient.latestHeightSearched,
-      },
-    },
-    [BINANCE_NETWORKS[l2ChainId]]: {
-      chainId: l2ChainId,
-      provider: l2SpokePoolClient.spokePool.provider,
-      eventSearchConfig: {
-        ...l2SpokePoolClient.eventSearchConfig,
-        to: l2SpokePoolClient.eventSearchConfig.to ?? l2SpokePoolClient.latestHeightSearched,
-      },
-    },
+  const clientsByNetwork = Object.values(spokePoolClients)
+    .filter(dependencies.isEVMSpokePoolClient)
+    .reduce<Record<string, EVMSpokePoolClient>>((clients, client) => {
+      const network = BINANCE_NETWORKS[client.chainId];
+      if (isDefined(network)) {
+        clients[network] = client;
+      }
+      return clients;
+    }, {});
+  const supportedBinanceBridgeDeposits = _binanceBridgeDeposits.filter(({ coin, network, status }) => {
+    const client = clientsByNetwork[network];
+    return (
+      configuredSymbols.has(coin) &&
+      status === BINANCE_DEPOSIT_STATUS.CONFIRMED &&
+      isDefined(client) &&
+      (client.chainId === hubChainId ||
+        dependencies.isBinanceRoute(client.chainId, EvmAddress.from(resolveAcrossToken(coin, hubChainId, true))))
+    );
   });
+
+  const ownedBinanceBridgeDeposits = await dependencies.getOwnedBinanceDeposits(
+    supportedBinanceBridgeDeposits,
+    Object.fromEntries(
+      Object.entries(clientsByNetwork).map(([network, client]) => [
+        network,
+        {
+          chainId: client.chainId,
+          provider: client.spokePool.provider,
+          eventSearchConfig: {
+            ...client.eventSearchConfig,
+            to: client.eventSearchConfig.to ?? client.latestHeightSearched,
+          },
+        },
+      ])
+    )
+  );
   assertAllConfirmedBinanceDepositsAttributed(supportedBinanceBridgeDeposits, ownedBinanceBridgeDeposits);
   logger.debug({
     at: "BinanceFinalizer",
@@ -176,8 +193,12 @@ export async function binanceFinalizer(
   );
 
   const coinBalances = Object.fromEntries(accountCoins.map((coin) => [coin.symbol, Number(coin.balance)]));
+  const ownedDepositKeys = new Set(ownedBinanceBridgeDeposits.map(({ network, txId }) => `${network}:${txId}`));
   const remainingAttributedBalances = _binanceBridgeDeposits
-    .filter(({ network, status }) => status === BINANCE_DEPOSIT_STATUS.CONFIRMED && !supportedNetworks.has(network))
+    .filter(
+      ({ network, txId, status }) =>
+        status === BINANCE_DEPOSIT_STATUS.CONFIRMED && !ownedDepositKeys.has(`${network}:${txId}`)
+    )
     .reduce<Record<string, number>>((balances, deposit) => {
       balances[deposit.coin] = (balances[deposit.coin] ?? 0) + deposit.amount;
       return balances;
@@ -239,9 +260,10 @@ export async function binanceFinalizer(
         // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
         const finalizingOnL2 = withdrawNetwork === BINANCE_NETWORKS[l2ChainId];
         const depositAmounts = depositsInScope
-          .filter(
-            (deposit) =>
-              deposit.network === (finalizingOnL2 ? BINANCE_NETWORKS[hubChainId] : BINANCE_NETWORKS[l2ChainId])
+          .filter((deposit) =>
+            finalizingOnL2
+              ? deposit.network === BINANCE_NETWORKS[hubChainId]
+              : deposit.network !== BINANCE_NETWORKS[hubChainId]
           )
           .reduce((sum, deposit) => sum.add(floatToBN(deposit.amount, l1Decimals)), bnZero);
 

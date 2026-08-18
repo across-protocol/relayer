@@ -1,5 +1,6 @@
 import { Signer } from "ethers";
 import { AugmentedTransaction, HubPoolClient, SpokePoolClient } from "../clients";
+import { SpokePoolClientsByChain } from "../interfaces";
 import { Multicall2Call, winston, Address } from "../utils";
 
 /**
@@ -42,7 +43,8 @@ export interface ChainFinalizer {
     hubPoolClient: HubPoolClient,
     l2SpokePoolClient: SpokePoolClient,
     l1SpokePoolClient: SpokePoolClient,
-    l1ToL2AddressesToFinalize: AddressesToFinalize // Map from token address to associated token symbols to finalize for that address.
+    l1ToL2AddressesToFinalize: AddressesToFinalize, // Map from token address to associated token symbols to finalize for that address.
+    spokePoolClients: SpokePoolClientsByChain
   ): Promise<FinalizerPromise>;
 }
 

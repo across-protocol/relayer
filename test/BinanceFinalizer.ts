@@ -239,6 +239,65 @@ describe("Binance finalizer helpers", function () {
     );
   });
 
+  it("finalizes deposits from non-BSC Binance routes on L1", async function () {
+    const deposit = makeDeposit({
+      amount: 10,
+      coin: "USDT",
+      network: BINANCE_NETWORKS[CHAIN_IDs.AVALANCHE],
+      status: 1,
+    });
+    const submitted: Array<Record<string, unknown>> = [];
+    const dependencies = {
+      getTimestampForBlock: sinon.stub().resolves(0),
+      getBinanceApiClient: sinon.stub().resolves({} as never),
+      getBinanceDeposits: sinon.stub().resolves([deposit]),
+      getAccountCoins: sinon.stub().resolves([
+        {
+          symbol: "USDT",
+          balance: "10",
+          networkList: [
+            {
+              name: BINANCE_NETWORKS[CHAIN_IDs.MAINNET],
+              coin: "USDT",
+              withdrawMin: "0.01",
+              withdrawMax: "1000",
+              withdrawFee: "0",
+              contractAddress: "",
+            },
+          ],
+        },
+      ]),
+      getBinanceDepositType: sinon.stub().resolves(BinanceTransactionType.UNKNOWN),
+      getOwnedBinanceDeposits: sinon
+        .stub()
+        .callsFake(async (deposits: BinanceDeposit[]) =>
+          deposits.map((deposit) => ({ ...deposit, depositor: EvmAddress.from(FIRST_EOA).toNative() }))
+        ),
+      getBinanceWithdrawals: sinon.stub().resolves([]),
+      getBinanceWithdrawalType: sinon.stub(),
+      isBinanceRoute: sinon.stub().callsFake((chainId) => chainId === CHAIN_IDs.AVALANCHE),
+      isEVMSpokePoolClient: sinon.stub().returns(true),
+      submitBinanceWithdrawal: sinon.stub().callsFake(async (_api, withdrawal) => {
+        submitted.push(withdrawal);
+        return { id: "withdrawal" };
+      }),
+      constructAdapter: sinon.stub().resolves({ getPendingRebalances: sinon.stub().resolves({}) } as never),
+    } as unknown as BinanceFinalizerDependencies;
+
+    await runTestFinalizer(dependencies, new Map([[EvmAddress.from(FIRST_EOA), ["USDT"]]]), [
+      CHAIN_IDs.MAINNET,
+      CHAIN_IDs.BSC,
+      CHAIN_IDs.AVALANCHE,
+    ]);
+
+    expect(dependencies.getOwnedBinanceDeposits.firstCall.firstArg).to.deep.equal([deposit]);
+    expect(submitted[0]).to.include({
+      address: EvmAddress.from(FIRST_EOA).toNative(),
+      network: BINANCE_NETWORKS[CHAIN_IDs.MAINNET],
+      amount: 10,
+    });
+  });
+
   it("finalizes same-coin deposits by EOA and excludes a prior orphan sweep on rerun", async function () {
     const first = FIRST_EOA;
     const second = SECOND_EOA;
@@ -311,6 +370,7 @@ describe("Binance finalizer helpers", function () {
         }))
       ),
       getBinanceWithdrawalType: sinon.stub().resolves(BinanceTransactionType.BRIDGE),
+      isBinanceRoute: sinon.stub().returns(true),
       isEVMSpokePoolClient: sinon.stub().returns(true),
       submitBinanceWithdrawal: sinon.stub().callsFake(async (_api, withdrawal) => {
         const result = { ...withdrawal, id: `withdrawal-${submitted.length}` };
@@ -383,7 +443,8 @@ describe("Binance finalizer helpers", function () {
 
 function runTestFinalizer(
   dependencies: BinanceFinalizerDependencies,
-  addresses = new Map([[EvmAddress.from(FIRST_EOA), ["USDC"]]])
+  addresses = new Map([[EvmAddress.from(FIRST_EOA), ["USDC"]]]),
+  chainIds = [CHAIN_IDs.MAINNET, CHAIN_IDs.BSC]
 ) {
   const signer = {
     provider: {},
@@ -391,6 +452,7 @@ function runTestFinalizer(
   } as never;
   const client = (chainId: number) =>
     ({ chainId, eventSearchConfig: { from: 0 }, spokePool: { provider: {} } }) as never;
+  const clients = Object.fromEntries(chainIds.map((chainId) => [chainId, client(chainId)]));
   return binanceFinalizer(
     createSpyLogger().spyLogger,
     signer,
@@ -398,6 +460,7 @@ function runTestFinalizer(
     client(CHAIN_IDs.BSC),
     client(CHAIN_IDs.MAINNET),
     addresses,
+    clients,
     dependencies
   );
 }
