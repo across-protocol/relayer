@@ -13,9 +13,19 @@ document is mostly about those reasons.
 
 ## Running it
 
-```bash
-npm install
+The only runtime dependency is `ethers` v5, which this repo already provides. The directory also
+carries its own `package.json`/`tsconfig.json`, so it runs standalone in a bare directory without
+installing the relayer's full dependency tree — handy if you only want to run a scan.
 
+```bash
+# inside this repo
+yarn tsx scripts/stuckWithdrawals/index.ts --verify-fixtures
+
+# or standalone: copy the directory anywhere, then
+npm install && npm run scan -- --verify-fixtures
+```
+
+```bash
 export NODE_URL_1=<mainnet>            # required
 export NODE_URL_10=<optimism>          # per-chain, see registry.ts for the full list
 
