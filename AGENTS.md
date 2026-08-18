@@ -78,7 +78,7 @@ relayer-v2/
 │   │   ├── TokenClient.ts        # Token metadata, balances, and allowance helpers.
 │   │   ├── SpokePoolClient.ts    # SpokePool event/state client wrappers.
 │   │   └── bridges/              # Bridge adapter selection and cross-chain transfer helpers.
-│   ├── caching/                  # Redis-backed and in-memory cache helpers.
+│   ├── cache/                    # Redis-backed and in-memory cache helpers.
 │   ├── messaging/                # Cross-bot messaging transports.
 │   │   ├── redis/                # Redis pub/sub wrapper (handover signaling).
 │   │   └── gcp/                  # GCP Pub/Sub publisher (lifecycle events) + push-request decode/auth.
