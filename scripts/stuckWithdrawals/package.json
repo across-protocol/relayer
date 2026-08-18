@@ -5,7 +5,7 @@
   "description": "Exhaustive scanner for un-finalized Across L2->L1 withdrawals",
   "type": "commonjs",
   "scripts": {
-    "scan": "tsx src/index.ts",
+    "scan": "tsx index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": { "ethers": "^5.7.2" },

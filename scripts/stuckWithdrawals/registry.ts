@@ -11,23 +11,12 @@
  * Anything marked "docs" should be treated as suspect until a control passes (see oracles.ts).
  */
 import { ethers } from "ethers";
-import { SPOKE_POOLS, deployedTokensBridged } from "./spokePools";
+import { SPOKE_POOLS, deployedTokensBridged, SpokeDeployment } from "./spokePools";
+
+export type { SpokeDeployment };
 
 export type Family =
-  | "op-bedrock"
-  | "op-legacy"
-  | "orbit-nitro"
-  | "orbit-classic"
-  | "polygon-pos"
-  | "zk-stack"
-  | "scroll"
-  | "linea";
-
-export interface SpokeDeployment {
-  address: string;
-  fromBlock?: number;
-  label: string;
-}
+  "op-bedrock" | "op-legacy" | "orbit-nitro" | "orbit-classic" | "polygon-pos" | "zk-stack" | "scroll" | "linea";
 
 export interface ChainConfig {
   chainId: number;
@@ -44,6 +33,8 @@ export interface ChainConfig {
     outbox?: string[];
     /** Pre-Nitro outboxes. `isSpent` does not exist here; use outboxEntryExists + L1 logs. */
     classicOutboxes?: string[];
+    /** L1 block from which to scan classic outboxes for OutBoxTransactionExecuted. */
+    classicOutboxFromBlock?: number;
     rootChainManager?: string;
     /** Polygon checkpoint contract; gate "unclaimed" on getLastChildBlock(). */
     rootChain?: string;
@@ -52,6 +43,23 @@ export interface ChainConfig {
     l1Messenger?: string;
     /** L2-side messenger/message-service, for chains where discovery is not a predeploy. */
     l2Messenger?: string;
+  };
+  /**
+   * Positive controls. Every oracle must be shown to return TRUE for one of these before the
+   * scanner is allowed to report `finalized: false` as a finding on this chain — a stuck-at-false
+   * oracle is otherwise indistinguishable from "everything is unclaimed". No control, no findings.
+   */
+  controls?: {
+    /** An outbox position confirmed spent. Permanent: spending an outbox entry is irreversible. */
+    spentOutboxPosition?: number;
+    /** Withdrawal hashes the portal has finalized, for portals that do not emit standard topics. */
+    finalizedWithdrawalHashes?: string[];
+    /** successfulMessages keys confirmed true on the L1CrossDomainMessenger. */
+    relayedLegacyHashes?: string[];
+    /** A (block, txIndex, receiptLogIndex) whose Polygon exit is confirmed processed. */
+    processedExit?: { block: number; txIndex: number; logIndex: number };
+    /** A classic (batchNumber, indexInBatch) confirmed executed on an L1 classic outbox. */
+    executedClassic?: { batchNumber: number; indexInBatch: number };
   };
   spokePools: SpokeDeployment[];
   /** Informational: token-specific bridges that a token-level scan would miss. */
@@ -92,8 +100,7 @@ export const EVENTS = {
   /** Bedrock-era OP-Stack. Emitted by every post-Bedrock withdrawal regardless of bridge. */
   messagePassed: {
     address: "0x4200000000000000000000000000000000000016",
-    signature:
-      "MessagePassed(uint256,address,address,uint256,uint256,bytes,bytes32)",
+    signature: "MessagePassed(uint256,address,address,uint256,uint256,bytes,bytes32)",
     topic0: topic0("MessagePassed(uint256,address,address,uint256,uint256,bytes,bytes32)"),
     /**
      * withdrawalHash lives at hex chars [192,256) of `data`.
@@ -118,15 +125,13 @@ export const EVENTS = {
   /** Nitro-era Orbit. `position` is topic3 and is monotonic — usable as a coverage oracle. */
   l2ToL1Tx: {
     address: "0x0000000000000000000000000000000000000064",
-    signature:
-      "L2ToL1Tx(address,address,uint256,uint256,uint256,uint256,uint256,uint256,bytes)",
+    signature: "L2ToL1Tx(address,address,uint256,uint256,uint256,uint256,uint256,uint256,bytes)",
     topic0: "0x3e7aafa77dbf186b7fd488006beff893744caa3c4f6f299e8a709fa2087374fc",
   },
   /** Classic (pre-Nitro) Arbitrum. Different shape; invisible to an L2ToL1Tx-only scan. */
   l2ToL1TransactionClassic: {
     address: "0x0000000000000000000000000000000000000064",
-    signature:
-      "L2ToL1Transaction(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,bytes)",
+    signature: "L2ToL1Transaction(address,address,uint256,uint256,uint256,uint256,uint256,uint256,uint256,bytes)",
     // Pinned to the value OBSERVED in real pre-Nitro logs. Independently recomputed from the
     // signature and confirmed identical, so both derivations agree.
     topic0: "0x5baaa87db386365b5c161be377bc3d8e317e8d98d71a3ca7ed7d555340c8f767",
@@ -146,6 +151,12 @@ export const SELECTORS = {
   finalizedWithdrawals: ethers.utils.id("finalizedWithdrawals(bytes32)").slice(0, 10),
   provenWithdrawals: ethers.utils.id("provenWithdrawals(bytes32,address)").slice(0, 10),
   proofSubmitters: ethers.utils.id("proofSubmitters(bytes32,uint256)").slice(0, 10),
+  numProofSubmitters: ethers.utils.id("numProofSubmitters(bytes32)").slice(0, 10),
+  // The two independent Portal-2 clocks that together gate finalization. Mainnet OP reads
+  // 604800 and 302400 respectively. src: verified
+  proofMaturityDelaySeconds: ethers.utils.id("proofMaturityDelaySeconds()").slice(0, 10),
+  disputeGameFinalityDelaySeconds: ethers.utils.id("disputeGameFinalityDelaySeconds()").slice(0, 10),
+  resolvedAt: ethers.utils.id("resolvedAt()").slice(0, 10),
   isSpent: ethers.utils.id("isSpent(uint256)").slice(0, 10),
   successfulMessages: ethers.utils.id("successfulMessages(bytes32)").slice(0, 10),
   failedMessages: ethers.utils.id("failedMessages(bytes32)").slice(0, 10),
@@ -176,9 +187,19 @@ export const CHAINS: ChainConfig[] = [
       l1XDM: "0x25aCE71c97B33Cc4729CF772ae268934F7aB5fA1", // src: verified (target of legacy SNX withdrawals)
       l1StandardBridge: "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1", // src: verified (SNX finalizeERC20Withdrawal target)
     },
+    controls: {
+      // V1 versioned hash of legacy SNX message nonce 137125, relayed 2026-08-18 by the keeper in
+      // L1 tx 0x0a2992ee…. successfulMessages reads true for this key and false for its v0
+      // counterpart 0xc14724b1… — which is exactly the asymmetry legacyRelayed() must handle.
+      // src: verified
+      relayedLegacyHashes: ["0xdde3a671b7d7e655befb274151d1f9e393cf356229afc4c361ec9327115eeaa1"],
+    },
     spokePools: [{ address: "0x6f26Bf09B1C792e3228e5467807a900A503c0281", label: "current" }],
     customBridges: [
-      { address: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65", note: "Maker DAI bridge — invisible to standard-bridge scans" },
+      {
+        address: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
+        note: "Maker DAI bridge — invisible to standard-bridge scans",
+      },
     ],
     notes:
       "Only OP chain with a substantial pre-Bedrock history (verified: every other OP chain reports " +
@@ -218,7 +239,10 @@ export const CHAINS: ChainConfig[] = [
     },
     spokePools: [{ address: "0x9552a0a6624A23B848060AE5901659CDDa1f83f8", label: "current" }],
     customBridges: [
-      { address: "0x3b1aC69368Eb6447F5db2D4e1641380Fa9E40d29", note: "bridged-USDC custom bridge — burns, no standard-bridge event" },
+      {
+        address: "0x3b1aC69368Eb6447F5db2D4e1641380Fa9E40d29",
+        note: "bridged-USDC custom bridge — burns, no standard-bridge event",
+      },
     ],
   },
   {
@@ -256,9 +280,24 @@ export const CHAINS: ChainConfig[] = [
       l1XDM: "0x5D4472f31bD9385709ec61305AFc749F0fA8e9d0",
       l1StandardBridge: "0x697402166Fbf2F22E970df8a6486Ef171dbfc524",
     },
+    controls: {
+      /**
+       * Blast's portal does not emit standard WithdrawalFinalized topics, so the self-emitted
+       * positive control is structurally unavailable and assertDiscriminates() falls back to these.
+       * Without them the control returns positive="unavailable" and every Blast candidate is
+       * reported `unknown` — correct, but useless. Each hash below was extracted from a real L2
+       * MessagePassed log with the scanner's own withdrawalHashSlice and confirmed to read true
+       * through finalizedWithdrawals, which also end-to-end validates that slice. src: verified
+       */
+      finalizedWithdrawalHashes: [
+        "0xab980c088e623616da20aa87d9f5da73fcbb07e8ce8cf1b95cb6a5dd10e1ea7d", // L2 block 6000554
+        "0xa5b0217b6960e5e68a0cada74e47e7b67f381008970e43fbfb24eb0aadf89cd6", // L2 block 6000885
+        "0x8f73b4e853230f8142e2bd6a1251e1e6e8daf42248d03a9af6b3ef6aeec95824", // L2 block 6001023
+      ],
+    },
     spokePools: [{ address: "0x2D509190Ed0172ba588407D4c2df918F955Cc6E1", label: "current" }],
     notes:
-      "Portal does NOT emit standard WithdrawalFinalized topics, so the usual positive control is unavailable; oracles.ts falls back to sampling old withdrawals.",
+      "Portal does NOT emit standard WithdrawalFinalized topics, so the usual positive control is unavailable; controls.finalizedWithdrawalHashes supplies the fallback.",
   },
   {
     chainId: 57073,
@@ -304,6 +343,19 @@ export const CHAINS: ChainConfig[] = [
         "0x760723CD2e632826c38Fef8CD438A4CC7E7E1A40", // Outbox2, the active classic one. src: verified
         "0x667e23ABd27E623c11d4CC00ca3EC4d0bD63337a", // Outbox v0, only 10 claims ever. src: verified
       ],
+      classicOutboxFromBlock: 12_500_000, // pre-dates Outbox2 deployment. src: docs
+    },
+    controls: {
+      // Position 119534, executed on the Nitro outbox at L1 block 20000264 in tx 0xaa003a4a…
+      // (2024-06-02). isSpent(119534) reads true; isSpent is monotonic, so this can never go
+      // stale. src: verified
+      spentOutboxPosition: 119_534,
+      /**
+       * Batch 16378 on Outbox2 is PARTIALLY executed — indices 4,5,6,7 were claimed (L1 blocks
+       * 15522136-15579726, Sep/Oct 2022) while 1,2,3 never were. One query therefore proves the
+       * oracle discriminates in both directions on the same batch. src: verified
+       */
+      executedClassic: { batchNumber: 16_378, indexInBatch: 4 },
     },
     spokePools: [{ address: "0xe35e9842fceaCA96570B734083f4a58e8F7C5f2A", label: "current" }],
   },
@@ -313,6 +365,8 @@ export const CHAINS: ChainConfig[] = [
     rpcEnv: ["NODE_URL_41455", "ALEPHZERO_RPC_URL"],
     families: ["orbit-nitro"],
     l1: { outbox: ["0x73bb50c32a3BD6A1032aa5cFeA048fBDA3D6aF6e"] }, // src: verified (isSpent discriminates)
+    // Position 35, executed at L1 block 21796006 in tx 0x2bf872df…. src: verified
+    controls: { spentOutboxPosition: 35 },
     spokePools: [],
     notes: "Chain dead since 2025-09-16; L2 RPC unreachable, so L2-side discovery is unverified.",
   },
@@ -322,8 +376,12 @@ export const CHAINS: ChainConfig[] = [
     rpcEnv: ["NODE_URL_4663"],
     families: ["orbit-nitro"],
     l1: { outbox: ["0xf0ce991ea4A0d2400A4AB49b20ae333f6Dce3DE9"] }, // src: verified (isSpent discriminates)
+    // Position 0, executed at L1 block 25335231 in tx 0x0726dee0…. src: verified
+    controls: { spentOutboxPosition: 0 },
     spokePools: [{ address: "0xD29C85F15DF544bA632C9E25829fd29d767d7978", label: "current" }],
-    notes: "Zero withdrawals as of 2026-08: ArbSys positions 0..1161 contiguous, no TokensBridged.",
+    notes:
+      "Zero ACROSS withdrawals as of 2026-08: ArbSys positions 0..1161 contiguous, no TokensBridged. " +
+      "The chain itself does have claimed outbox entries, hence the control above.",
   },
   {
     chainId: 137,
@@ -335,6 +393,8 @@ export const CHAINS: ChainConfig[] = [
       rootChain: "0x86E4Dc95c7FBdBf52e33D563BbDB00823894C287", // checkpoint mgr. src: verified
       erc20Predicate: "0x40ec5B33f54e0E8A33A975908C5BA1c14e5BbbDf", // cross-check only. src: verified
     },
+    // processedExits reads true for this exit key. src: verified
+    controls: { processedExit: { block: 92_225_980, txIndex: 0, logIndex: 0 } },
     spokePools: [{ address: "0x9295ee1d8C5b022Be115A2AD3c30C72E34e7F096", label: "current" }],
     notes:
       "PoS exits are not OP-style: the child token is burned and exited on L1. The exit key IS " +
@@ -404,8 +464,7 @@ export async function derivePortal(
   l2: ethers.providers.JsonRpcProvider,
   l1: ethers.providers.JsonRpcProvider
 ): Promise<{ l1StandardBridge?: string; l1XDM?: string; portal?: string }> {
-  const addr = (ret?: string) =>
-    ret && ret.length >= 42 ? ethers.utils.getAddress("0x" + ret.slice(-40)) : undefined;
+  const addr = (ret?: string) => (ret && ret.length >= 42 ? ethers.utils.getAddress("0x" + ret.slice(-40)) : undefined);
   const call = async (p: ethers.providers.JsonRpcProvider, to: string, data: string) => {
     try {
       return await p.send("eth_call", [{ to, data }, "latest"]);

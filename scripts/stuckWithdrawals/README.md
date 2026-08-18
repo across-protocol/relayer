@@ -36,14 +36,30 @@ npm run scan -- --verify-fixtures
 npm run scan -- --chains 10 --era both --since 400          # Optimism, both eras
 npm run scan -- --chains 42161,137 --since 90 --out out.json
 npm run scan -- --chains 10 --from-block 0 --to-block 105235062 --era legacy   # pre-Bedrock only
+npm run scan -- --chains 137 --since 30 --tokens 0x2791Bca1…,0x…   # Polygon needs child tokens
+npm run scan -- --chains 42161 --era classic --resolve-classic     # + wide L1 outbox log scan
 ```
 
 Flags: `--chains` (csv, default all) · `--since <days>` · `--from-block` / `--to-block` ·
 `--era bedrock|legacy|nitro|classic|both` · `--chunk <blocks>` · `--out <file>` ·
-`--verify-fixtures`.
+`--tokens <csv>` (required for Polygon) · `--resolve-classic` · `--verify-fixtures`.
+
+**Exit codes matter — do not just read stdout:**
+
+| code | meaning |
+| --- | --- |
+| `0` | scan complete, every oracle proven, nothing unclaimed |
+| `1` | scan complete, unclaimed withdrawals found (actionable) |
+| `2` | scan **incomplete or unproven** — a chain was unreachable, a block range could not be read, or an oracle failed its control |
+
+`2` outranks `1` on purpose. "We could not look" must never be indistinguishable from "all clear":
+a missing `NODE_URL_<chain>` used to produce zero findings and exit `0`, which reads as a clean
+result for a chain the scanner never contacted. Anything that leaves a candidate unresolved prints
+`UNKNOWN` alongside the `STUCK` lines rather than being silently omitted.
 
 Cost control: `--since` and `--chunk` bound the work. A full-history Optimism scan is the expensive
-one; everything else is cheap. Start narrow, widen once you trust the output.
+one; `--resolve-classic` adds a wide L1 log scan per classic batch. Start narrow, widen once you
+trust the output.
 
 ---
 
@@ -54,12 +70,20 @@ to discriminate**, and treat any RPC error as a **coverage gap** rather than an 
 chain family gets one scanner per *era* (message layers change at hard forks), and one oracle per
 era. The registry supplies addresses, event shapes and the watch-list; the core is generic.
 
-- `src/rpc.ts` — chunked `eth_getLogs` with adaptive splitting and explicit gap accounting.
-- `src/scanners.ts` — L2 discovery, one function per family/era.
-- `src/oracles.ts` — L1 "has this been claimed?" plus the control harness.
-- `src/registry.ts` — chains, contracts, event signatures, watch-list. **Edit this one.**
-- `src/spokePools.ts` — historical SpokePool addresses and every `TokensBridged` shape.
-- `src/fixtures.ts` — known-good/known-bad regression cases.
+- `rpc.ts` — chunked `eth_getLogs` with adaptive splitting and explicit gap accounting, plus the
+  `eth_call` wrapper that distinguishes a revert from a node that could not answer.
+- `scanners.ts` — L2 discovery, one function per family/era.
+- `oracles.ts` — L1 "has this been claimed?" plus the control harness.
+- `registry.ts` — chains, contracts, event signatures, per-chain controls, watch-list. **Edit this one.**
+- `spokePools.ts` — historical SpokePool addresses and every `TokensBridged` shape.
+- `fixtures.ts` — known-good/known-bad regression cases and offline hash-derivation fixtures.
+- `selfTest.ts` — offline tests for the chunking loop, run as part of `--verify-fixtures`.
+
+**Controls are gates, not warnings.** Every oracle must be shown to return `true` for a known-claimed
+message before the scanner will report any `finalized: false` from it as a finding. An oracle that
+fails its control forces every candidate on that chain to `unknown`. The known-claimed values live in
+`ChainConfig.controls` per chain — they are *not* global constants, because a control that is correct
+for Arbitrum is meaningless on Aleph Zero.
 
 ---
 
@@ -98,14 +122,40 @@ separate times.
 records unreadable ranges in `stats.gaps`. **A scan with non-empty `gaps` is not exhaustive**, and
 `coverage.exhaustive` says so.
 
+The same trap applies to `eth_call`, and it is worse there because the result feeds a *finding*
+rather than coverage. A wrapper that swallows every failure into `undefined` turns a five-second L1
+timeout into `finalized = false`, i.e. a withdrawal reported as stuck because the RPC blinked.
+`ethCall` therefore returns `undefined` **only** for a genuine revert (a real answer from the node —
+which is legitimately how "this function does not exist here" presents on the classic outboxes) and
+throws `RpcError` when the node could not answer, after retrying. Callers record those candidates as
+`unknown`; nothing that could not be read is ever reported as a finding.
+
+### 4b. An adaptive chunker can shrink and grow forever without making progress
+`getLogsChunked` grew its window whenever no chunk had failed yet — including on the very iteration
+that had just shrunk. Against an endpoint that rejects `chunk` but accepts `chunk/4` it oscillated
+indefinitely: shrink to `minChunk`, grow back, get rejected, shrink again, never issuing the narrower
+request and never recording a gap. The scan hung with no error.
+**Fix:** grow only after a *successful* batch at the current size, and record a gap once retries are
+exhausted at `minChunk`. `selfTest.ts` pins all three behaviours (shrink past a cap, cover the range,
+account for every unreadable block) offline against a fake capped endpoint.
+
 ### 5. An oracle that never returns `true` looks exactly like "everything is stuck"
 A subtly wrong portal address, or a withdrawal hash computed at the wrong offset, returns
 `finalized=false` for every query. That is a total false-positive, and it reads as a dramatic
 finding. One sweep reported 19 stuck Ink withdrawals this way; all 19 were claimed. Blast is the
 live trap — its portal does not emit standard `WithdrawalFinalized` topics.
 **Fix:** `assertDiscriminates()` requires a positive control (a hash the portal itself emitted, or
-a sampled historical withdrawal) *and* a negative control (a bogus hash) before any status is
-believed. Failure downgrades the run to `UNPROVEN` in the output rather than reporting findings.
+one of `controls.finalizedWithdrawalHashes`) *and* a negative control (a bogus hash) before any status
+is believed. A failed control **forces every candidate on that chain to `unknown`** — it is a gate,
+not a log line. Blast ships three verified fallback hashes precisely because its portal cannot supply
+the self-emitted control.
+
+The controls have to be per chain and they have to be right. The Orbit positive control was once the
+literal position `164622` for every Orbit chain — which is Arbitrum's, and which `fixtures.ts`
+simultaneously pins as **unspent** because it was inside its challenge window. So the control asked
+"is this unclaimed withdrawal claimed?", correctly got `false`, and declared the oracle broken on
+every Arbitrum scan. A control value must be a *known-claimed* message on *that* chain
+(`controls.spentOutboxPosition`), and because claiming is irreversible such a value never goes stale.
 
 ### 6. `withdrawalHash` is not the last 32 bytes of `MessagePassed.data`
 It sits at hex chars `[192, 256)`. `bytes data` is dynamic and its contents trail *after* the hash,
@@ -139,8 +189,20 @@ for recent activity.
 ### 11. A withdrawal proven by someone else needs a different finalize call
 `finalizeWithdrawalTransaction` resolves the proof against `msg.sender`. If a third party proved it
 — a keeper at `0x9A8f92a8…` proves and finalizes ours — the plain variant **reverts**, and you need
-`finalizeWithdrawalTransactionExternalProof(_tx, thatProver)`. `proofSubmitters[hash][0]` tells you
-who to name. The scanner reports `proofSubmitter` for this reason.
+`finalizeWithdrawalTransactionExternalProof(_tx, thatProver)`. The scanner reports `proofSubmitter`
+for this reason. Read the **last** submitter, not index 0: a reproven withdrawal keeps its stale first
+proof at index 0, backed by a game that will never resolve favourably, so naming it sends you into a
+reverting finalization. The scanner enumerates `numProofSubmitters(hash)` and prefers the newest proof
+with a resolved game, matching `getDisputeGameFinalizableAt()` in `src/finalizer/utils/opStack.ts`.
+
+### 11b. "Proven + 7 days" is not when a Portal-2 withdrawal becomes claimable
+There are **two independent clocks** and the gate is the later of them:
+`provenAt + proofMaturityDelaySeconds`, and `disputeGame.resolvedAt() + disputeGameFinalityDelaySeconds`
+— and the second has not even *started* while the backing game is unresolved (`resolvedAt == 0`).
+Mainnet OP reads `604800` and `302400` respectively, so a hardcoded seven days silently matched the
+first clock alone and ignored the second, advertising a `claimableAt` that can be days early. The
+scanner now reads both off the portal and reports `claimableBlockedOn` instead of a timestamp when the
+game has not resolved.
 
 ### 12. An oracle can exist, be callable, and still be the wrong one
 Linea's `inboxL2L1MessageStatus(bytes32)` is callable and returns `0` for **every** real message,
@@ -188,8 +250,18 @@ chunk counting cannot:
   messenger). `observed >= expected` is the assertion; `observed < expected` means logs went missing.
 - **Orbit:** `L2ToL1Tx.position` is monotonic, so a contiguous run with no gaps proves every message
   in the range was seen. This is what established Robinhood's genuine zero (positions 0…1161).
+  Classic has the same property under a different field — `L2ToL1Transaction`'s `uniqueId` (topic2) is
+  the global counter, while `batchNumber` (topic3) is **not** and repeats across messages.
 
 `coverage.exhaustive` is only `true` when there were no gaps **and** the independent check agreed.
+
+**An empty sequence proves nothing.** Contiguity over zero observations used to evaluate to `true`,
+so a wrong event address, a wrong topic0, or an endpoint that answered `[]` to everything satisfied
+the cross-check vacuously and the scan was marked exhaustive on the strength of a zero corroborating
+itself. Contiguity now requires at least two observations; below that the independent check is
+reported as unavailable, `exhaustive` is `false`, and the coverage note says why. A genuinely empty
+window therefore exits `2` rather than `0` — widen the range, or confirm by hand that the positions
+either side are adjacent.
 
 ---
 
@@ -204,14 +276,20 @@ chunk counting cannot:
   sufficient** — LayerZero OFT sends also burn, so the scanner requires the tx to have called
   `withdraw(uint256)`/`withdrawTo`. Recent burns are gated on `rootChain.getLastChildBlock()`;
   the checkpoint lag runs 15–40 minutes and without the gate every fresh burn reads as stuck.
-- **Pre-Nitro Arbitrum is discovered but deliberately left unresolved.** The classic topic0 is now
-  confirmed against real logs (and independently recomputed — both agree), and the classic outboxes
-  are verified on-chain. But `isSpent` does not exist there, so the scanner reports classic
-  candidates as `unknown` rather than guessing. Resolving them needs `outboxEntryExists` plus L1
-  `OutBoxTransactionExecuted` log matching — worth building, given claims are still arriving.
+- **Pre-Nitro Arbitrum now resolves, behind `--resolve-classic`.** Classic is keyed on the *pair*
+  `(batchNumber, indexInBatch)` — `batchNumber` alone is not a message id — and `indexInBatch` is data
+  **word 1**, not word 0, because the non-indexed `caller` occupies word 0. Status comes from matching
+  L1 `OutBoxTransactionExecuted` logs, which is a wide L1 log scan and so is opt-in. It has its own
+  control (`controls.executedClassic`): batch 16378 on Outbox2 is *partially* executed — indices
+  4,5,6,7 claimed, 1,2,3 not — so a single query proves the oracle discriminates in both directions.
+  Without `--resolve-classic`, classic candidates stay `unknown`; they are never resolved against the
+  Nitro outbox, because the index spaces overlap and a cross-era `isSpent` answers confidently and
+  wrongly in both directions.
 - **Redstone (690) and Aleph Zero (41455)** SpokePool addresses could not be confirmed on-chain —
-  both chains are sunset and their public RPCs are dead. Marked `verified: false`; a zero there is
-  unproven until run against an archive node.
+  both chains are sunset and their public RPCs are dead. Marked `verified: false`, and the
+  `TokensBridged` sweep now reports `exhaustive: false` for an unverified address that returned zero
+  logs: a zero from an address we cannot prove is the right address is not evidence. Any *hit* proves
+  the address, and flips it to exhaustive.
 - **zkSync and Linea oracles are now verified and fixture-pinned** (zkSync via `L1Nullifier`
   `0xD7f9f541…` — note this is the upgraded L1SharedBridge, *not* the AssetRouter; Linea via
   `isMessageClaimed`). **Scroll** has a verified oracle and key derivation but no fixture yet.
@@ -235,5 +313,13 @@ New chain: add a `ChainConfig` to `CHAINS`, list its SpokePools in `spokePools.t
 `eraBoundaryBlock` if it has a fork boundary. If you do not know the OP portal address, leave it
 unset — `derivePortal()` resolves it on-chain via
 `L2StandardBridge.otherBridge() → L1StandardBridge.messenger() → L1XDM.portal()`, which is more
-trustworthy than a copied constant. Then add a fixture, ideally one stuck and one claimed case, and
-confirm `--verify-fixtures` passes.
+trustworthy than a copied constant.
+
+Then — and this is the part that is easy to skip — populate `controls` for that chain with a
+**known-claimed** message, or the scanner will (correctly) refuse to report anything on it and every
+candidate will come back `unknown`. Find one by reading the relevant L1 claim event
+(`WithdrawalFinalized`, `OutBoxTransactionExecuted`, …) and confirming the oracle returns `true` for
+it. Finally add a fixture — ideally one claimed and one *permanently* unclaimed case — and confirm
+`--verify-fixtures` passes. Prefer permanent negatives: a negative pinned to a live withdrawal is only
+valid until somebody claims it, and must be marked `mutable: true` so a later claim reports as DRIFT
+rather than failing the suite.

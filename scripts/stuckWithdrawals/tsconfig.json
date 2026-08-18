@@ -5,5 +5,5 @@
     "forceConsistentCasingInFileNames": true, "resolveJsonModule": true,
     "moduleResolution": "node", "outDir": "dist"
   },
-  "include": ["src/**/*.ts"]
+  "include": ["*.ts"]
 }

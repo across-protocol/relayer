@@ -58,46 +58,61 @@ export async function getLogsChunked(
 
   let start = fromBlock;
   let size = chunk0;
+  /** Successful batches at the current `size`. Growing before this is >0 livelocks — see below. */
+  let okAtSize = 0;
 
   while (start <= toBlock) {
     const end = Math.min(start + size - 1, toBlock);
-    let ok = false;
+    let succeeded = false;
+    let shrank = false;
     let attempt = 0;
 
-    while (attempt < retries && !ok) {
+    while (attempt < retries) {
       try {
-        const batch = await p.send("eth_getLogs", [
-          { ...filter, fromBlock: hex(start), toBlock: hex(end) },
-        ]);
+        const batch = await p.send("eth_getLogs", [{ ...filter, fromBlock: hex(start), toBlock: hex(end) }]);
         if (!Array.isArray(batch)) throw new RpcError(`non-array result: ${JSON.stringify(batch).slice(0, 120)}`);
         stats.okChunks++;
         stats.events += batch.length;
         logs.push(...batch);
         opts.onBatch?.(batch);
-        ok = true;
+        succeeded = true;
+        break;
       } catch (err) {
         attempt++;
-        // Shrink and retry. Range-too-wide and timeout both present as opaque errors.
+        // Shrink and retry the SAME `start`. Range-too-wide and timeout both present as
+        // opaque errors, so we cannot tell them apart and simply narrow the request.
         if (size > minChunk) {
           size = Math.max(minChunk, Math.floor(size / 4));
+          shrank = true;
           break; // recompute `end` with the smaller size
         }
-        if (attempt >= retries) {
-          stats.failChunks++;
-          stats.gaps.push([start, end]);
-          ok = true; // give up on this range, but it is recorded as a gap
-        } else {
-          await sleep(400 * attempt);
-        }
+        if (attempt < retries) await sleep(400 * attempt);
       }
     }
-    if (ok) {
-      // Only advance if we actually consumed [start,end]; a shrink leaves start untouched.
-      const consumed = Math.min(start + size - 1, toBlock);
-      if (consumed >= end) start = end + 1;
+
+    if (succeeded) {
+      start = end + 1;
+      okAtSize++;
+      /**
+       * Grow ONLY after the current size has actually delivered. The previous version grew
+       * whenever `failChunks === 0`, which included the iteration that had just shrunk — so an
+       * endpoint that rejects `chunk0` but accepts `chunk0/4` livelocked: shrink, grow, reject,
+       * shrink, grow, ... forever, never issuing the smaller request and never recording a gap.
+       */
+      if (okAtSize >= 2 && size < chunk0) {
+        size = Math.min(chunk0, size * 2);
+        okAtSize = 0;
+      }
+    } else if (shrank) {
+      okAtSize = 0; // retry [start, start+size-1] with the narrower window
+    } else {
+      // Exhausted retries at minChunk. Record the gap and move on; the caller is not entitled
+      // to claim exhaustiveness while stats.gaps is non-empty.
+      stats.failChunks++;
+      stats.gaps.push([start, end]);
+      start = end + 1;
+      okAtSize = 0;
     }
-    // Gently grow back toward the configured chunk size after a successful run.
-    if (stats.failChunks === 0 && size < chunk0) size = Math.min(chunk0, size * 2);
   }
   return { logs, stats };
 }
@@ -145,19 +160,61 @@ export function payloadMatches(log: Log, needles: string[]): string[] {
 export const hex = (n: number): string => "0x" + n.toString(16);
 export const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
-/** eth_call returning raw hex, or undefined on revert. Never throws for reverts. */
+/**
+ * True when a failed eth_call is the node telling us the call REVERTED, i.e. a real answer about
+ * chain state, as opposed to the node failing to answer at all.
+ *
+ * The distinction is load-bearing: see ethCall().
+ */
+function isRevert(err: unknown): boolean {
+  const e = err as { code?: unknown; body?: string; error?: { code?: number; message?: string }; message?: string };
+  // JSON-RPC error code 3 is "execution error"; ethers surfaces the inner error under `.error`.
+  if (e?.error?.code === 3) return true;
+  const msg = `${e?.error?.message ?? ""} ${e?.message ?? ""} ${e?.body ?? ""}`.toLowerCase();
+  return (
+    msg.includes("execution reverted") ||
+    msg.includes("execution error") ||
+    msg.includes("invalid opcode") ||
+    msg.includes("out of gas")
+  );
+}
+
+/**
+ * eth_call returning raw hex.
+ *
+ * Returns `undefined` ONLY for a genuine revert — a real "no" from the node, which for these
+ * oracles legitimately means "this function does not exist here" (see orbitClassicEntryExists).
+ *
+ * THROWS RpcError when the node could not answer (timeout, 429, 5xx, connection reset), after
+ * retrying. This is the important half: the previous version swallowed every failure into
+ * `undefined`, which isTrue() then read as `false`, which the scanner reported as STUCK. A
+ * five-second L1 blip was therefore indistinguishable from an unclaimed withdrawal, and would
+ * have produced exactly the class of false positive the controls exist to prevent. Callers must
+ * let this propagate and record the candidate as `unknown`, never as a finding.
+ */
 export async function ethCall(
   p: ethers.providers.JsonRpcProvider,
   to: string,
   data: string,
-  from?: string
+  opts: { from?: string; retries?: number; block?: string } = {}
 ): Promise<string | undefined> {
-  try {
-    return await p.send("eth_call", [{ to, data, ...(from ? { from } : {}) }, "latest"]);
-  } catch {
-    return undefined;
+  const retries = opts.retries ?? 3;
+  let last: unknown;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await p.send("eth_call", [
+        { to, data, ...(opts.from ? { from: opts.from } : {}) },
+        opts.block ?? "latest",
+      ]);
+    } catch (err) {
+      if (isRevert(err)) return undefined;
+      last = err;
+      if (attempt < retries) await sleep(300 * attempt);
+    }
   }
+  throw new RpcError(
+    `eth_call ${to} ${data.slice(0, 10)} did not answer after ${retries} attempts: ${String(last).slice(0, 160)}`
+  );
 }
 
-export const isTrue = (ret: string | undefined): boolean =>
-  ret !== undefined && ret.length >= 3 && BigInt(ret) === 1n;
+export const isTrue = (ret: string | undefined): boolean => ret !== undefined && ret.length >= 3 && BigInt(ret) === 1n;

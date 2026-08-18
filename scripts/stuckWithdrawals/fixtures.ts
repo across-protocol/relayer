@@ -5,15 +5,31 @@
  * the tool is wrong — not the fixtures. These exist because a scanner that returns a clean
  * "nothing stuck" is indistinguishable from a broken one unless it can also correctly identify
  * things that ARE stuck and things that are NOT.
+ *
+ * ON PINNING LIVE STATE: claim status is MONOTONIC — unclaimed can become claimed, never the
+ * reverse. So an `expectFinalized: true` fixture is permanent and any regression to false is a real
+ * failure, while an `expectFinalized: false` fixture pinned to a live withdrawal is only valid
+ * until somebody claims it. Those carry `mutable: true` and a false -> true observation is reported
+ * as DRIFT rather than FAIL; see verifyFixtures() in index.ts. Mark a negative `mutable` only when
+ * it pins live state — the permanent negatives are what actually guard against a stuck-at-true
+ * oracle, so never weaken those.
  */
 export interface Fixture {
   label: string;
   chainId: number;
   family: "op-bedrock" | "op-legacy" | "orbit-nitro";
-  /** withdrawalHash (bedrock), xDomainCalldata hash (legacy) or outbox position (orbit). */
-  key: string;
+  /** withdrawalHash (bedrock) or outbox position (orbit). Unused when `keys` is set. */
+  key?: string;
+  /**
+   * Legacy fixtures MUST declare v0 and v1 separately. Passing one hash as both (which this
+   * harness used to do) means an implementation regressed to checking only v0 still passes, which
+   * is precisely the bug the legacy fixture exists to catch.
+   */
+  keys?: { v0?: string; v1?: string };
   expectFinalized: boolean;
   asOf: string;
+  /** Pins live chain state that is allowed to flip false -> true. Only valid on negatives. */
+  mutable?: boolean;
   note?: string;
 }
 
@@ -90,30 +106,71 @@ export const FIXTURES: Fixture[] = [
     expectFinalized: true,
     asOf: "2026-08-18T11:52Z",
   },
-
-  // --- legacy-oracle regression: guards the v0-vs-v1 successfulMessages bug --------------
-  // This is the V1 versioned hash of legacy SNX message nonce 137125, relayed 2026-08-18.
-  // If someone "simplifies" legacyRelayed() back to checking only the v0 xDomainCalldata hash,
-  // this fixture fails — which is the entire point of it. v0 for this message reads false forever.
   {
-    label: "legacy SNX nonce 137125 (V1 versioned hash) — relayed",
+    // PERMANENT negative for the portal oracle: a hash no portal has ever seen.
+    label: "unknown withdrawal hash (portal negative control)",
     chainId: 10,
-    family: "op-legacy",
-    key: "0xdde3a671b7d7e655befb274151d1f9e393cf356229afc4c361ec9327115eeaa1",
-    expectFinalized: true,
+    family: "op-bedrock",
+    key: "0x" + "ab".repeat(32),
+    expectFinalized: false,
     asOf: "2026-08-18T12:35Z",
-    note: "v0 hash 0xc14724b1… reads false; only the v1 key records the relay",
+    note: "permanent — this preimage is not a real withdrawal, so it can never become finalized",
   },
 
-  // --- Orbit: HubPool-destined WBTC return, inside its 7-day window ----------------------
+  // --- legacy-oracle regression: guards the v0-vs-v1 successfulMessages bug --------------
+  // The v0 and v1 keys of legacy SNX message nonce 137125, relayed 2026-08-18. Both are real and
+  // they DISAGREE on-chain: v1 reads true, v0 reads false forever, because the post-Bedrock
+  // messenger writes the versioned key while only *reading* the legacy one. Supplying both is what
+  // makes this fixture bite — an implementation that checks only v0 reports this claimed
+  // withdrawal as stuck, and every legacy withdrawal with it.
   {
-    label: "Arbitrum WBTC 4.6256 -> HubPool (outbox position)",
+    label: "legacy SNX nonce 137125 — relayed, recorded under the V1 key only",
+    chainId: 10,
+    family: "op-legacy",
+    keys: {
+      v0: "0xc14724b19f1e506f34573656ccc22516561fcd4d16d89a250d340d2a2db30aca",
+      v1: "0xdde3a671b7d7e655befb274151d1f9e393cf356229afc4c361ec9327115eeaa1",
+    },
+    expectFinalized: true,
+    asOf: "2026-08-18T12:35Z",
+    note: "v0 alone reads false; a v0-only implementation fails here. src: verified both keys",
+  },
+  {
+    // PERMANENT negative: the v0 key on its own must NOT read as relayed.
+    label: "legacy SNX nonce 137125 — V0 key alone (must read false)",
+    chainId: 10,
+    family: "op-legacy",
+    keys: { v0: "0xc14724b19f1e506f34573656ccc22516561fcd4d16d89a250d340d2a2db30aca" },
+    expectFinalized: false,
+    asOf: "2026-08-18T12:35Z",
+    note:
+      "permanent — the pre-Bedrock messenger never recorded this key and the post-Bedrock one " +
+      "never will. Catches an oracle that returns true unconditionally.",
+  },
+
+  // --- Orbit ------------------------------------------------------------------------------
+  {
+    // PERMANENT negative: an outbox index that cannot plausibly be assigned for decades.
+    label: "Arbitrum outbox position 999999999999 (never assigned)",
+    chainId: 42161,
+    family: "orbit-nitro",
+    key: "999999999999",
+    expectFinalized: false,
+    asOf: "2026-08-18T11:52Z",
+    note: "permanent negative — guards against a stuck-at-true isSpent()",
+  },
+  {
+    label: "Arbitrum WBTC 4.6256 -> HubPool (outbox position 164622)",
     chainId: 42161,
     family: "orbit-nitro",
     key: "164622",
     expectFinalized: false,
     asOf: "2026-08-18T11:52Z",
-    note: "still inside the 7-day window at time of recording",
+    mutable: true,
+    note:
+      "LIVE state: unclaimed only because it was still inside its 7-day window when recorded. " +
+      "Once somebody claims it this reads true, which is DRIFT, not a failure — the permanent " +
+      "negative above is what actually holds the negative side of this oracle.",
   },
 ];
 
@@ -129,7 +186,14 @@ export type OracleFixture =
 
 export const ORACLE_FIXTURES: OracleFixture[] = [
   // Polygon: proves the exit key is derivable offline from (block, txIndex, receiptLogIndex).
-  { kind: "polygon", label: "processed exit (block 92225980, tx 0, log 0)", block: 92225980, txIndex: 0, logIndex: 0, expect: true },
+  {
+    kind: "polygon",
+    label: "processed exit (block 92225980, tx 0, log 0)",
+    block: 92225980,
+    txIndex: 0,
+    logIndex: 0,
+    expect: true,
+  },
   { kind: "polygon", label: "bogus exit (block 1, tx 0, log 0)", block: 1, txIndex: 0, logIndex: 0, expect: false },
 
   // Linea: guards against reverting to inboxL2L1MessageStatus, which returns 0 for everything.
@@ -141,4 +205,41 @@ export const ORACLE_FIXTURES: OracleFixture[] = [
   { kind: "zksync", label: "(324, 514000, 5) finalized", chainId: 324, batch: 514000, index: 5, expect: true },
   { kind: "zksync", label: "(324, 514000, 4) not finalized", chainId: 324, batch: 514000, index: 4, expect: false },
   { kind: "zksync", label: "(300, 514000, 5) wrong chain", chainId: 300, batch: 514000, index: 5, expect: false },
+];
+
+/**
+ * Offline hash-DERIVATION fixtures.
+ *
+ * The claim-key fixtures above prove the L1 oracles discriminate. These prove the other half: that
+ * we compute the keys we hand them correctly. Without this, a regression in
+ * legacyXDomainCalldataHash()/legacyVersionedHash() produces a hash no messenger has ever heard of,
+ * which reads as "not relayed" — a mass false positive that every oracle-side fixture still passes.
+ *
+ * Inputs are the exact relayMessage arguments the keeper submitted in L1 tx
+ * 0x0a2992eecf4af772f93bbe44b64beedf9a968fb50d1b456bd479c7ad1f6dfa1a
+ * (finalizeWithdrawalTransactionExternalProof, OP portal, 2026-08-18), decoded from its calldata.
+ * The expectations are keccak256 of that calldata, so they are checkable with no RPC at all.
+ */
+export interface DerivationFixture {
+  label: string;
+  messageNonce: string;
+  sender: string;
+  target: string;
+  message: string;
+  expectV0: string;
+  expectV1: string;
+}
+
+export const DERIVATION_FIXTURES: DerivationFixture[] = [
+  {
+    label: "legacy SNX 55.0 (message nonce 137125)",
+    messageNonce: "137125",
+    sender: "0x4200000000000000000000000000000000000010", // L2StandardBridge
+    target: "0x99C9fc46f92E8a1c0deC1b1747d010903E884bE1", // L1StandardBridge
+    message:
+      "0xa9f9e675000000000000000000000000c011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f0000000000000000000000008700daec35af8ff88c16bdf0418774cb3d7599b4000000000000000000000000428ab2ba90eba0a4be7af34c9ac451ab061ac010000000000000000000000000428ab2ba90eba0a4be7af34c9ac451ab061ac010000000000000000000000000000000000000000000000002fb474098f67c008c00000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000000",
+    // successfulMessages[expectV1] == true, successfulMessages[expectV0] == false. src: verified
+    expectV0: "0xc14724b19f1e506f34573656ccc22516561fcd4d16d89a250d340d2a2db30aca",
+    expectV1: "0xdde3a671b7d7e655befb274151d1f9e393cf356229afc4c361ec9327115eeaa1",
+  },
 ];

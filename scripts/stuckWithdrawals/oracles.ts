@@ -12,6 +12,7 @@ import { ethCall, isTrue, getLogsChunked, Log } from "./rpc";
 import { SELECTORS, EVENTS } from "./registry";
 
 const WITHDRAWAL_FINALIZED_TOPIC = ethers.utils.id("WithdrawalFinalized(bytes32,bool)");
+const OUTBOX_TX_EXECUTED_TOPIC = ethers.utils.id("OutBoxTransactionExecuted(address,address,uint256,uint256)");
 const pad32 = (h: string) => ethers.utils.hexZeroPad(h, 32).slice(2);
 
 export interface Control {
@@ -41,11 +42,7 @@ export async function opProvenAt(
   withdrawalHash: string,
   proofSubmitter: string
 ): Promise<{ disputeGame: string; timestamp: number } | undefined> {
-  const ret = await ethCall(
-    l1,
-    portal,
-    SELECTORS.provenWithdrawals + pad32(withdrawalHash) + pad32(proofSubmitter)
-  );
+  const ret = await ethCall(l1, portal, SELECTORS.provenWithdrawals + pad32(withdrawalHash) + pad32(proofSubmitter));
   if (!ret || ret.length < 130) return undefined;
   return {
     disputeGame: ethers.utils.getAddress("0x" + ret.slice(26, 66)),
@@ -67,6 +64,126 @@ export async function opProofSubmitter(
   if (!ret || ret.length < 66) return undefined;
   const a = ethers.utils.getAddress("0x" + ret.slice(-40));
   return a === ethers.constants.AddressZero ? undefined : a;
+}
+
+export async function opNumProofSubmitters(
+  l1: ethers.providers.JsonRpcProvider,
+  portal: string,
+  withdrawalHash: string
+): Promise<number | undefined> {
+  const ret = await ethCall(l1, portal, SELECTORS.numProofSubmitters + pad32(withdrawalHash));
+  return ret === undefined || ret.length < 3 ? undefined : Number(BigInt(ret));
+}
+
+/**
+ * Every proof submitter for a withdrawal, newest LAST.
+ *
+ * DO NOT just read index 0. When a withdrawal is reproven — which is exactly what happens after a
+ * dispute game is invalidated — index 0 still points at the OLD proof, backed by a game that can
+ * never resolve favourably. Reporting that submitter tells an operator to submit a finalization
+ * that reverts. The production finalizer reads `numProofSubmitters - 1` for this reason
+ * (src/finalizer/utils/opStack.ts); we enumerate so we can prefer the newest proof that actually
+ * has a resolved game.
+ */
+export async function opProofSubmitters(
+  l1: ethers.providers.JsonRpcProvider,
+  portal: string,
+  withdrawalHash: string
+): Promise<string[]> {
+  const n = await opNumProofSubmitters(l1, portal, withdrawalHash);
+  if (n === undefined) {
+    // Pre-Portal-2 portals have no numProofSubmitters; index 0 is the only proof that can exist.
+    const only = await opProofSubmitter(l1, portal, withdrawalHash, 0);
+    return only ? [only] : [];
+  }
+  const out: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const s = await opProofSubmitter(l1, portal, withdrawalHash, i);
+    if (s) out.push(s);
+  }
+  return out;
+}
+
+const uint = async (
+  l1: ethers.providers.JsonRpcProvider,
+  to: string,
+  selector: string
+): Promise<number | undefined> => {
+  const ret = await ethCall(l1, to, selector);
+  return ret === undefined || ret.length < 3 ? undefined : Number(BigInt(ret));
+};
+
+export const opProofMaturityDelay = (l1: ethers.providers.JsonRpcProvider, portal: string) =>
+  uint(l1, portal, SELECTORS.proofMaturityDelaySeconds);
+
+export const opDisputeGameFinalityDelay = (l1: ethers.providers.JsonRpcProvider, portal: string) =>
+  uint(l1, portal, SELECTORS.disputeGameFinalityDelaySeconds);
+
+/** DisputeGame.resolvedAt(); 0 (returned as undefined here) means the game has not resolved. */
+export async function disputeGameResolvedAt(
+  l1: ethers.providers.JsonRpcProvider,
+  game: string
+): Promise<number | undefined> {
+  const v = await uint(l1, game, SELECTORS.resolvedAt);
+  return v ? v : undefined;
+}
+
+export interface Claimability {
+  /** Unix seconds at which finalization first becomes possible, if that is knowable now. */
+  claimableAt?: number;
+  /** Set when the answer is "not yet knowable" rather than a timestamp. */
+  blockedOn?: string;
+  proofSubmitter?: string;
+  disputeGame?: string;
+  provenAt?: number;
+}
+
+/**
+ * When can this proven withdrawal actually be finalized?
+ *
+ * NOT `provenAt + 7 days`. On a Portal-2 (fault-proof) chain there are TWO independent clocks and
+ * the gate is the later of them:
+ *   1. proof maturity:      provenAt        + proofMaturityDelaySeconds
+ *   2. dispute-game airgap: game.resolvedAt + disputeGameFinalityDelaySeconds
+ * and clock 2 has not even STARTED while the game is unresolved (resolvedAt == 0). Mainnet OP
+ * reads proofMaturityDelaySeconds = 604800 and disputeGameFinalityDelaySeconds = 302400, so the
+ * hardcoded seven days silently matched clock 1 alone and ignored clock 2 entirely — advertising a
+ * claimableAt that can be days early and sending operators into reverting finalizations. This
+ * mirrors getDisputeGameFinalizableAt() in src/finalizer/utils/opStack.ts.
+ */
+export async function opClaimability(
+  l1: ethers.providers.JsonRpcProvider,
+  portal: string,
+  withdrawalHash: string,
+  submitters: string[]
+): Promise<Claimability> {
+  // Newest proof first: a reproof supersedes whatever index 0 holds.
+  for (const submitter of [...submitters].reverse()) {
+    const pv = await opProvenAt(l1, portal, withdrawalHash, submitter);
+    if (!pv?.timestamp) continue;
+    const base: Claimability = {
+      proofSubmitter: submitter,
+      disputeGame: pv.disputeGame,
+      provenAt: pv.timestamp,
+    };
+    const maturity = await opProofMaturityDelay(l1, portal);
+    // Legacy (pre-fault-proof) portal: no dispute games, single 7-day clock.
+    if (maturity === undefined) return { ...base, claimableAt: pv.timestamp + 7 * 86400 };
+
+    const matureAt = pv.timestamp + maturity;
+    const airgap = await opDisputeGameFinalityDelay(l1, portal);
+    if (airgap === undefined) return { ...base, claimableAt: matureAt };
+
+    const resolvedAt =
+      pv.disputeGame === ethers.constants.AddressZero ? undefined : await disputeGameResolvedAt(l1, pv.disputeGame);
+    if (resolvedAt === undefined)
+      return {
+        ...base,
+        blockedOn: `dispute game ${pv.disputeGame} unresolved — airgap clock has not started; earliest possible is proof maturity at ${new Date(matureAt * 1000).toISOString()}`,
+      };
+    return { ...base, claimableAt: Math.max(matureAt, resolvedAt + airgap) };
+  }
+  return { blockedOn: "no proof found for any known submitter" };
 }
 
 /**
@@ -128,9 +245,7 @@ export function legacyXDomainCalldataHash(
   const iface = new ethers.utils.Interface([
     "function relayMessage(address target, address sender, bytes message, uint256 messageNonce)",
   ]);
-  return ethers.utils.keccak256(
-    iface.encodeFunctionData("relayMessage", [target, sender, message, messageNonce])
-  );
+  return ethers.utils.keccak256(iface.encodeFunctionData("relayMessage", [target, sender, message, messageNonce]));
 }
 
 /**
@@ -231,8 +346,7 @@ export async function orbitNitroSpent(
   position: ethers.BigNumberish
 ): Promise<{ spent: boolean; via?: string }> {
   const key = pad32(ethers.utils.hexlify(ethers.BigNumber.from(position)));
-  if (isTrue(await ethCall(l1, nitroOutbox, SELECTORS.isSpent + key)))
-    return { spent: true, via: nitroOutbox };
+  if (isTrue(await ethCall(l1, nitroOutbox, SELECTORS.isSpent + key))) return { spent: true, via: nitroOutbox };
   return { spent: false };
 }
 
@@ -253,6 +367,98 @@ export async function orbitClassicEntryExists(
   return isTrue(
     await ethCall(l1, classicOutbox, sel + pad32(ethers.utils.hexlify(ethers.BigNumber.from(batchNumber))))
   );
+}
+
+/**
+ * Definitive classic claim check: the L1 OutBoxTransactionExecuted log.
+ *
+ * Classic identifies a message by the PAIR (batchNumber, indexInBatch) — not by a single global
+ * position — and the event carries batchNumber in indexed topic3 with indexInBatch in `data`.
+ * outboxEntryExists() alone is not enough: it says the batch was confirmed, not that this
+ * particular message inside it was executed.
+ *
+ * Returns `undefined` (not `false`) when the log scan hit a gap, so an unreadable range can never
+ * be mistaken for "not claimed".
+ */
+export async function orbitClassicExecutedIndices(
+  l1: ethers.providers.JsonRpcProvider,
+  classicOutboxes: string[],
+  batchNumber: ethers.BigNumberish,
+  fromBlock: number,
+  toBlock: number,
+  chunk = 500_000
+): Promise<{ indices: Set<string>; complete: boolean }> {
+  const indices = new Set<string>();
+  let complete = true;
+  for (const outbox of classicOutboxes) {
+    const { logs, stats } = await getLogsChunked(
+      l1,
+      {
+        address: outbox,
+        topics: [
+          OUTBOX_TX_EXECUTED_TOPIC,
+          null,
+          null,
+          ethers.utils.hexZeroPad(ethers.BigNumber.from(batchNumber).toHexString(), 32),
+        ],
+      },
+      fromBlock,
+      toBlock,
+      { chunk }
+    );
+    if (stats.gaps.length) complete = false;
+    for (const l of logs) if (l.data) indices.add(ethers.BigNumber.from(l.data).toString());
+  }
+  return { indices, complete };
+}
+
+export async function orbitClassicExecuted(
+  l1: ethers.providers.JsonRpcProvider,
+  classicOutboxes: string[],
+  batchNumber: ethers.BigNumberish,
+  indexInBatch: ethers.BigNumberish,
+  fromBlock: number,
+  toBlock: number
+): Promise<boolean | undefined> {
+  const { indices, complete } = await orbitClassicExecutedIndices(l1, classicOutboxes, batchNumber, fromBlock, toBlock);
+  const hit = indices.has(ethers.BigNumber.from(indexInBatch).toString());
+  // An incomplete scan may only ever produce `true` (a hit is proof) or `undefined`.
+  return hit ? true : complete ? false : undefined;
+}
+
+/**
+ * Control for the classic outbox oracle.
+ *
+ * Uses a batch known to be PARTIALLY executed, so one L1 log query yields both halves: the known
+ * executed index must read true and an index that batch never contained must read false. Without
+ * this the oracle is a log scan whose empty result is indistinguishable from a wrong topic0, a
+ * wrong outbox address, or a range the endpoint quietly refused — i.e. a silent all-stuck oracle,
+ * which is the exact failure this file exists to prevent.
+ */
+export async function assertOrbitClassicDiscriminates(
+  l1: ethers.providers.JsonRpcProvider,
+  classicOutboxes: string[],
+  known: { batchNumber: number; indexInBatch: number },
+  fromBlock: number,
+  toBlock: number
+): Promise<Control> {
+  const { indices, complete } = await orbitClassicExecutedIndices(
+    l1,
+    classicOutboxes,
+    known.batchNumber,
+    fromBlock,
+    toBlock
+  );
+  const pos = indices.has(String(known.indexInBatch)) ? "pass" : "fail";
+  const neg = indices.has("999999999") ? "fail" : "pass";
+  return {
+    ok: pos === "pass" && neg === "pass" && complete,
+    positive: pos,
+    negative: neg,
+    detail:
+      `batch ${known.batchNumber}: executed indices [${[...indices].sort((a, b) => Number(a) - Number(b)).join(",")}]` +
+      `, expected ${known.indexInBatch} present${complete ? "" : " (L1 LOG SCAN INCOMPLETE)"}`,
+  };
 }
 
 /** Back-compat shim for the fixture harness; Nitro only. */
@@ -307,9 +513,7 @@ export function polygonNibbles(buf: Uint8Array): string {
 }
 
 export function polygonExitHash(l2BlockNumber: number, txIndex: number, receiptLogIndex: number): string {
-  const key = ethers.utils.arrayify(
-    ethers.utils.RLP.encode(txIndex === 0 ? "0x" : ethers.utils.hexlify(txIndex))
-  );
+  const key = ethers.utils.arrayify(ethers.utils.RLP.encode(txIndex === 0 ? "0x" : ethers.utils.hexlify(txIndex)));
   return ethers.utils.solidityKeccak256(
     ["uint256", "bytes", "uint256"],
     [l2BlockNumber, polygonNibbles(key), receiptLogIndex]
@@ -397,8 +601,11 @@ export async function zkWithdrawalFinalized(
 
 /** Scroll L2->L1 message key: keccak(relayMessage selector ++ abi.encode(sender,target,value,nonce,message)). */
 export function scrollMessageHash(
-  sender: string, target: string, value: ethers.BigNumberish,
-  messageNonce: ethers.BigNumberish, message: string
+  sender: string,
+  target: string,
+  value: ethers.BigNumberish,
+  messageNonce: ethers.BigNumberish,
+  message: string
 ): string {
   const iface = new ethers.utils.Interface([
     "function relayMessage(address from, address to, uint256 value, uint256 nonce, bytes message)",
@@ -441,8 +648,12 @@ export async function lineaMessageClaimed(
 
 /** Linea message hash, verified byte-identical to the on-chain MessageClaimed topic1. */
 export function lineaMessageHash(
-  from: string, to: string, fee: ethers.BigNumberish, value: ethers.BigNumberish,
-  nonce: ethers.BigNumberish, calldata: string
+  from: string,
+  to: string,
+  fee: ethers.BigNumberish,
+  value: ethers.BigNumberish,
+  nonce: ethers.BigNumberish,
+  calldata: string
 ): string {
   return ethers.utils.keccak256(
     ethers.utils.defaultAbiCoder.encode(
