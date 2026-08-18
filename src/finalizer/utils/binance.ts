@@ -2,7 +2,6 @@ import {
   winston,
   Signer,
   getTimestampForBlock,
-  mapAsync,
   getBinanceApiClient,
   resolveAcrossToken,
   compareAddressesSimple,
@@ -33,10 +32,15 @@ import {
   BinanceDeposit,
   BINANCE_SWEEP_WITHDRAW_ORDER_ID_PREFIX,
   isBinanceSweepWithdrawal,
+  CHAIN_IDs,
+  EventSearchConfig,
+  getPaginatedBlockRanges,
+  paginatedEventQuery,
 } from "../../utils";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { FinalizerPromise, AddressesToFinalize } from "../types";
 import { constructAdapter } from "../../rebalancer/RebalancerClientHelper";
+import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 
 // Alias for a Binance deposit/withdrawal status.
 enum Status {
@@ -52,13 +56,24 @@ enum Status {
 const DECIMAL_PRECISION = 1_000_000;
 
 type OwnedBinanceDeposit = BinanceDeposit & { depositor: string };
-type ReceiptProvider = Pick<ethers.providers.Provider, "getTransactionReceipt">;
+type DepositAttributionClient = {
+  chainId: number;
+  provider: ethers.providers.Provider;
+  eventSearchConfig: EventSearchConfig;
+};
+type Erc20Transfer = { transactionHash: string; from: string };
+type QueryErc20Transfers = (
+  client: DepositAttributionClient,
+  token: string,
+  recipient: string
+) => Promise<Erc20Transfer[]>;
 export type BinanceFinalizerDependencies = {
   constructAdapter: typeof constructAdapter;
   getAccountCoins: typeof getAccountCoins;
   getBinanceApiClient: typeof getBinanceApiClient;
   getBinanceDeposits: typeof getBinanceDeposits;
   getBinanceDepositType: typeof getBinanceDepositType;
+  getOwnedBinanceDeposits: typeof getOwnedBinanceDeposits;
   getBinanceWithdrawals: typeof getBinanceWithdrawals;
   getBinanceWithdrawalType: typeof getBinanceWithdrawalType;
   getTimestampForBlock: typeof getTimestampForBlock;
@@ -71,6 +86,7 @@ const defaultDependencies: BinanceFinalizerDependencies = {
   getBinanceApiClient,
   getBinanceDeposits,
   getBinanceDepositType,
+  getOwnedBinanceDeposits,
   getBinanceWithdrawals,
   getBinanceWithdrawalType,
   getTimestampForBlock,
@@ -127,9 +143,23 @@ export async function binanceFinalizer(
     return true;
   });
 
-  const ownedBinanceBridgeDeposits = await getOwnedBinanceDeposits(_binanceBridgeDeposits, {
-    [BINANCE_NETWORKS[hubChainId]]: l1SpokePoolClient.spokePool.provider,
-    [BINANCE_NETWORKS[l2ChainId]]: l2SpokePoolClient.spokePool.provider,
+  const ownedBinanceBridgeDeposits = await dependencies.getOwnedBinanceDeposits(_binanceBridgeDeposits, {
+    [BINANCE_NETWORKS[hubChainId]]: {
+      chainId: hubChainId,
+      provider: l1SpokePoolClient.spokePool.provider,
+      eventSearchConfig: {
+        ...l1SpokePoolClient.eventSearchConfig,
+        to: l1SpokePoolClient.eventSearchConfig.to ?? l1SpokePoolClient.latestHeightSearched,
+      },
+    },
+    [BINANCE_NETWORKS[l2ChainId]]: {
+      chainId: l2ChainId,
+      provider: l2SpokePoolClient.spokePool.provider,
+      eventSearchConfig: {
+        ...l2SpokePoolClient.eventSearchConfig,
+        to: l2SpokePoolClient.eventSearchConfig.to ?? l2SpokePoolClient.latestHeightSearched,
+      },
+    },
   });
   assertAllConfirmedBinanceDepositsAttributed(_binanceBridgeDeposits, ownedBinanceBridgeDeposits);
   const statusesGrouped = groupObjectCountsByProp(ownedBinanceBridgeDeposits, (deposit: { status: number }) => {
@@ -366,24 +396,78 @@ export async function binanceFinalizer(
 
 export async function getOwnedBinanceDeposits(
   deposits: BinanceDeposit[],
-  providersByNetwork: Record<string, ReceiptProvider>
+  clientsByNetwork: Record<string, DepositAttributionClient>,
+  queryErc20Transfers: QueryErc20Transfers = getErc20Transfers
 ): Promise<OwnedBinanceDeposit[]> {
-  return (
-    await mapAsync(deposits, async (deposit) => {
-      const provider = providersByNetwork[deposit.network];
-      if (!isDefined(provider)) {
-        return undefined;
+  const depositors = new Map<string, string>();
+  const erc20Groups = new Map<string, BinanceDeposit[]>();
+  const depositKey = ({ network, txId }: BinanceDeposit) => `${network}:${txId.toLowerCase()}`;
+  const receiptDeposits: BinanceDeposit[] = [];
+
+  deposits.forEach((deposit) => {
+    const client = clientsByNetwork[deposit.network];
+    if (!isDefined(client)) {
+      return;
+    }
+    if (deposit.coin === "ETH" && client.chainId === CHAIN_IDs.MAINNET) {
+      receiptDeposits.push(deposit);
+    } else {
+      const key = `${deposit.network}:${deposit.coin}:${deposit.address.toLowerCase()}`;
+      const group = erc20Groups.get(key) ?? [];
+      group.push(deposit);
+      erc20Groups.set(key, group);
+    }
+  });
+
+  await Promise.all(
+    Array.from(erc20Groups.values()).map(async (group) => {
+      const [deposit] = group;
+      const client = clientsByNetwork[deposit.network];
+      if (getPaginatedBlockRanges(client.eventSearchConfig).length > group.length) {
+        receiptDeposits.push(...group);
+        return;
       }
+      const token = getTokenInfoFromSymbol(deposit.coin, client.chainId).address.toNative();
+      const transfers = await queryErc20Transfers(client, token, deposit.address);
+      const senders = new Map(transfers.map(({ transactionHash, from }) => [transactionHash.toLowerCase(), from]));
+      group.forEach((item) => {
+        const sender = senders.get(item.txId.toLowerCase());
+        if (isDefined(sender)) {
+          depositors.set(depositKey(item), EvmAddress.from(sender).toNative());
+        }
+      });
+    })
+  );
+  await Promise.all(
+    receiptDeposits.map(async (deposit) => {
       try {
-        const receipt = await provider.getTransactionReceipt(deposit.txId);
-        return isDefined(receipt) && ethers.utils.isAddress(receipt.from)
-          ? { ...deposit, depositor: EvmAddress.from(receipt.from).toNative() }
-          : undefined;
+        const receipt = await clientsByNetwork[deposit.network].provider.getTransactionReceipt(deposit.txId);
+        if (isDefined(receipt) && ethers.utils.isAddress(receipt.from)) {
+          depositors.set(depositKey(deposit), EvmAddress.from(receipt.from).toNative());
+        }
       } catch {
-        return undefined;
+        return;
       }
     })
-  ).filter(isDefined);
+  );
+
+  return deposits
+    .map((deposit) => {
+      const depositor = depositors.get(depositKey(deposit));
+      return isDefined(depositor) ? { ...deposit, depositor } : undefined;
+    })
+    .filter(isDefined);
+}
+
+async function getErc20Transfers(
+  client: DepositAttributionClient,
+  tokenAddress: string,
+  recipient: string
+): Promise<Erc20Transfer[]> {
+  const token = new ethers.Contract(tokenAddress, ERC20_ABI, client.provider);
+  return (await paginatedEventQuery(token, token.filters.Transfer(null, recipient), client.eventSearchConfig)).map(
+    ({ transactionHash, args }) => ({ transactionHash, from: args?.from })
+  );
 }
 
 export function assertAllConfirmedBinanceDepositsAttributed(

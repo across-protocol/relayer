@@ -107,6 +107,8 @@ export type BinanceDeposit = {
   network: string;
   // The transaction hash of the deposit.
   txId: string;
+  // The Binance address that received the deposit.
+  address: string;
   // The timestamp that Binance assigns the deposit.
   insertTime: number;
   // The status of the deposit/withdrawal.
@@ -114,7 +116,7 @@ export type BinanceDeposit = {
 };
 
 // A BinanceWithdrawal is a simplified element of the return type of the Binance API's `withdrawHistory`.
-export type BinanceWithdrawal = Omit<BinanceDeposit, "insertTime"> & {
+export type BinanceWithdrawal = Omit<BinanceDeposit, "insertTime" | "address"> & {
   // The recipient of `coin` on the destination network.
   recipient: string;
   // The unique withdrawal ID.
@@ -415,6 +417,7 @@ export async function getBinanceDeposits(
       coin: resolveBinanceCoinSymbol(deposit.coin),
       network: deposit.network,
       txId: deposit.txId,
+      address: deposit.address,
       status: deposit.status,
       insertTime: deposit.insertTime,
     } satisfies BinanceDeposit;

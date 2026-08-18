@@ -81,33 +81,114 @@ describe("Binance finalizer helpers", function () {
     const l1Depositor = "0x0000000000000000000000000000000000000001";
     const l2Depositor = "0x0000000000000000000000000000000000000002";
     const deposits: BinanceDeposit[] = [
-      { amount: 10, coin: "USDC", network: BINANCE_NETWORKS[CHAIN_IDs.MAINNET], txId: "l1", insertTime: 1 },
-      { amount: 20, coin: "USDC", network: BINANCE_NETWORKS[CHAIN_IDs.BSC], txId: "l2", insertTime: 2 },
-      { amount: 30, coin: "USDC", network: "UNSUPPORTED", txId: "other", insertTime: 3 },
+      {
+        amount: 10,
+        coin: "USDC",
+        network: BINANCE_NETWORKS[CHAIN_IDs.MAINNET],
+        txId: "l1",
+        address: "0x0000000000000000000000000000000000000011",
+        insertTime: 1,
+      },
+      {
+        amount: 20,
+        coin: "USDC",
+        network: BINANCE_NETWORKS[CHAIN_IDs.BSC],
+        txId: "l2",
+        address: "0x0000000000000000000000000000000000000022",
+        insertTime: 2,
+      },
+      {
+        amount: 30,
+        coin: "USDC",
+        network: "UNSUPPORTED",
+        txId: "other",
+        address: "0x0000000000000000000000000000000000000033",
+        insertTime: 3,
+      },
     ];
-    const ownedDeposits = await getOwnedBinanceDeposits(deposits, {
-      [BINANCE_NETWORKS[CHAIN_IDs.MAINNET]]: {
-        getTransactionReceipt: sinon.stub().resolves({ from: l1Depositor }),
+    const queryTransfers = sinon.stub().callsFake(async (_client, _token, recipient) => [
+      {
+        transactionHash: recipient === deposits[0].address ? "l1" : "l2",
+        from: recipient === deposits[0].address ? l1Depositor : l2Depositor,
       },
-      [BINANCE_NETWORKS[CHAIN_IDs.BSC]]: {
-        getTransactionReceipt: sinon.stub().resolves({ from: l2Depositor }),
+    ]);
+    const ownedDeposits = await getOwnedBinanceDeposits(
+      deposits,
+      {
+        [BINANCE_NETWORKS[CHAIN_IDs.MAINNET]]: getDepositAttributionTestClient(CHAIN_IDs.MAINNET),
+        [BINANCE_NETWORKS[CHAIN_IDs.BSC]]: getDepositAttributionTestClient(CHAIN_IDs.BSC),
       },
-    });
+      queryTransfers
+    );
 
     expect(ownedDeposits.map(({ txId, depositor }) => ({ txId, depositor }))).to.deep.equal([
       { txId: "l1", depositor: EvmAddress.from(l1Depositor).toNative() },
       { txId: "l2", depositor: EvmAddress.from(l2Depositor).toNative() },
     ]);
+    expect(queryTransfers.callCount).to.equal(2);
   });
 
-  it("fails closed when a Binance deposit receipt cannot be resolved", async function () {
+  it("uses the transaction receipt for native ETH deposits", async function () {
+    const depositor = "0x0000000000000000000000000000000000000001";
+    const deposit: BinanceDeposit = {
+      amount: 1,
+      coin: "ETH",
+      network: BINANCE_NETWORKS[CHAIN_IDs.MAINNET],
+      txId: "native",
+      address: "0x0000000000000000000000000000000000000011",
+      insertTime: 1,
+    };
+    const client = getDepositAttributionTestClient(CHAIN_IDs.MAINNET);
+    client.provider.getTransactionReceipt = sinon.stub().resolves({ from: depositor });
+
+    const ownedDeposits = await getOwnedBinanceDeposits([deposit], {
+      [BINANCE_NETWORKS[CHAIN_IDs.MAINNET]]: client,
+    });
+
+    expect(ownedDeposits[0].depositor).to.equal(EvmAddress.from(depositor).toNative());
+  });
+
+  it("uses receipts when paginated logs would require more calls", async function () {
+    const depositor = "0x0000000000000000000000000000000000000001";
+    const deposits: BinanceDeposit[] = ["first", "second"].map((txId) => ({
+      amount: 1,
+      coin: "USDC",
+      network: BINANCE_NETWORKS[CHAIN_IDs.BSC],
+      txId,
+      address: "0x0000000000000000000000000000000000000011",
+      insertTime: 1,
+    }));
+    const client = getDepositAttributionTestClient(CHAIN_IDs.BSC);
+    client.eventSearchConfig = { from: 0, to: 100, maxLookBack: 10 };
+    client.provider.getTransactionReceipt = sinon.stub().resolves({ from: depositor });
+    const queryTransfers = sinon.stub();
+
+    const ownedDeposits = await getOwnedBinanceDeposits(
+      deposits,
+      { [BINANCE_NETWORKS[CHAIN_IDs.BSC]]: client },
+      queryTransfers
+    );
+
+    expect(ownedDeposits).to.have.length(2);
+    expect(client.provider.getTransactionReceipt.callCount).to.equal(2);
+    expect(queryTransfers.callCount).to.equal(0);
+  });
+
+  it("fails closed when a native Binance deposit receipt cannot be resolved", async function () {
     const deposits: BinanceDeposit[] = [
-      { amount: 10, coin: "USDC", network: BINANCE_NETWORKS[CHAIN_IDs.MAINNET], txId: "missing", insertTime: 1 },
-    ];
-    const ownedDeposits = await getOwnedBinanceDeposits(deposits, {
-      [BINANCE_NETWORKS[CHAIN_IDs.MAINNET]]: {
-        getTransactionReceipt: sinon.stub().rejects(new Error("RPC unavailable")),
+      {
+        amount: 10,
+        coin: "ETH",
+        network: BINANCE_NETWORKS[CHAIN_IDs.MAINNET],
+        txId: "missing",
+        address: "0x0000000000000000000000000000000000000011",
+        insertTime: 1,
       },
+    ];
+    const client = getDepositAttributionTestClient(CHAIN_IDs.MAINNET);
+    client.provider.getTransactionReceipt = sinon.stub().rejects(new Error("RPC unavailable"));
+    const ownedDeposits = await getOwnedBinanceDeposits(deposits, {
+      [BINANCE_NETWORKS[CHAIN_IDs.MAINNET]]: client,
     });
 
     expect(ownedDeposits).to.deep.equal([]);
@@ -122,6 +203,7 @@ describe("Binance finalizer helpers", function () {
       getBinanceDeposits: sinon.stub().resolves([{ ...deposits[0], status: 1 }]),
       getAccountCoins: sinon.stub().resolves([]),
       getBinanceDepositType: sinon.stub().resolves(BinanceTransactionType.UNKNOWN),
+      getOwnedBinanceDeposits: sinon.stub().resolves([]),
     } as unknown as BinanceFinalizerDependencies;
     const clients = getBinanceFinalizerTestClients(sinon.stub().rejects(new Error("RPC unavailable")));
     await expect(
@@ -146,6 +228,7 @@ describe("Binance finalizer helpers", function () {
         coin: "USDC",
         network: BINANCE_NETWORKS[CHAIN_IDs.MAINNET],
         txId: "l1-deposit",
+        address: "0x0000000000000000000000000000000000000011",
         insertTime: 1,
         status: 1,
       },
@@ -154,6 +237,7 @@ describe("Binance finalizer helpers", function () {
         coin: "USDC",
         network: BINANCE_NETWORKS[CHAIN_IDs.BSC],
         txId: "l2-deposit",
+        address: "0x0000000000000000000000000000000000000022",
         insertTime: 2,
         status: 1,
       },
@@ -182,6 +266,12 @@ describe("Binance finalizer helpers", function () {
         .onSecondCall()
         .resolves([{ ...coin, balance: "5.1" }]),
       getBinanceDepositType: sinon.stub().resolves(BinanceTransactionType.UNKNOWN),
+      getOwnedBinanceDeposits: sinon.stub().callsFake(async (items: BinanceDeposit[]) =>
+        items.map((deposit) => ({
+          ...deposit,
+          depositor: EvmAddress.from(deposit.txId === "l2-deposit" ? second : first).toNative(),
+        }))
+      ),
       getBinanceWithdrawals: sinon.stub().callsFake(async () =>
         submitted.map((withdrawal) => ({
           ...withdrawal,
@@ -232,6 +322,7 @@ describe("Binance finalizer helpers", function () {
       coin: "USDC",
       network: BINANCE_NETWORKS[CHAIN_IDs.BSC],
       txId: "later-l2-deposit",
+      address: "0x0000000000000000000000000000000000000022",
       insertTime: 3,
       status: 1,
     });
@@ -295,4 +386,12 @@ function getBinanceFinalizerTestClients(getTransactionReceipt: sinon.SinonStub) 
   const client = (chainId: number) =>
     ({ chainId, eventSearchConfig: { from: 0 }, spokePool: { provider: { getTransactionReceipt } } }) as never;
   return { signer, l1: client(CHAIN_IDs.MAINNET), l2: client(CHAIN_IDs.BSC) };
+}
+
+function getDepositAttributionTestClient(chainId: number) {
+  return {
+    chainId,
+    provider: { getTransactionReceipt: sinon.stub() } as never,
+    eventSearchConfig: { from: 0, to: 0 },
+  };
 }
