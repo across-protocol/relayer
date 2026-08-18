@@ -19,6 +19,7 @@ import { fromWei, retry, toBNWei } from "./SDKUtils";
 let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
 const BINANCE_TRADES_FETCH_LIMIT = 1000;
+export const BINANCE_SWEEP_WITHDRAW_ORDER_ID_PREFIX = "across-finalizer-sweep-";
 
 // Binance only accepts a signed request while its timestamp remains within recvWindow.
 // Signed reads can tolerate a much larger window because a delayed accepted request still returns current server data.
@@ -122,7 +123,13 @@ export type BinanceWithdrawal = Omit<BinanceDeposit, "insertTime"> & {
   transactionFee: number;
   // The timestamp of the withdrawal.
   applyTime: string;
+  // Optional client-provided ID persisted by Binance with the withdrawal.
+  withdrawOrderId?: string;
 };
+
+export function isBinanceSweepWithdrawal(withdrawal: Pick<BinanceWithdrawal, "withdrawOrderId">): boolean {
+  return withdrawal.withdrawOrderId?.startsWith(BINANCE_SWEEP_WITHDRAW_ORDER_ID_PREFIX) ?? false;
+}
 
 export enum BINANCE_WITHDRAWAL_STATUS {
   EMAIL_SENT = 0,
@@ -279,7 +286,7 @@ export async function submitBinanceOrder(
 
 export async function submitBinanceWithdrawal(
   binanceApi: BinanceApi,
-  options: Parameters<BinanceApi["withdraw"]>[0]
+  options: Parameters<BinanceApi["withdraw"]>[0] & { withdrawOrderId?: string }
 ): ReturnType<BinanceApi["withdraw"]> {
   return (binanceApi as BinanceApiWithRecvWindow).withdraw({ ...options, recvWindow: BINANCE_WITHDRAW_RECV_WINDOW_MS });
 }
@@ -443,6 +450,7 @@ export async function getBinanceWithdrawals(
       network: withdrawal.network,
       status: withdrawal.status,
       applyTime: withdrawal.applyTime,
+      withdrawOrderId: withdrawal.withdrawOrderId,
     } satisfies BinanceWithdrawal;
   });
 }

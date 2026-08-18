@@ -24,6 +24,7 @@ import {
   BinanceTransactionType,
   getBinanceWithdrawalType,
   isCompletedBinanceWithdrawal,
+  isBinanceSweepWithdrawal,
   getOutstandingBinanceDeposits,
   isDefined,
 } from "../../utils";
@@ -123,7 +124,8 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
         isCompletedBinanceWithdrawal(withdrawal.status) &&
         withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET] &&
         compareAddressesSimple(withdrawal.recipient, fromAddress.toNative()) &&
-        withdrawalType !== BinanceTransactionType.SWAP
+        withdrawalType !== BinanceTransactionType.SWAP &&
+        !isBinanceSweepWithdrawal(withdrawal)
       );
     });
 
