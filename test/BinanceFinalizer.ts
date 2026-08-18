@@ -285,7 +285,7 @@ describe("Binance finalizer helpers", function () {
       items.map((deposit) => ({
         ...deposit,
         depositor: EvmAddress.from(
-          ["l2-deposit", "avalanche-deposit"].includes(deposit.txId) ? second : first
+          ["l2-deposit", "avalanche-deposit", "missing-network-deposit"].includes(deposit.txId) ? second : first
         ).toNative(),
       }))
     );
@@ -377,6 +377,23 @@ describe("Binance finalizer helpers", function () {
     expect(submitted.slice(3).map(({ address, network, amount }) => ({ address, network, amount }))).to.deep.equal([
       { address: EvmAddress.from(first).toNative(), network: BINANCE_NETWORKS[CHAIN_IDs.MAINNET], amount: 5 },
     ]);
+
+    deposits.splice(
+      0,
+      deposits.length,
+      makeDeposit({ amount: 10, coin: "USDT", txId: "missing-network-deposit", status: 1 })
+    );
+    submitted.length = 0;
+    dependencies.getAccountCoins.onThirdCall().resolves([
+      {
+        ...coin,
+        balance: "10",
+        networkList: coin.networkList.filter(({ name }) => name !== BINANCE_NETWORKS[CHAIN_IDs.BSC]),
+      },
+    ]);
+
+    await runTestFinalizer(dependencies, addresses);
+    expect(submitted).to.be.empty;
   });
 
   it("skips non-EVM addresses when collecting pending rebalance accounts", function () {

@@ -257,9 +257,6 @@ export async function binanceFinalizer(
       // must be finalized on L1. Withdrawals to Binance Smart Chain must originate from Ethereum L1.
       for (const withdrawNetwork of [BINANCE_NETWORKS[l2ChainId], BINANCE_NETWORKS[hubChainId]]) {
         const networkLimits = coin.networkList.find((network) => network.name === withdrawNetwork);
-        if (!isDefined(networkLimits)) {
-          continue;
-        }
         // Get both the amount deposited and ready to be finalized and the amount already withdrawn on L2.
         const finalizingOnL2 = withdrawNetwork === BINANCE_NETWORKS[l2ChainId];
         const depositAmounts = depositsInScope
@@ -293,6 +290,9 @@ export async function binanceFinalizer(
           amountToFinalize,
           pendingRebalanceDeduction,
         });
+        if (!isDefined(networkLimits)) {
+          continue;
+        }
         // Additionally, binance imposes a minimum amount to withdraw. If the amount we want to finalize is less than the minimum, then
         // do not attempt to withdraw anything. Likewise, if the amount we want to withdraw is greater than the maximum, then warn and withdraw the maximum amount.
         if (amountToFinalize >= Number(networkLimits.withdrawMax)) {
