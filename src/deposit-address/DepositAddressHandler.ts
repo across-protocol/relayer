@@ -899,7 +899,7 @@ export class DepositAddressHandler {
         payload,
       });
     } catch (err) {
-      this.logger.error({
+      this.logger.warn({
         at: "DepositAddressHandler#_publishWithdrawFailed",
         message: "Failed to publish withdraw_failed to GCP Pub/Sub",
         topic: this.config.pubSubDepositAddressWithdrawTopic,
