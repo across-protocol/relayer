@@ -5,6 +5,7 @@ import {
   buildDepositExecutedPayload,
   buildWithdrawExecutedPayload,
   buildWithdrawFailedPayload,
+  NON_CONFORMING_TOKEN_REASON,
   ERC20_TRANSFER_TOPIC,
   WITHDRAW_TOPIC,
 } from "../src/deposit-address/withdrawPayload";
@@ -384,7 +385,7 @@ describe("buildDepositExecutedPayload", function () {
 });
 
 describe("buildWithdrawFailedPayload", function () {
-  const REASON = "balance read reverted: token 0xDEAD is not a conforming ERC-20 on chain 1";
+  const REASON = NON_CONFORMING_TOKEN_REASON;
 
   it("carries only the inbound transfer key and the reason", function () {
     // Shape is locked by the consumer's `isDepositAddressExecutionMessage`: `erc20Transfer` with

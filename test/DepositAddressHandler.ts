@@ -1166,7 +1166,8 @@ describe("DepositAddressHandler.initiateWithdrawV3 balance check", function () {
     const payload = publishStub.firstCall.args[1];
     expect(payload.type).to.equal("withdraw_failed");
     expect(payload.data.erc20Transfer.chainId).to.equal(chainId);
-    expect(payload.data.reason).to.contain("not a conforming ERC-20");
+    // A stable code, not prose: ops groups on metadata.failureReason.
+    expect(payload.data.reason).to.equal("NON_CONFORMING_TOKEN");
     // Persisted so the indexer's replay window cannot re-read or re-publish.
     const skipped = (handler as unknown as { terminallySkippedWithdrawKeys: Set<string> })
       .terminallySkippedWithdrawKeys;

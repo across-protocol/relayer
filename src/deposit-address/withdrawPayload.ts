@@ -63,6 +63,14 @@ export type WithdrawFailedPayload = {
 };
 
 /**
+ * `reason` code for a deposit-address `balanceOf` that reverted: the token does not implement
+ * ERC-20, so the transfer can never be withdrawn. The consumer stores it verbatim in
+ * `metadata.failureReason`, where ops groups on it — a stable code, not prose to be reworded.
+ * Which token and chain is on the joined transfer row (and in the bot's warn log).
+ */
+export const NON_CONFORMING_TOKEN_REASON = "NON_CONFORMING_TOKEN";
+
+/**
  * Returns the last log in `receipt` recording `token` leaving `depositAddress`. When `to` is
  * provided, the recipient topic must match as well — used by the withdraw path to disambiguate
  * fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address

@@ -55,6 +55,7 @@ import {
   buildDepositExecutedPayload,
   buildWithdrawExecutedPayload,
   buildWithdrawFailedPayload,
+  NON_CONFORMING_TOKEN_REASON,
 } from "./withdrawPayload";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
@@ -1584,10 +1585,7 @@ export class DepositAddressHandler {
         if (terminal) {
           // Publish before persisting: the Redis write can throw, and a lost failure event is the
           // very thing this reports. The publisher never throws.
-          await this._publishWithdrawFailed(
-            depositMessage,
-            `balance read reverted: token ${token} is not a conforming ERC-20 on chain ${chainId}`
-          );
+          await this._publishWithdrawFailed(depositMessage, NON_CONFORMING_TOKEN_REASON);
           this.terminallySkippedWithdrawKeys.add(depositKey);
           await this._persistSkippedWithdrawKeysRedis();
         }
