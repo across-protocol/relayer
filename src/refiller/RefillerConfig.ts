@@ -1,18 +1,18 @@
-import { boolean, create, number, object, optional, record, string } from "superstruct";
+import { array, boolean, create, number, object, optional, record, string, union } from "superstruct";
 import { CommonConfig, ProcessEnv } from "../common";
 import { getNativeTokenAddressForChain, Address, toAddressType, isDefined, toBNWei, BigNumber } from "../utils";
 
+const RefillBalanceEntrySchema = object({
+  target: number(),
+  trigger: number(),
+  isHubPool: optional(boolean()),
+  token: optional(string()),
+});
+
+/** Per account → per chainId → one entry or a list of entries (multiple tokens on the same chain). */
 const RefillBalances2Schema = record(
   string(),
-  record(
-    string(),
-    object({
-      target: number(),
-      trigger: number(),
-      isHubPool: optional(boolean()),
-      token: optional(string()),
-    })
-  )
+  record(string(), union([RefillBalanceEntrySchema, array(RefillBalanceEntrySchema)]))
 );
 
 export type RefillBalanceData = {
@@ -92,16 +92,18 @@ export class RefillerConfig extends CommonConfig {
       Object.entries(config).forEach(([account, chainConfig]) => {
         Object.entries(chainConfig).forEach(([_chainId, tokenConfig]) => {
           const chainId = Number(_chainId);
-          const { target, trigger, isHubPool, token } = tokenConfig;
-          validate(chainId, account, target, trigger);
-          this.refillEnabledBalances.push({
-            chainId,
-            account: toAddressType(account, chainId),
-            target,
-            trigger,
-            isHubPool: Boolean(isHubPool),
-            token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
-          });
+          const entries = Array.isArray(tokenConfig) ? tokenConfig : [tokenConfig];
+          for (const { target, trigger, isHubPool, token } of entries) {
+            validate(chainId, account, target, trigger);
+            this.refillEnabledBalances.push({
+              chainId,
+              account: toAddressType(account, chainId),
+              target,
+              trigger,
+              isHubPool: Boolean(isHubPool),
+              token: isDefined(token) ? toAddressType(token, chainId) : getNativeTokenAddressForChain(chainId),
+            });
+          }
         });
       });
     }
