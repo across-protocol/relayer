@@ -42,11 +42,8 @@ export type DepositExecutedPayload = {
   data: DepositExecutedData;
 };
 
-/**
- * Body of a `withdraw_failed` event. Carries no execution-tx coordinates — there is no settlement
- * to point at — only the inbound transfer the consumer keys rows on, plus the reason, which lands
- * verbatim in `metadata.failureReason` on the indexer row.
- */
+/** Body of a `withdraw_failed` event: no execution-tx coordinates (nothing settled), just the
+ * consumer's row-lookup key and a reason code for `metadata.failureReason`. */
 export type WithdrawFailedData = {
   erc20Transfer: {
     chainId: number;
@@ -62,13 +59,9 @@ export type WithdrawFailedPayload = {
   data: WithdrawFailedData;
 };
 
-/**
- * `reason` code for a deposit-address `balanceOf` that reverted: the token does not implement
- * ERC-20, so the transfer can never be withdrawn. The consumer stores it verbatim in
- * `metadata.failureReason`, where ops groups on it — a stable code, not prose to be reworded.
- * Which token and chain is on the joined transfer row (and in the bot's warn log).
- */
-export const NON_CONFORMING_TOKEN_REASON = "NON_CONFORMING_TOKEN";
+/** Terminal balance check: `balanceOf` reverted, so the token is not a conforming ERC-20. Stable
+ * code — ops groups on it, so add codes, never reword them. */
+export const BALANCE_CHECK_FAILED_REASON = "BALANCE_CHECK_FAILED";
 
 /**
  * Returns the last log in `receipt` recording `token` leaving `depositAddress`. When `to` is
@@ -208,13 +201,9 @@ export function buildDepositExecutedPayload(
 }
 
 /**
- * Builds the `withdraw_failed` payload published when a refund withdraw is terminally
- * un-executable. Unlike the executed builders it takes no receipt and cannot return `undefined`:
- * there is no settlement log to scan for, so the `erc20Transfer` lookup key comes straight off the
- * indexer message.
- *
- * Publishing this transitions the indexer row `auto_pending` → `failed` (surfaced to the user as
- * `refund-failed`), so callers must only reach here on a failure no retry or manual op can fix.
+ * Builds the `withdraw_failed` payload. No receipt and no `undefined` return — there is no
+ * settlement log to scan, so the lookup key comes straight off the indexer message. Transitions the
+ * row to `failed` (user-visible `refund-failed`): only for failures no retry or manual op can fix.
  */
 export function buildWithdrawFailedPayload(
   depositMessage: DepositAddressMessageV3,

@@ -5,7 +5,7 @@ import {
   buildDepositExecutedPayload,
   buildWithdrawExecutedPayload,
   buildWithdrawFailedPayload,
-  NON_CONFORMING_TOKEN_REASON,
+  BALANCE_CHECK_FAILED_REASON,
   ERC20_TRANSFER_TOPIC,
   WITHDRAW_TOPIC,
 } from "../src/deposit-address/withdrawPayload";
@@ -385,12 +385,11 @@ describe("buildDepositExecutedPayload", function () {
 });
 
 describe("buildWithdrawFailedPayload", function () {
-  const REASON = NON_CONFORMING_TOKEN_REASON;
+  const REASON = BALANCE_CHECK_FAILED_REASON;
 
   it("carries only the inbound transfer key and the reason", function () {
-    // Shape is locked by the consumer's `isDepositAddressExecutionMessage`: `erc20Transfer` with
-    // four numeric/string fields plus `reason`, and no execution-tx coordinates (there is no
-    // settlement tx). A payload failing that guard is ack'd and dropped silently.
+    // Shape is locked by the consumer's `isDepositAddressExecutionMessage`, which ack's and drops
+    // a mismatch silently: `erc20Transfer` + `reason`, no execution-tx coordinates.
     expect(buildWithdrawFailedPayload(depositMessageV3(), REASON)).to.deep.equal({
       type: "withdraw_failed",
       data: {
@@ -419,13 +418,12 @@ describe("buildWithdrawFailedPayload", function () {
 });
 
 describe("isTerminalBalanceReadError", function () {
-  /** Minimal stand-in for an ethers error: `isEthersError` narrows on `code` + `reason`. */
+  /** Minimal stand-in for an ethers error: `isEthersError` narrows on `code`. */
   function ethersError(code: string): Error {
     return Object.assign(new Error(`synthetic ${code}`), { code, reason: "synthetic" });
   }
 
   it("treats a reverting balanceOf as terminal", function () {
-    // What a non-conforming ERC-20 produces: "missing revert data in call exception" (data="0x").
     expect(isTerminalBalanceReadError(ethersError("CALL_EXCEPTION"))).to.equal(true);
   });
 

@@ -50,7 +50,7 @@ type WithdrawFailedPayload = {
   type: "withdraw_failed";
   data: {
     erc20Transfer: { chainId: number; blockNumber: number; txHash: string; logIndex: number };
-    reason: string; // stable code, e.g. "NON_CONFORMING_TOKEN" — never free prose
+    reason: string; // stable code, e.g. "BALANCE_CHECK_FAILED" — never free prose
   };
 };
 
@@ -96,10 +96,10 @@ The publisher serializes the envelope as a UTF-8 JSON string and sends it as the
 
 `DepositAddressHandler._publishWithdrawFailed` (called from `initiateWithdrawV3` only):
 
-1. Runs when the defensive deposit-address balance read throws with ethers `code === CALL_EXCEPTION` — the token does not implement `balanceOf` (or there is no contract at all: any address can be named in a `Transfer`-shaped log). `isTerminalBalanceReadError` gates on the `code`, never the message string. Everything else — `TIMEOUT` / `SERVER_ERROR` / `NETWORK_ERROR` / rate limits, plus non-ethers throws (missing provider, base58 conversion) — is our infrastructure and stays transient: warn + return, row stays `auto_pending`, retried next poll.
-2. Sends a stable `reason` **code**, not prose: `NON_CONFORMING_TOKEN` (the only code today). The consumer stores it verbatim in `metadata.failureReason`, which ops groups on — add codes, never reword them. The token and chain are recoverable from the joined transfer row and the bot's warn log, so the code carries no context of its own.
-3. Publishes **before** persisting the terminal skip (`terminallySkippedWithdrawKeys` + Redis), so a Redis failure cannot swallow the event; the persisted skip then caps this at one publish per transfer.
-4. Same gate (`ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER`), same topic, same best-effort posture as the executed publishes.
+1. Runs when the defensive balance read throws with ethers `code === CALL_EXCEPTION`: the token does not implement `balanceOf`, or there is no contract at all (any address can be named in a `Transfer`-shaped log). `isTerminalBalanceReadError` gates on the `code`, never the message. Everything else — `TIMEOUT` / `SERVER_ERROR` / `NETWORK_ERROR` / rate limits, plus non-ethers throws (missing provider, base58) — is our infrastructure and stays transient: warn + return, row stays `auto_pending`, retried next poll.
+2. Sends a stable `reason` **code**, not prose: `BALANCE_CHECK_FAILED` (the only one today). Ops groups on `metadata.failureReason`, so add codes, never reword them; the token and chain are on the joined transfer row already.
+3. Publishes **before** persisting the terminal skip (`terminallySkippedWithdrawKeys` + Redis), so a Redis failure cannot swallow the event; the skip then caps this at one publish per transfer.
+4. Same gate (`ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER`), topic and best-effort posture as the executed publishes.
 
 Not published: the terminal quote-api `422` in `_getSignedWithdrawV3`, and every v1 (`initiateWithdraw`) failure path. Both still strand rows at `auto_pending`.
 
@@ -128,7 +128,7 @@ A single `GcpPubSubPublisher` client serves every event type (same project + top
 
 ## Contributor recommendations
 
-- **Keep `withdraw_failed` to genuinely terminal decision points.** The model in place is narrow on purpose: a reverting `balanceOf` cannot be fixed by a retry, a redelivery or a manual op, so it is safe to report. The consumer rejects late `failed`-after-`executed` via the conditional UPDATE, so a spurious event does not corrupt state — but the indexer serves each transfer once, so it is what the user is left with. Before adding a call site, ask whether a retry or an ops action could still succeed; if it could, extend the bot's logging instead.
+- **Keep `withdraw_failed` to genuinely terminal decision points.** A reverting `balanceOf` cannot be fixed by a retry, a redelivery or a manual op, so it is safe to report. A spurious event does not corrupt state (the conditional UPDATE rejects `failed`-after-`executed`), but the indexer serves each transfer once, so it is what the user is left with. Before adding a call site, ask whether a retry or an ops action could still succeed; if it could, extend the bot's logging instead.
 - **Don't rely on ordering.** The consumer handles out-of-order arrivals via last-write-wins + executed-sticky. If you find yourself wanting ordering keys, prefer adding a `decidedAt` timestamp in the payload and resolving precedence on the consumer side.
 - **Keep the schema additive.** New fields should be optional on the consumer until the producer rolls out; the producer should default new fields when emitting until both sides ship.
 - **Avoid persistent at-least-once delivery on the producer side** unless an ops case forces it. The cost is a new Redis state shape and drainage logic; the benefit is recovering from rare, narrow windows of bot crash. Today's "best-effort + ops reconciliation" is intentionally chosen.

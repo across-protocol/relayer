@@ -1149,12 +1149,10 @@ describe("DepositAddressHandler.initiateWithdrawV3 balance check", function () {
     expect(signWithdrawStub.notCalled).to.equal(true);
     expect(warnStub.calledOnce).to.equal(true);
     expect(warnStub.firstCall.firstArg.message).to.contain("failed to fetch deposit address balance");
-    // A non-Provider TypeError is not an ethers error: transient, so nothing user-facing is emitted.
     expect(publishStub.notCalled).to.equal(true);
   });
 
   it("publishes one terminal withdraw_failed when the balance read reverts", async function () {
-    // What a non-conforming ERC-20 does: `balanceOf` reverts with no revert data.
     (handler as unknown as { getDepositAddressBalance: sinon.SinonStub }).getDepositAddressBalance = sinon
       .stub()
       .rejects(Object.assign(new Error("missing revert data in call exception"), { code: "CALL_EXCEPTION" }));
@@ -1166,9 +1164,7 @@ describe("DepositAddressHandler.initiateWithdrawV3 balance check", function () {
     const payload = publishStub.firstCall.args[1];
     expect(payload.type).to.equal("withdraw_failed");
     expect(payload.data.erc20Transfer.chainId).to.equal(chainId);
-    // A stable code, not prose: ops groups on metadata.failureReason.
-    expect(payload.data.reason).to.equal("NON_CONFORMING_TOKEN");
-    // Persisted so the indexer's replay window cannot re-read or re-publish.
+    expect(payload.data.reason).to.equal("BALANCE_CHECK_FAILED");
     const skipped = (handler as unknown as { terminallySkippedWithdrawKeys: Set<string> })
       .terminallySkippedWithdrawKeys;
     expect(skipped.size).to.equal(1);

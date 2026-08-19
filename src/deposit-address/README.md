@@ -321,13 +321,11 @@ The intentional trade-off: a dropped publish leaves the indexer row in `auto_pen
 
 ### Terminal failures (`withdraw_failed`)
 
-Most withdraw failures are retried internally and must **not** be published — a `failed` row surfaces to the user as `refund-failed`, and the indexer serves each transfer once (plus a ~15-minute replay window), so there is no walking it back. The one signal published today is a v3 deposit-address balance read that fails with ethers `CALL_EXCEPTION`: the token does not implement `balanceOf`, so nothing — no retry, no manual op — can withdraw it. Any contract can emit a `Transfer`-shaped log, so "the deposit address received token X" can be a fiction.
+Most withdraw failures are retried and must **not** be published: a `failed` row shows the user `refund-failed`, and the indexer serves each transfer once (plus a ~15-minute replay window), so there is no walking it back. The one signal published today is a v3 balance read failing with ethers `CALL_EXCEPTION` — the token does not implement `balanceOf`, so no retry and no manual op can withdraw it. `isTerminalBalanceReadError` gates on the `code`, never the message; `TIMEOUT` / `SERVER_ERROR` / `NETWORK_ERROR` and non-ethers throws are our infrastructure and keep today's warn-and-return.
 
-`isTerminalBalanceReadError` (exported from `DepositAddressHandler.ts`) gates on the ethers error `code`, never the message. `TIMEOUT` / `SERVER_ERROR` / `NETWORK_ERROR` / rate limits and any non-ethers throw (missing provider, base58 conversion) are our infrastructure, not the token: those keep today's warn-and-return, leaving the row at `auto_pending` for the next poll.
+`_publishWithdrawFailed` carries the inbound `erc20Transfer` lookup key plus a stable `reason` code — today only `BALANCE_CHECK_FAILED` — which lands in `metadata.failureReason` for ops to group on (add codes, never reword them). It publishes **before** persisting the skip to `terminallySkippedWithdrawKeys`, so a Redis failure cannot swallow the event, and the skip caps it at one publish per transfer.
 
-`_publishWithdrawFailed` carries only the inbound `erc20Transfer` lookup key and a `reason` (no execution-tx coordinates — there is no settlement tx); `reason` lands verbatim in `metadata.failureReason` on the indexer row. It is a **stable code, not prose** — today only `NON_CONFORMING_TOKEN` — so ops can group on it; which token and chain is on the joined transfer row and in the bot's warn log. Add codes, never reword them. The publish happens **before** the depositKey is added to `terminallySkippedWithdrawKeys` and persisted, so a Redis failure cannot swallow the event. The persisted skip means one publish per transfer: the replay window will not re-read the balance.
-
-Still deliberately unpublished: the terminal quote-api `422` in `_getSignedWithdrawV3` (it also strands rows at `auto_pending`), and every v1 (`initiateWithdraw`) failure path.
+Still deliberately unpublished: the terminal quote-api `422` in `_getSignedWithdrawV3`, and every v1 (`initiateWithdraw`) failure path — both still strand rows at `auto_pending`.
 
 ## Related modules
 
