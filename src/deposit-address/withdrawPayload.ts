@@ -43,6 +43,26 @@ export type DepositExecutedPayload = {
 };
 
 /**
+ * Body of a `withdraw_failed` event. Carries no execution-tx coordinates — there is no settlement
+ * to point at — only the inbound transfer the consumer keys rows on, plus the reason, which lands
+ * verbatim in `metadata.failureReason` on the indexer row.
+ */
+export type WithdrawFailedData = {
+  erc20Transfer: {
+    chainId: number;
+    blockNumber: number;
+    txHash: string;
+    logIndex: number;
+  };
+  reason: string;
+};
+
+export type WithdrawFailedPayload = {
+  type: "withdraw_failed";
+  data: WithdrawFailedData;
+};
+
+/**
  * Returns the last log in `receipt` recording `token` leaving `depositAddress`. When `to` is
  * provided, the recipient topic must match as well — used by the withdraw path to disambiguate
  * fee-on-transfer / tax / burn tokens that emit several Transfer events from the deposit address
@@ -94,7 +114,7 @@ function findLastTransferFromDepositAddress(
  *
  * The envelope shape `{ type, data }` is shared by every Pub/Sub message the bot publishes;
  * `data`'s shape varies per `type`. The consumer at
- * `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts` keys on `type`
+ * `indexer/packages/indexer/src/pubsub/DepositAddressExecutionConsumer.ts` keys on `type`
  * and validates `data` against the matching schema.
  */
 export function buildWithdrawExecutedPayload(
@@ -175,6 +195,34 @@ export function buildDepositExecutedPayload(
         txHash: erc20Transfer.transactionHash.toLowerCase(),
         logIndex: erc20Transfer.logIndex,
       },
+    },
+  };
+}
+
+/**
+ * Builds the `withdraw_failed` payload published when a refund withdraw is terminally
+ * un-executable. Unlike the executed builders it takes no receipt and cannot return `undefined`:
+ * there is no settlement log to scan for, so the `erc20Transfer` lookup key comes straight off the
+ * indexer message.
+ *
+ * Publishing this transitions the indexer row `auto_pending` → `failed` (surfaced to the user as
+ * `refund-failed`), so callers must only reach here on a failure no retry or manual op can fix.
+ */
+export function buildWithdrawFailedPayload(
+  depositMessage: DepositAddressMessageV3,
+  reason: string
+): WithdrawFailedPayload {
+  const { erc20Transfer } = depositMessage;
+  return {
+    type: "withdraw_failed",
+    data: {
+      erc20Transfer: {
+        chainId: Number(erc20Transfer.chainId),
+        blockNumber: erc20Transfer.blockNumber,
+        txHash: erc20Transfer.transactionHash.toLowerCase(),
+        logIndex: erc20Transfer.logIndex,
+      },
+      reason,
     },
   };
 }

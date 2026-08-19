@@ -1,6 +1,6 @@
 # Deposit-address withdraw lifecycle — Pub/Sub contract
 
-This document describes the cross-repo Pub/Sub contract between the relayer-v2 `DepositAddressHandler` (publisher, this repo) and the across-indexer's `DepositAddressWithdrawConsumer` (consumer, sibling `indexer` repo).
+This document describes the cross-repo Pub/Sub contract between the relayer-v2 `DepositAddressHandler` (publisher, this repo) and the across-indexer's `DepositAddressExecutionConsumer` (consumer, sibling `indexer` repo).
 
 ## Current behavior
 
@@ -27,7 +27,7 @@ The Pub/Sub topic carries lifecycle events from the bot to the indexer so the ro
 
 Every Pub/Sub message uses a shared envelope: `{ type, data }`. `type` is the message-type discriminator; `data` carries a body whose shape depends on `type`. New message types are added by introducing new `type` values; existing types are versioned by changing the `data` shape and rolling producer + consumer in lockstep.
 
-The consumer's validator (`isDepositAddressWithdrawPayload` in `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts`) accepts two shapes:
+The consumer's validator (`isDepositAddressExecutionMessage` in `indexer/packages/indexer/src/pubsub/DepositAddressExecutionConsumer.ts`) accepts three shapes:
 
 ```ts
 type WithdrawExecutedPayload = {
@@ -71,7 +71,7 @@ type DepositExecutedPayload = {
 };
 ```
 
-The bot emits **`withdraw_executed`** (refund-withdraw paths) and **`deposit_executed`** (successful v3 correct-transfer executions). `deposit_executed` shares the exact `data` shape of `withdraw_executed`; only the `type` discriminator differs. `withdraw_failed` is reserved by the contract but not produced — the bot retries internally on most failure paths and does not track a "retries exhausted" terminal state.
+The bot emits **`withdraw_executed`** (refund-withdraw paths), **`deposit_executed`** (successful v3 correct-transfer executions) and **`withdraw_failed`** (v3 refund withdraws that are terminally un-executable). `deposit_executed` shares the exact `data` shape of `withdraw_executed`; only the `type` discriminator differs. `withdraw_failed` carries no execution-tx coordinates — there is no settlement tx — only the `erc20Transfer` lookup key and a `reason`.
 
 The `data.erc20Transfer` block is the lookup key the consumer uses to find the row (`(chainId, blockNumber, transactionHash, logIndex)` on the `deposit_address_transfer` table); the sibling fields under `data` populate the withdraw-tx columns on the row being transitioned.
 
@@ -94,11 +94,19 @@ The publisher serializes the envelope as a UTF-8 JSON string and sends it as the
 3. Builds the `deposit_executed` payload and publishes to the **same topic** as `withdraw_executed`.
 4. Same best-effort posture: on failure, log at `error` level and continue; no rollback, no retry.
 
-A single `GcpPubSubPublisher` client serves both event types (same project + topic); it is constructed when **either** gate (`ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` / `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER`) is on, and each publish path checks its own flag so the two events toggle independently.
+`DepositAddressHandler._publishWithdrawFailed` (called from `initiateWithdrawV3` only):
+
+1. Runs when the defensive deposit-address balance read throws with ethers `code === CALL_EXCEPTION` — the token does not implement `balanceOf` (or there is no contract at all: any address can be named in a `Transfer`-shaped log). `isTerminalBalanceReadError` gates on the `code`, never the message string. Everything else — `TIMEOUT` / `SERVER_ERROR` / `NETWORK_ERROR` / rate limits, plus non-ethers throws (missing provider, base58 conversion) — is our infrastructure and stays transient: warn + return, row stays `auto_pending`, retried next poll.
+2. Publishes **before** persisting the terminal skip (`terminallySkippedWithdrawKeys` + Redis), so a Redis failure cannot swallow the event; the persisted skip then caps this at one publish per transfer.
+3. Same gate (`ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER`), same topic, same best-effort posture as the executed publishes.
+
+Not published: the terminal quote-api `422` in `_getSignedWithdrawV3`, and every v1 (`initiateWithdraw`) failure path. Both still strand rows at `auto_pending`.
+
+A single `GcpPubSubPublisher` client serves every event type (same project + topic); it is constructed when **either** gate (`ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` / `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER`) is on, and each publish path checks its own flag so the deposit and withdraw events toggle independently. `withdraw_failed` shares the withdraw gate.
 
 ### Consumer mechanics (sibling `indexer` repo)
 
-`DepositAddressWithdrawConsumer.handleMessage`:
+`DepositAddressExecutionConsumer.handleMessage`:
 
 - Locates the `DepositAddressTransfer` row by the inbound `erc20Transfer` identifiers; ack + skip if missing.
 - Locates the joined `DepositAddressTransferWithdraw` row; ack + skip if missing (classification is the only insert path).
@@ -113,11 +121,13 @@ A single `GcpPubSubPublisher` client serves both event types (same project + top
 | GCP publish raises after internal retries | Log + continue. | Indexer row stays `auto_pending`. Ops reconciles manually. |
 | Bot crashes between Redis persist and publish | No replay on next start. | Same as above; one dropped event per crash. |
 | Receipt missing any Transfer log out of the deposit address (or, for native refunds, any `Withdraw` event from it) | Warn + skip publish. | Indexer row stays `auto_pending`. Withdraw is still on-chain and reflected via the bot's existing log. |
+| Balance read reverts (`CALL_EXCEPTION`): token is not a conforming ERC-20 | Publish `withdraw_failed`, persist the terminal skip, return. | Row → `failed` with `metadata.failureReason`; user sees `refund-failed` instead of a permanent `auto-refund-pending`. |
+| Balance read fails transiently (`TIMEOUT` / `SERVER_ERROR` / …) | Warn + return; no publish. | Row stays `auto_pending`; retried on the next poll. |
 | Indexer message missing `blockNumber` / `logIndex` | Type-system / runtime error. | We treat the fields as required; the indexer API always populates them. A drift would fail loudly rather than silently skip. |
 
 ## Contributor recommendations
 
-- **Don't add `withdraw_failed` emission without first defining a terminal-failure model in the bot.** The consumer rejects late `failed`-after-`executed` via the conditional UPDATE, so spurious failed events do not corrupt state — but they do generate noise and false WARN logs on the indexer. If you need failure observability, prefer extending the bot's logging first and only graduate to a Pub/Sub message when there's a clear `executed-or-failed-forever` decision point.
+- **Keep `withdraw_failed` to genuinely terminal decision points.** The model in place is narrow on purpose: a reverting `balanceOf` cannot be fixed by a retry, a redelivery or a manual op, so it is safe to report. The consumer rejects late `failed`-after-`executed` via the conditional UPDATE, so a spurious event does not corrupt state — but the indexer serves each transfer once, so it is what the user is left with. Before adding a call site, ask whether a retry or an ops action could still succeed; if it could, extend the bot's logging instead.
 - **Don't rely on ordering.** The consumer handles out-of-order arrivals via last-write-wins + executed-sticky. If you find yourself wanting ordering keys, prefer adding a `decidedAt` timestamp in the payload and resolving precedence on the consumer side.
 - **Keep the schema additive.** New fields should be optional on the consumer until the producer rolls out; the producer should default new fields when emitting until both sides ship.
 - **Avoid persistent at-least-once delivery on the producer side** unless an ops case forces it. The cost is a new Redis state shape and drainage logic; the benefit is recovering from rare, narrow windows of bot crash. Today's "best-effort + ops reconciliation" is intentionally chosen.

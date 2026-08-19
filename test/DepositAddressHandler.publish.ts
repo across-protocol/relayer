@@ -4,9 +4,11 @@ import { DepositAddressMessage, DepositAddressMessageV3 } from "../src/interface
 import {
   buildDepositExecutedPayload,
   buildWithdrawExecutedPayload,
+  buildWithdrawFailedPayload,
   ERC20_TRANSFER_TOPIC,
   WITHDRAW_TOPIC,
 } from "../src/deposit-address/withdrawPayload";
+import { isTerminalBalanceReadError } from "../src/deposit-address/DepositAddressHandler";
 import { NATIVE_TOKEN_SENTINEL_ADDRESS } from "../src/utils/DepositAddressUtils";
 import { getGcpPubSubPublisher } from "../src/messaging/gcp";
 
@@ -378,6 +380,65 @@ describe("buildDepositExecutedPayload", function () {
       ]);
       expect(buildDepositExecutedPayload(receipt, tronDepositMessageV3())).to.be.undefined;
     });
+  });
+});
+
+describe("buildWithdrawFailedPayload", function () {
+  const REASON = "balance read reverted: token 0xDEAD is not a conforming ERC-20 on chain 1";
+
+  it("carries only the inbound transfer key and the reason", function () {
+    // Shape is locked by the consumer's `isDepositAddressExecutionMessage`: `erc20Transfer` with
+    // four numeric/string fields plus `reason`, and no execution-tx coordinates (there is no
+    // settlement tx). A payload failing that guard is ack'd and dropped silently.
+    expect(buildWithdrawFailedPayload(depositMessageV3(), REASON)).to.deep.equal({
+      type: "withdraw_failed",
+      data: {
+        erc20Transfer: {
+          chainId: 1,
+          blockNumber: 1_000_000,
+          txHash: INBOUND_TX,
+          logIndex: 4,
+        },
+        reason: REASON,
+      },
+    });
+  });
+
+  it("normalizes the wire types the consumer guard requires", function () {
+    const message = depositMessageV3();
+    // The indexer serves chainId as a string and does not guarantee tx-hash casing.
+    message.erc20Transfer.chainId = "8453";
+    message.erc20Transfer.transactionHash = INBOUND_TX.toUpperCase().replace("0X", "0x");
+
+    const { data } = buildWithdrawFailedPayload(message, REASON);
+    expect(data.erc20Transfer.chainId).to.equal(8453);
+    expect(data.erc20Transfer.txHash).to.equal(INBOUND_TX);
+    expect(data).to.not.have.property("txHash");
+  });
+});
+
+describe("isTerminalBalanceReadError", function () {
+  /** Minimal stand-in for an ethers error: `isEthersError` narrows on `code` + `reason`. */
+  function ethersError(code: string): Error {
+    return Object.assign(new Error(`synthetic ${code}`), { code, reason: "synthetic" });
+  }
+
+  it("treats a reverting balanceOf as terminal", function () {
+    // What a non-conforming ERC-20 produces: "missing revert data in call exception" (data="0x").
+    expect(isTerminalBalanceReadError(ethersError("CALL_EXCEPTION"))).to.equal(true);
+  });
+
+  it("treats node-side failures as transient", function () {
+    for (const code of ["TIMEOUT", "SERVER_ERROR", "NETWORK_ERROR", "UNPREDICTABLE_GAS_LIMIT"]) {
+      expect(isTerminalBalanceReadError(ethersError(code)), code).to.equal(false);
+    }
+  });
+
+  it("treats non-ethers throws as transient", function () {
+    // e.g. the missing-provider assert or a base58 conversion failure — our bug, not the token's.
+    expect(isTerminalBalanceReadError(new Error("Provider not found for chain 8453"))).to.equal(false);
+    expect(isTerminalBalanceReadError("CALL_EXCEPTION")).to.equal(false);
+    expect(isTerminalBalanceReadError(undefined)).to.equal(false);
   });
 });
 

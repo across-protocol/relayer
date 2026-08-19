@@ -1081,6 +1081,7 @@ describe("DepositAddressHandler.initiateWithdrawV3 balance check", function () {
   let handler: DepositAddressHandler;
   let signWithdrawStub: sinon.SinonStub;
   let getBalanceStub: sinon.SinonStub;
+  let publishStub: sinon.SinonStub;
   let warnStub: sinon.SinonStub;
   let debugStub: sinon.SinonStub;
   const chainId = 42161;
@@ -1098,6 +1099,8 @@ describe("DepositAddressHandler.initiateWithdrawV3 balance check", function () {
     const config = {
       enableV3Withdrawals: true,
       relayerOriginChains: [chainId],
+      // A terminal balance read publishes withdraw_failed; the gate must be on to observe it.
+      enableDepositAddressWithdrawPublisher: true,
     } as unknown as DepositAddressHandlerConfig;
     warnStub = sinon.stub();
     debugStub = sinon.stub();
@@ -1118,6 +1121,11 @@ describe("DepositAddressHandler.initiateWithdrawV3 balance check", function () {
     (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
       [chainId]: { getBalance: getBalanceStub },
     };
+    publishStub = sinon.stub().resolves("msg-id");
+    (handler as unknown as { executionPublisher: { publishJson: sinon.SinonStub } }).executionPublisher = {
+      publishJson: publishStub,
+    };
+    (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: sinon.stub().resolves() };
   });
 
   afterEach(() => sinon.restore());
@@ -1141,6 +1149,42 @@ describe("DepositAddressHandler.initiateWithdrawV3 balance check", function () {
     expect(signWithdrawStub.notCalled).to.equal(true);
     expect(warnStub.calledOnce).to.equal(true);
     expect(warnStub.firstCall.firstArg.message).to.contain("failed to fetch deposit address balance");
+    // A non-Provider TypeError is not an ethers error: transient, so nothing user-facing is emitted.
+    expect(publishStub.notCalled).to.equal(true);
+  });
+
+  it("publishes one terminal withdraw_failed when the balance read reverts", async function () {
+    // What a non-conforming ERC-20 does: `balanceOf` reverts with no revert data.
+    (handler as unknown as { getDepositAddressBalance: sinon.SinonStub }).getDepositAddressBalance = sinon
+      .stub()
+      .rejects(Object.assign(new Error("missing revert data in call exception"), { code: "CALL_EXCEPTION" }));
+
+    await (handler as unknown as Internals).initiateWithdrawV3(withdrawMessageV3());
+
+    expect(signWithdrawStub.notCalled).to.equal(true);
+    expect(publishStub.calledOnce).to.equal(true);
+    const payload = publishStub.firstCall.args[1];
+    expect(payload.type).to.equal("withdraw_failed");
+    expect(payload.data.erc20Transfer.chainId).to.equal(chainId);
+    expect(payload.data.reason).to.contain("not a conforming ERC-20");
+    // Persisted so the indexer's replay window cannot re-read or re-publish.
+    const skipped = (handler as unknown as { terminallySkippedWithdrawKeys: Set<string> })
+      .terminallySkippedWithdrawKeys;
+    expect(skipped.size).to.equal(1);
+  });
+
+  it("publishes nothing when the balance read fails transiently", async function () {
+    (handler as unknown as { getDepositAddressBalance: sinon.SinonStub }).getDepositAddressBalance = sinon
+      .stub()
+      .rejects(Object.assign(new Error("timeout"), { code: "TIMEOUT" }));
+
+    await (handler as unknown as Internals).initiateWithdrawV3(withdrawMessageV3());
+
+    expect(warnStub.calledOnce).to.equal(true);
+    expect(publishStub.notCalled).to.equal(true);
+    expect(
+      (handler as unknown as { terminallySkippedWithdrawKeys: Set<string> }).terminallySkippedWithdrawKeys.size
+    ).to.equal(0);
   });
 });
 
