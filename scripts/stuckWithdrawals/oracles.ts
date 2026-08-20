@@ -258,9 +258,10 @@ export function legacyXDomainCalldataHash(
  * false forever. Checking only v0 reports every legacy message as stuck — verified against the five
  * SNX withdrawals: v0 => false, v1 => true, after they were demonstrably claimed.
  *
- * For migrated legacy messages the inner relayMessage carries value = 0 and minGasLimit = 0.
- * That is empirical (n=2, both SNX proofs) rather than read from the migration spec, so if a
- * legacy control ever fails, suspect these two zeros first.
+ * minGasLimit is 0 for migrated legacy messages. `value` is NOT always 0 — see
+ * legacyMessageValue(): an ETH withdrawal carries the withdrawn amount as the message value, and
+ * assuming 0 there produced five phantom "stuck" findings worth 1,552 ETH. The original n=2 sample
+ * was both SNX, i.e. both ERC20, which is exactly why the zero looked safe.
  */
 export function legacyVersionedHash(
   messageNonce: ethers.BigNumberish,
@@ -278,20 +279,53 @@ export function legacyVersionedHash(
   );
 }
 
+/** finalizeETHWithdrawal(address _from, address _to, uint256 _amount, bytes _data) */
+const FINALIZE_ETH_WITHDRAWAL = ethers.utils.id("finalizeETHWithdrawal(address,address,uint256,bytes)").slice(0, 10);
+
 /**
- * Relayed status for a legacy message. Checks BOTH keys:
- *   v0 - set by the pre-Bedrock messenger for messages relayed before the migration
- *   v1 - set by the post-Bedrock messenger for legacy messages relayed after it
- * Either being true means the funds have moved.
+ * The `value` carried by a legacy cross-domain message.
+ *
+ * Pre-Bedrock, ETH left L2 as a *message* to L1StandardBridge.finalizeETHWithdrawal, and the
+ * migration re-encoded it with that amount as the relayMessage value. An ERC20 withdrawal moves no
+ * ETH and so carries 0. Using 0 for both is what made every pre-Bedrock ETH withdrawal hash to a
+ * key the messenger has never written, i.e. a permanent, confident false positive — the exact
+ * failure mode this tool exists to prevent, reproduced on the ETH path.
+ *
+ * Verified: Optimism nonce 139216 (640.825390412071816812 ETH, SpokePool -> HubPool, relayed
+ * 2023-06-14 in L1 tx 0x9bc7b3a1…) hashes to the RelayedMessage topic only with value = amount.
+ */
+export function legacyMessageValue(message: string): ethers.BigNumber {
+  if (!message?.startsWith(FINALIZE_ETH_WITHDRAWAL)) return ethers.constants.Zero;
+  try {
+    const [, , amount] = ethers.utils.defaultAbiCoder.decode(
+      ["address", "address", "uint256", "bytes"],
+      "0x" + message.slice(10)
+    );
+    return ethers.BigNumber.from(amount);
+  } catch {
+    return ethers.constants.Zero;
+  }
+}
+
+/**
+ * Relayed status for a legacy message. Checks every key the messenger could have written:
+ *   v0     - set by the pre-Bedrock messenger for messages relayed before the migration
+ *   v1     - set by the post-Bedrock messenger, with the message's true value (see
+ *            legacyMessageValue) — the ETH amount for an ETH withdrawal, 0 for an ERC20 one
+ *   v1Zero - the same hash computed with value = 0, kept because it is what earlier runs used
+ *            and a claim recorded under it is still a claim
+ * Any one being true means the funds have moved. Probing extra keys can only ever turn a false
+ * "stuck" into a true "claimed", so the redundancy is free in the direction that matters.
  */
 export async function legacyRelayed(
   l1: ethers.providers.JsonRpcProvider,
   l1XDM: string,
-  hashes: { v0?: string; v1?: string }
-): Promise<{ successful: boolean; failed: boolean; via?: "v0" | "v1" }> {
+  hashes: { v0?: string; v1?: string; v1Zero?: string }
+): Promise<{ successful: boolean; failed: boolean; via?: "v0" | "v1" | "v1Zero" }> {
   const keys = [
     ["v0", hashes.v0],
     ["v1", hashes.v1],
+    ["v1Zero", hashes.v1Zero],
   ] as const;
   let failed = false;
   for (const [which, h] of keys) {

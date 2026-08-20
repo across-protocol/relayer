@@ -13,7 +13,12 @@
 import { ethers } from "ethers";
 import { ChainConfig, EVENTS, WATCH, TOKENS_BRIDGED_VARIANTS } from "./registry";
 import { getLogsChunked, payloadMatches, ChunkStats, Log, hex } from "./rpc";
-import { extractWithdrawalHash, legacyXDomainCalldataHash, legacyVersionedHash } from "./oracles";
+import {
+  extractWithdrawalHash,
+  legacyXDomainCalldataHash,
+  legacyVersionedHash,
+  legacyMessageValue,
+} from "./oracles";
 
 export interface Candidate {
   chainId: number;
@@ -152,10 +157,14 @@ export async function scanOpLegacy(
       // Both keys: v0 is what the pre-Bedrock messenger recorded, v1 is what the
       // post-Bedrock messenger records when it relays a legacy message. See oracles.ts.
       const v0 = legacyXDomainCalldataHash(target, sender, message, nonce);
-      const v1 = legacyVersionedHash(nonce, sender, target, message);
+      // An ETH withdrawal's message value is the amount, not 0 — see legacyMessageValue().
+      const msgValue = legacyMessageValue(message);
+      const v1 = legacyVersionedHash(nonce, sender, target, message, msgValue);
       key = v0;
       extra.hashV0 = v0;
       extra.hashV1 = v1;
+      extra.messageValue = msgValue.toString();
+      if (!msgValue.isZero()) extra.hashV1Zero = legacyVersionedHash(nonce, sender, target, message);
       extra.target = target;
       extra.sender = sender;
       extra.messageNonce = nonce.toString();
@@ -369,7 +378,13 @@ export async function scanPolygonBurns(
   const candidates: Candidate[] = [];
   const coverage: Coverage[] = [];
   const zero = ethers.utils.hexZeroPad(ethers.constants.AddressZero, 32);
-  const senders = [...Object.keys(WATCH), ...cfg.spokePools.map((s) => s.address)];
+  // Polygon identifies a withdrawal only by the burn's `from`, so — unlike the payload-matching
+  // OP-Stack/Orbit scanners — a helper that exits on our behalf must be named explicitly.
+  const senders = [
+    ...Object.keys(WATCH),
+    ...cfg.spokePools.map((s) => s.address),
+    ...(cfg.extraSenders ?? []).map((s) => s.address),
+  ];
 
   for (const token of tokens) {
     for (const from of senders) {

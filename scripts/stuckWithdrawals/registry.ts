@@ -64,6 +64,16 @@ export interface ChainConfig {
   spokePools: SpokeDeployment[];
   /** Informational: token-specific bridges that a token-level scan would miss. */
   customBridges?: Array<{ address: string; note: string }>;
+  /**
+   * Extra L2 senders whose withdrawals are ours.
+   *
+   * Only needed where discovery matches on the **sender** rather than the message payload.
+   * OP-Stack and Orbit scan the canonical message layer and substring-match WATCH against the raw
+   * payload, so a helper contract that withdraws to us is found automatically. Polygon cannot do
+   * that — a PoS exit is an ERC20 burn to 0x0, whose only identifying field is `from` — so a
+   * contract that burns on our behalf is invisible unless it is listed here.
+   */
+  extraSenders?: Array<{ address: string; note: string }>;
   notes?: string;
 }
 
@@ -396,6 +406,17 @@ export const CHAINS: ChainConfig[] = [
     // processedExits reads true for this exit key. src: verified
     controls: { processedExit: { block: 92_225_980, txIndex: 0, logIndex: 0 } },
     spokePools: [{ address: "0x9295ee1d8C5b022Be115A2AD3c30C72E34e7F096", label: "current" }],
+    extraSenders: [
+      {
+        address: "0x0330E9b4D0325cCfF515E81DFbc7754F2a02ac57",
+        // Across never exits Polygon from the SpokePool itself: the SpokePool transfers to this
+        // helper, which calls withdraw() and so is the `from` on every burn. Scanning only
+        // WATCH + spokePools therefore returns a confident zero for all HubPool returns.
+        // src: verified — deployments/{polygon,mainnet}/PolygonTokenBridger.json, and observed
+        // as the burner on real WETH/USDC.e/DAI/WBTC exits in the 45d window.
+        note: "Across PolygonTokenBridger — burns for every SpokePool->HubPool return",
+      },
+    ],
     notes:
       "PoS exits are not OP-style: the child token is burned and exited on L1. The exit key IS " +
       "computable offline from (blockNumber, txIndex, receiptLogIndex) — no Merkle proof or API " +

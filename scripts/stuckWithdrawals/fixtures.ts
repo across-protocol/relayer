@@ -148,6 +148,38 @@ export const FIXTURES: Fixture[] = [
       "never will. Catches an oracle that returns true unconditionally.",
   },
 
+  /**
+   * Legacy ETH regression. Both SNX fixtures above are ERC20, so they pin the value = 0 branch
+   * only, and the scanner shipped with 0 hardcoded for every legacy message. That reported five
+   * genuinely-claimed pre-Bedrock ETH withdrawals — 1,552.38 ETH, SpokePool -> HubPool, all
+   * relayed 2023-06-14 — as stuck, because an ETH message hashes with value = amount.
+   *
+   * v1 is the correct key (reads true). v1Zero is what the old derivation produced and must stay
+   * false, so this one fixture pins both directions of the fix. src: verified — v1 equals the
+   * RelayedMessage topic emitted by L1 tx 0x9bc7b3a1…, and the ETH is on L1.
+   */
+  {
+    label: "legacy ETH nonce 139216 (640.83 ETH -> HubPool) — value=amount key is the real one",
+    chainId: 10,
+    family: "op-legacy",
+    keys: { v1: "0x0b00674fc3966044dff9b9461aa3a9846b87151eb6cb0f6974294504df0c5cff" },
+    expectFinalized: true,
+    asOf: "2026-08-20T12:40Z",
+    note: "relayed 2023-06-14 as a migrated withdrawal; permanent, since claiming is irreversible",
+  },
+  {
+    // PERMANENT negative: the value=0 mis-derivation for that same ETH message.
+    label: "legacy ETH nonce 139216 — value=0 mis-derivation (must read false)",
+    chainId: 10,
+    family: "op-legacy",
+    keys: { v0: "0x0aedec62946ee398090b717fbe554228dd00d66c6ef6ea605ff746afb1f1aa37" },
+    expectFinalized: false,
+    asOf: "2026-08-20T12:40Z",
+    note:
+      "permanent — the messenger has never written this key and never will. This is the exact " +
+      "hash that produced the 1,552 ETH false positive; if it ever reads true the derivation moved.",
+  },
+
   // --- Orbit ------------------------------------------------------------------------------
   {
     // PERMANENT negative: an outbox index that cannot plausibly be assigned for decades.
@@ -178,11 +210,12 @@ export const FIXTURES: Fixture[] = [
  * Oracle fixtures for the non-OP families. Each pins a value that was verified on-chain, and each
  * pair deliberately includes a true AND a false case so a stuck-at-one-value oracle cannot pass.
  */
-export type OracleFixture =
-  | { kind: "polygon"; label: string; block: number; txIndex: number; logIndex: number; expect: boolean }
-  | { kind: "linea"; label: string; messageNumber: number; expect: boolean }
-  | { kind: "zksync"; label: string; chainId: number; batch: number; index: number; expect: boolean }
-  | { kind: "orbit-classic"; label: string; batchNumber: number; expect: boolean };
+export type OracleFixture = { label: string; expect: boolean; mutable?: boolean; note?: string } & (
+  | { kind: "polygon"; block: number; txIndex: number; logIndex: number }
+  | { kind: "linea"; messageNumber: number }
+  | { kind: "zksync"; chainId: number; batch: number; index: number }
+  | { kind: "orbit-classic"; batchNumber: number }
+);
 
 export const ORACLE_FIXTURES: OracleFixture[] = [
   // Polygon: proves the exit key is derivable offline from (block, txIndex, receiptLogIndex).
@@ -199,7 +232,23 @@ export const ORACLE_FIXTURES: OracleFixture[] = [
   // Linea: guards against reverting to inboxL2L1MessageStatus, which returns 0 for everything.
   { kind: "linea", label: "message 108140 claimed", messageNumber: 108140, expect: true },
   { kind: "linea", label: "message 108139 claimed", messageNumber: 108139, expect: true },
-  { kind: "linea", label: "message 108141 unclaimed", messageNumber: 108141, expect: false },
+  {
+    kind: "linea",
+    label: "message 108141 unclaimed",
+    messageNumber: 108141,
+    expect: false,
+    // Pinned to live state, so a later claim is legal drift rather than a broken oracle. It was in
+    // fact claimed between 2026-08-17 and 2026-08-20, which failed the suite for the wrong reason.
+    mutable: true,
+  },
+  {
+    // PERMANENT negative: a message number the bitmap cannot reach for years.
+    kind: "linea",
+    label: "message 99999999 (never assigned)",
+    messageNumber: 99_999_999,
+    expect: false,
+    note: "permanent — holds the negative side of isMessageClaimed once 108141 drifts to claimed",
+  },
 
   // zkSync: chainId is part of the key, so a wrong chainId must read false.
   { kind: "zksync", label: "(324, 514000, 5) finalized", chainId: 324, batch: 514000, index: 5, expect: true },

@@ -179,9 +179,15 @@ async function verifyFixtures(): Promise<number> {
       console.log(`  SKIP  [${f.kind}] ${f.label}: oracle not configured`);
       continue;
     }
-    const ok = actual === f.expect;
+    // Same monotonic-drift rule as the OP fixtures: a live negative that has since been claimed is
+    // expected, not a regression. Only fixtures marked mutable get that latitude.
+    const drifted = f.mutable === true && f.expect === false && actual === true;
+    const ok = actual === f.expect || drifted;
     if (!ok) fails++;
-    console.log(`  ${ok ? "PASS" : "FAIL"}  [${f.kind}] ${f.label}  expected=${f.expect} got=${actual}`);
+    console.log(
+      `  ${drifted ? "DRIFT" : ok ? "PASS" : "FAIL"}  [${f.kind}] ${f.label}  expected=${f.expect} got=${actual}` +
+        `${drifted ? " (claimed since the fixture was recorded — expected)" : ""}`
+    );
   }
 
   /**
@@ -420,6 +426,7 @@ async function scanChain(
             const r2 = await legacyRelayed(l1, cfg.l1.l1XDM!, {
               v0: c.extra?.hashV0 ?? c.key,
               v1: c.extra?.hashV1,
+              v1Zero: c.extra?.hashV1Zero,
             });
             if (r2.failed) c.extra = { ...c.extra, l1RelayFailed: "true" };
             return r2.successful;
@@ -567,6 +574,19 @@ async function scanChain(
         }
         findings.push({ ...c, finalized, unresolved: finalized === "unknown" ? unresolved : undefined });
       }
+    } else {
+      /**
+       * zk-stack / scroll / linea have verified L1 oracles but no L2 discovery scanner, so there is
+       * nothing to feed them. Without this branch those chains ran no scan, produced no findings and
+       * no skip, and `complete` stayed true — i.e. exit 0, "scan complete, nothing unclaimed", for a
+       * chain whose message layer was never read. That is the precise failure the exit codes exist
+       * to prevent, so an unimplemented family must count as skipped.
+       */
+      warnings.push(
+        `${cfg.name}: family '${fam}' has no L2 discovery scanner — NOT scanned. ` +
+          `Any zero for this chain is absence of evidence, not evidence of absence.`
+      );
+      familiesSkipped++;
     }
   }
 
