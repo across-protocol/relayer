@@ -1,15 +1,15 @@
 import { interfaces, utils as sdkUtils } from "@across-protocol/sdk";
+import { PUBLIC_NETWORKS } from "@across-protocol/constants";
 import { Contract, Signer } from "ethers";
-import { Provider as zksProvider, Wallet as zkWallet } from "zksync-ethers";
+import { Provider as zksProvider, Wallet as zkWallet, utils as zksUtils } from "zksync-ethers";
 import { HubPoolClient, SpokePoolClient } from "../../clients";
 import { CONTRACT_ADDRESSES, getContractEntry } from "../../common";
 import {
   convertFromWei,
-  getBlockForTimestamp,
-  getCurrentTime,
   getTokenInfo,
   getUniqueLogIndex,
   Multicall2Call,
+  paginatedEventQuery,
   winston,
   zkSync as zkSyncUtils,
   assert,
@@ -22,8 +22,7 @@ import {
   Provider,
   CHAIN_IDs,
 } from "../../utils";
-import { getRedisCache } from "../../cache/Redis";
-import { FinalizerPromise, CrossChainMessage } from "../types";
+import { AddressesToFinalize, FinalizerPromise, CrossChainMessage } from "../types";
 
 type TokensBridged = interfaces.TokensBridged;
 
@@ -41,13 +40,144 @@ const IGNORED_WITHDRAWALS = [
 ];
 
 /**
+ * Discovers withdrawals initiated by monitored EOAs rather than by the SpokePool. The rebalancer withdraws excess
+ * inventory directly from the relayer's own address, and those withdrawals do not emit TokensBridged, so without
+ * this they would initiate on L2 and never be finalized on L1.
+ *
+ * ERC20 withdrawals are burned by the L2 native token vault; base token (ETH on zkSync Era, GHO on Lens)
+ * withdrawals go through the L2BaseToken system contract. Everything downstream is keyed on the L2 transaction
+ * hash, so the events only need coercing into the TokensBridged shape.
+ *
+ * @returns Synthetic TokensBridged events for EOA-initiated withdrawals.
+ */
+async function getEOAWithdrawals(
+  logger: winston.Logger,
+  spokePoolClient: SpokePoolClient,
+  hubPoolClient: HubPoolClient,
+  senderAddresses: AddressesToFinalize
+): Promise<TokensBridged[]> {
+  assert(isEVMSpokePoolClient(spokePoolClient));
+  const { chainId: l2ChainId } = spokePoolClient;
+  const { chainId: l1ChainId } = hubPoolClient;
+
+  // Withdrawals sent by the SpokePool are already covered by getTokensBridged().
+  const senders = Array.from(senderAddresses.keys())
+    .filter((address) => address.isEVM())
+    .map((address) => address.toNative())
+    .filter((sender) => sender !== spokePoolClient.spokePool.address);
+  if (senders.length === 0) {
+    return [];
+  }
+
+  // A ZK Stack chain that has not had its system contracts registered yet should simply not have EOA withdrawals
+  // discovered, rather than taking down finalization for the SpokePool's withdrawals too.
+  const vaultEntry = CONTRACT_ADDRESSES[l2ChainId]?.["nativeTokenVault"];
+  const baseTokenEntry = CONTRACT_ADDRESSES[l2ChainId]?.["l2BaseToken"];
+  if (!isDefined(vaultEntry?.address) || !isDefined(baseTokenEntry?.address)) {
+    logger.debug({
+      at: "Finalizer#ZkSyncFinalizer",
+      message: `Skipping EOA withdrawal discovery on chain ${l2ChainId}: system contracts are not registered.`,
+    });
+    return [];
+  }
+
+  // Withdrawals above the executed-batch boundary are discovered too: they cannot be finalized yet, but the
+  // caller reports them so that a withdrawal's progress is observable before it becomes claimable.
+  const provider = spokePoolClient.spokePool.provider;
+  const searchConfig = { ...spokePoolClient.eventSearchConfig, to: spokePoolClient.latestHeightSearched };
+
+  const { address: vaultAddress, abi: vaultAbi } = getContractEntry(l2ChainId, "nativeTokenVault");
+  const nativeTokenVault = new Contract(vaultAddress, vaultAbi, provider);
+  const { address: baseTokenAddress, abi: baseTokenAbi } = getContractEntry(l2ChainId, "l2BaseToken");
+  const l2BaseToken = new Contract(baseTokenAddress, baseTokenAbi, provider);
+
+  // USDC on some ZK Stack chains (Lens) exits over the standalone USDC bridge rather than the asset router.
+  let usdcBridge: Contract | undefined;
+  if (isDefined(CONTRACT_ADDRESSES[l2ChainId]?.["usdcBridge"]?.address)) {
+    const { address, abi } = getContractEntry(l2ChainId, "usdcBridge");
+    usdcBridge = new Contract(address, abi, provider);
+  }
+
+  const [burnEvents, baseTokenWithdrawalEvents, usdcWithdrawalEvents] = await Promise.all([
+    // The burn is emitted against the counterparty chain, which for a withdrawal is the hub chain.
+    paginatedEventQuery(nativeTokenVault, nativeTokenVault.filters.BridgeBurn(l1ChainId, null, senders), searchConfig),
+    paginatedEventQuery(l2BaseToken, l2BaseToken.filters.Withdrawal(senders), searchConfig),
+    usdcBridge
+      ? paginatedEventQuery(usdcBridge, usdcBridge.filters.WithdrawalInitiated(senders), searchConfig)
+      : Promise.resolve([]),
+  ]);
+
+  // A base token withdrawal is attributed to the chain's wrapped native token, since that is the token the
+  // inventory book is keyed on and the only one getTokenInfo() can resolve. The base token itself is a system
+  // contract, not an Across token.
+  const wrappedNativeTokenEntry = PUBLIC_NETWORKS[l2ChainId].nativeToken === "ETH" ? "weth" : "wrappedNativeToken";
+  const wrappedNativeToken = CONTRACT_ADDRESSES[l2ChainId]?.[wrappedNativeTokenEntry]?.address;
+
+  // Cache the promise rather than the resolved value so that concurrent lookups of the same assetId share one call.
+  const l2TokenByAssetId: { [assetId: string]: Promise<string> } = {};
+  const resolveBurnedToken = (assetId: string): Promise<string> =>
+    (l2TokenByAssetId[assetId] ??= nativeTokenVault.tokenAddress(assetId));
+
+  const candidates = [
+    ...(await sdkUtils.mapAsync(burnEvents, async (event) => ({
+      event,
+      amountToReturn: event.args.amount,
+      l2TokenAddress: await resolveBurnedToken(event.args.assetId),
+    }))),
+    ...baseTokenWithdrawalEvents.map((event) => ({
+      event,
+      amountToReturn: event.args._amount,
+      l2TokenAddress: wrappedNativeToken,
+    })),
+    ...usdcWithdrawalEvents.map((event) => ({
+      event,
+      amountToReturn: event.args.amount,
+      l2TokenAddress: event.args.l2Token,
+    })),
+  ];
+
+  return candidates.flatMap(({ event, amountToReturn, l2TokenAddress }) => {
+    // Skip anything Across does not recognise rather than throwing: a single unknown token would otherwise abort
+    // finalization for every withdrawal on this chain.
+    if (!isDefined(l2TokenAddress)) {
+      return [];
+    }
+    try {
+      getTokenInfo(EvmAddress.from(l2TokenAddress), l2ChainId);
+    } catch {
+      logger.debug({
+        at: "Finalizer#ZkSyncFinalizer",
+        message: `Skipping EOA withdrawal of unrecognised token ${l2TokenAddress}.`,
+        txnRef: event.transactionHash,
+      });
+      return [];
+    }
+
+    const { transactionHash, transactionIndex, ...rest } = event;
+    return [
+      {
+        ...rest,
+        amountToReturn,
+        chainId: l2ChainId,
+        leafId: 0,
+        l2TokenAddress: EvmAddress.from(l2TokenAddress),
+        txnRef: transactionHash,
+        txnIndex: transactionIndex,
+      },
+    ];
+  });
+}
+
+/**
  * @returns Withdrawal finalization calldata and metadata.
  */
 export async function zkSyncFinalizer(
   logger: winston.Logger,
   signer: Signer,
   hubPoolClient: HubPoolClient,
-  spokePoolClient: SpokePoolClient
+  spokePoolClient: SpokePoolClient,
+  _l1SpokePoolClient: SpokePoolClient,
+  senderAddresses: AddressesToFinalize
 ): Promise<FinalizerPromise> {
   assert(isEVMSpokePoolClient(spokePoolClient));
   const { chainId: l1ChainId } = hubPoolClient;
@@ -58,26 +188,29 @@ export async function zkSyncFinalizer(
   assert(isSignerWallet(signer), "Signer is not a Wallet");
   const wallet = new zkWallet(signer.privateKey, l2Provider, l1Provider);
 
-  // Zksync takes ~6 hours to finalize so ignore any events
-  // earlier than that.
-  const redis = await getRedisCache(logger);
-  const latestBlockToFinalize = await getBlockForTimestamp(
-    logger,
-    l2ChainId,
-    getCurrentTime() - 60 * 60 * 6,
-    undefined,
-    redis
-  );
+  // A withdrawal is only claimable once the L1 batch containing it has been executed on the hub chain, so the last
+  // L2 block of the highest executed batch is the newest withdrawal worth querying. Read that boundary from the
+  // chains instead of assuming a fixed finalization delay, which drifts as zkSync's batch cadence changes.
+  const mainContract = await wallet.getMainContract();
+  const executedBatch = (await mainContract.getTotalBatchesExecuted()).toNumber();
+  const batchBlockRange = await l2Provider.getL1BatchBlockRange(executedBatch);
+  assert(isDefined(batchBlockRange), `zkSync: getL1BatchBlockRange returned null for executed batch ${executedBatch}`);
+  const latestBlockToFinalize = batchBlockRange[1];
 
   logger.debug({
     at: "Finalizer#ZkSyncFinalizer",
     message: "ZkSync TokensBridged event filter",
+    executedBatch,
     toBlock: latestBlockToFinalize,
   });
-  const withdrawalsToQuery = spokePoolClient
+  const eoaWithdrawals = await getEOAWithdrawals(logger, spokePoolClient, hubPoolClient, senderAddresses);
+  const discoveredWithdrawals = spokePoolClient
     .getTokensBridged()
-    .filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize)
+    .concat(eoaWithdrawals)
     .filter(({ txnRef }) => !IGNORED_WITHDRAWALS.includes(txnRef));
+  // Only withdrawals inside the executed-batch boundary are claimable; the rest are reported below.
+  const withdrawalsToQuery = discoveredWithdrawals.filter(({ blockNumber }) => blockNumber <= latestBlockToFinalize);
+  const awaitingBatchExecution = discoveredWithdrawals.filter(({ blockNumber }) => blockNumber > latestBlockToFinalize);
   const statuses = await sortWithdrawals(l2Provider, withdrawalsToQuery);
   const l2Finalized = statuses["finalized"] ?? [];
   const candidates = await filterMessageLogs(wallet, l1ChainId, l2Finalized);
@@ -110,9 +243,15 @@ export async function zkSyncFinalizer(
       withdrawalProcessing: statuses["processing"]?.length,
       // Pending essentially includes txns with the "committed" statuses
       withdrawalPending: withdrawalsToQuery.length - l2Finalized.length,
+      withdrawalAwaitingBatchExecution: awaitingBatchExecution.length,
       withdrawalFinalizedNotExecuted: candidates.length,
       withdrawalExecuted: l2Finalized.length - candidates.length,
     },
+    awaitingBatchExecution: awaitingBatchExecution.map(({ txnRef, l2TokenAddress, amountToReturn }) => ({
+      txnRef,
+      l2TokenAddress: l2TokenAddress.toNative(),
+      amountToReturn: amountToReturn.toString(),
+    })),
   });
 
   return { callData: txns, crossChainMessages: withdrawals };
@@ -215,28 +354,48 @@ async function getWithdrawalParams(
 }
 
 /**
+ * Which L1 entrypoint finalizes a given withdrawal on the L1Nullifier.
+ *
+ * The legacy finalizeWithdrawal() does not carry l2Sender, so the L1 contract has to assume it. That
+ * assumption does not hold for withdrawals initiated by the L2 asset router -- every ERC-20, which on a
+ * chain whose base token isn't ETH includes WETH -- and the resulting message hash mismatch reverts
+ * InvalidProof(). finalizeDeposit() passes l2Sender explicitly, so prefer it wherever it exists.
+ *
+ * @dev Verified on mainnet state against Lens WETH 0xa964075c…12cec8 (l2Sender = L2 asset router), where
+ * finalizeWithdrawal() reverts InvalidProof() and finalizeDeposit() succeeds.
+ * @param l2ChainId Chain ID for the L2.
+ * @param l2Sender The L2 contract that initiated the withdrawal.
+ * @returns true if the withdrawal must be finalized via the legacy finalizeWithdrawal() entrypoint.
+ */
+export function useLegacyFinalizeWithdrawal(l2ChainId: number, l2Sender: string): boolean {
+  const isAssetRouterWithdrawal = l2Sender.toLowerCase() === zksUtils.L2_ASSET_ROUTER_ADDRESS.toLowerCase();
+  return [CHAIN_IDs.LENS].includes(l2ChainId) && !isAssetRouterWithdrawal;
+}
+
+/**
  * @param withdrawal Withdrawal proof data for a single withdrawal.
  * @param ethAddr Ethereum address on the L2.
  * @param l1Mailbox zkSync mailbox contract on the L1.
  * @param l1ERC20Bridge zkSync ERC20 bridge contract on the L1.
+ * @param useLegacyEntrypoint Whether to finalize via the legacy finalizeWithdrawal() rather than finalizeDeposit().
  * @returns Calldata for a withdrawal finalization.
  */
 async function prepareFinalization(
   withdrawal: zkSyncWithdrawalData,
   l2ChainId: number,
-  l1SharedBridge: Contract
+  l1SharedBridge: Contract,
+  useLegacyEntrypoint: boolean
 ): Promise<Multicall2Call> {
-  const isLegacyBridge = [CHAIN_IDs.LENS].includes(l2ChainId);
   const args = [
     l2ChainId,
     withdrawal.l1BatchNumber,
     withdrawal.l2MessageIndex,
-    isLegacyBridge ? undefined : withdrawal.sender,
+    useLegacyEntrypoint ? undefined : withdrawal.sender,
     withdrawal.l2TxNumberInBlock,
     withdrawal.message,
     withdrawal.proof,
   ];
-  const calldata = isLegacyBridge
+  const calldata = useLegacyEntrypoint
     ? await l1SharedBridge.populateTransaction.finalizeWithdrawal(...args.filter(isDefined))
     : await l1SharedBridge.populateTransaction.finalizeDeposit(args);
 
@@ -264,12 +423,15 @@ async function prepareFinalizations(
   );
 
   return await sdkUtils.mapAsync(withdrawalParams, async (withdrawal, idx) => {
-    const finalizationContract = getFinalizationContract(
-      l1ChainId,
-      tokensBridged[idx].chainId,
-      tokensBridged[idx].l2TokenAddress
-    );
-    return prepareFinalization(withdrawal, l2ChainId, finalizationContract);
+    const { chainId, l2TokenAddress } = tokensBridged[idx];
+    const finalizationContract = getFinalizationContract(l1ChainId, chainId, l2TokenAddress);
+
+    // The standalone ZkStack USDC bridge only implements finalizeWithdrawal(), so it's the sole entrypoint
+    // available there. Everything else finalizes on the L1Nullifier, where the sender decides.
+    const useLegacyEntrypoint =
+      withdrawalRequiresCustomUsdcBridge(l1ChainId, chainId, l2TokenAddress) ||
+      useLegacyFinalizeWithdrawal(l2ChainId, withdrawal.sender);
+    return prepareFinalization(withdrawal, l2ChainId, finalizationContract, useLegacyEntrypoint);
   });
 }
 

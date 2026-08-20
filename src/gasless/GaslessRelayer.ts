@@ -23,7 +23,7 @@ import {
   TransactionReceipt,
   EvmAddress,
   SvmAddress,
-  toBN,
+  BigNumber,
   blockExplorerLink,
   getNetworkName,
   relayFillStatus,
@@ -64,6 +64,7 @@ import {
   buildGaslessFillRelayTx,
   buildSyntheticDeposit,
   getGaslessAuthorizerAddress,
+  getLegacySpokePoolPeripheryAddresses,
   extractGaslessDepositFields,
   getGaslessPermitNonce,
   isPermit2NonceUsed,
@@ -136,7 +137,17 @@ export class GaslessRelayer {
   // The object is indexed by `chainId`. A `FilledRelay` event is marked by adding `${originChainId}:${depositId}` to the respective chain's set.
   protected observedFills: { [chainId: number]: Set<string> } = {};
   // The object is indexed by `chainId`. A SpokePoolPeriphery contract is indexed by the chain ID.
+  // This is the default (current-generation) periphery, used when a message names no target.
   protected spokePoolPeripheries: { [chainId: number]: Contract } = {};
+  /**
+   * Allowlist of every periphery generation accepted as a deposit target, indexed by chainId
+   * then lowercased address: the default periphery plus previous generations still draining
+   * (see {@link getLegacySpokePoolPeripheryAddresses}). Deposits execute against the periphery
+   * the message names ({@link AnyGaslessDepositMessage.targetAddress}) — the user's signature
+   * binds that exact contract — validated against this map so the relayer never calls an
+   * address a message nominates outside the known set.
+   */
+  protected peripheryTargets: { [chainId: number]: { [address: string]: Contract } } = {};
   // The object is indexed by `chainId`. A SpokePool contract is indexed by the chain ID (EVM destinations only).
   protected spokePools: { [chainId: number]: Contract } = {};
   /** Solana destination fill client (at most one SVM destination chain). */
@@ -150,6 +161,8 @@ export class GaslessRelayer {
   // Tracks whether a fill is currently in progress for a given user/originChainId combo.
   // Keyed by `${authorizer}:${originChainId}`.
   protected fillLock: { [key: string]: string } = {};
+  /** requestIds already error-logged for an unservable periphery target (avoids per-poll log spam). */
+  protected unservableTargetsLogged = new Set<string>();
 
   private api: AcrossSwapApiClient;
   private _signerAddress?: EvmAddress;
@@ -199,6 +212,14 @@ export class GaslessRelayer {
         chainId,
         this.config.spokePoolPeripheryOverrides[chainId]
       ).connect(provider);
+      this.peripheryTargets[chainId] = Object.fromEntries(
+        [
+          this.spokePoolPeripheries[chainId],
+          ...getLegacySpokePoolPeripheryAddresses(chainId).map((address) =>
+            getSpokePoolPeriphery(chainId, address).connect(provider)
+          ),
+        ].map((contract) => [contract.address.toLowerCase(), contract])
+      );
       if (!this.config.noPermit2ContractChainIds.has(chainId)) {
         this.permit2Contracts[chainId] = getPermit2(chainId).connect(provider);
       }
@@ -325,11 +346,7 @@ export class GaslessRelayer {
           .map((event) => unpackDepositEvent(spreadEventWithBlockNumber(event), originChainId))
           .filter((deposit) => apiMessages.some(({ depositId }) => deposit.depositId.eq(depositId)))
           .forEach((deposit) => {
-            const depositKey = this._getDepositKey(
-              deposit.inputToken.toNative(),
-              originChainId,
-              deposit.depositId.toString()
-            );
+            const depositKey = this._getDepositKey(deposit.inputToken.toNative(), originChainId, deposit.depositId);
             observedDeposits.add(depositKey);
 
             if (chainIsSvm(deposit.destinationChainId)) {
@@ -365,7 +382,7 @@ export class GaslessRelayer {
     );
     for (const filledRelay of destinationFilledRelayEvents) {
       const fill = unpackFillEvent(spreadEventWithBlockNumber(filledRelay), destinationChainId);
-      observedFills.add(this._getFilledRelayKey(fill.originChainId, fill.depositId.toString()));
+      observedFills.add(this._getFilledRelayKey(fill.originChainId, fill.depositId));
     }
   }
 
@@ -394,7 +411,7 @@ export class GaslessRelayer {
       const fillStatus = await this._getDestinationFillStatus(deposit);
       if (fillStatus === FillStatus.Filled) {
         this.observedFills[deposit.destinationChainId].add(
-          this._getFilledRelayKey(deposit.originChainId, deposit.depositId.toString())
+          this._getFilledRelayKey(deposit.originChainId, deposit.depositId)
         );
       }
     });
@@ -496,14 +513,23 @@ export class GaslessRelayer {
         if (["permit2", "permit"].includes(depositMessage.permitType)) {
           const owner = getGaslessAuthorizerAddress(depositMessage);
           const permitNonce = getGaslessPermitNonce(depositMessage);
-          const nonceUsed =
-            depositMessage.permitType === "permit2"
-              ? await isPermit2NonceUsed(this.permit2Contracts[originChainId], owner, permitNonce)
-              : await isErc2612PermitNonceConsumed({
-                  spokePoolPeriphery: this.spokePoolPeripheries[originChainId],
-                  owner,
-                  signedNonce: permitNonce,
-                });
+          let nonceUsed: boolean;
+          if (depositMessage.permitType === "permit2") {
+            nonceUsed = await isPermit2NonceUsed(this.permit2Contracts[originChainId], owner, permitNonce);
+          } else {
+            // permitNonces is periphery-local storage: read the generation the message binds.
+            // An unlisted target can't be checked (or executed) — leave it unobserved; the
+            // message filter drops it before the state machine.
+            const messagePeriphery = this.resolvePeriphery(originChainId, depositMessage.targetAddress);
+            if (!isDefined(messagePeriphery)) {
+              return;
+            }
+            nonceUsed = await isErc2612PermitNonceConsumed({
+              spokePoolPeriphery: messagePeriphery,
+              owner,
+              signedNonce: permitNonce,
+            });
+          }
           if (!nonceUsed) {
             return;
           }
@@ -537,7 +563,7 @@ export class GaslessRelayer {
       if (!isDefined(transactionHash)) {
         return;
       }
-      const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId.toString());
+      const depositKey = this._getDepositKey(inputToken.toNative(), originChainId, depositId);
       this.observedDeposits[originChainId].add(depositKey);
     });
   }
@@ -697,7 +723,10 @@ export class GaslessRelayer {
 
           case MessageState.DEPOSIT_SUBMIT: {
             if (fillImmediate) {
-              const depositTx = buildGaslessDepositTx(depositMessage, this.getPeripheryContract(originChainId));
+              const depositTx = buildGaslessDepositTx(
+                depositMessage,
+                this.getPeripheryContract(originChainId, depositMessage.targetAddress)
+              );
               const { succeed, reason } = await willSucceed(depositTx);
               if (!succeed) {
                 log("warn", "Deposit simulation failed, falling back to standard path.", { reason });
@@ -727,7 +756,8 @@ export class GaslessRelayer {
                   found = await this._findAuthorizationUsed(originChainId, authToken, authorizer, nonce);
                 } else if (depositMessage.permitType === "permit") {
                   const nonceConsumed = await isErc2612PermitNonceConsumed({
-                    spokePoolPeriphery: this.spokePoolPeripheries[originChainId],
+                    // permitNonces is periphery-local storage: read the generation the message binds.
+                    spokePoolPeriphery: this.getPeripheryContract(originChainId, depositMessage.targetAddress),
                     owner: authorizer,
                     signedNonce: nonce,
                   });
@@ -762,7 +792,7 @@ export class GaslessRelayer {
             let nextState: MessageState;
             if (fillImmediate && isDefined(deposit)) {
               const verifiedDeposit = depositReceipt
-                ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId)
+                ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId, depositId)
                 : await this._findDeposit(bridgeMessage);
 
               if (isDefined(verifiedDeposit)) {
@@ -778,7 +808,7 @@ export class GaslessRelayer {
               }
             } else {
               deposit ??= depositReceipt
-                ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId)
+                ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId, depositId)
                 : await this._findDeposit(bridgeMessage);
               if (isDefined(deposit)) {
                 if (this._skipsDestinationFill(depositMessage)) {
@@ -855,6 +885,24 @@ export class GaslessRelayer {
         return false;
       }
 
+      // The deposit can only execute against the periphery generation the signature binds;
+      // a target outside the allowlist is unservable by this relayer (e.g. a generation
+      // newer than this build knows). Skip it — an updated instance must drain it.
+      if (!isDefined(this.resolvePeriphery(deposit.originChainId, deposit.targetAddress))) {
+        if (!this.unservableTargetsLogged.has(deposit.requestId)) {
+          this.unservableTargetsLogged.add(deposit.requestId);
+          this.logger.error({
+            at: "GaslessRelayer#evaluateApiSignatures",
+            message: "Skipping gasless deposit targeting an unknown SpokePoolPeriphery generation.",
+            requestId: deposit.requestId,
+            depositId: deposit.depositId,
+            originChainId: deposit.originChainId,
+            targetAddress: deposit.targetAddress,
+          });
+        }
+        return false;
+      }
+
       const rawInputToken =
         deposit.depositFlowType === "swapAndBridge"
           ? deposit.depositData.inputToken
@@ -874,8 +922,25 @@ export class GaslessRelayer {
    * @notice Builds and sends depositWithAuthorization tx, then waits for execution.
    * @returns The transaction receipt, or null if skipped or failed.
    */
-  protected getPeripheryContract(originChainId: number): Contract {
-    const contract = this.spokePoolPeripheries[originChainId];
+  /**
+   * Resolves the periphery generation a message's deposit must execute against. The user's
+   * signature binds the periphery the API quoted ({@link AnyGaslessDepositMessage.targetAddress}),
+   * so the target is taken from the message, validated against {@link peripheryTargets}. A
+   * message with no target (legacy feed shape) falls back to the chain's default periphery.
+   * Returns undefined for a target outside the allowlist — the caller must skip the message.
+   */
+  protected resolvePeriphery(originChainId: number, targetAddress?: string): Contract | undefined {
+    if (!isDefined(targetAddress)) {
+      return this.spokePoolPeripheries[originChainId];
+    }
+    return this.peripheryTargets[originChainId]?.[targetAddress.toLowerCase()];
+  }
+
+  protected getPeripheryContract(originChainId: number, targetAddress?: string): Contract {
+    const contract = this.resolvePeriphery(originChainId, targetAddress);
+    // messageFilter drops unknown targets before the state machine, so this is unreachable
+    // for API messages; it guards direct callers.
+    assert(isDefined(contract), `No allowlisted SpokePoolPeriphery at ${targetAddress} for chain ${originChainId}`);
     return this.depositSigners.length === 0
       ? contract.connect(this.baseSigner.connect(this.providersByChain[originChainId]))
       : contract;
@@ -886,7 +951,7 @@ export class GaslessRelayer {
   ): Promise<TransactionReceipt | null | undefined> {
     const { originChainId, depositId } = depositMessage;
     const authorizer = getGaslessAuthorizerAddress(depositMessage);
-    const spokePoolPeripheryContract = this.getPeripheryContract(originChainId);
+    const spokePoolPeripheryContract = this.getPeripheryContract(originChainId, depositMessage.targetAddress);
     const _depositTx = buildGaslessDepositTx(depositMessage, spokePoolPeripheryContract);
 
     if (!this.config.sendingTransactionsEnabled) {
@@ -1071,7 +1136,7 @@ export class GaslessRelayer {
       return retriesRemaining > 0 ? this._queryGaslessApi(--retriesRemaining) : [];
     }
     const deposits = restructureGaslessDeposits(apiResponseData.deposits, this.logger);
-    return this._filterDepositsByIntegratorId(deposits);
+    return this._filterDepositsByAddress(this._filterDepositsByIntegratorId(deposits));
   }
 
   protected _filterDepositsByIntegratorId(deposits: AnyGaslessDepositMessage[]): AnyGaslessDepositMessage[] {
@@ -1112,6 +1177,60 @@ export class GaslessRelayer {
     });
   }
 
+  /**
+   * Filter deposits by authorizer / depositor / recipient against `allowedAddresses` or `blockedAddresses`.
+   * - Allow-list: keep only if authorizer or depositor is in the set.
+   * - Block-list: discard if authorizer, depositor, or recipient is in the set.
+   * Matching is case-insensitive (lowercase).
+   */
+  protected _filterDepositsByAddress(deposits: AnyGaslessDepositMessage[]): AnyGaslessDepositMessage[] {
+    const { allowedAddresses, blockedAddresses } = this.config;
+    if (!isDefined(allowedAddresses) && !isDefined(blockedAddresses)) {
+      return deposits;
+    }
+
+    return deposits.filter((deposit) => {
+      const authorizer = getGaslessAuthorizerAddress(deposit).toLowerCase();
+      const depositData = deposit.depositFlowType === "swapAndBridge" ? deposit.depositData : deposit.baseDepositData;
+      const depositor = depositData.depositor.toLowerCase();
+      const recipient = depositData.recipient.toLowerCase();
+      const depositLogFields = {
+        requestId: deposit.requestId,
+        depositId: deposit.depositId,
+        authorizer,
+        depositor,
+        recipient,
+      };
+
+      if (isDefined(allowedAddresses)) {
+        const allowed = allowedAddresses.has(authorizer) || allowedAddresses.has(depositor);
+        if (!allowed) {
+          this.logger.debug({
+            at: "GaslessRelayer#_queryGaslessApi",
+            message: "Skipping gasless deposit with address outside allow-list",
+            ...depositLogFields,
+          });
+        }
+        return allowed;
+      }
+
+      if (isDefined(blockedAddresses)) {
+        const blockedParty = [authorizer, depositor, recipient].find((address) => blockedAddresses.has(address));
+        if (isDefined(blockedParty)) {
+          this.logger.debug({
+            at: "GaslessRelayer#_queryGaslessApi",
+            message: "Skipping gasless deposit with blocked address",
+            ...depositLogFields,
+            blockedAddress: blockedParty,
+          });
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }
+
   /*
    * @notice Finds a deposit via EIP-3009 AuthorizationUsed on the token, then extracts the deposit from the tx receipt.
    */
@@ -1119,7 +1238,8 @@ export class GaslessRelayer {
     originChainId: number,
     inputToken: Address,
     authorizer: string,
-    nonce: string
+    nonce: string,
+    depositId: BigNumber
   ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
     const provider = this.providersByChain[originChainId];
     const transactionHash = await this._findAuthorizationUsed(originChainId, inputToken, authorizer, nonce);
@@ -1128,7 +1248,7 @@ export class GaslessRelayer {
     }
     // Otherwise, find the associated deposit event.
     const transactionReceipt = await provider.getTransactionReceipt(transactionHash);
-    return this._extractDepositFromTransactionReceipt(transactionReceipt, originChainId);
+    return this._extractDepositFromTransactionReceipt(transactionReceipt, originChainId, depositId);
   }
 
   private async _findAuthorizationUsed(
@@ -1174,7 +1294,7 @@ export class GaslessRelayer {
     const authorizer = getGaslessAuthorizerAddress(depositMessage);
     const nonce = getGaslessPermitNonce(depositMessage);
 
-    return this._findDepositByAuthorization(originChainId, inputToken, authorizer, nonce);
+    return this._findDepositByAuthorization(originChainId, inputToken, authorizer, nonce, depositId);
   }
 
   /*
@@ -1183,14 +1303,14 @@ export class GaslessRelayer {
    */
   private async _findDepositByDepositId(
     originChainId: number,
-    depositId: string
+    depositId: BigNumber
   ): Promise<Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined> {
     const provider = this.providersByChain[originChainId];
     const originSpokePool = this.spokePools[originChainId].connect(provider);
     const searchConfig = await this._getEventSearchConfig(originChainId);
     const events = await paginatedEventQuery(
       originSpokePool,
-      originSpokePool.filters.FundsDeposited(null, null, null, null, null, toBN(depositId)),
+      originSpokePool.filters.FundsDeposited(null, null, null, null, null, depositId),
       searchConfig
     );
     if (events.length === 0) {
@@ -1200,26 +1320,28 @@ export class GaslessRelayer {
   }
 
   /*
-   * @notice Extracts the deposit event from an input transaction receipt. This function assumes the input transaction receipt does indeed contain a deposit in the logs.
+   * @notice Extracts a specific deposit event from an input transaction receipt. The receipt may contain multiple
+   * FundsDeposited events (e.g. a batched submission), so the event is selected by depositId.
+   * @returns The unpacked deposit event, or undefined when the receipt contains no matching deposit.
    */
   protected _extractDepositFromTransactionReceipt(
     transactionReceipt: TransactionReceipt,
-    originChainId: number
-  ): Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> {
+    originChainId: number,
+    depositId: BigNumber
+  ): Omit<DepositWithBlock, "fromLiteChain" | "toLiteChain" | "quoteBlockNumber"> | undefined {
     const originSpokePool = this.spokePools[originChainId];
     const fundsDepositedSignature = originSpokePool.interface.getEventTopic(DEPOSIT_EVENT);
-    const depositLogs = transactionReceipt.logs.filter(
-      ({ address, topics }) => address === originSpokePool.address && topics[0] === fundsDepositedSignature
-    );
+    const depositLogs = transactionReceipt.logs
+      .filter(({ address, topics }) => address === originSpokePool.address && topics[0] === fundsDepositedSignature)
+      // We must decode the log data manually and tell `spreadEventWithBlockNumber` that this log is a `FundsDeposited` event.
+      .map((log) => ({ event: DEPOSIT_EVENT, ...log, ...originSpokePool.interface.parseLog(log) }))
+      .filter(({ args }) => depositId.eq(args.depositId));
 
-    assert(depositLogs.length === 1, "Deposit with authorization should only contain a single FundsDeposited event.");
-    // We must decode the log data manually and tell `spreadEventWithBlockNumber` that this log is a `FundsDeposited` event.
-    const depositLog = {
-      event: DEPOSIT_EVENT,
-      ...depositLogs[0],
-      ...originSpokePool.interface.parseLog(depositLogs[0]),
-    };
-    return unpackDepositEvent(spreadEventWithBlockNumber(depositLog), originChainId);
+    if (depositLogs.length === 0) {
+      return undefined;
+    }
+    assert(depositLogs.length === 1, "Multiple FundsDeposited events with the same depositId in one receipt.");
+    return unpackDepositEvent(spreadEventWithBlockNumber(depositLogs[0]), originChainId);
   }
 
   /*
@@ -1259,7 +1381,7 @@ export class GaslessRelayer {
   /*
    * @notice Gets the key for `this.observedDeposits` from a relevant 3009 authorization.
    */
-  protected _getDepositKey(token: string, originChainId: number, depositId: string): string {
+  protected _getDepositKey(token: string, originChainId: number, depositId: BigNumber): string {
     return `${token}:${originChainId}:${depositId}`;
   }
 
@@ -1291,7 +1413,7 @@ export class GaslessRelayer {
    * @dev We key on the origin chain and depositId only since this is what uniquely identifies a deposit on an origin chain for a specific user (the only way to have a collision here with
    * a valid, unfilled deposit is by finding a collision in keccak).
    */
-  private _getFilledRelayKey(originChainId: number, depositId: string): string {
+  private _getFilledRelayKey(originChainId: number, depositId: BigNumber): string {
     return `${originChainId}:${depositId}`;
   }
 }

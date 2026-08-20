@@ -5,10 +5,29 @@ import {
   ethers,
   getTokenInfoFromSymbol,
   isDefined,
+  toBNWei,
   winston,
 } from "../../utils";
 import { getRedisCache, RedisCache } from "../../cache/Redis";
 import { ExcessOrDeficit, OrderDetails, RedisOrderDetailsPayload } from "./interfaces";
+
+// The operator's maximum acceptable venue cost, in percentage points scaled to 18 decimals (default 2.5%).
+export function getMaxFeePct(): BigNumber {
+  return toBNWei(process.env.MAX_FEE_PCT ?? "2.5");
+}
+
+// The maximum acceptable venue cost for a rebalance of `amount`, from getMaxFeePct().
+export function getMaxFee(amount: BigNumber): BigNumber {
+  return amount.mul(getMaxFeePct()).div(toBNWei(100));
+}
+
+// @todo Default low for now, eventually change this to a very high default value.
+export function getMaxPendingOrders(
+  config: { maxPendingOrders: { [adapter: string]: number | undefined } },
+  adapterName: string
+): number {
+  return config.maxPendingOrders[adapterName] ?? 2;
+}
 
 // Optional namespace that lets different rebalancer deployments keep their status-tracking data isolated
 // even if they share the same Redis instance.
@@ -84,6 +103,9 @@ export enum STATUS {
   PENDING_DEPOSIT,
   PENDING_SWAP,
   PENDING_WITHDRAWAL,
+  // A direct Binance deposit whose order was persisted before the deposit transaction was submitted. Promoted to
+  // PENDING_DEPOSIT once the deposit transaction hash is confirmed on-chain (or immediately after a clean submission).
+  PENDING_DEPOSIT_SUBMISSION,
 }
 
 export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS, account: string): string {
@@ -101,6 +123,9 @@ export function getPendingBridgeStatusSetKey(redisPrefix: string, status: STATUS
     case STATUS.PENDING_BRIDGE_PRE_DEPOSIT:
       orderStatusKey = redisPrefix + "pending-bridge-pre-deposit";
       break;
+    case STATUS.PENDING_DEPOSIT_SUBMISSION:
+      orderStatusKey = redisPrefix + "pending-deposit-submission";
+      break;
     default:
       throw new Error(`Invalid status: ${status}`);
   }
@@ -115,6 +140,12 @@ export function getPendingBridgeOrderKey(redisPrefix: string, cloid: string, acc
 // (e.g. pruning an expired order) can locate and untag the deposit.
 export function getPendingBridgeDepositTxnKey(redisPrefix: string, cloid: string, account: string): string {
   return `${redisPrefix}deposit-txn:${cloid}:${account.toLowerCase()}`;
+}
+
+// Marks an order whose deposit submission may have broadcast without its outcome being recorded. While present,
+// lifecycle passes resolve the order from the on-chain receipt instead of progressing it.
+export function getPendingBridgeDepositRecoveryKey(redisPrefix: string, cloid: string, account: string): string {
+  return `${redisPrefix}deposit-recovery:${cloid}:${account.toLowerCase()}`;
 }
 
 export async function redisGetOrderDetailsForAdapter(

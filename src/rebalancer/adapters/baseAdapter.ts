@@ -169,10 +169,7 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   ): Promise<void> {
     const oldOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, oldStatus, account.toNative());
     const newOrderStatusKey = getPendingBridgeStatusSetKey(this.REDIS_PREFIX, status, account.toNative());
-    const result = await Promise.all([
-      this.redisCache.sRem(oldOrderStatusKey, cloid),
-      this.redisCache.sAdd(newOrderStatusKey, cloid),
-    ]);
+    const result = await this.redisCache.moveSetMember(oldOrderStatusKey, newOrderStatusKey, cloid);
     this.logger.debug({
       at: "BaseAdapter._redisUpdateOrderStatus",
       message: `Updated order status for cloid ${cloid} from ${oldOrderStatusKey} to ${newOrderStatusKey}`,
@@ -206,23 +203,21 @@ export abstract class BaseAdapter implements RebalancerAdapter {
       amountToTransfer: amountToTransfer.toString(),
     });
 
-    const results = await Promise.all([
-      // @todo: Should we set a TTL here?
-      this.redisCache.sAdd(orderStatusKey, cloid.toString()),
-      this.redisCache.set(
-        orderDetailsKey,
-        JSON.stringify({
-          sourceToken,
-          destinationToken,
-          sourceChain,
-          destinationChain,
-          amountToTransfer: amountToTransfer.toString(),
-        }),
-        process.env.REBALANCER_PENDING_ORDER_TTL
-          ? Number(process.env.REBALANCER_PENDING_ORDER_TTL)
-          : (ttlOverride ?? 60 * 60) // default to 1 hour
-      ),
-    ]);
+    const results = await this.redisCache.setAndAddToSet(
+      orderDetailsKey,
+      JSON.stringify({
+        sourceToken,
+        destinationToken,
+        sourceChain,
+        destinationChain,
+        amountToTransfer: amountToTransfer.toString(),
+      }),
+      orderStatusKey,
+      cloid,
+      process.env.REBALANCER_PENDING_ORDER_TTL
+        ? Number(process.env.REBALANCER_PENDING_ORDER_TTL)
+        : (ttlOverride ?? 60 * 60) // default to 1 hour
+    );
     this.logger.debug({
       at: "BaseAdapter._redisCreateOrder",
       message: `Completed saving new order details for cloid ${cloid}`,
@@ -318,6 +313,13 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     return sMembers;
   }
 
+  protected async _redisGetPendingDepositSubmissions(account: EvmAddress): Promise<string[]> {
+    await this._redisCleanupPendingOrders(STATUS.PENDING_DEPOSIT_SUBMISSION, account);
+    return this.redisCache.sMembers(
+      getPendingBridgeStatusSetKey(this.REDIS_PREFIX, STATUS.PENDING_DEPOSIT_SUBMISSION, account.toNative())
+    );
+  }
+
   protected async _redisGetPendingSwaps(account: EvmAddress): Promise<string[]> {
     await this._redisCleanupPendingOrders(STATUS.PENDING_SWAP, account);
     const sMembers = await this.redisCache.sMembers(
@@ -335,13 +337,15 @@ export abstract class BaseAdapter implements RebalancerAdapter {
   }
 
   protected async _redisGetPendingOrders(account: EvmAddress): Promise<string[]> {
-    const [pendingDeposits, pendingSwaps, pendingWithdrawals, pendingBridgesPreDeposit] = await Promise.all([
-      this._redisGetPendingDeposits(account),
-      this._redisGetPendingSwaps(account),
-      this._redisGetPendingWithdrawals(account),
-      this._redisGetPendingBridgesPreDeposit(account),
-    ]);
-    return [...pendingDeposits, ...pendingSwaps, ...pendingWithdrawals, ...pendingBridgesPreDeposit];
+    return (
+      await Promise.all([
+        this._redisGetPendingDeposits(account),
+        this._redisGetPendingSwaps(account),
+        this._redisGetPendingWithdrawals(account),
+        this._redisGetPendingBridgesPreDeposit(account),
+        this._redisGetPendingDepositSubmissions(account),
+      ])
+    ).flat();
   }
 
   // ////////////////////////////////////////////////////////////
@@ -359,8 +363,8 @@ export abstract class BaseAdapter implements RebalancerAdapter {
     );
   }
 
-  // The Redis order store can be shared by multiple rebalancer bots running with the same signer (e.g. the
-  // swapRebalancer and sameAssetRebalancer), so updateRebalanceStatuses() can encounter pending orders created by a
+  // The Redis order store can be shared by multiple rebalancer runtimes running with the same signer (e.g. the
+  // swapRebalancer and the AdapterManager's Binance swap bridge), so updateRebalanceStatuses() can encounter pending orders created by a
   // bot configured with a different route catalog. Each adapter should only progress orders whose routes it supports:
   // skipped orders are left pending for a properly-configured instance to progress, and if no such instance exists
   // (e.g. after config drift) the order is eventually TTL-pruned with a warning by _redisCleanupPendingOrders.

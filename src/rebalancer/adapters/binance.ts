@@ -54,7 +54,7 @@ import {
   blockExplorerLink,
 } from "../../utils";
 import { OrderDetails, RebalanceRoute } from "../utils/interfaces";
-import { getPendingBridgeDepositTxnKey, STATUS } from "../utils/utils";
+import { getPendingBridgeDepositRecoveryKey, getPendingBridgeDepositTxnKey, STATUS } from "../utils/utils";
 import { BaseAdapter } from "./baseAdapter";
 import { AugmentedTransaction, MultiCallerClient } from "../../clients";
 import { RebalancerConfig } from "../RebalancerConfig";
@@ -241,6 +241,21 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 
   async updateRebalanceStatuses(): Promise<void> {
     this._assertInitialized();
+    const account = this.baseSignerAddress.toNative();
+
+    const pendingDepositSubmissions = await this._redisGetPendingDepositSubmissions(this.baseSignerAddress);
+    for (const cloid of pendingDepositSubmissions) {
+      const orderDetails = await this._redisGetOrderDetailsRequired(cloid, this.baseSignerAddress);
+      if (!this._canProgressOrder("BinanceStablecoinSwapAdapter.updateRebalanceStatuses", cloid, orderDetails)) {
+        continue;
+      }
+      // Fail closed on markerless submissions: without a recovery marker there is no receipt trail to prove the
+      // deposit landed, so leave the order to the TTL prune.
+      const recoveryKey = getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account);
+      if (isDefined(await this.redisCache.get(recoveryKey))) {
+        await this._reconcileDepositRecovery(cloid);
+      }
+    }
 
     // Pending bridges to Binance network: we'll attempt to deposit the tokens to Binance if we have enough balance.
     const pendingBridgeToBinanceDepositNetwork = await this._redisGetPendingBridgesPreDeposit(this.baseSignerAddress);
@@ -552,11 +567,12 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // rebalancing logic.
   }
 
-  // Only PENDING_DEPOSIT prunes have unconsumed Binance deposits to release.
+  // Only deposit-stage prunes can have unconsumed Binance deposits to release.
   protected override async _onExpiredOrderPruned(status: STATUS, cloid: string, account: EvmAddress): Promise<void> {
-    if (status !== STATUS.PENDING_DEPOSIT) {
+    if (status !== STATUS.PENDING_DEPOSIT && status !== STATUS.PENDING_DEPOSIT_SUBMISSION) {
       return;
     }
+    await this.redisCache.del(getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account.toNative()));
     const depositTxnKey = getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account.toNative());
     const depositTxn = await this.redisCache.get<string>(depositTxnKey);
     if (!isDefined(depositTxn)) {
@@ -752,12 +768,28 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
   }
 
   async initializeRebalance(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber): Promise<BigNumber> {
+    return (await this.initializeRebalanceWithTransaction(rebalanceRoute, amountToTransfer)).amount;
+  }
+
+  /**
+   * Same as initializeRebalance, but also surfaces the Binance deposit transaction hash when the order was
+   * initiated with a direct deposit (i.e. no intermediate bridge leg). Used by the AdapterManager's Binance swap
+   * bridge, whose callers expect a transaction reference for the initiation.
+   */
+  async initializeRebalanceWithTransaction(
+    rebalanceRoute: RebalanceRoute,
+    amountToTransfer: BigNumber,
+    { directDepositOnly = false } = {}
+  ): Promise<{ amount: BigNumber; transactionHash?: string }> {
     this._assertInitialized();
     this._assertRouteIsSupported(rebalanceRoute);
     const { sourceChain, sourceToken, destinationToken, destinationChain } = rebalanceRoute;
     const routeRequiresSwap = this._routeRequiresSwap(sourceToken, destinationToken);
 
-    const destinationCoin = await this._getAccountCoins(destinationToken);
+    // Read account coins fresh here: `withdrawEnable` flips whenever Binance opens or closes a withdrawal window, and
+    // a stale cache entry would either keep committing funds to a suspended route or keep skipping one that has
+    // already reopened.
+    const destinationCoin = await this._getAccountCoins(destinationToken, true);
     const destinationEntrypointNetwork = await this._getEntrypointNetwork(destinationChain, destinationToken);
     const destinationBinanceNetwork = destinationCoin.networkList.find(
       (network) => network.name === BINANCE_NETWORKS[destinationEntrypointNetwork]
@@ -766,6 +798,21 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       isDefined(destinationBinanceNetwork),
       `No Binance network entry for ${destinationToken} on chain ${destinationEntrypointNetwork}`
     );
+    // Binance keeps a suspended coin/network pair listed in `networkList`, so this flag is the only pre-trade signal
+    // that the withdrawal leg will be rejected. Bail out before any funds are committed: the deposit into Binance is
+    // not reversible from this adapter, so initiating an order we cannot withdraw would strand the tranche on the
+    // exchange until its TTL elapses and the finalizer reclaims it.
+    if (!isBinanceNetworkWithdrawEnabled(destinationBinanceNetwork)) {
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `🚧 Skipping rebalance: Binance has suspended ${resolveBinanceCoinSymbol(
+          destinationToken
+        )} withdrawals on network ${BINANCE_NETWORKS[destinationEntrypointNetwork]}`,
+        rebalanceRoute,
+        destinationNetwork: BINANCE_NETWORKS[destinationEntrypointNetwork],
+      });
+      return { amount: bnZero };
+    }
     const { withdrawMin, withdrawMax } = destinationBinanceNetwork;
 
     // Make sure that the amount to transfer will be larger than the minimum withdrawal size after expected fees.
@@ -794,7 +841,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `Expected amount to withdraw ${expectedAmountToWithdrawInDestinationUnits.toString()} is less than minimum withdrawal size ${withdrawMinWei.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
       });
-      return bnZero;
+      return { amount: bnZero };
     }
     const withdrawMaxWei = toBNWei(
       truncate(Number(withdrawMax), destinationTokenInfo.decimals),
@@ -805,7 +852,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `Expected amount to withdraw ${expectedAmountToWithdrawInDestinationUnits.toString()} is greater than maximum withdrawal size ${withdrawMaxWei.toString()} on Binance destination chain ${destinationEntrypointNetwork}`,
       });
-      return bnZero;
+      return { amount: bnZero };
     }
 
     // TODO: The amount transferred here might produce dust due to the rounding required to meet the minimum order
@@ -832,7 +879,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           at: "BinanceStablecoinSwapAdapter.initializeRebalance",
           message: `Amount to transfer ${amountToTransfer.toString()} is less than minimum order size ${minimumOrderSize.toString()}`,
         });
-        return bnZero;
+        return { amount: bnZero };
       }
     }
 
@@ -844,6 +891,14 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     // Binance network with good stability.
     const binanceDepositNetwork = await this._getEntrypointNetwork(sourceChain, sourceToken);
     const requiresBridgeBeforeDeposit = binanceDepositNetwork !== sourceChain;
+    if (requiresBridgeBeforeDeposit && directDepositOnly) {
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Declining rebalance: source chain ${getNetworkName(sourceChain)} requires an intermediate bridge into Binance but the caller requires a direct deposit`,
+        rebalanceRoute,
+      });
+      return { amount: bnZero };
+    }
     if (requiresBridgeBeforeDeposit) {
       assert(
         supportsBinanceIntermediateBridgeToken(sourceToken),
@@ -861,7 +916,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
           balance: balance.toString(),
           amountToTransfer: amountToTransfer.toString(),
         });
-        return bnZero;
+        return { amount: bnZero };
       }
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
@@ -889,23 +944,129 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
         this.baseSignerAddress,
         preDepositTtlOverride
       );
-      return amountReceivedFromBridge;
+      return { amount: amountReceivedFromBridge };
     } else {
       this.logger.info({
         at: "BinanceStablecoinSwapAdapter.initializeRebalance",
         message: `🍻 Creating new order ${cloid} by first transferring ${sourceFormatter(amountToTransfer)} ${sourceTokenInfo.symbol} into Binance from ${getNetworkName(sourceChain)} in order to acquire ${destinationTokenInfo.symbol} on ${getNetworkName(destinationChain)}`,
         expectedOutput: destinationFormatter(expectedAmountToWithdrawInDestinationUnits),
       });
-      await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer);
+      const recoveryKey = getPendingBridgeDepositRecoveryKey(
+        this.REDIS_PREFIX,
+        cloid,
+        this.baseSignerAddress.toNative()
+      );
+      // Persist the order and a recovery marker before the deposit can broadcast, so a crash mid-submission
+      // leaves a reconcilable order instead of an untracked deposit.
       await this._redisCreateOrder(
         cloid,
-        STATUS.PENDING_DEPOSIT,
+        STATUS.PENDING_DEPOSIT_SUBMISSION,
         rebalanceRoute,
         amountToTransfer,
         this.baseSignerAddress
       );
-      return amountToTransfer;
+      try {
+        assert(
+          isDefined(await this.redisCache.set(recoveryKey, "1", 2 * FINALIZER_TOKENBRIDGE_LOOKBACK)),
+          "Failed to persist Binance deposit recovery marker"
+        );
+      } catch (error) {
+        // Nothing has been submitted yet, so remove the unreconcilable order instead of leaving it to the TTL prune.
+        await this._purgeOrderBestEffort(cloid);
+        throw error;
+      }
+      let transactionHash: string;
+      try {
+        transactionHash = await this._depositToBinance(cloid, sourceToken, sourceChain, amountToTransfer);
+        await this._redisUpdateOrderStatus(
+          cloid,
+          STATUS.PENDING_DEPOSIT_SUBMISSION,
+          STATUS.PENDING_DEPOSIT,
+          this.baseSignerAddress
+        );
+        await this.redisCache.del(recoveryKey);
+      } catch (error) {
+        // The deposit may have broadcast: leave the order for _reconcileDepositRecovery to resolve from the
+        // receipt or, failing that, for the TTL prune to reclaim.
+        this.logger.warn({
+          at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+          message: `Binance deposit submission for order ${cloid} failed; leaving the order for receipt reconciliation`,
+          error,
+        });
+        throw error;
+      }
+      return { amount: amountToTransfer, transactionHash };
     }
+  }
+
+  /**
+   * Resolve a recovery-marked order from its deposit transaction receipt: promote to PENDING_DEPOSIT on success,
+   * purge on revert, and wait when the receipt (or the persisted transaction hash) is not yet available.
+   */
+  private async _reconcileDepositRecovery(cloid: string): Promise<void> {
+    const account = this.baseSignerAddress.toNative();
+    const depositTxn = await this.redisCache.get<string>(
+      getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account)
+    );
+    if (!isDefined(depositTxn)) {
+      // The crash predates the transaction-hash write, so there is no receipt to check. Wait: either a concurrent
+      // submitter is still writing it, or the TTL prune reclaims the order.
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter._reconcileDepositRecovery",
+        message: `Waiting for deposit transaction recovery data for order ${cloid}`,
+      });
+      return;
+    }
+    const { chainId, transactionHash } = JSON.parse(depositTxn) as { chainId: number; transactionHash: string };
+    const transactionReceipt = await this._getDepositTransactionReceipt(chainId, transactionHash);
+    if (!isDefined(transactionReceipt)) {
+      return;
+    }
+    if (transactionReceipt.status === 0) {
+      await this._purgeOrder(cloid);
+      return;
+    }
+    // Re-tag the deposit in case the crash raced the tag write, then resume the normal lifecycle.
+    await setBinanceDepositType(
+      chainId,
+      transactionHash,
+      BinanceTransactionType.SWAP,
+      2 * FINALIZER_TOKENBRIDGE_LOOKBACK
+    );
+    await this._redisUpdateOrderStatus(
+      cloid,
+      STATUS.PENDING_DEPOSIT_SUBMISSION,
+      STATUS.PENDING_DEPOSIT,
+      this.baseSignerAddress
+    );
+    await this.redisCache.del(getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account));
+  }
+
+  // Remove all Redis state for an order that definitively has no funds behind it.
+  private async _purgeOrder(cloid: string): Promise<void> {
+    const account = this.baseSignerAddress.toNative();
+    await Promise.all([
+      this._redisDeleteOrder(cloid, STATUS.PENDING_DEPOSIT_SUBMISSION, this.baseSignerAddress),
+      this.redisCache.del(getPendingBridgeDepositTxnKey(this.REDIS_PREFIX, cloid, account)),
+      this.redisCache.del(getPendingBridgeDepositRecoveryKey(this.REDIS_PREFIX, cloid, account)),
+    ]);
+  }
+
+  private async _purgeOrderBestEffort(cloid: string): Promise<void> {
+    await this._purgeOrder(cloid).catch((cleanupError) =>
+      this.logger.warn({
+        at: "BinanceStablecoinSwapAdapter.initializeRebalance",
+        message: `Failed to remove pre-submission order ${cloid}; manual recovery may be required`,
+        cleanupError,
+      })
+    );
+  }
+
+  private async _getDepositTransactionReceipt(chainId: number, transactionHash: string) {
+    const provider = await getProvider(chainId);
+    const hash =
+      chainId === CHAIN_IDs.TRON && !transactionHash.startsWith("0x") ? `0x${transactionHash}` : transactionHash;
+    return provider.getTransactionReceipt(hash);
   }
 
   async getEstimatedCost(
@@ -1144,7 +1305,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
     sourceToken: string,
     sourceChain: number,
     amountToDeposit: BigNumber
-  ): Promise<void> {
+  ): Promise<string> {
     assert(isDefined(BINANCE_NETWORKS[sourceChain]), "Source chain should be a Binance network");
     assert(
       sourceToken !== "WETH" || isDefined(getAtomicDepositorContracts(sourceChain)),
@@ -1191,6 +1352,7 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       message: `Deposited ${amountReadable} ${sourceToken} to Binance from chain ${getNetworkName(sourceChain)}`,
       redisDepositTypeKey: getBinanceTransactionTypeKey(sourceChain, txnHash),
     });
+    return txnHash;
   }
 
   private _buildDirectBinanceTokenDepositTransaction(
@@ -1690,18 +1852,36 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
       });
     } catch (error) {
       const unlockErrorMessage = getBinanceDepositUnlockErrorMessage(error);
-      if (!unlockErrorMessage) {
-        throw error;
+      if (unlockErrorMessage) {
+        this.logger.debug({
+          at: "BinanceStablecoinSwapAdapter._withdraw",
+          message: `Binance rejected withdrawal for order ${cloid} because recent deposits have not reached withdrawal-unlock confirmations. Waiting before retrying.`,
+          cloid,
+          destinationToken,
+          amountToWithdraw,
+          error: unlockErrorMessage,
+        });
+        return false;
       }
-      this.logger.debug({
-        at: "BinanceStablecoinSwapAdapter._withdraw",
-        message: `Binance rejected withdrawal for order ${cloid} because recent deposits have not reached withdrawal-unlock confirmations. Waiting before retrying.`,
-        cloid,
-        destinationToken,
-        amountToWithdraw,
-        error: unlockErrorMessage,
-      });
-      return false;
+      // A suspended withdrawal window is a venue-side outage, not a bug in this order. Leave the order pending so it
+      // retries once Binance reopens withdrawals; if the suspension outlasts REBALANCER_PENDING_ORDER_TTL the prune
+      // path hands the deposit back to the Binance finalizer, which reclaims it.
+      const withdrawDisabledErrorMessage = getBinanceWithdrawDisabledErrorMessage(error);
+      if (withdrawDisabledErrorMessage) {
+        this.logger.warn({
+          at: "BinanceStablecoinSwapAdapter._withdraw",
+          message: `🚧 Binance has suspended ${binanceDestinationCoin} withdrawals on network ${
+            BINANCE_NETWORKS[destinationEntrypointNetwork]
+          }; leaving order ${cloid} pending until withdrawals reopen.`,
+          cloid,
+          destinationToken,
+          destinationNetwork: BINANCE_NETWORKS[destinationEntrypointNetwork],
+          amountToWithdraw,
+          error: withdrawDisabledErrorMessage,
+        });
+        return false;
+      }
+      throw error;
     }
     const initiatedWithdrawalKey = this._redisGetInitiatedWithdrawalKey(cloid);
     await this.redisCache.set(initiatedWithdrawalKey, withdrawalId.id);
@@ -1758,4 +1938,19 @@ export class BinanceStablecoinSwapAdapter extends BaseAdapter {
 function getBinanceDepositUnlockErrorMessage(error: unknown): string | undefined {
   const message = error instanceof Error ? error.message : String(error);
   return message.includes("[RW00441]") ? message : undefined;
+}
+
+// Binance reports [031026] when withdrawals for a coin/network pair are administratively suspended, for example during
+// a chain upgrade or a wallet maintenance window. The pair stays listed in `networkList` for the whole suspension, so
+// presence in the network list is not sufficient to conclude that a withdrawal will be accepted.
+function getBinanceWithdrawDisabledErrorMessage(error: unknown): string | undefined {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("[031026]") ? message : undefined;
+}
+
+// Binance omits `withdrawEnable` on some `accountCoins` responses, so treat an absent flag as enabled — a missing
+// field should never strand an otherwise healthy route. Mirrors `isNetworkEnabledForDirection` in
+// scripts/swapOnBinance.ts.
+function isBinanceNetworkWithdrawEnabled(network: { withdrawEnable?: boolean }): boolean {
+  return network.withdrawEnable ?? true;
 }

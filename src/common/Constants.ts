@@ -26,7 +26,6 @@ const { AddressZero: ZERO_ADDRESS } = ethersConstants;
 import {
   BaseBridgeAdapter,
   OpStackDefaultERC20Bridge,
-  DaiOptimismBridge,
   UsdcTokenSplitterBridge,
   OpStackWethBridge,
   PolygonWethBridge,
@@ -48,6 +47,7 @@ import {
   BridgeApi,
   TokenSplitterBridge,
   PaxosTransitBridge,
+  BinanceStablecoinSwapBridge,
 } from "../adapter/bridges";
 import {
   BaseL2BridgeAdapter,
@@ -61,6 +61,10 @@ import {
   BridgeApi as L2BridgeApi,
   TokenSplitterBridge as L2TokenSplitterBridge,
   PaxosTransitL2Bridge,
+  ArbitrumOrbitBridge as L2ArbitrumOrbitBridge,
+  ZKStackBridge as L2ZKStackBridge,
+  ZKStackNativeBridge as L2ZKStackNativeBridge,
+  ZKStackUSDCBridge as L2ZKStackUSDCBridge,
 } from "../adapter/l2Bridges";
 import { getContractAddress } from "./ContractAddresses";
 import { OFTL2Bridge } from "../adapter/l2Bridges/OFTL2Bridge";
@@ -229,6 +233,17 @@ export const DEFAULT_RELAYER_GAS_MESSAGE_MULTIPLIER = "1.0"; // Multiplier on pr
 
 export const DEFAULT_MULTICALL_CHUNK_SIZE = 50;
 
+// Drift margin on a finalization batch's summed estimates.
+export const MULTICALL3_BATCH_GAS_MULTIPLIER = 1.1;
+
+// Allowance for the Multicall3 wrapper, which the summed estimates don't price: the transaction's own intrinsic gas
+// and calldata, plus dispatch and the 1/64 withheld from each call. The multiplier can't cover it, being
+// proportional to a sum that excludes it — a lone call estimating at 48,773 gets 53,650 and needs 54,870.
+export const MULTICALL3_BATCH_GAS_OVERHEAD = 100_000;
+
+// Split a finalization batch above this. Under EIP-7825's 2^24 per-transaction cap, less room for the above.
+export const MULTICALL3_BATCH_GAS_CEILING = 15_000_000;
+
 // List of proposal block numbers to ignore. This should be ignored because they are administrative bundle proposals
 // with useless bundle block eval numbers and other data that isn't helpful for the dataworker to know. This does not
 // include any invalid bundles that got through, such as at blocks 15001113 or 15049343 which are missing
@@ -343,23 +358,23 @@ export const spokesThatHoldNativeTokens = resolveNativeTokenSpokes();
 
 // A mapping of L2 chain IDs to an array of tokens Across supports on that chain.
 export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
-  [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "DAI", "WBTC"],
+  [CHAIN_IDs.ARBITRUM]: ["USDC", "USDT", "WETH", "WBTC"],
   [CHAIN_IDs.ARC]: ["USDC"],
   [CHAIN_IDs.AVALANCHE]: ["USDC", "USDT"],
-  [CHAIN_IDs.BASE]: ["DAI", "ETH", "WETH", "USDC", "USDT"],
+  [CHAIN_IDs.BASE]: ["ETH", "WETH", "USDC", "USDT"],
   [CHAIN_IDs.BLAST]: ["DAI", "WBTC", "WETH"],
   [CHAIN_IDs.BSC]: ["WBNB", "USDC", "USDT", "WETH"],
   [CHAIN_IDs.HYPEREVM]: ["USDC", "USDT"],
   [CHAIN_IDs.INK]: ["ETH", "WETH", "USDT", "USDC"],
   [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
-  [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
-  [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "LSK", "WBTC"],
+  [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC"],
+  [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.MEGAETH]: ["WETH", "USDT"],
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.MONAD]: ["USDC", "USDT"], // @TODO: Add WBTC after its added to the chain token list
-  [CHAIN_IDs.OPTIMISM]: ["DAI", "WETH", "USDC", "USDT", "WBTC", "WLD"],
+  [CHAIN_IDs.OPTIMISM]: ["WETH", "USDC", "USDT", "WBTC", "WLD"],
   [CHAIN_IDs.PLASMA]: ["USDT", "WETH"],
-  [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "DAI", "WBTC"],
+  [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "WBTC"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
   [CHAIN_IDs.ROBINHOOD]: ["WETH", "USDC"],
@@ -367,7 +382,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.TRON]: ["USDT"],
   [CHAIN_IDs.UNICHAIN]: ["ETH", "WETH", "USDC", "USDT"],
   [CHAIN_IDs.WORLD_CHAIN]: ["WETH", "WBTC", "USDC", "WLD"],
-  [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC", "DAI"],
+  [CHAIN_IDs.ZK_SYNC]: ["USDC", "USDT", "WETH", "WBTC"],
   [CHAIN_IDs.ZORA]: ["USDC", "WETH"],
 
   // Testnets:
@@ -456,7 +471,9 @@ export const CANONICAL_BRIDGE = resolveCanonicalBridges();
 
 export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2BridgeAdapter>> = {
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
+  // @dev Lens is deliberately absent: each of its tokens needs a different exit, wired per-token in CUSTOM_L2_BRIDGE.
   [CHAIN_IDs.LISK]: L2OpStackBridge,
+  [CHAIN_IDs.ZK_SYNC]: L2ZKStackBridge,
   [CHAIN_IDs.ZORA]: L2OpStackBridge,
 };
 
@@ -472,6 +489,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   },
   [CHAIN_IDs.AVALANCHE]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
+    [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: BinanceStablecoinSwapBridge,
   },
   [CHAIN_IDs.BASE]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
@@ -519,7 +537,6 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     // [TOKEN_SYMBOLS_MAP.WBTC.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
   },
   [CHAIN_IDs.OPTIMISM]: {
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: DaiOptimismBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcTokenSplitterBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OpStackWethBridge,
   },
@@ -638,6 +655,19 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     // L2→L1 excess withdrawals via Binance (same pattern as Optimism USDT). No L1→L2 Binance route.
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
   },
+  // Lens is wired per-token rather than via CANONICAL_L2_BRIDGE because only one of its three supported tokens can
+  // take the asset router route:
+  //   - USDC arrives over the standalone ZK Stack USDC bridge and is unknown to the native token vault, so it has
+  //     its own adapter. The finalizer routes every Lens USDC withdrawal to that standalone bridge on
+  //     (chain, token) alone, which could not settle an asset router message.
+  //   - WGHO is Lens's wrapped base token, which the vault refuses to burn, so it exits via L2BaseToken. Lens
+  //     registered its L1 base token as LGHO (the L1 "WGHO" the inventory book is keyed on), so the withdrawal is
+  //     minted on L1 as exactly that token.
+  [CHAIN_IDs.LENS]: {
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2ZKStackUSDCBridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2ZKStackBridge,
+    [TOKEN_SYMBOLS_MAP.WGHO.addresses[CHAIN_IDs.MAINNET]]: L2ZKStackNativeBridge,
+  },
   [CHAIN_IDs.LISK]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2OpStackUSDCBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2OpStackWethBridge,
@@ -705,12 +735,17 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   },
   [CHAIN_IDs.ROBINHOOD]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: PaxosTransitL2Bridge,
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2ArbitrumOrbitBridge,
   },
   [CHAIN_IDs.WORLD_CHAIN]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
   [CHAIN_IDs.ZK_SYNC]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
+    // WETH is zkSync's wrapped base token, which the native token vault refuses to burn, so it cannot take the
+    // canonical asset router route that the other ZK_SYNC tokens use. It is unwrapped and withdrawn as ETH
+    // instead, which the relayer then re-wraps on the hub chain.
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2ZKStackNativeBridge,
   },
 };
 
@@ -743,20 +778,6 @@ export const DEFAULT_ARWEAVE_GATEWAY = { url: "arweave.net", port: 443, protocol
 
 export const ARWEAVE_TAG_BYTE_LIMIT = 2048;
 
-// Chains with slow (> 2 day liveness) canonical L2-->L1 bridges that we prioritize taking repayment on.
-// This does not include all 7-day withdrawal chains because we don't necessarily prefer being repaid on some of these 7-day chains.
-// This list should generally exclude Lite chains because the relayer ignores HubPool liquidity in that case which could cause the
-// relayer to unintentionally overdraw the HubPool's available reserves.
-export const SLOW_WITHDRAWAL_CHAINS = [
-  CHAIN_IDs.ARBITRUM,
-  CHAIN_IDs.BASE,
-  CHAIN_IDs.BLAST,
-  CHAIN_IDs.INK,
-  CHAIN_IDs.OPTIMISM,
-  CHAIN_IDs.SONEIUM,
-  CHAIN_IDs.UNICHAIN,
-];
-
 // Arbitrum Orbit chains may have custom gateways for certain tokens. These gateways need to be specified since token approvals are directed at the
 // gateway, while function calls are directed at the gateway router.
 export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { [address: string]: { l1: string; l2: string } } } = {
@@ -772,10 +793,6 @@ export const CUSTOM_ARBITRUM_GATEWAYS: { [chainId: number]: { [address: string]:
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: {
       l1: "0xd92023E9d9911199a6711321D1277285e6d4e2db", // WETH
       l2: "0x6c411aD3E74De3E7Bd422b94A27770f5B86C623B",
-    },
-    [TOKEN_SYMBOLS_MAP.DAI.addresses[CHAIN_IDs.MAINNET]]: {
-      l1: "0xD3B5b60020504bc3489D6949d545893982BA3011", // DAI
-      l2: "0x467194771dAe2967Aef3ECbEDD3Bf9a310C76C65",
     },
   },
   [CHAIN_IDs.ROBINHOOD]: {

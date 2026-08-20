@@ -1,6 +1,7 @@
 import { RebalancerConfig } from "../RebalancerConfig";
 import { assert, BigNumber, bnZero, EvmAddress, forEachAsync, Signer, winston, ZERO_ADDRESS } from "../../utils";
 import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "../utils/interfaces";
+import { getMaxPendingOrders } from "../utils/utils";
 
 /**
  * @notice This class is a successor to the InventoryClient. It is in charge of rebalancing inventory of the user
@@ -11,6 +12,7 @@ import { RebalancerAdapter, RebalancerClient, RebalanceRoute } from "../utils/in
 export abstract class BaseRebalancerClient implements RebalancerClient {
   public rebalanceRoutes: RebalanceRoute[] = [];
   protected baseSignerAddress: EvmAddress = EvmAddress.from(ZERO_ADDRESS);
+  protected adaptersWithFailedPendingReads = new Set<string>();
   constructor(
     readonly logger: winston.Logger,
     readonly config: RebalancerConfig,
@@ -56,6 +58,7 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
    */
   async getPendingRebalances(account: EvmAddress): Promise<{ [chainId: number]: { [token: string]: BigNumber } }> {
     const pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
+    this.adaptersWithFailedPendingReads.clear();
     await forEachAsync(Object.entries(this.adapters), async ([adapterName, adapter]) => {
       let pending: { [chainId: number]: { [token: string]: BigNumber } };
       try {
@@ -63,6 +66,7 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
       } catch (err) {
         // The failed adapter's in-flight rebalances stay invisible to virtual balances until its
         // dependency recovers; that undercount is preferable to aborting the caller's whole run.
+        this.adaptersWithFailedPendingReads.add(adapterName);
         this.logger.warn({
           at: "BaseRebalancerClient.getPendingRebalances",
           message: `Failed to get pending rebalances from ${adapterName} adapter; treating them as empty`,
@@ -81,13 +85,16 @@ export abstract class BaseRebalancerClient implements RebalancerClient {
     return pendingRebalances;
   }
 
+  getAdaptersWithFailedPendingReads(): string[] {
+    return Array.from(this.adaptersWithFailedPendingReads);
+  }
+
   protected async getAvailableAdapters(): Promise<string[]> {
     // Check if there are already too many pending orders for this adapter.
     const availableAdapters: Set<string> = new Set();
     for (const adapter of Object.keys(this.adapters)) {
       const pendingOrders = await this.adapters[adapter].getPendingOrders();
-      const maxPendingOrdersForAdapter = this.config.maxPendingOrders[adapter] ?? 2; // @todo Default low for now,
-      // eventually change this to a very high default value.
+      const maxPendingOrdersForAdapter = getMaxPendingOrders(this.config, adapter);
       if (pendingOrders.length < maxPendingOrdersForAdapter) {
         availableAdapters.add(adapter);
       } else {

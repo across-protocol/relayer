@@ -44,7 +44,7 @@ Each message also carries a top-level `version` that selects the execution schem
 | Version | Path |
 | --- | --- |
 | absent / `1` | Legacy v1 scheme — normalized via `normalizeDepositAddressMessage`, then dispatched on classification as above. |
-| `3` | Upgradeable-counterfactual scheme — `correct_transfer` goes to the v3 execute path (below); `mis_route` goes to the v3 refund-withdraw path (below) when `ENABLE_V3_WITHDRAWALS=true`; `intent_refund` and other classifications are dropped (not yet supported on v3). |
+| `3` | Upgradeable-counterfactual scheme — `correct_transfer` goes to the v3 execute path (below), except when the execute endpoint has already rejected it as below the minimum deposit, in which case it is routed to the v3 refund-withdraw path instead; `mis_route` and `intent_refund` go to the v3 refund-withdraw path (below) when `ENABLE_V3_WITHDRAWALS=true`; other classifications are dropped. |
 | anything else (e.g. `2`) | Dropped (debug-logged) before normalization, since unsupported payloads may not carry a shape the normalizer can dereference. |
 
 **Native-token transfers.** The indexer detects native transfers to deposit addresses via traces
@@ -130,6 +130,32 @@ The flow (`initiateDepositV3`):
    Redis exactly like v1.
 8. Publish a `deposit_executed` lifecycle event to GCP Pub/Sub (if `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`).
 
+**Below-minimum executes are refunded, not retried.** The execute endpoint rejects an `amount` under
+the minimum deposit with the error code `AMOUNT_BELOW_MINIMUM` (422 today). The amount is whatever
+landed on the deposit address, so no retry can change the outcome: `_getExecuteTx` stops retrying,
+records the `depositKey` in the refund-only set (below), and `initiateDepositV3` hands the transfer to
+`initiateWithdrawV3` in the same tick — the funds go back to the committed refund address instead of
+sitting on the deposit address. Later polls route straight to the withdraw path from the persisted
+marker, so the execute endpoint is never asked again. Two consequences worth knowing:
+
+- The refund obeys `ENABLE_V3_WITHDRAWALS`. With the gate off the marker still lands (so the API is
+  no longer hammered) but nothing is refunded until the gate is on.
+- A below-minimum amount is small, and the v3 withdraw deducts gas from the refund, so the
+  sign-withdraw call can itself return a terminal `GAS_EXCEEDS_REFUND` 422. That converges correctly:
+  both markers are persisted, the bot stops making API calls for the transfer, and the funds stay put
+  for manual handling.
+
+The bot classifies on the error **code**, not the status, so the guard survives a status change on
+the API side. Seeing the code at all requires `_postOrThrowWithErrorCode` in
+[`AcrossApiBaseClient`](../clients/AcrossApiBaseClient.ts): the SDK's fetch helper only reads an
+`error` key, which Across API error bodies never set, so a 422 otherwise arrives as
+`HTTP 422: Unprocessable Entity` with the code discarded.
+
+The resulting `withdraw_executed` event is published as usual, but the indexer's consumer currently
+drops it for a `correct_transfer` row — no `DepositAddressTransferWithdraw` row exists, since
+classification is its only insert path. Funds reach the user on-chain; the row keeps no
+`depositRefundTxnRef` until the indexer counterpart ships.
+
 The v3 message's `counterfactualMaterials`/`initialRoot`/`salt` are relayed by the indexer but not
 read by the execute path — the API re-derives them, so they are carried for diagnostics only.
 
@@ -151,9 +177,11 @@ path is still EVM-only).
 
 ## v3 refund-withdraw flow
 
-For `version: 3` `mis_route` messages, when `ENABLE_V3_WITHDRAWALS=true`, the bot refunds the
-stranded funds back to the committed refund address. `intent_refund` is **not** handled on v3 yet
-(dropped). The flow (`initiateWithdrawV3`) mirrors v1 `initiateWithdraw` with v3-specific guards:
+For `version: 3` `mis_route` and `intent_refund` messages, when `ENABLE_V3_WITHDRAWALS=true`, the
+bot refunds the stranded funds back to the committed refund address. (An expired intent is refunded
+on-chain to the deposit address itself — the SpokePool depositor — so it needs the same second hop
+out to the refund address as a mis_route.) The flow (`initiateWithdrawV3`) mirrors v1
+`initiateWithdraw` with v3-specific guards:
 
 1. Gate on `enableV3Withdrawals`, filter on `relayerOriginChains` (refund chain = `erc20Transfer.chainId`),
    and dedup against the shared withdraw sets (`executedWithdrawKeys`, in-flight `observedExecutedWithdraws`,
@@ -164,10 +192,11 @@ stranded funds back to the committed refund address. `intent_refund` is **not** 
 4. Defensive on-chain balance check, as on the other paths.
 5. Fetch `{ signedWithdrawTx: { to, data, value, chainId }, deadline, requestedAmount, appliedGasFee, netAmount, bundledDeploy }`
    from `POST /deposit-addresses/sign-withdraw`. Unlike v1, **gas is deducted from the refund**
-   (`deductGasFromRefund: true`) so refunds are not operated at a loss. The endpoint **verifies** the
-   supplied CDA materials (never re-derives the address) and bundles the v3 BeaconProxy
-   `deploy(salt, initialRoot)` + `signedWithdrawToUser` into one Multicall3 call when the proxy is
-   not yet on-chain.
+   (`deductGasFromRefund: true`) so refunds are not operated at a loss — except for `intent_refund`,
+   which sends `false`: nobody filled the intent, so the user is refunded in full at our expense.
+   The endpoint **verifies** the supplied CDA materials (never re-derives the address) and bundles
+   the v3 BeaconProxy `deploy(salt, initialRoot)` + `signedWithdrawToUser` into one Multicall3 call
+   when the proxy is not yet on-chain.
 6. Validate the response: `signedWithdrawTx.chainId` must match the refund chain and the embedded
    signature's `deadline` must have ≥60s headroom (perishable; re-requested fresh on the next poll).
 7. Submit via `TransactionClient`, persist the depositKey, and publish `withdraw_executed` (same gate
@@ -208,11 +237,12 @@ neither validates nor skips: the deposit address is already deployed from explic
 
 ## Redis persistence
 
-Three sets persist across runs so handover does not double-spend, double-refund, or re-attempt a terminally-skipped refund:
+Four sets persist across runs so handover does not double-spend, double-refund, re-attempt a terminally-skipped refund, or re-execute a transfer already known to be unexecutable:
 
 - `deposit-address:executed:<botIdentifier>` — set of `erc20Transfer.transactionHash` for successfully executed deposits.
 - `deposit-address:withdrawn-deposit-keys:<botIdentifier>` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
 - `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
+- `deposit-address:refund-only-deposit-keys:<botIdentifier>` — set of `depositKey` for v3 correct-transfers the execute endpoint rejected as `AMOUNT_BELOW_MINIMUM`; never executed again, routed to the refund-withdraw path instead.
 
 On each poll, entries whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages.
 

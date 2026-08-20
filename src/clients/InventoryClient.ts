@@ -862,8 +862,27 @@ export class InventoryClient {
         l2Tokens.forEach((l2Token) => {
           // Make sure to prioritize shortfall rebalances over ordinary rebalances by pushing them into the array first
           if (this.inventoryConfig?.rebalanceShortfalls) {
+            // Combine same-route shortfalls into a single bridge transfer: each entry shares the same route, and
+            // one transfer avoids burning per-transfer bridge fees and (for capacity-limited bridges) extra slots.
+            // Greedily aggregate the entries the current L1 balance can fund, skipping ones that don't fit so a
+            // smaller later shortfall is still covered when a larger one alone exceeds the balance. If nothing
+            // fits, emit the largest so the downstream balance guard rejects and logs it, as before aggregation.
             const shortfallRebalances = this._getPossibleShortfallRebalances(l1Token, chainId, l2Token);
-            rebalancesRequired.push(...shortfallRebalances);
+            const [firstShortfall] = shortfallRebalances;
+            if (isDefined(firstShortfall)) {
+              const l1Balance = this.tokenClient.getBalance(this.hubPoolClient.chainId, l1Token);
+              let amount = bnZero;
+              for (const shortfall of shortfallRebalances) {
+                const combined = amount.add(shortfall.amount);
+                if (combined.lte(l1Balance)) {
+                  amount = combined;
+                }
+              }
+              rebalancesRequired.push({
+                ...firstShortfall,
+                amount: amount.gt(bnZero) ? amount : firstShortfall.amount,
+              });
+            }
           }
           const inventoryRebalance = this._getPossibleInventoryRebalances(cumulativeBalance, l1Token, chainId, l2Token);
           if (inventoryRebalance) {
@@ -913,7 +932,7 @@ export class InventoryClient {
   }
 
   _getPossibleShortfallRebalances(l1Token: EvmAddress, chainId: number, l2Token: Address): Rebalance[] {
-    const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const { decimals: l1TokenDecimals, symbol } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
     const { decimals: l2TokenDecimals } = this.getTokenInfo(l2Token, chainId);
     // Order unfilled amounts from largest to smallest to prioritize larger shortfalls.
     const unfilledDepositAmounts = this.tokenClient
@@ -926,6 +945,15 @@ export class InventoryClient {
       l1Token,
       l2Token
     );
+    // Same-asset rebalances tracked as Redis orders (e.g. Binance swaps) never surface as on-chain outstanding
+    // transfers, so count them here too; otherwise every run would re-initiate coverage for the same shortfall.
+    const canonicalL2Token = getRemoteTokenForL1Token(l1Token, chainId, this.hubPoolClient.chainId);
+    const pendingRebalance = canonicalL2Token?.eq(l2Token) ? this.pendingRebalances[chainId]?.[symbol] : undefined;
+    if (isDefined(pendingRebalance)) {
+      outstandingCrossChainTransferAmount = outstandingCrossChainTransferAmount.add(
+        sdkUtils.ConvertDecimals(l2TokenDecimals, l1TokenDecimals)(pendingRebalance)
+      );
+    }
     const rebalancesRequired: Rebalance[] = [];
     for (const depositAmount of unfilledDepositAmounts) {
       // If this pending deposit amount is greater than the outstanding cross chain transfer amount,
@@ -956,6 +984,19 @@ export class InventoryClient {
       return [];
     }
 
+    // Redis-tracked pending rebalances are the ONLY in-flight accounting for Binance swap transfers (the
+    // bridge's queryL1BridgeInitiationEvents deliberately returns nothing), so an incomplete Binance pending
+    // read could double-initiate a transfer that is already in flight. Skip initiation for this run instead.
+    const failedAdapters = this.rebalancerClient.getAdaptersWithFailedPendingReads();
+    if (failedAdapters.includes("binance")) {
+      this.log(
+        "Skipping inventory rebalances because Binance pending-rebalance state is incomplete",
+        { failedAdapters },
+        "warn"
+      );
+      return [];
+    }
+
     const tokenDistributionPerL1Token = this.getTokenDistributionPerL1Token();
     this.constructConsideringRebalanceDebugLog(tokenDistributionPerL1Token);
 
@@ -971,6 +1012,21 @@ export class InventoryClient {
 
     // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
     for (const rebalance of rebalancesRequired) {
+      // Bridges backed by an external venue (e.g. Binance) enforce a per-transfer maximum and reject over-cap
+      // sends one-shot, so clamp the requested amount and let successive runs chunk an over-cap deficit. An
+      // unavailable venue is surfaced when the transfer is sent, not here.
+      const maxTransferAmount = await this.adapterManager
+        .getMaxL1ToL2TransferAmount(rebalance.chainId, rebalance.l1Token)
+        .catch(() => undefined);
+      if (isDefined(maxTransferAmount) && rebalance.amount.gt(maxTransferAmount)) {
+        this.log("Capping rebalance amount to the bridge's maximum transfer amount", {
+          chainId: rebalance.chainId,
+          l2Token: rebalance.l2Token,
+          amount: rebalance.amount,
+          maxTransferAmount,
+        });
+        rebalance.amount = maxTransferAmount;
+      }
       const { balance, amount, l1Token, l2Token, chainId } = rebalance;
 
       // This is the balance left after any assumed rebalances from earlier loop iterations.

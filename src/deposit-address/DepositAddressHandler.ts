@@ -39,6 +39,7 @@ import {
   isDepositAddressMessageV3,
 } from "../interfaces";
 import {
+  AcrossApiHttpError,
   AcrossSwapApiClient,
   TransactionClient,
   SwapApiResponse,
@@ -60,6 +61,14 @@ const V3_SIGNATURE_DEADLINE_BUFFER = 60;
 
 /** Quote-api execute requires a 2-byte-hex integratorId; mirror its schema regex. */
 const INTEGRATOR_ID_REGEX = /^0x[0-9a-fA-F]{4}$/;
+
+/**
+ * Quote-api error code for a v3 execute whose `amount` is under the minimum deposit. Terminal: the
+ * amount is fixed by what landed on the deposit address, so no retry can change the outcome and the
+ * transfer is refunded instead (see `_getExecuteTx` / `refundOnlyDepositKeys`). Matched on the code
+ * rather than the accompanying status (422 today) so the guard survives a status change on the API.
+ */
+const AMOUNT_BELOW_MINIMUM_ERROR_CODE = "AMOUNT_BELOW_MINIMUM";
 
 /**
  * Indexer message versions the bot knows how to execute. Anything else (e.g. v2, or a future
@@ -128,6 +137,15 @@ export class DepositAddressHandler {
    * indexer stops returning the source message.
    */
   private terminallySkippedWithdrawKeys: Set<string> = new Set();
+
+  /**
+   * Set of depositKeys for correct-transfer deposits the quote-api execute endpoint rejected as
+   * below the minimum deposit (`AMOUNT_BELOW_MINIMUM`). The amount cannot change, so these are
+   * never executed again: they are refunded through the withdraw path instead. Persisted in Redis so
+   * both the no-retry decision and the refund routing survive handover, and pruned alongside the
+   * other sets once the indexer stops returning the source message.
+   */
+  private refundOnlyDepositKeys: Set<string> = new Set();
 
   /**
    * Per chainId (refund chain = erc20Transfer.chainId): set of depositKeys for withdraws currently
@@ -222,6 +240,7 @@ export class DepositAddressHandler {
     await this._loadExecutedDepositsFromRedis();
     await this._loadWithdrawnKeysFromRedis();
     await this._loadSkippedWithdrawKeysFromRedis();
+    await this._loadRefundOnlyKeysFromRedis();
 
     this.initialized = true;
   }
@@ -236,6 +255,10 @@ export class DepositAddressHandler {
 
   private getSkippedWithdrawKeysRedisKey(): string {
     return `deposit-address:skipped-withdraw-keys:${this.config.botIdentifier}`;
+  }
+
+  private getRefundOnlyKeysRedisKey(): string {
+    return `deposit-address:refund-only-deposit-keys:${this.config.botIdentifier}`;
   }
 
   /** Loads executed deposit tx hashes from Redis (e.g. after handover). */
@@ -322,6 +345,35 @@ export class DepositAddressHandler {
       at: "DepositAddressHandler#_loadSkippedWithdrawKeysFromRedis",
       message: "Loaded terminally-skipped withdraw deposit keys from Redis",
       count: this.terminallySkippedWithdrawKeys.size,
+    });
+  }
+
+  /** Loads refund-only (below-minimum execute) depositKeys from Redis (e.g. after handover). */
+  private async _loadRefundOnlyKeysFromRedis(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    const redisKey = this.getRefundOnlyKeysRedisKey();
+    const raw = await redisCache.get<string>(redisKey);
+    let arr: string[] = [];
+    try {
+      if (raw) {
+        arr = parseJson.stringArray(raw);
+      }
+    } catch (err) {
+      this.logger.error({
+        at: "DepositAddressHandler#_loadRefundOnlyKeysFromRedis",
+        message: "Failed to parse refund-only deposit keys from Redis, using empty set",
+        redisKey,
+        err: err instanceof Error ? err.message : String(err),
+      });
+
+      throw err;
+    }
+    this.refundOnlyDepositKeys = new Set(arr);
+    this.logger.debug({
+      at: "DepositAddressHandler#_loadRefundOnlyKeysFromRedis",
+      message: "Loaded refund-only deposit keys from Redis",
+      count: this.refundOnlyDepositKeys.size,
     });
   }
 
@@ -413,6 +465,11 @@ export class DepositAddressHandler {
         this.terminallySkippedWithdrawKeys.delete(key);
       }
     }
+    for (const key of [...this.refundOnlyDepositKeys]) {
+      if (!depositKeysFromIndexer.has(key)) {
+        this.refundOnlyDepositKeys.delete(key);
+      }
+    }
 
     await forEachAsync(depositMessages, async (depositMessage) => {
       await this.processExecution(depositMessage);
@@ -422,9 +479,12 @@ export class DepositAddressHandler {
   /**
    * Dispatches an indexer message to the deposit or refund-withdraw path based on its version and
    * classification:
-   *   - v3 correct_transfer: thin-submitter execute path (initiateDepositV3).
-   *   - v3 mis_route: refund-withdraw path (initiateWithdrawV3), gated behind config.enableV3Withdrawals.
-   *   - v3 anything else (incl. intent_refund): dropped — not yet supported on v3.
+   *   - v3 correct_transfer: thin-submitter execute path (initiateDepositV3) — unless the execute
+   *     endpoint already rejected it as below the minimum deposit, in which case it is routed to the
+   *     refund-withdraw path like a mis_route (see `refundOnlyDepositKeys`).
+   *   - v3 mis_route / intent_refund: refund-withdraw path (initiateWithdrawV3), gated behind
+   *     config.enableV3Withdrawals.
+   *   - v3 anything else: dropped — not yet supported on v3.
    *   - v1 correct_transfer: forward deposit/execute path.
    *   - v1 mis_route / intent_refund: refund-withdraw path.
    *   - anything else: dropped (forward-compat) until explicitly supported.
@@ -433,9 +493,22 @@ export class DepositAddressHandler {
     const classification = depositMessage.erc20Transfer.transferClassification;
     if (isDepositAddressMessageV3(depositMessage)) {
       if (classification === "correct_transfer") {
+        // A below-minimum execute is terminal, so don't ask the API again — refund instead. This
+        // covers every poll after the one that discovered it, including after a handover (the
+        // marker is in Redis; the in-memory execute state is not).
+        if (this.refundOnlyDepositKeys.has(getDepositKey(depositMessage))) {
+          this.logger.debug({
+            at: "DepositAddressHandler#processExecution",
+            message: "Routing correct_transfer to refund withdraw: execute rejected as below minimum",
+            depositAddress: depositMessage.depositAddress,
+            txHash: depositMessage.erc20Transfer.transactionHash,
+            chainId: depositMessage.erc20Transfer.chainId,
+          });
+          return this.initiateWithdrawV3(depositMessage);
+        }
         return this.initiateDepositV3(depositMessage);
       }
-      if (classification === "mis_route") {
+      if (classification === "mis_route" || classification === "intent_refund") {
         return this.initiateWithdrawV3(depositMessage);
       }
       this.logger.debug({
@@ -709,6 +782,14 @@ export class DepositAddressHandler {
     const { redisCache } = this;
     const redisKey = this.getSkippedWithdrawKeysRedisKey();
     await redisCache.set(redisKey, JSON.stringify([...this.terminallySkippedWithdrawKeys]));
+  }
+
+  /** Same pattern as `_persistSkippedWithdrawKeysRedis` but for below-minimum (refund-only) deposit keys. */
+  private async _persistRefundOnlyKeysRedis(): Promise<void> {
+    assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+    const { redisCache } = this;
+    const redisKey = this.getRefundOnlyKeysRedisKey();
+    await redisCache.set(redisKey, JSON.stringify([...this.refundOnlyDepositKeys]));
   }
 
   /**
@@ -1100,6 +1181,14 @@ export class DepositAddressHandler {
 
       const executeResponse = await this._getExecuteTx(depositMessage);
       if (!isDefined(executeResponse)) {
+        // `_getExecuteTx` marks a below-minimum rejection refund-only. Refund in this same tick
+        // rather than waiting for the next poll to route it. Awaited so the deposit in-flight lock
+        // is held until the refund settles (no concurrent tick can re-enter the deposit path for
+        // this key); the withdraw path takes its own lock, so this cannot self-block.
+        if (this.refundOnlyDepositKeys.has(depositKey)) {
+          await this.initiateWithdrawV3(depositMessage);
+          return;
+        }
         this.logger.warn({
           at: "DepositAddressHandler#initiateDepositV3",
           message: "Failed to fetch execute tx from swap API",
@@ -1282,26 +1371,49 @@ export class DepositAddressHandler {
           }
         : {}),
     };
-    // `_post` swallows errors and returns undefined, so retry on both throw and falsy return.
+    // The client rethrows, but retry on a falsy return too rather than submitting a malformed 200.
     try {
       const result = await this.api.executeDepositAddress(request);
       if (result) {
         return result;
       }
-    } catch {
+    } catch (err) {
+      // Below-minimum is terminal: the amount is whatever landed on the deposit address, so no
+      // retry can change it. Mark the transfer refund-only (persisted, so the decision survives
+      // handover) and let the caller refund it instead of executing.
+      if (err instanceof AcrossApiHttpError && err.code === AMOUNT_BELOW_MINIMUM_ERROR_CODE) {
+        const depositKey = getDepositKey(depositMessage);
+        this.refundOnlyDepositKeys.add(depositKey);
+        await this._persistRefundOnlyKeysRedis();
+        this.logger.warn({
+          at: "DepositAddressHandler#_getExecuteTx",
+          message: "Execute rejected as below the minimum deposit; refunding instead of retrying",
+          status: err.status,
+          code: err.code,
+          error: err.message,
+          amount: erc20Transfer.amount,
+          depositKey,
+          depositAddress,
+          chainId: originChainId,
+        });
+        return undefined;
+      }
       // Logging is handled in AcrossSwapApiClient.
     }
     return retriesRemaining > 0 ? this._getExecuteTx(depositMessage, --retriesRemaining) : undefined;
   }
 
   /**
-   * v3 refund-withdraw path entry point. Gated behind config.enableV3Withdrawals and only reached
-   * for `mis_route` classifications (see processExecution). Refunds funds stranded on a v3
+   * v3 refund-withdraw path entry point. Gated behind config.enableV3Withdrawals. Reached for
+   * `mis_route` classifications, and for a `correct_transfer` whose execute the quote-api rejected as
+   * below the minimum deposit (see `refundOnlyDepositKeys`). Refunds funds stranded on a v3
    * (upgradeable-counterfactual) deposit address back to the committed refund address via the
    * quote-api v3 sign-withdraw endpoint, which bundles the BeaconProxy deploy + signedWithdrawToUser
    * into a single Multicall3 call when the proxy is not yet on-chain. Gas is deducted from the
-   * refund (`deductGasFromRefund: true`) so refunds are not operated at a loss; a terminal 422
-   * (fee ≥ refund / unpriceable token) is persisted and never retried.
+   * refund (`deductGasFromRefund: true`) so refunds are not operated at a loss — except for an
+   * `intent_refund`, where the deposit failed on our side (no relayer filled the intent) and the user
+   * is made whole at our expense. A terminal 422 (fee ≥ refund / unpriceable token) is persisted and
+   * never retried.
    */
   private async initiateWithdrawV3(depositMessage: DepositAddressMessageV3): Promise<void> {
     const { depositAddress, refundAddress, erc20Transfer, depositAddressNamespace } = depositMessage;
@@ -1521,7 +1633,9 @@ export class DepositAddressHandler {
       counterfactualBeacon: depositMessage.counterfactualBeaconContractAddress,
       adminWithdrawManager: depositMessage.adminWithdrawManagerContractAddress,
       withdrawImplementation: withdrawLeaf.implementationAddress,
-      deductGasFromRefund: true,
+      // An intent_refund is our failure to fill, not a user mistake — refund the full amount and eat
+      // the gas. Every other refund reason deducts it.
+      deductGasFromRefund: erc20Transfer.transferClassification !== "intent_refund",
     };
     try {
       return await this.api.signWithdrawDepositAddressV3(request);

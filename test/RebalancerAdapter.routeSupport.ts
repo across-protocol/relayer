@@ -1,11 +1,15 @@
 import { expect, ethers, sinon } from "./utils";
 import winston from "winston";
 import { HyperliquidStablecoinSwapAdapter } from "../src/rebalancer/adapters/hyperliquid";
+import { BinanceStablecoinSwapAdapter } from "../src/rebalancer/adapters/binance";
+import { BinanceStablecoinSwapBridge } from "../src/adapter/bridges";
 import { CctpAdapter } from "../src/rebalancer/adapters/cctpAdapter";
 import { OftAdapter } from "../src/rebalancer/adapters/oftAdapter";
+import { buildAdapterManagerBinanceRoutes } from "../src/rebalancer/RebalancerClientHelper";
 import { RebalancerConfig } from "../src/rebalancer/RebalancerConfig";
 import { RebalanceRoute, OrderDetails } from "../src/rebalancer/utils/interfaces";
-import { BigNumber, bnZero, CHAIN_IDs, EvmAddress, toBNWei } from "../src/utils";
+import { STATUS } from "../src/rebalancer/utils/utils";
+import { BigNumber, bnZero, CHAIN_IDs, EvmAddress, TOKEN_SYMBOLS_MAP, toBNWei } from "../src/utils";
 
 const TEST_LOGGER = {
   debug: () => undefined,
@@ -47,6 +51,20 @@ type AdapterInternals = {
   _bridgeToChain(token: string, originChain: number, destinationChain: number, amount: BigNumber): Promise<BigNumber>;
 };
 
+type BinanceAdapterInternals = {
+  initialized: boolean;
+  availableRoutes: RebalanceRoute[];
+  _redisGetPendingBridgesPreDeposit(account: EvmAddress): Promise<string[]>;
+  _redisGetPendingDepositSubmissions(account: EvmAddress): Promise<string[]>;
+  _redisGetPendingDeposits(account: EvmAddress): Promise<string[]>;
+  _redisGetPendingSwaps(account: EvmAddress): Promise<string[]>;
+  _redisGetPendingWithdrawals(account: EvmAddress): Promise<string[]>;
+  _redisGetOrderDetailsRequired(cloid: string, account: EvmAddress): Promise<OrderDetails>;
+  _getBinanceBalance(token: string): Promise<number>;
+  _withdraw(cloid: string, amount: number, token: string, chainId: number): Promise<boolean>;
+  _redisUpdateOrderStatus(cloid: string, oldStatus: number, status: number, account: EvmAddress): Promise<void>;
+};
+
 async function makeHyperliquidAdapter(): Promise<{
   adapter: HyperliquidStablecoinSwapAdapter;
   internals: AdapterInternals;
@@ -70,9 +88,9 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
     sinon.restore();
   });
 
-  // Multiple rebalancer bots (e.g. swapRebalancer and sameAssetRebalancer) share a signer and Redis order store, so
-  // an adapter can encounter pending orders created by a bot with a different route catalog. Regression test for the
-  // sameAssetRebalancer crashing with "Route is not supported: USDC 999 -> USDC 1" while progressing a swap-created
+  // Multiple rebalancer runtimes (e.g. swapRebalancer and the AdapterManager's Binance swap bridge) share a signer
+  // and Redis order store, so an adapter can encounter pending orders created by a runtime with a different route
+  // catalog. Regression test for a run crashing with "Route is not supported: USDC 999 -> USDC 1" while progressing a swap-created
   // Hyperliquid order through its final CCTP bridge leg.
   it("skips pending orders whose routes are not in availableRoutes without throwing", async function () {
     const { adapter, internals } = await makeHyperliquidAdapter();
@@ -124,5 +142,85 @@ describe("Rebalancer adapters only progress orders for supported routes", functi
     expect(adapter.supportsRoute(SWAP_ORDER_DETAILS)).to.equal(false);
     internals.availableRoutes = [SWAP_ORDER_ROUTE];
     expect(adapter.supportsRoute(SWAP_ORDER_DETAILS)).to.equal(true);
+  });
+
+  const REBALANCER_CONFIG = {
+    sameAssetBalances: { USDT: { [CHAIN_IDs.AVALANCHE]: {} } },
+  } as unknown as RebalancerConfig;
+
+  it("derives AdapterManager Binance lifecycle routes from the registry and operator config", function () {
+    // A route requires both a CUSTOM_BRIDGE registration and operator enablement in the rebalancer config.
+    expect(buildAdapterManagerBinanceRoutes({ sameAssetBalances: {} } as unknown as RebalancerConfig)).to.be.empty;
+    const routes = buildAdapterManagerBinanceRoutes(REBALANCER_CONFIG);
+    expect(routes).to.deep.include({
+      sourceChain: CHAIN_IDs.MAINNET,
+      sourceToken: "USDT",
+      destinationChain: CHAIN_IDs.AVALANCHE,
+      destinationToken: "USDT",
+      adapter: "binance",
+    });
+  });
+
+  it("progresses AdapterManager Binance orders using bridge-derived lifecycle routes", async function () {
+    const wallet = ethers.Wallet.createRandom();
+    const signer = EvmAddress.from(await wallet.getAddress());
+    const route = buildAdapterManagerBinanceRoutes(REBALANCER_CONFIG)[0];
+    const l1Token = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]);
+    const l2Token = EvmAddress.from(TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.AVALANCHE]);
+    let order!: OrderDetails;
+    const initiatingAdapter = {
+      baseSignerAddress: signer,
+      config: { maxAmountsToTransfer: {}, maxPendingOrders: {} },
+      supportsRoute: () => true,
+      getPendingOrders: async () => [],
+      getEstimatedCost: async () => bnZero,
+      initializeRebalanceWithTransaction: async (createdRoute: RebalanceRoute, amount: BigNumber) => {
+        order = { ...createdRoute, amountToTransfer: amount };
+        return { amount, transactionHash: "0xdeposit" };
+      },
+    };
+    const bridge = new BinanceStablecoinSwapBridge(
+      CHAIN_IDs.AVALANCHE,
+      CHAIN_IDs.MAINNET,
+      wallet,
+      wallet,
+      l1Token,
+      TEST_LOGGER,
+      Promise.resolve(initiatingAdapter as never)
+    );
+    await bridge.sendL1ToL2Transfer(signer, l1Token, l2Token, toBNWei("100", 6), false);
+
+    const adapter = new BinanceStablecoinSwapAdapter(
+      TEST_LOGGER,
+      {} as RebalancerConfig,
+      wallet,
+      {} as CctpAdapter,
+      {} as OftAdapter
+    );
+    const internals = adapter as unknown as BinanceAdapterInternals;
+    internals.initialized = true;
+    internals.availableRoutes = [route];
+    adapter.baseSignerAddress = signer;
+
+    sinon.stub(internals, "_redisGetPendingBridgesPreDeposit").resolves([]);
+    sinon.stub(internals, "_redisGetPendingDepositSubmissions").resolves([]);
+    sinon.stub(internals, "_redisGetPendingDeposits").resolves(["adapter-manager-order"]);
+    sinon.stub(internals, "_redisGetPendingSwaps").resolves([]);
+    sinon.stub(internals, "_redisGetPendingWithdrawals").resolves([]);
+    sinon.stub(internals, "_redisGetOrderDetailsRequired").resolves(order);
+    sinon.stub(internals, "_getBinanceBalance").resolves(100);
+    sinon.stub(internals, "_withdraw").resolves(true);
+    const updateStatus = sinon.stub(internals, "_redisUpdateOrderStatus").resolves();
+
+    await adapter.updateRebalanceStatuses();
+
+    // The order initiated through the AdapterManager bridge progressed to withdrawal in the swap rebalancer's
+    // normal lifecycle because the adapter carries the bridge-derived route.
+    expect(updateStatus.calledOnce).to.equal(true);
+    expect(updateStatus.firstCall.args.slice(0, 3)).to.deep.equal([
+      "adapter-manager-order",
+      STATUS.PENDING_DEPOSIT,
+      STATUS.PENDING_WITHDRAWAL,
+    ]);
   });
 });

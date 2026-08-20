@@ -13,10 +13,13 @@ export async function runGaslessRelayer(_logger: winston.Logger, baseSigner: Sig
   await relayer.initialize();
 
   try {
+    // Exclude swapApiKey from the logged config: it is a live bearer credential and must not be
+    // serialized into log transports at startup.
+    const { swapApiKey: _swapApiKey, ...loggedConfig } = config;
     logger[startupLogLevel(config)]({
       at: "GaslessRelayer#index",
       message: "Gasless relayer started",
-      config,
+      config: loggedConfig,
     });
     const start = Date.now();
 
