@@ -20,12 +20,13 @@ import {
   getProvider,
   paginatedEventQuery,
   getNetworkName,
-  getL2TokenAddresses,
+  getRemoteTokenForL1Token,
   getNativeTokenSymbol,
   getTokenInfo,
   assert,
   isDefined,
   isEVMSpokePoolClient,
+  Address,
   EvmAddress,
 } from "../../utils";
 import { getRedisCache } from "../../cache/Redis";
@@ -39,6 +40,14 @@ import { ARB_ORBIT_NETWORK_CONFIGS, getArbitrumOrbitFinalizationTime } from "../
 
 let LATEST_MAINNET_BLOCK: number;
 let MAINNET_BLOCK_TIME: number;
+
+/**
+ * Arbitrum withdrawals are discovered from the canonical gateways and ArbSys, not from the SpokePool, so there is no
+ * `TokensBridged` event and no relayer refund leaf behind them. The Outbox proof is rebuilt from the L2 transaction
+ * receipt alone, which leaves `txnRef` as the only load-bearing field; token and amount just label the log line. The
+ * remaining `TokensBridged` fields have no counterpart here, so don't invent one.
+ */
+type ArbitrumWithdrawal = Pick<TokensBridged, "amountToReturn" | "l2TokenAddress" | "txnRef">;
 
 export async function arbStackFinalizer(
   logger: winston.Logger,
@@ -87,7 +96,6 @@ export async function arbStackFinalizer(
     message: `${networkName} TokensBridged event filter`,
     to: latestBlockToFinalize,
   });
-  const withdrawalEvents: TokensBridged[] = [];
 
   // ERC20 withdrawals emit events in the erc20GatewayRouter.
   // Native token withdrawals emit events in the ArbSys contract.
@@ -144,14 +152,30 @@ export async function arbStackFinalizer(
       to: latestBlockToFinalize,
     }
   );
+  // @dev Anyone can withdraw an arbitrary token to an address we finalize for, so an unrecognised token must not
+  // stall the queue. The token is only used to label the finalization; it is not an input to the Outbox proof.
+  const unknownTokenWithdrawals: { l1Token: string; to: string; amount: string; txnRef: string }[] = [];
   const _withdrawalEvents = [
     ...withdrawalErc20Events.map((e) => {
-      const l2Token = getL2TokenAddresses(e.args.l1Token)?.[chainId];
-      assert(isDefined(l2Token), `Missing L2 token mapping for L1 token ${e.args.l1Token} on chain ${chainId}`);
+      const { l1Token, _to: to, _amount: amount } = e.args;
+      // @dev Resolve against the hub chain, and require a mapping on chainId so the aliased ETH/WETH L1 address
+      // doesn't send a recognised token down the unknown path.
+      const l2Token = getRemoteTokenForL1Token(EvmAddress.from(l1Token), chainId, hubPoolClient.chainId);
+      if (!isDefined(l2Token)) {
+        unknownTokenWithdrawals.push({
+          l1Token,
+          to,
+          // @dev Keeps this an array; the logger's BigNumber pass rebuilds via Object.fromEntries().
+          amount: amount.toString(),
+          txnRef: e.transactionHash,
+        });
+      }
       return {
         ...e,
-        amount: e.args._amount,
-        l2TokenAddress: EvmAddress.from(l2Token),
+        amount,
+        // @dev An unmapped token has no known L2 address, so fall back to the L1 address to keep the withdrawal
+        // identifiable in logs. Nothing downstream reads this to build the finalization.
+        l2TokenAddress: l2Token ?? EvmAddress.from(l1Token),
       };
     }),
     ...withdrawalNativeEvents.map((e) => {
@@ -164,43 +188,50 @@ export async function arbStackFinalizer(
       };
     }),
   ];
-  // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
-  // submit proofs and finalizations for.
-  _withdrawalEvents.forEach(({ transactionHash, transactionIndex, ...event }) => {
-    try {
-      const tokenBridgedEvent: TokensBridged = {
-        ...event,
-        amountToReturn: event.amount,
-        chainId,
-        leafId: 0,
-        l2TokenAddress: event.l2TokenAddress,
-        txnRef: transactionHash,
-        txnIndex: transactionIndex,
-      };
-      withdrawalEvents.push(tokenBridgedEvent);
-    } catch {
-      logger.debug({
-        at: `Finalizer#${networkName}Finalizer`,
-        message: `Skipping ERC20 withdrawal event for unknown token ${event.l2TokenAddress} on chain ${networkName}`,
-        event: event,
-      });
-    }
-  });
+  // @dev Deliberately not routed to across-error: anyone can mint this condition on demand, so paging on it would
+  // hand out a notification-spam primitive. It stays a warn so log-based alerting can still key off it if wanted.
+  if (unknownTokenWithdrawals.length > 0) {
+    logger.warn({
+      at: `Finalizer#${networkName}Finalizer`,
+      message: `Finalizing ${unknownTokenWithdrawals.length} ${networkName} withdrawal(s) of unrecognised token(s) 🚩`,
+      unknownTokenWithdrawals,
+    });
+  }
+
+  // Reduce the discovered events to the fields the finalization path actually reads.
+  const withdrawalEvents = _withdrawalEvents.map(({ transactionHash, amount, l2TokenAddress }) => ({
+    amountToReturn: amount,
+    l2TokenAddress,
+    txnRef: transactionHash,
+  }));
 
   return await multicallArbitrumFinalizations(withdrawalEvents, signer, hubPoolClient, logger, chainId);
 }
 
+/**
+ * Resolve token metadata for the finalization log line. The Outbox proof is built from the L2 message alone, so a
+ * token we can't describe must degrade the label rather than abort the batch. The fallback decimals only keep the
+ * logged amount readable; treat it as indicative for an unrecognised token.
+ */
+function describeToken(l2TokenAddress: Address, chainId: number): { symbol: string; decimals: number } {
+  try {
+    return getTokenInfo(l2TokenAddress, chainId);
+  } catch {
+    return { symbol: "UNKNOWN", decimals: 18 };
+  }
+}
+
 async function multicallArbitrumFinalizations(
-  tokensBridged: TokensBridged[],
+  withdrawals: ArbitrumWithdrawal[],
   hubSigner: Signer,
   hubPoolClient: HubPoolClient,
   logger: winston.Logger,
   chainId: number
 ): Promise<FinalizerPromise> {
-  const finalizableMessages = await getFinalizableMessages(logger, tokensBridged, hubSigner, chainId);
+  const finalizableMessages = await getFinalizableMessages(logger, withdrawals, hubSigner, chainId);
   const callData = await Promise.all(finalizableMessages.map((message) => finalizeArbitrum(message.message, chainId)));
   const crossChainTransfers = finalizableMessages.map(({ info: { l2TokenAddress, amountToReturn } }) => {
-    const { symbol, decimals } = getTokenInfo(l2TokenAddress, chainId);
+    const { symbol, decimals } = describeToken(l2TokenAddress, chainId);
     const amountFromWei = convertFromWei(amountToReturn.toString(), decimals);
     const withdrawal: CrossChainMessage = {
       originationChainId: chainId,
@@ -247,17 +278,17 @@ async function finalizeArbitrum(message: ChildToParentMessageWriter, chainId: nu
 
 async function getFinalizableMessages(
   logger: winston.Logger,
-  tokensBridged: TokensBridged[],
+  withdrawals: ArbitrumWithdrawal[],
   l1Signer: Signer,
   chainId: number
 ): Promise<
   {
-    info: TokensBridged;
+    info: ArbitrumWithdrawal;
     message: ChildToParentMessageWriter;
     status: string;
   }[]
 > {
-  const allMessagesWithStatuses = await getAllMessageStatuses(tokensBridged, logger, l1Signer, chainId);
+  const allMessagesWithStatuses = await getAllMessageStatuses(withdrawals, logger, l1Signer, chainId);
   const statusesGrouped = groupObjectCountsByProp(
     allMessagesWithStatuses,
     (message: { status: string }) => message.status
@@ -274,34 +305,34 @@ async function getFinalizableMessages(
 }
 
 async function getAllMessageStatuses(
-  tokensBridged: TokensBridged[],
+  withdrawals: ArbitrumWithdrawal[],
   logger: winston.Logger,
   mainnetSigner: Signer,
   chainId: number
 ): Promise<
   {
-    info: TokensBridged;
+    info: ArbitrumWithdrawal;
     message: ChildToParentMessageWriter;
     status: string;
   }[]
 > {
   // For each token bridge event, store a unique log index for the event within the arbitrum transaction hash.
   // This is important for bridge transactions containing multiple events.
-  const logIndexesForMessage = getUniqueLogIndex(tokensBridged);
+  const logIndexesForMessage = getUniqueLogIndex(withdrawals);
   const results = await Promise.all(
-    tokensBridged.map((e, i) =>
+    withdrawals.map((e, i) =>
       getMessageOutboxStatusAndProof(logger, e, mainnetSigner, logIndexesForMessage[i], chainId)
     )
   );
   return results.flatMap((result, i) => {
     const { message, status } = result;
-    return isDefined(message) ? [{ info: tokensBridged[i], message, status }] : [];
+    return isDefined(message) ? [{ info: withdrawals[i], message, status }] : [];
   });
 }
 
 async function getMessageOutboxStatusAndProof(
   logger: winston.Logger,
-  event: TokensBridged,
+  event: ArbitrumWithdrawal,
   l1Signer: Signer,
   logIndex: number,
   chainId: number
