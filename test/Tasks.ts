@@ -1,6 +1,6 @@
 import { expect } from "./utils";
 
-import { abortableDelay, fireAndForget } from "../src/utils";
+import { abortableDelay, fireAndForget, trackInFlight } from "../src/utils";
 
 describe("Tasks", function () {
   describe("fireAndForget", function () {
@@ -145,6 +145,63 @@ describe("Tasks", function () {
       const cb = fireAndForget(() => Promise.reject(new Error("boom")));
       expect(cb).to.not.throw();
       await tick();
+    });
+  });
+
+  describe("trackInFlight", function () {
+    // Tracking settles invocations over a few microtask hops; setImmediate flushes them all.
+    const flushMicrotasks = () => new Promise((resolve) => setImmediate(resolve));
+
+    it("drains every overlapping invocation, not only the most recent", async function () {
+      // scheduleTask is fixed-rate, so invocation 1 can still be running when invocation 2 starts
+      // and finishes. Draining must wait for the older one.
+      const releases: Array<() => void> = [];
+      const { run, drain } = trackInFlight(() => new Promise<void>((resolve) => releases.push(resolve)));
+
+      const first = run();
+      const second = run();
+      let firstSettled = false;
+      void first.then(() => (firstSettled = true));
+
+      releases[1]();
+      await second;
+      await flushMicrotasks();
+
+      let drained: boolean | undefined;
+      void drain(10).then((result) => (drained = result));
+      await flushMicrotasks();
+      expect(drained).to.be.undefined;
+      expect(firstSettled).to.be.false;
+
+      releases[0]();
+      await first;
+      await flushMicrotasks();
+      expect(drained).to.be.true;
+    });
+
+    it("returns false once the drain bound expires", async function () {
+      const { run, drain } = trackInFlight(() => new Promise<void>(() => undefined)); // Never settles.
+      void run();
+      const start = performance.now();
+      expect(await drain(0.1)).to.be.false;
+      expect(performance.now() - start).to.be.lessThan(1000);
+    });
+
+    it("returns true when nothing is in flight", async function () {
+      const { run, drain } = trackInFlight(async () => undefined);
+      await run();
+      await flushMicrotasks();
+      expect(await drain(10)).to.be.true;
+    });
+
+    it("stops tracking a rejected invocation without an unhandled rejection", async function () {
+      const { run, drain } = trackInFlight(() => Promise.reject(new Error("boom")));
+      let rejected = false;
+      // The caller still sees the rejection (scheduleTask's onError reports it).
+      await run().catch(() => (rejected = true));
+      await flushMicrotasks();
+      expect(rejected).to.be.true;
+      expect(await drain(10)).to.be.true;
     });
   });
 });
