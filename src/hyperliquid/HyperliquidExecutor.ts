@@ -73,6 +73,63 @@ const HL_FIXED_ADJUSTMENT = 10 ** USD_DECIMALS;
 const STABLE_SWAP_DISCOUNT = 0.2;
 // There is a minimum order placement requirement of 10 USD.
 const MIN_ORDER_AMOUNT = toBN(10 * HL_FIXED_ADJUSTMENT);
+// Hypercore dexes the finalizer supports delivering to. Spot sends have no precision constraint. The default USDC perp
+// dex (dex 0) uses PERP_ACCOUNTING_DECIMALS-decimal accounting while spot balances use the token's weiDecimals (8 for
+// USDC), so a perp-destined core-side send (CoreWriter sendAsset) whose amount is not a multiple of
+// 10^(weiDecimals - PERP_ACCOUNTING_DECIMALS) fails asynchronously with "Invalid send" and the swap flow stalls; see
+// defaultPerpLimitOrderOut for how submitted amounts are kept representable. Other perp dexes (e.g. HIP-3 builder
+// dexes) may use different collateral tokens and precision rules and are NOT supported: such orders are skipped (with
+// a page for manual intervention) rather than risking a stuck or mis-rounded send.
+const CORE_SPOT_DEX_ID = 4294967295; // Matches HyperCoreLib.CORE_SPOT_DEX_ID (type(uint32).max).
+const DEFAULT_USDC_PERP_DEX_ID = 0;
+const PERP_ACCOUNTING_DECIMALS = 6;
+
+// Granularity of amounts representable in the default USDC perp dex's accounting.
+function defaultPerpGranularity(weiDecimals: number): BigNumber {
+  return toBN(10).pow(Math.max(weiDecimals - PERP_ACCOUNTING_DECIMALS, 0));
+}
+
+/*
+ * @notice Computes the limit order output to submit for an order delivering to the default USDC perp dex, such that
+ * the amount the contract actually sends (`clamp(submitted, minAmountToSend, maxAmountToSend)`, see
+ * `_calcSwapFlowSendAmounts`) is representable in perp accounting:
+ * - Above max: the contract caps the send at maxAmountToSend, so submit the closest representable value >= max and
+ *   let the contract do the capping. maxAmountToSend is structurally representable for USDC (it derives from a
+ *   6-decimal EVM amount), which the ceil == max check makes explicit.
+ * - In range: floor to the representable granularity; the sub-granularity dust stays with the swap handler.
+ * - Below min (after flooring): the contract tops the send up to exactly minAmountToSend from the donation box, so
+ *   minAmountToSend itself must be representable.
+ * @returns The limit order output to submit, or undefined when the bound the contract would send (a non-representable
+ * min or max) makes finalization impossible: submitting anything would fail the core-side send ("Invalid send") after
+ * the swap is already marked finalized, stranding the funds with the swap handler. Such orders must be skipped and
+ * resolved manually.
+ */
+export function defaultPerpLimitOrderOut(
+  limitOrderOut: BigNumber,
+  minAmountToSend: BigNumber,
+  maxAmountToSend: BigNumber,
+  weiDecimals: number
+): BigNumber | undefined {
+  const granularity = defaultPerpGranularity(weiDecimals);
+  if (limitOrderOut.gt(maxAmountToSend)) {
+    const ceiledMax = maxAmountToSend.add(granularity).sub(1).div(granularity).mul(granularity);
+    // The reason to return undefined here if not equal: bot's accounting may be affected by this, need owner of this code
+    // take a look. This should never happen with USDC because of how maxAmountToSend is calculated on the contracts side
+    // so really it is a precaution
+    return ceiledMax.eq(maxAmountToSend) ? ceiledMax : undefined;
+  }
+  const flooredOut = limitOrderOut.div(granularity).mul(granularity);
+  if (flooredOut.gte(minAmountToSend)) {
+    return flooredOut;
+  }
+  // The reason to return undefined here is the following: if sent less than minAmountToSend at swap flow finalization, the contract
+  // automatically tops up the value to minAmountToSend. If that value is not representable in PERP decimals, the to-perp send will
+  // silently fail. If this were to ever happen, the bot would have to supply more than limitOrderOut into this flow just to keep the
+  // no-dust contract for to-perp sends, so code owner needs to decide how to reconcile bot accounting at that point. Hopefully this can
+  // be solved upstream at non-sponsored order creation time (sponsored USDC orders happen to be immune to this by nature of how the
+  // contract calculates minAmountToSend for them)
+  return minAmountToSend.mod(granularity).isZero() ? flooredOut : undefined;
+}
 
 /**
  * Class which operates on HyperEVM handler contracts. This supports placing orders on Hypercore and transferring tokens from
@@ -229,7 +286,11 @@ export class HyperliquidExecutor {
   public async finalizeSwapFlows(toBlock?: number): Promise<void> {
     // For each pair the finalizer handles, create a single transaction which bundles together all limit orders which have sufficient finalToken liquidity.
     await forEachAsync(Object.entries(this.pairs), async ([pairId, pair]) => {
-      const { decimals: inputTokenDecimals } = this._getTokenInfo(pair.baseToken, this.chainId);
+      const { decimals: inputTokenDecimals, symbol: baseTokenSymbol } = this._getTokenInfo(
+        pair.baseToken,
+        this.chainId
+      );
+      const dstHandler = this.dstHandler(baseTokenSymbol);
       // PairIds are formatted as `BASE_TOKEN-FINAL_TOKEN`.
       const [, finalTokenSymbol] = pairId.split("-");
       // We need to derive the "swappedInputTokenAmount", i.e. the amount of input tokens swapped in order for the handler its current amount of output tokens.
@@ -240,6 +301,11 @@ export class HyperliquidExecutor {
         getUserFees(this.infoClient, { user: pair.swapHandler.toNative() }),
       ]);
       let outputSpotBalance = _outputSpotBalance;
+      // Only perp-destined core-side sends are subject to the perp accounting granularity. The destination dex is not
+      // part of the `SwapFlowInitialized` event, so read it from the handler's swap state.
+      const destinationDexes = await Promise.all(
+        outstandingOrders.map(async (order) => (await dstHandler.swaps(order.quoteNonce)).destinationDex)
+      );
       // The market price is dependent on whether we are selling the base token or the final token.
       const currentPx = pair.baseForFinal ? l2Book.levels[0][0].px : l2Book.levels[1][0].px;
       const currentPxFixed = toBN(Math.floor(Number(currentPx) * HL_FIXED_ADJUSTMENT));
@@ -254,7 +320,7 @@ export class HyperliquidExecutor {
       // Fill orders FIFO.
       const quoteNonces = [];
       const outputAmounts = [];
-      for (const outstandingOrder of outstandingOrders) {
+      for (const [orderIdx, outstandingOrder] of outstandingOrders.entries()) {
         const convertedInputAmount = ConvertDecimals(
           inputTokenDecimals,
           pair.baseTokenDecimals
@@ -273,9 +339,49 @@ export class HyperliquidExecutor {
           pair.finalTokenDecimals
         )(realizedFeesInInputTokens);
         const _limitOrderOut = limitOrderOutNoFees.sub(realizedFees);
-        const limitOrderOut = _limitOrderOut.gt(outstandingOrder.maxAmountToSend)
-          ? outstandingOrder.maxAmountToSend
-          : _limitOrderOut;
+        // See the supported-dex comment on CORE_SPOT_DEX_ID/DEFAULT_USDC_PERP_DEX_ID/PERP_ACCOUNTING_DECIMALS.
+        const destinationDex = destinationDexes[orderIdx];
+        let limitOrderOut: BigNumber | undefined;
+        if (destinationDex === CORE_SPOT_DEX_ID) {
+          // Spot sends have no precision constraint; cap at the order's max, as the contract would.
+          limitOrderOut = _limitOrderOut.gt(outstandingOrder.maxAmountToSend)
+            ? outstandingOrder.maxAmountToSend
+            : _limitOrderOut;
+        } else if (destinationDex === DEFAULT_USDC_PERP_DEX_ID) {
+          limitOrderOut = defaultPerpLimitOrderOut(
+            _limitOrderOut,
+            outstandingOrder.minAmountToSend,
+            outstandingOrder.maxAmountToSend,
+            pair.finalTokenDecimals
+          );
+          if (!isDefined(limitOrderOut)) {
+            // Submitting this order would make the contract send an unrepresentable amount, failing the core-side
+            // send after the swap is marked finalized. Skip it (it stays outstanding) and page for manual
+            // intervention; keep finalizing the rest.
+            this.logger.error({
+              at: "HyperliquidExecutor#finalizeSwapFlows",
+              message:
+                "Cannot finalize perp-destined order: contract-enforced bound is not representable in perp accounting. Manual intervention required.",
+              pairId,
+              quoteNonce: outstandingOrder.quoteNonce,
+              marketOut: _limitOrderOut.toString(),
+              minAmountToSend: outstandingOrder.minAmountToSend.toString(),
+              maxAmountToSend: outstandingOrder.maxAmountToSend.toString(),
+            });
+            continue;
+          }
+        } else {
+          // Unknown precision rules; a mis-rounded send could strand funds. Skip and page, keep finalizing the rest.
+          this.logger.error({
+            at: "HyperliquidExecutor#finalizeSwapFlows",
+            message: "Cannot finalize order destined for an unsupported dex. Manual intervention required.",
+            pairId,
+            quoteNonce: outstandingOrder.quoteNonce,
+            destinationDex,
+            supportedDexes: [CORE_SPOT_DEX_ID, DEFAULT_USDC_PERP_DEX_ID],
+          });
+          continue;
+        }
         // If there is sufficient finalToken liquidity in the swap handler, then add it to the outstanding orders.
         if (limitOrderOut.lte(outputSpotBalance)) {
           quoteNonces.push(outstandingOrder.quoteNonce);
