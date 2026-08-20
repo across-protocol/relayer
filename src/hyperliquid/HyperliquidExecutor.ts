@@ -89,6 +89,10 @@ function defaultPerpGranularity(weiDecimals: number): BigNumber {
   return toBN(10).pow(Math.max(weiDecimals - PERP_ACCOUNTING_DECIMALS, 0));
 }
 
+function ceilToGranularity(amount: BigNumber, granularity: BigNumber): BigNumber {
+  return amount.add(granularity).sub(1).div(granularity).mul(granularity);
+}
+
 /*
  * @notice Computes the limit order output to submit for an order delivering to the default USDC perp dex, such that
  * the amount the contract actually sends (`clamp(submitted, minAmountToSend, maxAmountToSend)`, see
@@ -97,12 +101,18 @@ function defaultPerpGranularity(weiDecimals: number): BigNumber {
  *   let the contract do the capping. maxAmountToSend is structurally representable for USDC (it derives from a
  *   6-decimal EVM amount), which the ceil == max check makes explicit.
  * - In range: floor to the representable granularity; the sub-granularity dust stays with the swap handler.
- * - Below min (after flooring): the contract tops the send up to exactly minAmountToSend from the donation box, so
- *   minAmountToSend itself must be representable.
- * @returns The limit order output to submit, or undefined when the bound the contract would send (a non-representable
- * min or max) makes finalization impossible: submitting anything would fail the core-side send ("Invalid send") after
- * the swap is already marked finalized, stranding the funds with the swap handler. Such orders must be skipped and
- * resolved manually.
+ * - Below min (after flooring), representable min: the contract tops the send up to exactly minAmountToSend from the
+ *   donation box, so the floored output can be submitted as-is.
+ * - Below min (after flooring), non-representable min (it is slippage-scaled from the user's maxUserSlippageBps, so it
+ *   can carry dust): topping up to it would fail the core-side send, so instead submit the closest representable value
+ *   above min, sidestepping the top-up entirely. The delta above the actual swap proceeds is paid by the swap
+ *   handler's pooled spot balance (the donation box contributes nothing on this path); the caller logs it for
+ *   reconciliation.
+ * @returns The limit order output to submit, or undefined when no representable send amount exists within the
+ * contract-enforced bounds (a non-representable max, or a [min, max] window containing no representable value, e.g.
+ * zero slippage with a non-representable min == max): submitting anything would fail the core-side send
+ * ("Invalid send") after the swap is already marked finalized, stranding the funds with the swap handler. Such orders
+ * must be skipped and resolved manually.
  */
 export function defaultPerpLimitOrderOut(
   limitOrderOut: BigNumber,
@@ -112,23 +122,23 @@ export function defaultPerpLimitOrderOut(
 ): BigNumber | undefined {
   const granularity = defaultPerpGranularity(weiDecimals);
   if (limitOrderOut.gt(maxAmountToSend)) {
-    const ceiledMax = maxAmountToSend.add(granularity).sub(1).div(granularity).mul(granularity);
     // The reason to return undefined here if not equal: bot's accounting may be affected by this, need owner of this code
     // take a look. This should never happen with USDC because of how maxAmountToSend is calculated on the contracts side
     // so really it is a precaution
+    const ceiledMax = ceilToGranularity(maxAmountToSend, granularity);
     return ceiledMax.eq(maxAmountToSend) ? ceiledMax : undefined;
   }
   const flooredOut = limitOrderOut.div(granularity).mul(granularity);
-  if (flooredOut.gte(minAmountToSend)) {
+  // A representable min is safe to dip below: the contract tops the send up to exactly minAmountToSend from the
+  // donation box.
+  if (flooredOut.gte(minAmountToSend) || minAmountToSend.mod(granularity).isZero()) {
     return flooredOut;
   }
-  // The reason to return undefined here is the following: if sent less than minAmountToSend at swap flow finalization, the contract
-  // automatically tops up the value to minAmountToSend. If that value is not representable in PERP decimals, the to-perp send will
-  // silently fail. If this were to ever happen, the bot would have to supply more than limitOrderOut into this flow just to keep the
-  // no-dust contract for to-perp sends, so code owner needs to decide how to reconcile bot accounting at that point. Hopefully this can
-  // be solved upstream at non-sponsored order creation time (sponsored USDC orders happen to be immune to this by nature of how the
-  // contract calculates minAmountToSend for them)
-  return minAmountToSend.mod(granularity).isZero() ? flooredOut : undefined;
+  // Non-representable min: topping up to it would fail the send, so submit the closest representable value above it
+  // instead (never above max: only an order whose [min, max] window contains no representable value ends up there,
+  // and it cannot be finalized at any submitted amount).
+  const ceiledMin = ceilToGranularity(minAmountToSend, granularity);
+  return ceiledMin.lte(maxAmountToSend) ? ceiledMin : undefined;
 }
 
 /**
@@ -361,7 +371,7 @@ export class HyperliquidExecutor {
             this.logger.error({
               at: "HyperliquidExecutor#finalizeSwapFlows",
               message:
-                "Cannot finalize perp-destined order: contract-enforced bound is not representable in perp accounting. Manual intervention required.",
+                "Cannot finalize perp-destined order: no representable send amount exists within the contract-enforced bounds. Manual intervention required.",
               pairId,
               quoteNonce: outstandingOrder.quoteNonce,
               marketOut: _limitOrderOut.toString(),
@@ -384,6 +394,24 @@ export class HyperliquidExecutor {
         }
         // If there is sufficient finalToken liquidity in the swap handler, then add it to the outstanding orders.
         if (limitOrderOut.lte(outputSpotBalance)) {
+          if (limitOrderOut.gt(_limitOrderOut)) {
+            // Only the non-representable-min perp branch submits more than the market out: the submitted amount is the
+            // order's minAmountToSend ceiled to the representable granularity, and the delta above the actual swap
+            // proceeds is paid from the swap handler's pooled spot balance (the contract's donation-box top-up is
+            // bypassed). Log the subsidy so the pool can be reconciled/replenished; logged only once the order is
+            // queued for submission so reconciliation doesn't count subsidies for orders that never got sent.
+            this.logger.warn({
+              at: "HyperliquidExecutor#finalizeSwapFlows",
+              message:
+                "Subsidizing perp-destined order with non-representable minAmountToSend from swap handler balance.",
+              pairId,
+              quoteNonce: outstandingOrder.quoteNonce,
+              submitted: limitOrderOut.toString(),
+              marketOut: _limitOrderOut.toString(),
+              subsidy: limitOrderOut.sub(_limitOrderOut).toString(),
+              minAmountToSend: outstandingOrder.minAmountToSend.toString(),
+            });
+          }
           quoteNonces.push(outstandingOrder.quoteNonce);
           outputAmounts.push(limitOrderOut);
           outputSpotBalance = outputSpotBalance.sub(limitOrderOut);

@@ -39,12 +39,26 @@ describe("defaultPerpLimitOrderOut", function () {
     expect(defaultPerpLimitOrderOut(toBN("451999999999"), max, max, WEI_DECIMALS)?.toString()).to.equal("451999999900");
   });
 
-  it("refuses to finalize below a non-representable min", function () {
+  it("submits the ceiled min below a non-representable min, subsidizing the delta", function () {
     // The contract would top the send up to exactly min, which is not representable, so the send would fail after
-    // the swap is marked finalized.
-    expect(defaultPerpLimitOrderOut(toBN("450000000001"), dustyMin, max, WEI_DECIMALS)).to.be.undefined;
+    // the swap is marked finalized. Instead, submit the closest representable value above min: no top-up happens
+    // and the delta above the actual proceeds comes out of the swap handler's pooled balance.
+    const ceiledMin = toBN("451840900000");
+    expect(defaultPerpLimitOrderOut(toBN("450000000001"), dustyMin, max, WEI_DECIMALS)?.toString()).to.equal(
+      ceiledMin.toString()
+    );
     // Same when the floored output dips below min even though the raw output is above it.
-    expect(defaultPerpLimitOrderOut(toBN("451840899999"), dustyMin, max, WEI_DECIMALS)).to.be.undefined;
+    expect(defaultPerpLimitOrderOut(toBN("451840899999"), dustyMin, max, WEI_DECIMALS)?.toString()).to.equal(
+      ceiledMin.toString()
+    );
+  });
+
+  it("refuses to finalize when no representable value exists within [min, max]", function () {
+    // E.g. a zero-slippage order (min == max) with a non-representable bound: every submitted amount makes the
+    // contract send a non-representable value, so the order cannot be finalized at all.
+    expect(defaultPerpLimitOrderOut(toBN("451840899999"), dustyMin, dustyMin, WEI_DECIMALS)).to.be.undefined;
+    expect(defaultPerpLimitOrderOut(toBN("451840899900"), toBN("451840899901"), toBN("451840899999"), WEI_DECIMALS)).to
+      .be.undefined;
   });
 
   it("is a pure clamp for tokens whose weiDecimals do not exceed perp accounting decimals", function () {
