@@ -482,8 +482,9 @@ export class DepositAddressHandler {
    *   - v3 correct_transfer: thin-submitter execute path (initiateDepositV3) — unless the execute
    *     endpoint already rejected it as below the minimum deposit, in which case it is routed to the
    *     refund-withdraw path like a mis_route (see `refundOnlyDepositKeys`).
-   *   - v3 mis_route: refund-withdraw path (initiateWithdrawV3), gated behind config.enableV3Withdrawals.
-   *   - v3 anything else (incl. intent_refund): dropped — not yet supported on v3.
+   *   - v3 mis_route / intent_refund: refund-withdraw path (initiateWithdrawV3), gated behind
+   *     config.enableV3Withdrawals.
+   *   - v3 anything else: dropped — not yet supported on v3.
    *   - v1 correct_transfer: forward deposit/execute path.
    *   - v1 mis_route / intent_refund: refund-withdraw path.
    *   - anything else: dropped (forward-compat) until explicitly supported.
@@ -507,7 +508,7 @@ export class DepositAddressHandler {
         }
         return this.initiateDepositV3(depositMessage);
       }
-      if (classification === "mis_route") {
+      if (classification === "mis_route" || classification === "intent_refund") {
         return this.initiateWithdrawV3(depositMessage);
       }
       this.logger.debug({
@@ -1409,8 +1410,10 @@ export class DepositAddressHandler {
    * (upgradeable-counterfactual) deposit address back to the committed refund address via the
    * quote-api v3 sign-withdraw endpoint, which bundles the BeaconProxy deploy + signedWithdrawToUser
    * into a single Multicall3 call when the proxy is not yet on-chain. Gas is deducted from the
-   * refund (`deductGasFromRefund: true`) so refunds are not operated at a loss; a terminal 422
-   * (fee ≥ refund / unpriceable token) is persisted and never retried.
+   * refund (`deductGasFromRefund: true`) so refunds are not operated at a loss — except for an
+   * `intent_refund`, where the deposit failed on our side (no relayer filled the intent) and the user
+   * is made whole at our expense. A terminal 422 (fee ≥ refund / unpriceable token) is persisted and
+   * never retried.
    */
   private async initiateWithdrawV3(depositMessage: DepositAddressMessageV3): Promise<void> {
     const { depositAddress, refundAddress, erc20Transfer, depositAddressNamespace } = depositMessage;
@@ -1630,7 +1633,9 @@ export class DepositAddressHandler {
       counterfactualBeacon: depositMessage.counterfactualBeaconContractAddress,
       adminWithdrawManager: depositMessage.adminWithdrawManagerContractAddress,
       withdrawImplementation: withdrawLeaf.implementationAddress,
-      deductGasFromRefund: true,
+      // An intent_refund is our failure to fill, not a user mistake — refund the full amount and eat
+      // the gas. Every other refund reason deducts it.
+      deductGasFromRefund: erc20Transfer.transferClassification !== "intent_refund",
     };
     try {
       return await this.api.signWithdrawDepositAddressV3(request);

@@ -81,9 +81,8 @@ describe("parseTransfer", function () {
     expect(parseTransfer(v3({}, { transferClassification: "mis_route" })).route).to.equal("withdraw");
   });
 
-  it("drops classifications v3 does not support", function () {
-    // intent_refund is unsupported on v3, matching the polling bot.
-    expect(() => parseTransfer(v3({}, { transferClassification: "intent_refund" }))).to.throw(/no v3 route/);
+  it("routes intent_refund to withdraw", function () {
+    expect(parseTransfer(v3({}, { transferClassification: "intent_refund" })).route).to.equal("withdraw");
   });
 
   it("drops unsupported versions before validating the rest", function () {

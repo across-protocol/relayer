@@ -408,14 +408,14 @@ describe("DepositAddressHandler.processExecution v3 routing", function () {
     expect(v3Stub.notCalled).to.equal(true);
   });
 
-  it("drops v3 intent_refund (not yet supported)", async function () {
+  it("routes v3 intent_refund to the v3 withdraw path", async function () {
     const message = depositMessageV3();
     message.erc20Transfer.transferClassification = "intent_refund";
     await (handler as unknown as Internals).processExecution(message);
+    expect(withdrawV3Stub.calledOnceWithExactly(message)).to.equal(true);
     expect(v3Stub.notCalled).to.equal(true);
     expect(v1Stub.notCalled).to.equal(true);
     expect(withdrawStub.notCalled).to.equal(true);
-    expect(withdrawV3Stub.notCalled).to.equal(true);
   });
 
   it("keeps routing v1 messages to the v1 paths", async function () {
@@ -964,6 +964,14 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
       withdrawImplementation: WITHDRAW_IMPL,
       deductGasFromRefund: true,
     });
+  });
+
+  it("does not deduct gas from an intent_refund: the user is made whole at our expense", async function () {
+    signWithdrawStub.resolves({ signedWithdrawTx: { chainId: 42161 } });
+    const message = withdrawMessageV3();
+    message.erc20Transfer.transferClassification = "intent_refund";
+    await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf);
+    expect(signWithdrawStub.firstCall.args[0].deductGasFromRefund).to.equal(false);
   });
 
   it("retries transient failures, then gives up without persisting a skip", async function () {

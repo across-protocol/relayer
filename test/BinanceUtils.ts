@@ -29,7 +29,7 @@ import {
 } from "../src/utils";
 
 function makeDeposit(network: string, amount: number, insertTime: number): BinanceDeposit {
-  return { network, amount, coin: "USDT", txId: `0x${insertTime}`, insertTime };
+  return { network, amount, coin: "USDT", txId: `0x${insertTime}`, address: "0xBinance", insertTime };
 }
 
 function makeWithdrawal(amount: number, timestamp: number, transactionFee = 0): BinanceWithdrawal {

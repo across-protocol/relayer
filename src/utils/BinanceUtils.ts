@@ -9,16 +9,20 @@ import Binance, {
 export type { BinanceApi };
 import minimist from "minimist";
 import { JsonFragment } from "@ethersproject/abi";
+import { Contract, providers, utils as ethersUtils } from "ethers";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, CHAIN_IDs, truncate } from "./";
 import { getRedisCache } from "../cache/Redis";
 import { CONTRACT_ADDRESSES, isJsonAbi } from "../common";
 import { BigNumber } from "./BNUtils";
-import { fromWei, retry, toBNWei } from "./SDKUtils";
+import { chunk, EvmAddress, fromWei, retry, toBNWei } from "./SDKUtils";
+import { EventSearchConfig, getPaginatedBlockRanges, paginatedEventQuery } from "./EventUtils";
+import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
 // Store global promises on Gckms key retrieval actions so that we don't retrieve the same key multiple times.
 let binanceSecretKeyPromise: Promise<string | undefined> | undefined = undefined;
 
 const BINANCE_TRADES_FETCH_LIMIT = 1000;
+export const BINANCE_SWEEP_WITHDRAW_ORDER_ID_PREFIX = "across-finalizer-sweep-";
 
 // Binance only accepts a signed request while its timestamp remains within recvWindow.
 // Signed reads can tolerate a much larger window because a delayed accepted request still returns current server data.
@@ -106,14 +110,24 @@ export type BinanceDeposit = {
   network: string;
   // The transaction hash of the deposit.
   txId: string;
+  // The Binance address that received the deposit.
+  address: string;
   // The timestamp that Binance assigns the deposit.
   insertTime: number;
   // The status of the deposit/withdrawal.
   status?: number;
 };
 
+export type AttributedBinanceDeposit = BinanceDeposit & { depositor: string };
+export type QueryBinanceErc20Transfers = (
+  provider: providers.Provider,
+  eventSearchConfig: EventSearchConfig,
+  tokenAddress: string,
+  recipient: string
+) => Promise<Array<{ transactionHash: string; from: string }>>;
+
 // A BinanceWithdrawal is a simplified element of the return type of the Binance API's `withdrawHistory`.
-export type BinanceWithdrawal = Omit<BinanceDeposit, "insertTime"> & {
+export type BinanceWithdrawal = Omit<BinanceDeposit, "insertTime" | "address"> & {
   // The recipient of `coin` on the destination network.
   recipient: string;
   // The unique withdrawal ID.
@@ -122,7 +136,13 @@ export type BinanceWithdrawal = Omit<BinanceDeposit, "insertTime"> & {
   transactionFee: number;
   // The timestamp of the withdrawal.
   applyTime: string;
+  // Optional client-provided ID persisted by Binance with the withdrawal.
+  withdrawOrderId?: string;
 };
+
+export function isBinanceSweepWithdrawal(withdrawal: Pick<BinanceWithdrawal, "withdrawOrderId">): boolean {
+  return withdrawal.withdrawOrderId?.startsWith(BINANCE_SWEEP_WITHDRAW_ORDER_ID_PREFIX) ?? false;
+}
 
 export enum BINANCE_WITHDRAWAL_STATUS {
   EMAIL_SENT = 0,
@@ -132,6 +152,95 @@ export enum BINANCE_WITHDRAWAL_STATUS {
   PROCESSING = 4,
   FAILURE = 5,
   COMPLETED = 6,
+}
+
+export enum BINANCE_DEPOSIT_STATUS {
+  PENDING = 0,
+  CONFIRMED = 1,
+  REJECTED = 2,
+  CREDITED = 6,
+  WRONG_DEPOSIT = 7,
+  WAITING_USER_CONFIRM = 8,
+}
+
+/** Attributes a same-network, same-coin deposit batch by ERC20 transfers, or by receipts for native tokens. */
+export async function getAttributedBinanceDeposits(
+  deposits: BinanceDeposit[],
+  provider: providers.Provider,
+  eventSearchConfig: EventSearchConfig,
+  tokenAddress?: string,
+  queryErc20Transfers: QueryBinanceErc20Transfers = getBinanceErc20Transfers
+): Promise<AttributedBinanceDeposit[]> {
+  assert(
+    deposits.every(({ network, coin }) => network === deposits[0]?.network && coin === deposits[0]?.coin),
+    "Binance deposits must share a network and coin"
+  );
+  const depositors = new Map<string, string>();
+  const receiptDeposits: BinanceDeposit[] = [];
+  const depositKey = ({ network, txId }: BinanceDeposit) => `${network}:${txId.toLowerCase()}`;
+
+  if (isDefined(tokenAddress)) {
+    const groups = Object.values(Object.groupBy(deposits, ({ address }) => address.toLowerCase())).filter(isDefined);
+    const logQueryCount = getPaginatedBlockRanges(eventSearchConfig).length;
+    await Promise.all(
+      groups.map(async (group) => {
+        // BSC's short log range can make pagination more expensive than one receipt per deposit.
+        if (logQueryCount > group.length) {
+          receiptDeposits.push(...group);
+          return;
+        }
+        const transfers = await queryErc20Transfers(provider, eventSearchConfig, tokenAddress, group[0].address).catch(
+          () => []
+        );
+        const senders = new Map(transfers.map(({ transactionHash, from }) => [transactionHash.toLowerCase(), from]));
+        group.forEach((deposit) => {
+          const sender = senders.get(deposit.txId.toLowerCase());
+          if (isDefined(sender)) {
+            depositors.set(depositKey(deposit), EvmAddress.from(sender).toNative());
+          } else {
+            receiptDeposits.push(deposit);
+          }
+        });
+      })
+    );
+  } else {
+    receiptDeposits.push(...deposits);
+  }
+
+  for (const batchSize of [50, 25]) {
+    const unattributed = receiptDeposits.filter((deposit) => !depositors.has(depositKey(deposit)));
+    for (const batch of chunk(unattributed, batchSize)) {
+      await Promise.all(
+        batch.map(async (deposit) => {
+          const receipt = await provider.getTransactionReceipt(deposit.txId);
+          if (isDefined(receipt) && ethersUtils.isAddress(receipt.from)) {
+            depositors.set(depositKey(deposit), EvmAddress.from(receipt.from).toNative());
+          }
+        })
+      );
+    }
+    if (unattributed.every((deposit) => depositors.has(depositKey(deposit)))) {
+      break;
+    }
+  }
+  return deposits
+    .map((deposit) => {
+      const depositor = depositors.get(depositKey(deposit));
+      return isDefined(depositor) ? { ...deposit, depositor } : undefined;
+    })
+    .filter(isDefined);
+}
+
+async function getBinanceErc20Transfers(
+  provider: providers.Provider,
+  eventSearchConfig: EventSearchConfig,
+  tokenAddress: string,
+  recipient: string
+): Promise<Array<{ transactionHash: string; from: string }>> {
+  const token = new Contract(tokenAddress, ERC20_ABI, provider);
+  return (await paginatedEventQuery(token, token.filters.Transfer(null, recipient), eventSearchConfig)).map(
+    ({ transactionHash, args }) => ({ transactionHash, from: args?.from })
+  );
 }
 
 export function readableBinanceWithdrawalStatus(status?: number): string {
@@ -279,7 +388,7 @@ export async function submitBinanceOrder(
 
 export async function submitBinanceWithdrawal(
   binanceApi: BinanceApi,
-  options: Parameters<BinanceApi["withdraw"]>[0]
+  options: Parameters<BinanceApi["withdraw"]>[0] & { withdrawOrderId?: string }
 ): ReturnType<BinanceApi["withdraw"]> {
   return (binanceApi as BinanceApiWithRecvWindow).withdraw({ ...options, recvWindow: BINANCE_WITHDRAW_RECV_WINDOW_MS });
 }
@@ -408,6 +517,7 @@ export async function getBinanceDeposits(
       coin: resolveBinanceCoinSymbol(deposit.coin),
       network: deposit.network,
       txId: deposit.txId,
+      address: deposit.address,
       status: deposit.status,
       insertTime: deposit.insertTime,
     } satisfies BinanceDeposit;
@@ -443,6 +553,7 @@ export async function getBinanceWithdrawals(
       network: withdrawal.network,
       status: withdrawal.status,
       applyTime: withdrawal.applyTime,
+      withdrawOrderId: withdrawal.withdrawOrderId,
     } satisfies BinanceWithdrawal;
   });
 }

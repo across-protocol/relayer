@@ -130,10 +130,12 @@ function route(message: DepositAddressMessageV3): TransferRoute {
   switch (transferClassification) {
     case "correct_transfer":
       return "deposit";
+    // An expired intent refunds to the deposit address itself (the SpokePool depositor), so it needs
+    // the same second hop out to the committed refund address as a mis_route.
     case "mis_route":
+    case "intent_refund":
       return "withdraw";
     default:
-      // `intent_refund` is not supported on v3, matching the polling bot.
       throw new UnsupportedMessageError(`no v3 route for classification ${transferClassification}`);
   }
 }
