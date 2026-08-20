@@ -228,9 +228,43 @@ pre-regenesis OVM 1.0 chain, whose logs are **not in the current chain at all** 
 any `eth_getLogs` scan, at any depth, and they would need the archived pre-regenesis chain. The SNX
 nonces (137k) are safely above this, but a zero below 100000 is meaningless rather than reassuring.
 
+### 14b. The legacy claim key is not value-independent — ETH withdrawals hash differently
+`hashCrossDomainMessageV1` covers `(nonce, sender, target, value, minGasLimit, data)`. For a
+pre-Bedrock **ETH** withdrawal the `value` is the withdrawn amount, not `0`: ETH left L2 as a
+message to `L1StandardBridge.finalizeETHWithdrawal`, and the migration re-encoded it carrying that
+amount. Hardcoding `value = 0` — which the first cut did, from an n=2 sample that happened to be
+two SNX (ERC20, value 0) proofs — yields a key the messenger has never written, for every ETH
+withdrawal ever, forever. It reported five *claimed* withdrawals totalling **1,552.38 ETH**
+(SpokePool → HubPool, relayed 2023-06-14) as stuck.
+
+The tell was that it looked like a jackpot: five findings, one address, one narrow date range, all
+in the last five days before Bedrock. A cluster that tidy is a bug signature, not a discovery — the
+cross-check that settled it was `ETHWithdrawalFinalized` on the L1 bridge, which is the *other* side
+of the same event and does not share the derivation. `legacyMessageValue()` now derives value from
+the message selector, `legacyRelayed()` probes the zero-value key too, and both directions are
+fixture-pinned on nonce 139216.
+
 ### 15. `cast logs` silently drops results when given a `null` topic placeholder
 It returns zero hits rather than erroring. This produced a false "no burns exist" reading mid-
 investigation. Use raw `eth_getLogs` for anything load-bearing.
+
+### 15b. Polygon identifies a withdrawal only by `from`, so the watch-list alone is not enough
+Every other scanner substring-matches `WATCH` against the raw message payload, which is why the
+"add an address to `WATCH` and every scanner picks it up" rule in *Adding a chain or an address*
+holds. Polygon is the exception and the rule did not survive contact with it: a PoS exit is an ERC20
+burn to `0x0`, whose only identifying field is the burner. Across never burns from the SpokePool —
+it transfers to **`PolygonTokenBridger` `0x0330E9b4…`**, which calls `withdraw()` — so scanning
+`WATCH + spokePools` returned a clean zero for every HubPool return Polygon has ever made. Fixed
+with `ChainConfig.extraSenders`. Any future sender-keyed chain needs the same treatment.
+
+### 15c. A family with no scanner is not the same as a family with nothing to find
+`zk-stack`, `scroll` and `linea` have verified, fixture-pinned L1 oracles but no L2 discovery
+scanner. They also had no branch in the family dispatch, so they scanned nothing, produced no
+findings, incremented no skip counter, and exited **0 — "scan complete, nothing unclaimed"**. The
+whole point of separating exit 2 from exit 0 is that this cannot happen; it happened anyway,
+because the guard was written for the *chain unreachable* case and an unimplemented family reaches
+the end of the dispatch chain looking exactly like a completed one. Unhandled families now count as
+skipped. If you add a family to `Family`, add its dispatch branch or accept exit 2.
 
 ### 16. Getting the outbox position wrong inverts the answer
 An Orbit `isSpent(position)` on the wrong position happily returns `true` for some unrelated spent
@@ -290,9 +324,11 @@ either side are adjacent.
   `TokensBridged` sweep now reports `exhaustive: false` for an unverified address that returned zero
   logs: a zero from an address we cannot prove is the right address is not evidence. Any *hit* proves
   the address, and flips it to exhaustive.
-- **zkSync and Linea oracles are now verified and fixture-pinned** (zkSync via `L1Nullifier`
-  `0xD7f9f541…` — note this is the upgraded L1SharedBridge, *not* the AssetRouter; Linea via
-  `isMessageClaimed`). **Scroll** has a verified oracle and key derivation but no fixture yet.
+- **zkSync, Scroll and Linea have oracles but NO L2 scanner**, so they are never actually scanned
+  and always exit `2`. The zkSync and Linea oracles are verified and fixture-pinned (zkSync via
+  `L1Nullifier` `0xD7f9f541…` — the upgraded L1SharedBridge, *not* the AssetRouter; Linea via
+  `isMessageClaimed`); Scroll's oracle and key derivation are verified but unfixtured. Wiring
+  `zkL1MessageSent` / the Scroll and Linea L2 messengers into `scanners.ts` is the open work.
 - **Boba (288)** is an OVM 1.0 fork and so has a legacy era, but no RPC was available: its L1
   messenger address and migration parameters are entirely unconfirmed. Open item.
 - **Arbitrum classic `path` derivation** (`2^proofLen − 1 − indexInBatch`) held 4/4 across two
@@ -307,7 +343,9 @@ either side are adjacent.
 ## Adding a chain or an address
 
 Watch-list: add to `WATCH` in `registry.ts`. Matching is a raw-payload substring search, so a new
-address is picked up by every scanner without touching the core.
+address is picked up by every scanner without touching the core — **except Polygon**, which keys on
+the burn's `from` and needs the address in `WATCH`, `spokePools` or `extraSenders` to see it at all
+(see failure mode 15b). Any contract that withdraws *on our behalf* belongs in `extraSenders`.
 
 New chain: add a `ChainConfig` to `CHAINS`, list its SpokePools in `spokePools.ts`, and set
 `eraBoundaryBlock` if it has a fork boundary. If you do not know the OP portal address, leave it
