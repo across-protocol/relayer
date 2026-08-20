@@ -53,8 +53,9 @@ Stop and ask for clarification if any of the following are true:
 ## Planning and Documentation Evolution
 
 - Before writing a plan, identify any meaningful ambiguities and ask for clarification first.
-- Propose doc updates only when the change adds or materially alters a significant feature or load-bearing component. "No updates needed" is the common case.
+- Propose doc updates only when the change adds or materially alters core functionality or a load-bearing component. "No updates needed" is the common case.
 - Keep doc edits concise: amend existing lines before adding new sections, and cut anything that wouldn't change what a reader does.
+- Docs are a shared reference, not a personal log — keep investigation narrative and change history in the PR description.
 - When creating deep-dive docs, include discoverability updates in the same change (relevant `README.md` links and, when useful, `AGENTS.md` quick index entries).
 - Default deep-dive docs to cross-module coverage when behavior spans module boundaries; avoid single-file explanations for multi-module flows.
 - Default deep-dive docs to a "current behavior first" structure with a concise contributor recommendations section at the end.

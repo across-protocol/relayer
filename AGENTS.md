@@ -12,8 +12,9 @@ Read docs in this order:
 
 ## Documentation maintenance
 
-Document load-bearing things only: significant features, module interfaces, config surfaces, and runtime flows a contributor must understand to make a safe change. Bug fixes, refactors, and routine maintenance normally need no doc change — say so and move on.
+Document load-bearing things only: core functionality, significant features, module interfaces, config surfaces, and runtime flows a contributor must understand to make a safe change. Bug fixes, refactors, and routine maintenance normally need no doc change — say so and move on.
 
+- These files are a shared reference, not a personal log. Don't record investigation narrative, findings you happened to make along the way, or a history of what changed — that belongs in the PR description.
 - Keep doc edits terse. Prefer amending an existing line over adding a section, and cut anything that wouldn't change what a reader does.
 - When a change does clear the bar, update the affected `AGENTS.md` / `README.md` in the same change, not as a follow-up.
 - Before writing implementation plans, surface material ambiguities first and resolve them with the user.
@@ -77,7 +78,7 @@ relayer-v2/
 │   │   ├── TokenClient.ts        # Token metadata, balances, and allowance helpers.
 │   │   ├── SpokePoolClient.ts    # SpokePool event/state client wrappers.
 │   │   └── bridges/              # Bridge adapter selection and cross-chain transfer helpers.
-│   ├── caching/                  # Redis-backed and in-memory cache helpers.
+│   ├── cache/                    # Redis-backed and in-memory cache helpers.
 │   ├── messaging/                # Cross-bot messaging transports.
 │   │   ├── redis/                # Redis pub/sub wrapper (handover signaling).
 │   │   └── gcp/                  # GCP Pub/Sub publisher (lifecycle events) + push-request decode/auth.
