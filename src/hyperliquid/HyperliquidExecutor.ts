@@ -380,23 +380,6 @@ export class HyperliquidExecutor {
             });
             continue;
           }
-          if (limitOrderOut.gt(_limitOrderOut)) {
-            // Only the non-representable-min branch returns more than the market out: the submitted amount is the
-            // order's minAmountToSend ceiled to the representable granularity, and the delta above the actual swap
-            // proceeds is paid from the swap handler's pooled spot balance (the contract's donation-box top-up is
-            // bypassed). Log the subsidy so the pool can be reconciled/replenished.
-            this.logger.warn({
-              at: "HyperliquidExecutor#finalizeSwapFlows",
-              message:
-                "Subsidizing perp-destined order with non-representable minAmountToSend from swap handler balance.",
-              pairId,
-              quoteNonce: outstandingOrder.quoteNonce,
-              submitted: limitOrderOut.toString(),
-              marketOut: _limitOrderOut.toString(),
-              subsidy: limitOrderOut.sub(_limitOrderOut).toString(),
-              minAmountToSend: outstandingOrder.minAmountToSend.toString(),
-            });
-          }
         } else {
           // Unknown precision rules; a mis-rounded send could strand funds. Skip and page, keep finalizing the rest.
           this.logger.error({
@@ -411,6 +394,24 @@ export class HyperliquidExecutor {
         }
         // If there is sufficient finalToken liquidity in the swap handler, then add it to the outstanding orders.
         if (limitOrderOut.lte(outputSpotBalance)) {
+          if (limitOrderOut.gt(_limitOrderOut)) {
+            // Only the non-representable-min perp branch submits more than the market out: the submitted amount is the
+            // order's minAmountToSend ceiled to the representable granularity, and the delta above the actual swap
+            // proceeds is paid from the swap handler's pooled spot balance (the contract's donation-box top-up is
+            // bypassed). Log the subsidy so the pool can be reconciled/replenished; logged only once the order is
+            // queued for submission so reconciliation doesn't count subsidies for orders that never got sent.
+            this.logger.warn({
+              at: "HyperliquidExecutor#finalizeSwapFlows",
+              message:
+                "Subsidizing perp-destined order with non-representable minAmountToSend from swap handler balance.",
+              pairId,
+              quoteNonce: outstandingOrder.quoteNonce,
+              submitted: limitOrderOut.toString(),
+              marketOut: _limitOrderOut.toString(),
+              subsidy: limitOrderOut.sub(_limitOrderOut).toString(),
+              minAmountToSend: outstandingOrder.minAmountToSend.toString(),
+            });
+          }
           quoteNonces.push(outstandingOrder.quoteNonce);
           outputAmounts.push(limitOrderOut);
           outputSpotBalance = outputSpotBalance.sub(limitOrderOut);
