@@ -390,8 +390,14 @@ export const CHAINS: ChainConfig[] = [
     controls: { spentOutboxPosition: 0 },
     spokePools: [{ address: "0xD29C85F15DF544bA632C9E25829fd29d767d7978", label: "current" }],
     notes:
-      "Zero ACROSS withdrawals as of 2026-08: ArbSys positions 0..1161 contiguous, no TokensBridged. " +
-      "The chain itself does have claimed outbox entries, hence the control above.",
+      "NOT zero any more. The earlier note (positions 0..1161, no ACROSS withdrawals) was recorded " +
+      "before NODE_URL_4663 existed, so the L2 side had never actually been scanned — the zero was " +
+      "an artifact of not looking. With an RPC wired in, full history shows 1,345 L2ToL1Tx events " +
+      "and 6 watch-list withdrawals (1,308 WETH -> 0x07a, from 2026-08-15), none yet claimed. " +
+      "All six were still inside the 7-day window when found, and arbStackFinalizer IS configured " +
+      "for this chain (family ORBIT in PRODUCTION_NETWORKS; the finalizer logs 'Found 0 Robinhood " +
+      "messages' every cycle). Position 1210 matures 2026-08-22 07:46Z and is the first real test " +
+      "of whether anything actually claims here — there is no precedent of a completed one.",
   },
   {
     chainId: 137,
@@ -435,6 +441,22 @@ export const CHAINS: ChainConfig[] = [
     // for known-true keys. src: verified
     l1: { l1Nullifier: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB" },
     spokePools: [{ address: "0xE0B015E54d54fc84a6cB9B666099c46adE9335FF", label: "current" }],
+  },
+  {
+    chainId: 232,
+    name: "Lens",
+    rpcEnv: ["NODE_URL_232", "LENS_RPC_URL"],
+    families: ["zk-stack"],
+    /**
+     * Elastic-chain member, so its withdrawals settle through the SAME L1Nullifier as Era —
+     * chainId is part of the key, which is why one contract serves both. Listed here because it was
+     * absent from CHAINS entirely while being a live Across chain: a chain the registry does not
+     * know about is not reported as skipped, it is simply invisible, which is worse than exit 2.
+     * Like the other zk-stack/scroll/linea entries it has no L2 scanner yet, so it exits 2.
+     */
+    l1: { l1Nullifier: "0xD7f9f54194C633F36CCD5F3da84ad4a1c38cB2cB" },
+    spokePools: [{ address: "0xb234cA484866c811d0e6D3318866F583781ED045", label: "current" }],
+    notes: "src: spokePool from the Across API supported-chains list, 2026-08-21. Validium.",
   },
   {
     chainId: 534352,
