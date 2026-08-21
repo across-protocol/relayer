@@ -1368,6 +1368,29 @@ describe("GaslessRelayer", function () {
       expectImmediateTransitions(relayer.stateTransitions[nonce2]);
     });
 
+    it("Dispatches a user's oldest pending order first", async function () {
+      // Same authorizer and origin chain, so both contend for one fillLock and whichever is
+      // dispatched first is the one serviced. The API's feed is unordered: supply it newest-first.
+      const amounts = { inputAmount: "1000000", outputAmount: "900000" };
+      const [newer, older] = ["2024-01-01T00:00:02Z", "2024-01-01T00:00:01Z"].map((submittedAt, idx) => {
+        const msg = makeTestDepositMessage(amounts);
+        return Object.assign(msg, { depositId: toBN(100 + idx), requestId: submittedAt, submittedAt });
+      });
+      relayer.queryGaslessApiFn = async () => [newer, older];
+
+      const depositOrder: string[] = [];
+      relayer.initiateDepositFn = async ({ requestId }) => {
+        depositOrder.push(requestId);
+        return makeReceipt();
+      };
+      relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent(amounts);
+      relayer.initiateFillFn = async () => makeReceipt();
+
+      await relayer.runEvaluateApiSignatures();
+
+      expect(depositOrder).to.deep.equal([older.requestId, newer.requestId]);
+    });
+
     it("Message with existing state is skipped on subsequent polls", async function () {
       const { msg, nonce } = setupScenario(relayer, { inputAmount: "2000000", outputAmount: "1900000" }, (overrides) =>
         makeTestDepositMessage(overrides, { instantFill: true })

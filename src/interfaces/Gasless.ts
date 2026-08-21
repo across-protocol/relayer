@@ -295,6 +295,8 @@ export interface GaslessDepositMessage {
   /** Normalized to BigNumber on ingestion (restructureGaslessDeposits); raw API carries a string. */
   depositId: BigNumber;
   requestId: string;
+  /** ISO-8601 submission time; orders each poll batch. Optional: the feed isn't runtime-validated. */
+  submittedAt?: string;
   signature: string;
   permitType: GaslessPermitType;
   permit: ReceiveWithAuthorization | Permit2Permit;
@@ -327,6 +329,8 @@ export interface SwapAndBridgeGaslessDepositMessage {
   /** See {@link GaslessDepositMessage.depositId}. */
   depositId: BigNumber;
   requestId: string;
+  /** See {@link GaslessDepositMessage.submittedAt}. */
+  submittedAt?: string;
   signature: string;
   permitType: GaslessPermitType;
   permit: ReceiveWithAuthorization | Permit2SwapAndBridgePermit | PermitSwapAndBridgeWitness;

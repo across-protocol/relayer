@@ -8,9 +8,10 @@ import {
   getLegacySpokePoolPeripheryAddresses,
   isErc2612PermitNonceConsumed,
   resolveTokenInfoForLog,
+  sortGaslessDepositsOldestFirst,
 } from "../src/utils/GaslessUtils";
 import { CHAIN_IDs, toAddressType, getTokenInfo } from "../src/utils";
-import { APIGaslessDepositResponse } from "../src/interfaces";
+import { AnyGaslessDepositMessage, APIGaslessDepositResponse } from "../src/interfaces";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
 
 // Minimal valid 65-byte signature (hex)
@@ -180,6 +181,12 @@ describe("GaslessUtils", function () {
       expect(result.targetAddress).to.equal(DUMMY_ADDRESS);
     });
 
+    it("carries submittedAt through to the flattened message", function () {
+      const apiResponse = makeApiResponse();
+      const [result] = restructureGaslessDeposits([apiResponse], TEST_LOGGER);
+      expect(result.submittedAt).to.equal("2024-01-01T00:00:00Z");
+    });
+
     it("maps swapAndBridge permit payloads with permitApproval fields", function () {
       const apiResponse = {
         swapTx: {
@@ -270,6 +277,7 @@ describe("GaslessUtils", function () {
       expect(result.permitApprovalSignature).to.equal(DUMMY_SIGNATURE);
       expect(result.permitApprovalDeadline).to.equal(123456);
       expect(result.targetAddress).to.equal(DUMMY_ADDRESS);
+      expect(result.submittedAt).to.equal("2024-01-01T00:00:00Z");
     });
 
     it("skips deposits with unsupported permit type and logs warning", function () {
@@ -286,6 +294,30 @@ describe("GaslessUtils", function () {
         message: "Skipping gasless deposit with unsupported permit type.",
         permitType: "BridgeWitness",
       });
+    });
+  });
+
+  describe("sortGaslessDepositsOldestFirst", function () {
+    /** The comparator only reads submittedAt and requestId. */
+    const msg = (requestId: string, submittedAt?: string) =>
+      ({ requestId, submittedAt }) as unknown as AnyGaslessDepositMessage;
+    const sorted = (deposits: AnyGaslessDepositMessage[]) =>
+      sortGaslessDepositsOldestFirst(deposits).map(({ requestId }) => requestId);
+
+    it("orders oldest submittedAt first, comparing instants rather than strings", function () {
+      // 09:00-05:00 is 14:00Z: later than 12:00Z, but earlier lexicographically.
+      const deposits = [
+        msg("c", "2024-01-01T09:00:00-05:00"),
+        msg("a", "2024-01-01T01:00:00Z"),
+        msg("b", "2024-01-01T12:00:00Z"),
+      ];
+      expect(sorted(deposits)).to.deep.equal(["a", "b", "c"]);
+    });
+
+    it("sorts unusable submittedAt last, breaking ties on requestId", function () {
+      // Undated messages are both +Infinity; a subtractive comparator would compare them as NaN.
+      const deposits = [msg("d"), msg("c", "bad"), msg("b", "2024-01-01T00:00:01Z"), msg("a", "2024-01-01T00:00:01Z")];
+      expect(sorted(deposits)).to.deep.equal(["a", "b", "c", "d"]);
     });
   });
 

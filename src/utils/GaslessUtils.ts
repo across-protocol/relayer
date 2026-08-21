@@ -270,7 +270,7 @@ export function restructureGaslessDeposits(
   logger: winston.Logger
 ): AnyGaslessDepositMessage[] {
   return depositMessages.flatMap((msg): AnyGaslessDepositMessage[] => {
-    const { swapTx, requestId, signature } = msg;
+    const { swapTx, requestId, signature, submittedAt } = msg;
     const { chainId: originChainId, to: targetAddress, data } = swapTx;
     const { depositId, witness, integratorId, metadata, type: permitType } = data;
     if (!isGaslessPermitType(permitType)) {
@@ -299,6 +299,7 @@ export function restructureGaslessDeposits(
           originChainId,
           depositId: BigNumber.from(depositId),
           requestId,
+          submittedAt,
           signature,
           permitType,
           // permit type for this branch is erc3009 | Permit2SwapAndBridgePermit | EIP-2612 witness.
@@ -331,6 +332,7 @@ export function restructureGaslessDeposits(
         originChainId,
         depositId: BigNumber.from(depositId),
         requestId,
+        submittedAt,
         signature,
         permitType,
         // permit type for this branch is erc3009 | Permit2Permit.
@@ -346,6 +348,24 @@ export function restructureGaslessDeposits(
         metadata,
       },
     ];
+  });
+}
+
+/**
+ * Orders deposit messages oldest-first on `submittedAt`; see the batch ordering section of
+ * `src/gasless/README.md`. Unknown age sorts last, ties break on requestId.
+ */
+export function sortGaslessDepositsOldestFirst<T extends AnyGaslessDepositMessage>(deposits: T[]): T[] {
+  const submittedAtMs = (deposit: T): number => {
+    const parsed = Date.parse(deposit.submittedAt ?? "");
+    return isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+  };
+
+  return [...deposits].sort((a, b) => {
+    const [aMs, bMs] = [submittedAtMs(a), submittedAtMs(b)];
+    // Equality is checked before subtracting: two undated messages are both +Infinity, and their
+    // NaN difference would leave sort's ordering undefined.
+    return aMs === bMs ? a.requestId.localeCompare(b.requestId) : aMs - bMs;
   });
 }
 
