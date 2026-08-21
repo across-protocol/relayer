@@ -5,7 +5,7 @@ and executes them, replacing the polling bot in [`../deposit-address`](../deposi
 left untouched until cutover. Why a service rather than a poller:
 [#3663](https://github.com/across-protocol/relayer/issues/3663).
 
-> **Shell only.** The Redis lock, durable state and execution land in later PRs.
+> **Not wired yet.** The execution paths land in later PRs.
 > With no handler configured, or `EXECUTION_ENABLED` unset, the service **NACKs every delivery** and
 > `/ready` stays `503`, so nothing is discarded if a subscription is attached early.
 
@@ -16,8 +16,14 @@ left untouched until cutover. Why a service rather than a poller:
 transport fields.
 
 `parseTransfer` in [`message.ts`](./message.ts) then validates the **payload** and returns its
-`transferId` and route. Pure, no I/O. Not yet wired into a handler — there is nothing to do with the
-result until the execution paths land, and a handler that ACKed without executing would discard work.
+`transferId` and route. Pure, no I/O.
+
+[`transferState.ts`](./transferState.ts) holds the two Redis keys per transfer — an expiring `lock:` and a
+`state:` that must not expire while a transaction could still land — plus `classifyReceipt`, which reports
+what a receipt says and leaves the retry policy to the caller.
+
+None of it is wired into a handler yet: there is nothing to do with a route or a lock until the execution
+paths exist, and a handler that ACKed without executing would discard work.
 
 Handlers take one `RequestContext` (`delivery`, `startedAtMs`, `deadlineAtMs`, `signal`) and are
 **constructed once** with logger, config and shared clients closed over. Deliberate: the nonce cache
