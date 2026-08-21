@@ -356,17 +356,21 @@ export function restructureGaslessDeposits(
  * `src/gasless/README.md`. Unknown age sorts last, ties break on requestId.
  */
 export function sortGaslessDepositsOldestFirst<T extends AnyGaslessDepositMessage>(deposits: T[]): T[] {
-  const submittedAtMs = (deposit: T): number => {
-    const parsed = Date.parse(deposit.submittedAt ?? "");
-    return isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
-  };
-
-  return [...deposits].sort((a, b) => {
-    const [aMs, bMs] = [submittedAtMs(a), submittedAtMs(b)];
-    // Equality is checked before subtracting: two undated messages are both +Infinity, and their
-    // NaN difference would leave sort's ordering undefined.
-    return aMs === bMs ? a.requestId.localeCompare(b.requestId) : aMs - bMs;
-  });
+  // Decorate-sort-undecorate: parse each submittedAt once, rather than twice per comparison. The
+  // initial map also supplies the copy that keeps this non-mutating.
+  return deposits
+    .map((deposit) => {
+      const parsed = Date.parse(deposit.submittedAt ?? "");
+      return { deposit, submittedAtMs: isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed };
+    })
+    .sort((a, b) =>
+      // Equality is checked before subtracting: two undated messages are both +Infinity, and their
+      // NaN difference would leave sort's ordering undefined.
+      a.submittedAtMs === b.submittedAtMs
+        ? a.deposit.requestId.localeCompare(b.deposit.requestId)
+        : a.submittedAtMs - b.submittedAtMs
+    )
+    .map(({ deposit }) => deposit);
 }
 
 // Previous SpokePoolPeriphery generations, by chain. Most EVM chains share one CREATE2
