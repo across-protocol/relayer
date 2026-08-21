@@ -38,6 +38,11 @@ const MIN_GAS_RETRY_SCALER_DEFAULT = 1.1;
 const MAX_GAS_RETRY_SCALER_DEFAULT = 3;
 const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
 
+// Pending-nonce backlog (pending - confirmed count) at which a fresh submission assumes
+// head-of-line blocking and replaces at the confirmed nonce, rather than appending behind the
+// in-flight queue. Must sit above the 1 - 3 depth produced by ordinary concurrent bursts.
+const NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT = 4;
+
 // Default TVM fee limit in SUN (1 TRX = 1,000,000 SUN). 100 TRX is a reasonable default for
 // contract interactions on TRON.
 const DEFAULT_TVM_FEE_LIMIT = 100_000_000;
@@ -374,9 +379,29 @@ async function _runTransaction(
   const { maxFeePerGasScaler, priorityFeeScaler, retries: _retries } = _readTransactionConfig(chainId);
   retries ??= _retries;
 
+  // An explicitly-supplied nonce implies deliberate replacement of an in-flight transaction.
+  let replacing = isDefined(nonce);
+
   let gas: Partial<FeeData>;
   try {
-    nonce ??= await provider.getTransactionCount(await signer.getAddress());
+    if (!isDefined(nonce)) {
+      const address = await signer.getAddress();
+      const [confirmed, pending] = await Promise.all([
+        provider.getTransactionCount(address, "latest"),
+        provider.getTransactionCount(address, "pending").catch(() => undefined), // "pending" is not universal.
+      ]);
+      // A modest backlog is the normal signature of concurrent submitters sharing this signer;
+      // append behind it. A deep backlog implies the confirmed-nonce transaction is stuck;
+      // replace it (fee scaling engages via retry on rejection).
+      const backlog = Math.max((pending ?? confirmed) - confirmed, 0);
+      const backlogThreshold = Number(
+        process.env[`NONCE_BACKLOG_REPLACE_THRESHOLD_${chainId}`] ??
+          process.env.NONCE_BACKLOG_REPLACE_THRESHOLD ??
+          NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT
+      );
+      replacing = backlog >= backlogThreshold;
+      nonce = replacing ? confirmed : confirmed + backlog;
+    }
     const preGas = await getGasPrice(
       provider,
       priorityFeeScaler,
@@ -439,7 +464,10 @@ async function _runTransaction(
 
       case errors.REPLACEMENT_UNDERPRICED:
         message = `Transaction replacement on ${chain} failed at nonce ${nonce} (${cause}).`;
-        scaleGas = true;
+        // Only a deliberate replacement bumps fees at the same nonce. An appended submission that
+        // lost its nonce to a concurrent submitter re-syncs behind the in-flight queue instead.
+        scaleGas = replacing;
+        nonce = replacing ? nonce : null;
         break;
 
       // Undiagnosed issue. Can be a nonce issue, so try to re-sync, and otherwise
