@@ -11,8 +11,11 @@ import {
 } from "../../utils";
 import { getContractAbi, getContractEntry } from "../../common/ContractAddresses";
 import { DestinationInfo } from "../types";
-import { TransactionClient } from "../../clients";
+import { AugmentedTransaction, TransactionClient } from "../../clients";
 import { extractMintRecipientAddress } from "./commonUtils";
+
+// receiveMessage gas usage is state-dependent; the bare estimate has reverted out-of-gas onchain.
+const RECEIVE_MESSAGE_GAS_LIMIT_MULTIPLIER = 1.2;
 
 /**
  * Gets EVM provider from RPC URL
@@ -168,16 +171,27 @@ export async function processMintEvm(
   });
   const transactionClient = new TransactionClient(logger);
 
-  const mintTx = await submitTransaction(
-    {
-      contract: contract,
-      method,
-      args: receiveMessageArgs,
-      chainId,
-      ensureConfirmation: true,
-    },
-    transactionClient
-  );
+  const txn: AugmentedTransaction = {
+    contract,
+    method,
+    args: receiveMessageArgs,
+    chainId,
+    ensureConfirmation: true,
+  };
+
+  // Submit the simulated transaction (not the input) so its gasLimit is defined and the multiplier applies.
+  const [simulation] = await transactionClient.simulate([txn]);
+  if (!simulation.succeed) {
+    throw new Error(`Failed to simulate ${destination.address}.${method} on ${chainId} (${simulation.reason})`);
+  }
+  const [mintTx] = await transactionClient.submit(chainId, [
+    { ...simulation.transaction, gasLimitMultiplier: RECEIVE_MESSAGE_GAS_LIMIT_MULTIPLIER },
+  ]);
+  if (!isDefined(mintTx)) {
+    throw new Error(
+      `Transaction succeeded simulation but failed to submit onchain to ${destination.address}.${method} on ${chainId}`
+    );
+  }
 
   logger.info({
     at: "evmUtils#processMintEvm",
