@@ -44,7 +44,7 @@ Each message also carries a top-level `version` that selects the execution schem
 | Version | Path |
 | --- | --- |
 | absent / `1` | Legacy v1 scheme — normalized via `normalizeDepositAddressMessage`, then dispatched on classification as above. |
-| `3` | Upgradeable-counterfactual scheme — `correct_transfer` goes to the v3 execute path (below), except when the execute endpoint has already rejected it as below the minimum deposit, in which case it is routed to the v3 refund-withdraw path instead; `mis_route` goes to the v3 refund-withdraw path (below) when `ENABLE_V3_WITHDRAWALS=true`; `intent_refund` and other classifications are dropped (not yet supported on v3). |
+| `3` | Upgradeable-counterfactual scheme — `correct_transfer` goes to the v3 execute path (below), except when the execute endpoint has already rejected it as below the minimum deposit, in which case it is routed to the v3 refund-withdraw path instead; `mis_route` and `intent_refund` go to the v3 refund-withdraw path (below) when `ENABLE_V3_WITHDRAWALS=true`; other classifications are dropped. |
 | anything else (e.g. `2`) | Dropped (debug-logged) before normalization, since unsupported payloads may not carry a shape the normalizer can dereference. |
 
 **Native-token transfers.** The indexer detects native transfers to deposit addresses via traces
@@ -177,9 +177,11 @@ path is still EVM-only).
 
 ## v3 refund-withdraw flow
 
-For `version: 3` `mis_route` messages, when `ENABLE_V3_WITHDRAWALS=true`, the bot refunds the
-stranded funds back to the committed refund address. `intent_refund` is **not** handled on v3 yet
-(dropped). The flow (`initiateWithdrawV3`) mirrors v1 `initiateWithdraw` with v3-specific guards:
+For `version: 3` `mis_route` and `intent_refund` messages, when `ENABLE_V3_WITHDRAWALS=true`, the
+bot refunds the stranded funds back to the committed refund address. (An expired intent is refunded
+on-chain to the deposit address itself — the SpokePool depositor — so it needs the same second hop
+out to the refund address as a mis_route.) The flow (`initiateWithdrawV3`) mirrors v1
+`initiateWithdraw` with v3-specific guards:
 
 1. Gate on `enableV3Withdrawals`, filter on `relayerOriginChains` (refund chain = `erc20Transfer.chainId`),
    and dedup against the shared withdraw sets (`executedWithdrawKeys`, in-flight `observedExecutedWithdraws`,
@@ -190,10 +192,11 @@ stranded funds back to the committed refund address. `intent_refund` is **not** 
 4. Defensive on-chain balance check, as on the other paths.
 5. Fetch `{ signedWithdrawTx: { to, data, value, chainId }, deadline, requestedAmount, appliedGasFee, netAmount, bundledDeploy }`
    from `POST /deposit-addresses/sign-withdraw`. Unlike v1, **gas is deducted from the refund**
-   (`deductGasFromRefund: true`) so refunds are not operated at a loss. The endpoint **verifies** the
-   supplied CDA materials (never re-derives the address) and bundles the v3 BeaconProxy
-   `deploy(salt, initialRoot)` + `signedWithdrawToUser` into one Multicall3 call when the proxy is
-   not yet on-chain.
+   (`deductGasFromRefund: true`) so refunds are not operated at a loss — except for `intent_refund`,
+   which sends `false`: nobody filled the intent, so the user is refunded in full at our expense.
+   The endpoint **verifies** the supplied CDA materials (never re-derives the address) and bundles
+   the v3 BeaconProxy `deploy(salt, initialRoot)` + `signedWithdrawToUser` into one Multicall3 call
+   when the proxy is not yet on-chain.
 6. Validate the response: `signedWithdrawTx.chainId` must match the refund chain and the embedded
    signature's `deadline` must have ≥60s headroom (perishable; re-requested fresh on the next poll).
 7. Submit via `TransactionClient`, persist the depositKey, and publish `withdraw_executed` (same gate

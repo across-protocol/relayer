@@ -25,6 +25,8 @@ export class FinalizerConfig extends CommonConfig {
     } = env;
     super(env, { botIdentifier: "across-finalizer" });
 
+    // EOA -> authorized token symbols. For Binance, deposits are returned to their receipt sender; the first EOA
+    // authorizing a symbol receives any genuinely orphaned balance for that symbol.
     const userAddresses = parseJson.stringArrayMap(FINALIZER_WITHDRAWAL_TO_ADDRESSES);
     this.userAddresses = new Map();
     Object.entries(userAddresses).forEach(([address, tokensToFinalize]) => {
