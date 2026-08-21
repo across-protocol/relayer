@@ -360,7 +360,13 @@ export function sortGaslessDepositsOldestFirst<T extends AnyGaslessDepositMessag
   // initial map also supplies the copy that keeps this non-mutating.
   return deposits
     .map((deposit) => {
-      const parsed = Date.parse(deposit.submittedAt ?? "");
+      // Date.parse() never throws: it stringifies its argument and returns NaN if the result isn't
+      // a recognizable date. The typeof guard covers the other half -- a non-string (say, epoch
+      // millis, if the feed's shape ever changes) would stringify into a wrong-but-valid date
+      // rather than NaN, silently mis-ordering the batch. Both paths land on "unknown age, sort
+      // last" instead.
+      const { submittedAt } = deposit;
+      const parsed = typeof submittedAt === "string" ? Date.parse(submittedAt) : NaN;
       return { deposit, submittedAtMs: isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed };
     })
     .sort((a, b) =>

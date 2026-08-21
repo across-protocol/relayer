@@ -299,7 +299,7 @@ describe("GaslessUtils", function () {
 
   describe("sortGaslessDepositsOldestFirst", function () {
     /** The comparator only reads submittedAt and requestId. */
-    const msg = (requestId: string, submittedAt?: string) =>
+    const msg = (requestId: string, submittedAt?: unknown) =>
       ({ requestId, submittedAt }) as unknown as AnyGaslessDepositMessage;
     const sorted = (deposits: AnyGaslessDepositMessage[]) =>
       sortGaslessDepositsOldestFirst(deposits).map(({ requestId }) => requestId);
@@ -318,6 +318,13 @@ describe("GaslessUtils", function () {
       // Undated messages are both +Infinity; a subtractive comparator would compare them as NaN.
       const deposits = [msg("d"), msg("c", "bad"), msg("b", "2024-01-01T00:00:01Z"), msg("a", "2024-01-01T00:00:01Z")];
       expect(sorted(deposits)).to.deep.equal(["a", "b", "c", "d"]);
+    });
+
+    it("sorts a non-string submittedAt last rather than stringifying it into a date", function () {
+      // Date.parse(0) is 2000-01-01, not the epoch: it stringifies to "0" and reads that as a year.
+      // Off-contract types must sort last, not jump the queue on a bogus instant.
+      const deposits = [msg("b", 0), msg("c", { at: "2024-01-01T00:00:00Z" }), msg("a", "2024-01-01T00:00:00Z")];
+      expect(sorted(deposits)).to.deep.equal(["a", "b", "c"]);
     });
   });
 
