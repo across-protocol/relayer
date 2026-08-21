@@ -1,6 +1,6 @@
 import assert from "assert";
 import { utils as ethersUtils } from "ethers";
-import { CommonConfig, ProcessEnv } from "../common";
+import { CommonConfig, DEFAULT_GASLESS_DEPOSIT_BATCH_SIZE, ProcessEnv } from "../common";
 import { isDefined, parseJson } from "../utils";
 import { normalizeIntegratorId } from "../utils/GaslessUtils";
 
@@ -29,6 +29,18 @@ export class GaslessRelayerConfig extends CommonConfig {
    * Destination fills are not submitted. From `RELAYER_GASLESS_FILLS_ENABLED` (default `true`).
    */
   fillsEnabled: boolean;
+  /**
+   * When true, batchable gasless deposits are grouped per origin chain and submitted through
+   * Multicall3.tryAggregate; each message's state machine confirms its own deposit against the
+   * shared batch receipt. From `RELAYER_GASLESS_DEPOSIT_BATCHING` (default `false`).
+   */
+  depositBatchingEnabled: boolean;
+  /**
+   * Maximum number of gasless deposits per Multicall3 batch, keyed by origin chain. Precedence:
+   * `RELAYER_GASLESS_DEPOSIT_BATCH_SIZE_CHAIN_${chainId}`, then `RELAYER_GASLESS_DEPOSIT_BATCH_SIZE`,
+   * then `DEFAULT_GASLESS_DEPOSIT_BATCH_SIZE`. Sized per chain because block gas limits vary widely.
+   */
+  depositBatchSize: { [chainId: number]: number } = {};
   spokePoolPeripheryOverrides: { [chainId: number]: string };
   /** Gasless-only: allowed input→output token pairs (by L2 symbol). E.g. { "USDT": ["USDC", "USDH", "USDC.e"] }. */
   allowedPeggedPairs: AllowedPeggedPairs;
@@ -74,6 +86,8 @@ export class GaslessRelayerConfig extends CommonConfig {
       INITIALIZATION_RETRY_ATTEMPTS,
       RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED,
       RELAYER_GASLESS_FILLS_ENABLED,
+      RELAYER_GASLESS_DEPOSIT_BATCHING = "false",
+      RELAYER_GASLESS_DEPOSIT_BATCH_SIZE,
       SPOKE_POOL_PERIPHERY_OVERRIDES,
       GASLESS_ALLOWED_PEGGED_PAIRS,
       SWAP_API_KEY,
@@ -102,6 +116,18 @@ export class GaslessRelayerConfig extends CommonConfig {
     this.initializationRetryAttempts = Number(INITIALIZATION_RETRY_ATTEMPTS ?? 3);
     this.refundFlowTestEnabled = String(RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED ?? "").toLowerCase() === "true";
     this.fillsEnabled = String(RELAYER_GASLESS_FILLS_ENABLED ?? "true").toLowerCase() === "true";
+    this.depositBatchingEnabled = RELAYER_GASLESS_DEPOSIT_BATCHING.toLowerCase() === "true";
+
+    this.relayerOriginChains.forEach((chainId) => {
+      // Batch size precedence: chain-specific environment, global environment, default.
+      // prettier-ignore
+      const batchSize = Number(
+        env[`RELAYER_GASLESS_DEPOSIT_BATCH_SIZE_CHAIN_${chainId}`]
+        ?? RELAYER_GASLESS_DEPOSIT_BATCH_SIZE
+      ) || DEFAULT_GASLESS_DEPOSIT_BATCH_SIZE;
+      assert(batchSize > 0, `Chain ${chainId} gasless deposit batch size (${batchSize}) must be greater than 0`);
+      this.depositBatchSize[chainId] = batchSize;
+    });
 
     this.spokePoolPeripheryOverrides = parseJson.stringMap(SPOKE_POOL_PERIPHERY_OVERRIDES);
 

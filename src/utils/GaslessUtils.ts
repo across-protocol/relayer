@@ -17,6 +17,7 @@ import type { AllowedPeggedPairs } from "../gasless/GaslessRelayerConfig";
 import {
   Address,
   assert,
+  compareAddressesSimple,
   ConvertDecimals,
   convertRelayDataParamsToBytes32,
   getTokenInfo,
@@ -32,6 +33,7 @@ import {
   isDefined,
   getInventoryEquivalentL1TokenAddress,
   getTokenSymbol,
+  ZERO_ADDRESS,
 } from "../utils";
 import { isStablecoin } from "./TokenUtils";
 import { AugmentedTransaction } from "../clients";
@@ -190,6 +192,30 @@ export function extractGaslessDepositFields(depositMessage: AnyGaslessDepositMes
     exclusivityParameter: bd.exclusivityParameter,
     ...swapAndBridgeOnlyFields,
   };
+}
+
+/**
+ * True when the deposit may be relayed through an external batcher (e.g. Multicall3.tryAggregate).
+ * The periphery pays submission fees to msg.sender when the signed fee recipient is zero
+ * (SpokePoolPeriphery._paySubmissionFees), so such messages must be submitted directly from the
+ * fee-collecting EOA — an external batcher would collect the fee itself.
+ */
+export function isBatchableGaslessDeposit(message: AnyGaslessDepositMessage): boolean {
+  const { amount, recipient } = message.submissionFees;
+  return toBN(amount).isZero() || !compareAddressesSimple(recipient, ZERO_ADDRESS);
+}
+
+/**
+ * ABI-encoded calldata for a gasless deposit transaction. integratorId-tagged deposits arrive
+ * pre-encoded (method "") with the 2-byte tag in trailing calldata.
+ */
+export function encodeGaslessDepositCalldata({ contract, method, args }: AugmentedTransaction): string {
+  if (method === "") {
+    const [callData] = args;
+    assert(typeof callData === "string", "Expected raw calldata for a tagged gasless deposit");
+    return callData;
+  }
+  return contract.interface.encodeFunctionData(method, args);
 }
 
 const DOMAIN_CALLDATA_DELIMITER = "0x1dc0de";
