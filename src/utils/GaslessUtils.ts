@@ -270,7 +270,7 @@ export function restructureGaslessDeposits(
   logger: winston.Logger
 ): AnyGaslessDepositMessage[] {
   return depositMessages.flatMap((msg): AnyGaslessDepositMessage[] => {
-    const { swapTx, requestId, signature } = msg;
+    const { swapTx, requestId, signature, submittedAt } = msg;
     const { chainId: originChainId, to: targetAddress, data } = swapTx;
     const { depositId, witness, integratorId, metadata, type: permitType } = data;
     if (!isGaslessPermitType(permitType)) {
@@ -299,6 +299,7 @@ export function restructureGaslessDeposits(
           originChainId,
           depositId: BigNumber.from(depositId),
           requestId,
+          submittedAt,
           signature,
           permitType,
           // permit type for this branch is erc3009 | Permit2SwapAndBridgePermit | EIP-2612 witness.
@@ -331,6 +332,7 @@ export function restructureGaslessDeposits(
         originChainId,
         depositId: BigNumber.from(depositId),
         requestId,
+        submittedAt,
         signature,
         permitType,
         // permit type for this branch is erc3009 | Permit2Permit.
@@ -347,6 +349,34 @@ export function restructureGaslessDeposits(
       },
     ];
   });
+}
+
+/**
+ * Orders deposit messages oldest-first on `submittedAt`; see the batch ordering section of
+ * `src/gasless/README.md`. Unknown age sorts last, ties break on requestId.
+ */
+export function sortGaslessDepositsOldestFirst<T extends AnyGaslessDepositMessage>(deposits: T[]): T[] {
+  // Decorate-sort-undecorate: parse each submittedAt once, rather than twice per comparison. The
+  // initial map also supplies the copy that keeps this non-mutating.
+  return deposits
+    .map((deposit) => {
+      // Date.parse() never throws: it stringifies its argument and returns NaN if the result isn't
+      // a recognizable date. The typeof guard covers the other half -- a non-string (say, epoch
+      // millis, if the feed's shape ever changes) would stringify into a wrong-but-valid date
+      // rather than NaN, silently mis-ordering the batch. Both paths land on "unknown age, sort
+      // last" instead.
+      const { submittedAt } = deposit;
+      const parsed = typeof submittedAt === "string" ? Date.parse(submittedAt) : NaN;
+      return { deposit, submittedAtMs: isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed };
+    })
+    .sort((a, b) =>
+      // Equality is checked before subtracting: two undated messages are both +Infinity, and their
+      // NaN difference would leave sort's ordering undefined.
+      a.submittedAtMs === b.submittedAtMs
+        ? a.deposit.requestId.localeCompare(b.deposit.requestId)
+        : a.submittedAtMs - b.submittedAtMs
+    )
+    .map(({ deposit }) => deposit);
 }
 
 // Previous SpokePoolPeriphery generations, by chain. Most EVM chains share one CREATE2
