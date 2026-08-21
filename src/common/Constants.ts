@@ -176,6 +176,7 @@ const resolveRpcConfig = () => {
     [CHAIN_IDs.BOBA]: 0,
     [CHAIN_IDs.HYPEREVM]: 1_000, // QuickNode constraint.
     [CHAIN_IDs.MONAD]: 1_000, // Alchemy constraint
+    [CHAIN_IDs.POLYGON]: 2_000, // Alchemy constraint: unbounded response size only up to 2k blocks.
     [CHAIN_IDs.SOLANA]: 1_000,
     [CHAIN_IDs.SOLANA_DEVNET]: 1000,
     [CHAIN_IDs.TRON]: 5_000, // Chainstack constraint.
