@@ -42,6 +42,27 @@ export type DepositExecutedPayload = {
   data: DepositExecutedData;
 };
 
+/** Body of a `withdraw_failed` event: no execution-tx coordinates (nothing settled), just the
+ * consumer's row-lookup key and a reason code for `metadata.failureReason`. */
+export type WithdrawFailedData = {
+  erc20Transfer: {
+    chainId: number;
+    blockNumber: number;
+    txHash: string;
+    logIndex: number;
+  };
+  reason: string;
+};
+
+export type WithdrawFailedPayload = {
+  type: "withdraw_failed";
+  data: WithdrawFailedData;
+};
+
+/** Terminal balance check: `balanceOf` reverted, so the token is not a conforming ERC-20. Stable
+ * code — ops groups on it, so add codes, never reword them. */
+export const BALANCE_CHECK_FAILED_REASON = "BALANCE_CHECK_FAILED";
+
 /**
  * Returns the last log in `receipt` recording `token` leaving `depositAddress`. When `to` is
  * provided, the recipient topic must match as well — used by the withdraw path to disambiguate
@@ -94,7 +115,7 @@ function findLastTransferFromDepositAddress(
  *
  * The envelope shape `{ type, data }` is shared by every Pub/Sub message the bot publishes;
  * `data`'s shape varies per `type`. The consumer at
- * `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts` keys on `type`
+ * `indexer/packages/indexer/src/pubsub/DepositAddressExecutionConsumer.ts` keys on `type`
  * and validates `data` against the matching schema.
  */
 export function buildWithdrawExecutedPayload(
@@ -175,6 +196,30 @@ export function buildDepositExecutedPayload(
         txHash: erc20Transfer.transactionHash.toLowerCase(),
         logIndex: erc20Transfer.logIndex,
       },
+    },
+  };
+}
+
+/**
+ * Builds the `withdraw_failed` payload. No receipt and no `undefined` return — there is no
+ * settlement log to scan, so the lookup key comes straight off the indexer message. Transitions the
+ * row to `failed` (user-visible `refund-failed`): only for failures no retry or manual op can fix.
+ */
+export function buildWithdrawFailedPayload(
+  depositMessage: DepositAddressMessageV3,
+  reason: string
+): WithdrawFailedPayload {
+  const { erc20Transfer } = depositMessage;
+  return {
+    type: "withdraw_failed",
+    data: {
+      erc20Transfer: {
+        chainId: Number(erc20Transfer.chainId),
+        blockNumber: erc20Transfer.blockNumber,
+        txHash: erc20Transfer.transactionHash.toLowerCase(),
+        logIndex: erc20Transfer.logIndex,
+      },
+      reason,
     },
   };
 }

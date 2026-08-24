@@ -241,7 +241,7 @@ Four sets persist across runs so handover does not double-spend, double-refund, 
 
 - `deposit-address:executed:<botIdentifier>` — set of `erc20Transfer.transactionHash` for successfully executed deposits.
 - `deposit-address:withdrawn-deposit-keys:<botIdentifier>` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
-- `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws the quote-api rejected with a terminal 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`); never re-attempted.
+- `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws that failed terminally: a quote-api 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`), or a balance read that reverted because the token is not a conforming ERC-20; never re-attempted.
 - `deposit-address:refund-only-deposit-keys:<botIdentifier>` — set of `depositKey` for v3 correct-transfers the execute endpoint rejected as `AMOUNT_BELOW_MINIMUM`; never executed again, routed to the refund-withdraw path instead.
 
 On each poll, entries whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages.
@@ -250,7 +250,7 @@ On each poll, entries whose source messages are no longer returned by the indexe
 
 1. Filter on `relayerOriginChains`; skip if the refund chain is not configured.
 2. Skip if the depositKey is already in the executed-withdraws set (Redis or in-memory in-flight).
-3. Read on-chain balance of `depositAddress`; skip if below the transfer amount (defends against reorged indexer messages and concurrent withdraws via other paths).
+3. Read on-chain balance of `depositAddress`; skip if below the transfer amount (defends against reorged indexer messages and concurrent withdraws via other paths). A read that reverts (`CALL_EXCEPTION`) means the token is not a conforming ERC-20 — v3 publishes a terminal `withdraw_failed` and persists the skip; any other read error is transient and retried on the next poll.
 4. Fetch a signed-withdraw quote from the swap API. The response bundles deploy + signed-withdraw into a single Multicall3 call when the deposit clone is not yet on-chain.
 5. Submit the tx via `TransactionClient`; wait for confirmation.
 6. Persist the depositKey to Redis.
@@ -261,7 +261,8 @@ On each poll, entries whose source messages are no longer returned by the indexe
 The bot publishes two lifecycle events to one shared GCP Pub/Sub topic so the consumer can transition indexer rows out of `auto_pending`:
 
 - `withdraw_executed` — when `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER=true`, every confirmed refund withdraw (v1 + v3).
-- `deposit_executed` — when `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`, every successful **v3** correct-transfer execution (`initiateDepositV3`). v1 deposits and failure events are out of scope.
+- `deposit_executed` — when `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`, every successful **v3** correct-transfer execution (`initiateDepositV3`). v1 deposits are out of scope.
+- `withdraw_failed` — same gate as `withdraw_executed`; only from the **v3** refund-withdraw path, and only for a terminal failure (see below).
 
 **`ENABLE_EXECUTE_ERC20_TRANSFER_METADATA` overrides the `deposit_executed` publish.** When metadata
 mode is on, the API emits the sweep ↔ funding-transfer link on-chain (a version-2 provenance blob via
@@ -270,13 +271,13 @@ the `deposit_executed` Pub/Sub publish entirely — regardless of `ENABLE_DEPOSI
 The `withdraw_executed` publish is unaffected. Operators enabling metadata mode should therefore expect
 row transitions for v3 executes to come from the indexer's on-chain ingestion, not Pub/Sub.
 
-The consumer lives at `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts` (sibling repo). A single Pub/Sub client serves both events (same project + topic); it is constructed when **either** gate is on, and each publish path checks its own flag so the two events toggle independently.
+The consumer lives at `indexer/packages/indexer/src/pubsub/DepositAddressExecutionConsumer.ts` (sibling repo). A single Pub/Sub client serves every event (same project + topic); it is constructed when **either** gate is on, and each publish path checks its own flag so the deposit and withdraw events toggle independently.
 
 ### Env
 
 | Name | Required | Description |
 | --- | --- | --- |
-| `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` | No (default `false`) | Gate for `withdraw_executed`. |
+| `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` | No (default `false`) | Gate for `withdraw_executed` **and** `withdraw_failed`. |
 | `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER` | No (default `false`) | Gate for `deposit_executed` (v3 executions). Independent of the withdraw gate. Ignored when `ENABLE_EXECUTE_ERC20_TRANSFER_METADATA=true` (the publish is skipped in favor of on-chain provenance). |
 | `PUBSUB_GCP_PROJECT_ID` | When either gate is on | GCP project that **hosts the topic** (may differ from the bot's runtime project — cross-project publish is supported when the runtime SA holds `roles/pubsub.publisher` on the topic in the host project). |
 | `PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC` | When either gate is on | Short topic name (e.g. `topic-deposit-address-execution` in prod, `…-sandbox` in non-prod). Shared by both events. |
@@ -318,7 +319,13 @@ Publish is best-effort. The withdraw or deposit execute is already on-chain and 
 
 The intentional trade-off: a dropped publish leaves the indexer row in `auto_pending` until ops reconciles. We do **not** replay executed-but-unpublished withdraws on startup (Redis does not persist per-key publish state). Both are accepted for v1; revisit if dropouts become an ops pain point.
 
-Failure events (`withdraw_failed`) are **not** emitted today. The bot retries internally on quote-API and tx-submit failures, so there is no clean "terminal failure" signal to publish. The consumer schema accepts them; producing them is deferred.
+### Terminal failures (`withdraw_failed`)
+
+Most withdraw failures are retried and must **not** be published: a `failed` row shows the user `refund-failed`, and the indexer serves each transfer once (plus a ~15-minute replay window), so there is no walking it back. The one signal published today is a v3 balance read failing with ethers `CALL_EXCEPTION` — the token does not implement `balanceOf`, so no retry and no manual op can withdraw it. `isTerminalBalanceReadError` gates on the `code`, never the message; `TIMEOUT` / `SERVER_ERROR` / `NETWORK_ERROR` and non-ethers throws are our infrastructure and keep today's warn-and-return.
+
+`_publishWithdrawFailed` carries the inbound `erc20Transfer` lookup key plus a stable `reason` code — today only `BALANCE_CHECK_FAILED` — which lands in `metadata.failureReason` for ops to group on (add codes, never reword them). It publishes **before** persisting the skip to `terminallySkippedWithdrawKeys`, so a Redis failure cannot swallow the event, and the skip caps it at one publish per transfer.
+
+Still deliberately unpublished: the terminal quote-api `422` in `_getSignedWithdrawV3`, and every v1 (`initiateWithdraw`) failure path — both still strand rows at `auto_pending`.
 
 ## Related modules
 

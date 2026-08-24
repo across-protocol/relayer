@@ -1,4 +1,6 @@
 import winston from "winston";
+import { ethers } from "ethers";
+import { typeguards } from "@across-protocol/sdk";
 import { DepositAddressHandlerConfig } from "./DepositAddressHandlerConfig";
 import {
   isDefined,
@@ -49,8 +51,24 @@ import {
 } from "../clients";
 import { AcrossIndexerApiClient } from "../clients/AcrossIndexerApiClient";
 import { GcpPubSubPublisher, getGcpPubSubPublisher } from "../messaging/gcp";
-import { buildDepositExecutedPayload, buildWithdrawExecutedPayload } from "./withdrawPayload";
+import {
+  buildDepositExecutedPayload,
+  buildWithdrawExecutedPayload,
+  buildWithdrawFailedPayload,
+  BALANCE_CHECK_FAILED_REASON,
+} from "./withdrawPayload";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
+
+/**
+ * Whether a balance read failed for a reason no retry or manual op can fix: a reverting `balanceOf`
+ * (`CALL_EXCEPTION`, `data: "0x"`) means the token does not implement ERC-20 — any contract can emit
+ * a `Transfer`-shaped log, so "the deposit address received token X" can be a fiction. Everything
+ * else is our infrastructure and stays transient: `TIMEOUT` / `SERVER_ERROR` / `NETWORK_ERROR` /
+ * rate limits, plus non-ethers throws (missing provider, base58). Gate on `code`, never the message.
+ */
+export function isTerminalBalanceReadError(err: unknown): boolean {
+  return typeguards.isEthersError(err) && err.code === ethers.errors.CALL_EXCEPTION;
+}
 
 /**
  * Minimum seconds that must remain on a v3 execute response's signatureDeadline at submission
@@ -131,10 +149,10 @@ export class DepositAddressHandler {
   private executedWithdrawKeys: Set<string> = new Set();
 
   /**
-   * Set of depositKeys for v3 refund withdraws the quote-api rejected with a terminal 422
-   * (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`). Persisted in Redis so the skip survives
-   * handover and is not re-attempted on later polls. Pruned alongside the other sets once the
-   * indexer stops returning the source message.
+   * Set of depositKeys for v3 refund withdraws that failed terminally: a quote-api 422
+   * (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`), or a balance read that reverted on a
+   * non-conforming token. Persisted in Redis so the skip survives handover and is not re-attempted
+   * on later polls. Pruned alongside the other sets once the indexer stops returning the message.
    */
   private terminallySkippedWithdrawKeys: Set<string> = new Set();
 
@@ -776,7 +794,7 @@ export class DepositAddressHandler {
     await redisCache.set(redisKey, JSON.stringify([...this.executedWithdrawKeys]));
   }
 
-  /** Same pattern as `_persistWithdrawnKeysRedis` but for terminally-skipped (422) withdraw keys. */
+  /** Same pattern as `_persistWithdrawnKeysRedis` but for terminally-skipped withdraw keys. */
   private async _persistSkippedWithdrawKeysRedis(): Promise<void> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const { redisCache } = this;
@@ -794,8 +812,8 @@ export class DepositAddressHandler {
 
   /**
    * Best-effort publish of a `withdraw_executed` lifecycle event to GCP Pub/Sub. Payload shape
-   * is locked by the consumer (`isDepositAddressWithdrawPayload` in
-   * `indexer/packages/indexer/src/pubsub/DepositAddressWithdrawConsumer.ts`).
+   * is locked by the consumer (`isDepositAddressExecutionMessage` in
+   * `indexer/packages/indexer/src/pubsub/DepositAddressExecutionConsumer.ts`).
    *
    * The withdraw is already on-chain by the time we get here; a publish failure never rolls
    * back state and never throws to the caller. The downside is that a dropped publish leaves
@@ -841,6 +859,42 @@ export class DepositAddressHandler {
       this.logger.error({
         at: "DepositAddressHandler#_publishWithdrawExecuted",
         message: "Failed to publish withdraw_executed to GCP Pub/Sub",
+        topic: this.config.pubSubDepositAddressWithdrawTopic,
+        payload,
+        err: err instanceof Error ? err.message : String(err),
+        notificationPath: "across-bot-error",
+      });
+    }
+  }
+
+  /**
+   * Best-effort publish of a terminal `withdraw_failed`. Same topic and gate as
+   * `_publishWithdrawExecuted`; the consumer flips the row to `failed` and stores `reason` in
+   * `metadata.failureReason`. The indexer serves each transfer once, so a spurious `failed` is what
+   * the user is left with — publish only where no retry and no manual op can succeed. Never throws:
+   * a dropped publish leaves the row in `auto_pending`, i.e. today's behaviour.
+   */
+  private async _publishWithdrawFailed(depositMessage: DepositAddressMessageV3, reason: string): Promise<void> {
+    if (!this.config.enableDepositAddressWithdrawPublisher || !isDefined(this.executionPublisher)) {
+      return;
+    }
+    const payload = buildWithdrawFailedPayload(depositMessage, reason);
+
+    try {
+      const messageId = await this.executionPublisher.publishJson(
+        this.config.pubSubDepositAddressWithdrawTopic,
+        payload
+      );
+      this.logger.debug({
+        at: "DepositAddressHandler#_publishWithdrawFailed",
+        message: "Published withdraw_failed",
+        messageId,
+        payload,
+      });
+    } catch (err) {
+      this.logger.warn({
+        at: "DepositAddressHandler#_publishWithdrawFailed",
+        message: "Failed to publish withdraw_failed to GCP Pub/Sub",
         topic: this.config.pubSubDepositAddressWithdrawTopic,
         payload,
         err: err instanceof Error ? err.message : String(err),
@@ -1412,8 +1466,9 @@ export class DepositAddressHandler {
    * into a single Multicall3 call when the proxy is not yet on-chain. Gas is deducted from the
    * refund (`deductGasFromRefund: true`) so refunds are not operated at a loss — except for an
    * `intent_refund`, where the deposit failed on our side (no relayer filled the intent) and the user
-   * is made whole at our expense. A terminal 422 (fee ≥ refund / unpriceable token) is persisted and
-   * never retried.
+   * is made whole at our expense. Terminal failures — a 422 (fee ≥ refund / unpriceable token), or a
+   * reverting balance read — are persisted and never retried; the latter publishes `withdraw_failed`
+   * so the row does not sit at `auto_pending`.
    */
   private async initiateWithdrawV3(depositMessage: DepositAddressMessageV3): Promise<void> {
     const { depositAddress, refundAddress, erc20Transfer, depositAddressNamespace } = depositMessage;
@@ -1448,7 +1503,7 @@ export class DepositAddressHandler {
       return;
     }
 
-    // Skip if a previous attempt hit a terminal 422 (persisted in Redis); never re-attempt.
+    // Skip if a previous attempt was terminal (422 or reverting balance read); never re-attempt.
     if (this.terminallySkippedWithdrawKeys.has(depositKey)) {
       this.logger.debug({
         at: "DepositAddressHandler#initiateWithdrawV3",
@@ -1504,6 +1559,8 @@ export class DepositAddressHandler {
       try {
         onchainBalance = await this.getDepositAddressBalance(chainId, token, depositAddress);
       } catch (err) {
+        // A reverting read is unfixable: report it instead of stranding the row at `auto_pending`.
+        const terminal = isTerminalBalanceReadError(err);
         this.logger.warn({
           at: "DepositAddressHandler#initiateWithdrawV3",
           message: "Skipping withdraw: failed to fetch deposit address balance",
@@ -1512,8 +1569,15 @@ export class DepositAddressHandler {
           depositKey,
           refTxHash,
           chainId,
+          terminal,
           err: err instanceof Error ? err.message : String(err),
         });
+        if (terminal) {
+          // Publish first: the Redis write can throw, and a lost event is what this fixes.
+          await this._publishWithdrawFailed(depositMessage, BALANCE_CHECK_FAILED_REASON);
+          this.terminallySkippedWithdrawKeys.add(depositKey);
+          await this._persistSkippedWithdrawKeysRedis();
+        }
         return;
       }
 
