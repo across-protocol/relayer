@@ -8,6 +8,9 @@ export type TokenBalanceConfig = {
   unwrapWethTarget?: BigNumber; // Amount of WETH to unwrap to refill ETH. Unused if unwrapWethThreshold is undefined.
   withdrawExcessPeriod?: number; // Period in seconds over which to withdraw any excess balance over the
   // (thresholdPct * targetOverageBuffer) down to the targetPct. IM will only withdraw excess if this value is set.
+  overageRepaymentCapUsd?: BigNumber; // Max USD value of allocation *in excess of* the effective target that the
+  // relayer will tolerate when accepting repayment on this chain. Unset (or 0) preserves the strict behaviour of
+  // rejecting any overallocated repayment chain.
 };
 
 export type ChainTokenConfig = {

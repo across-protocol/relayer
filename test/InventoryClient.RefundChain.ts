@@ -18,7 +18,7 @@ import {
 
 import { BinanceClient, ConfigStoreClient, InventoryClient } from "../src/clients"; // Tested
 import { CrossChainTransferClient } from "../src/clients/bridges";
-import { Deposit, InventoryConfig, SwapRoute } from "../src/interfaces";
+import { ChainTokenConfig, Deposit, InventoryConfig, SwapRoute } from "../src/interfaces";
 import {
   CHAIN_IDs,
   ZERO_ADDRESS,
@@ -500,6 +500,80 @@ describe("InventoryClient: Refund chain selection", function () {
       expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
       expect(spyLogIncludes(spy, -2, 'expectedPostRelayAllocation":"148148148148148148"')).to.be.true;
       expect(spyLogIncludes(spy, -1, 'expectedPostRelayAllocation":"111111111111111111"')).to.be.true;
+    });
+
+    describe("overageRepaymentCapUsd", function () {
+      // Same setup as the test above: both chains end up overallocated, so without a cap this returns [MAINNET].
+      // Polygon's post-relay allocation is 11.111% against a 7% effective target on a cumulative balance of 135 WETH,
+      // i.e. ~5.55 WETH of overage. Seeded at $2000/WETH that is ~$11.1k, so a $20k cap admits and a $10k cap does not.
+      const capClient = (overageRepaymentCapUsd: BigNumber, seedPrice = true): MockInventoryClient => {
+        const client = new MockInventoryClient(
+          toAddressType(owner.address, MAINNET),
+          spyLogger,
+          {
+            ...inventoryConfig,
+            tokenConfig: {
+              ...inventoryConfig.tokenConfig,
+              [mainnetWeth]: {
+                ...(inventoryConfig.tokenConfig[mainnetWeth] as ChainTokenConfig),
+                [POLYGON]: {
+                  targetPct: toWei(0.07),
+                  thresholdPct: toWei(0.05),
+                  targetOverageBuffer,
+                  overageRepaymentCapUsd,
+                },
+              },
+            },
+          },
+          tokenClient,
+          enabledChainIds,
+          hubPoolClient,
+          adapterManager,
+          crossChainTransferClient,
+          mockRebalancerClient,
+          false // simMode
+        );
+        client.setTokenMapping({
+          [mainnetWeth]: {
+            [MAINNET]: mainnetWeth,
+            [OPTIMISM]: l2TokensForWeth[OPTIMISM],
+            [POLYGON]: l2TokensForWeth[POLYGON],
+            [ARBITRUM]: l2TokensForWeth[ARBITRUM],
+            [BSC]: l2TokensForWeth[BSC],
+          },
+        });
+        client.setUpcomingRefunds(mainnetWeth, {});
+        if (seedPrice) {
+          client.seedL1TokenPriceUsd(mainnetWeth, toWei(2000));
+        }
+        return client;
+      };
+
+      beforeEach(async function () {
+        tokenClient.setTokenData(POLYGON, toAddressType(l2TokensForWeth[POLYGON], POLYGON), toWei(5));
+        sampleDepositData.inputAmount = toWei(10);
+        sampleDepositData.outputAmount = await computeOutputAmount(sampleDepositData);
+      });
+
+      it("admits an overallocated origin chain when the resulting overage is under the cap", async function () {
+        const client = capClient(toWei(20000));
+        expect(await client.determineRefundChainId(sampleDepositData)).to.deep.equal([POLYGON, MAINNET]);
+      });
+
+      it("still rejects an overallocated origin chain when the overage exceeds the cap", async function () {
+        const client = capClient(toWei(10000));
+        expect(await client.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
+      });
+
+      it("fails closed when no USD price is cached", async function () {
+        const client = capClient(toWei(20000), false);
+        expect(await client.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
+      });
+
+      it("is inert when the cap is unset", async function () {
+        const client = capClient(bnZero);
+        expect(await client.determineRefundChainId(sampleDepositData)).to.deep.equal([MAINNET]);
+      });
     });
     it("Origin allocation is below target", async function () {
       // Set Polygon allocation lower than target:

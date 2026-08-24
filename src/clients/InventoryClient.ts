@@ -4,7 +4,6 @@ import {
   acrossApi,
   bnZero,
   BigNumber,
-  binanceCredentialsConfigured,
   coingecko,
   defiLlama,
   winston,
@@ -111,13 +110,13 @@ export class InventoryClient {
     this.scalar = sdkUtils.fixedPointAdjustment;
     const rawBuffer = Number(process.env.RELAYER_CEX_REBALANCE_BUFFER);
     this.cexRebalanceBuffer = toBNWei(Number.isFinite(rawBuffer) && rawBuffer > 0 ? rawBuffer : 3);
-    if (binanceCredentialsConfigured()) {
-      this.priceClient = new PriceClient(logger, [
-        new acrossApi.PriceFeed({ host: getAcrossHost(this.hubPoolClient.chainId) }),
-        new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
-        new defiLlama.PriceFeed(),
-      ]);
-    }
+    // Prices back both Binance rebalance capacity and overage repayment caps, so this is no longer gated on Binance
+    // credentials. updateTokenPrices() no-ops when nothing needs a price.
+    this.priceClient = new PriceClient(logger, [
+      new acrossApi.PriceFeed({ host: getAcrossHost(this.hubPoolClient.chainId) }),
+      new coingecko.PriceFeed({ apiKey: process.env.COINGECKO_PRO_API_KEY }),
+      new defiLlama.PriceFeed(),
+    ]);
     this.formatWei = createFormatFunction(2, 4, false, 18);
     this.profiler = new Profiler({
       logger: this.logger,
@@ -203,6 +202,20 @@ export class InventoryClient {
     } else {
       return tokenConfig[chainId];
     }
+  }
+
+  /**
+   * Enumerate every TokenBalanceConfig registered against an L1 token, flattening alias (multi-L2-token) configs.
+   * Unlike getTokenConfig(), this never needs to disambiguate by l2Token, so it is safe for whole-token scans.
+   */
+  private getAllTokenConfigs(l1Token: EvmAddress): TokenBalanceConfig[] {
+    const tokenConfig = this.inventoryConfig.tokenConfig[l1Token.toEvmAddress()];
+    if (!isDefined(tokenConfig)) {
+      return [];
+    }
+    return isAliasConfig(tokenConfig)
+      ? Object.values(tokenConfig).flatMap((chainConfig) => Object.values(chainConfig))
+      : Object.values(tokenConfig);
   }
 
   supportsSwaps(): boolean {
@@ -817,6 +830,18 @@ export class InventoryClient {
         }
       );
       if (expectedPostRelayAllocation.lte(effectiveTargetPct)) {
+        eligibleChains.push(chainId);
+      } else if (
+        this.overageRepaymentPermitted(
+          deposit,
+          l1Token,
+          chainId,
+          tokenConfig,
+          expectedPostRelayAllocation,
+          effectiveTargetPct,
+          cumulativeVirtualBalancePostRefunds
+        )
+      ) {
         eligibleChains.push(chainId);
       }
     }
@@ -1725,8 +1750,8 @@ export class InventoryClient {
 
     if (isDefined(this.binanceClient)) {
       await this.binanceClient.refresh();
-      await this.updateTokenPrices();
     }
+    await this.updateTokenPrices();
   }
 
   // Strict-fail: any error clears the cache.
@@ -1735,15 +1760,19 @@ export class InventoryClient {
     if (!isDefined(this.priceClient)) {
       return;
     }
-    const binanceRouteTokens = this.getL1Tokens().filter((l1Token) =>
-      this.getEnabledChains().some((chainId) => hasBinanceRoute(chainId, l1Token))
+    // Price any token that a downstream USD check depends on: Binance rebalance capacity, or an overage repayment
+    // cap. Both fail closed without a price, so under-fetching here silently disables the feature.
+    const pricedTokens = this.getL1Tokens().filter(
+      (l1Token) =>
+        this.getEnabledChains().some((chainId) => hasBinanceRoute(chainId, l1Token)) ||
+        this.getAllTokenConfigs(l1Token).some(({ overageRepaymentCapUsd }) => isDefined(overageRepaymentCapUsd))
     );
-    if (binanceRouteTokens.length === 0) {
+    if (pricedTokens.length === 0) {
       return;
     }
     try {
       const prices = await this.priceClient.getPricesByAddress(
-        binanceRouteTokens.map((l1Token) => l1Token.toNative()),
+        pricedTokens.map((l1Token) => l1Token.toNative()),
         "usd"
       );
       prices.forEach(({ address, price }) => {
@@ -1840,6 +1869,66 @@ export class InventoryClient {
     const fillUsd = inputAmountInL1TokenDecimals.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals));
     const bufferedUsd = fillUsd.mul(this.cexRebalanceBuffer).div(fixedPointAdjustment);
     return this.binanceClient.canWithdraw(bufferedUsd, originChainId, l1Token);
+  }
+
+  /**
+   * Permit repayment on a chain that is already over its effective target, so long as the resulting overage is small
+   * in USD terms. The cap bounds the *standing* overage rather than the size of any single fill: once the chain sits
+   * `overageRepaymentCapUsd` past its effective target, subsequent overallocated repayments are rejected again. A
+   * per-fill cap would let unbounded overage accrete one small fill at a time.
+   *
+   * Fails closed: no cap configured, no USD price, or a lite-chain destination all fall back to strict behaviour.
+   */
+  private overageRepaymentPermitted(
+    deposit: Pick<Deposit, "depositId" | "toLiteChain" | "destinationChainId">,
+    l1Token: EvmAddress,
+    chainId: number,
+    tokenConfig: TokenBalanceConfig,
+    expectedPostRelayAllocation: BigNumber,
+    effectiveTargetPct: BigNumber,
+    cumulativeVirtualBalancePostRefunds: BigNumber
+  ): boolean {
+    const { overageRepaymentCapUsd } = tokenConfig;
+    if (!isDefined(overageRepaymentCapUsd) || overageRepaymentCapUsd.eq(bnZero)) {
+      return false;
+    }
+
+    // Excess balances on a lite chain can only be offloaded by further deposits destined for that chain, so never
+    // relax the constraint there.
+    if (deposit.toLiteChain && chainId === deposit.destinationChainId) {
+      return false;
+    }
+
+    const priceUsd = this.l1TokenPricesUsd.get(l1Token.toNative());
+    if (!isDefined(priceUsd)) {
+      this.log("Skipping overage repayment allowance: no USD price available.", { l1Token, chainId });
+      return false;
+    }
+
+    // Convert the allocation overshoot back into token terms, then into USD.
+    const { decimals: l1TokenDecimals } = this.getTokenInfo(l1Token, this.hubPoolClient.chainId);
+    const excessTokens = expectedPostRelayAllocation
+      .sub(effectiveTargetPct)
+      .mul(cumulativeVirtualBalancePostRefunds)
+      .div(this.scalar);
+    const excessUsd = excessTokens.mul(priceUsd).div(BigNumber.from(10).pow(l1TokenDecimals));
+    const permitted = excessUsd.lte(overageRepaymentCapUsd);
+
+    this.log(
+      `Overallocated repayment on chain ${chainId} for deposit ${deposit.depositId.toString()}: ${
+        permitted ? "PERMITTED under overage cap ✅" : "REJECTED, overage cap exceeded ❌"
+      }`,
+      {
+        l1Token,
+        chainId,
+        excessUsd: formatUnits(excessUsd, 18),
+        overageRepaymentCapUsd: formatUnits(overageRepaymentCapUsd, 18),
+        effectiveTargetPct: formatUnits(effectiveTargetPct, 18),
+        expectedPostRelayAllocation: formatUnits(expectedPostRelayAllocation, 18),
+      }
+    );
+
+    return permitted;
   }
 
   log(message: string, data?: AnyObject, level: DefaultLogLevels = "debug"): void {

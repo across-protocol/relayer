@@ -90,7 +90,7 @@ In code order:
 8. compute refund-aware virtual balance context
 9. build `chainsToEvaluate` in priority order
 10. assert compatibility with `getPossibleRepaymentChainIds()`
-11. evaluate each chain against expected post-relay allocation vs effective target
+11. evaluate each chain against expected post-relay allocation vs effective target, admitting an overallocated chain when `overageRepaymentCapUsd` bounds the resulting USD overage
 12. if forced origin and result is not exactly `[origin]`, return `[]`
 13. add origin fallback when quickly rebalanced
 14. add hub fallback when not forced-origin
@@ -102,6 +102,7 @@ Returned order is intentional and consumed by relayer selection.
 - destination may still be considered under specific config/gating conditions even when not strongly favored.
 - if a chain has no token config, destination can still be admitted as a narrow fillability fallback path while non-destination chains without config are skipped.
 - forced-origin deposits can return `[]` when eligibility constraints reject origin.
+- `overageRepaymentCapUsd` caps the *standing* overage past the effective target, not per-fill size, so overage cannot accrete indefinitely via small fills. It fails closed (strict behaviour) with no cap, no cached USD price, or a lite-chain destination.
 - `possible` and `eligible` are different sets by design: `possible` exists to guarantee LP-fee coverage, while `eligible` enforces policy/allocation admissibility.
 - post-relay virtual balance math is intentionally asymmetric for equivalence edge cases (for example USDC vs USDC.e-style mappings): destination output subtraction is only applied when tokens are considered equivalent by `areTokensEquivalent(...)`.
 
@@ -111,7 +112,7 @@ Returned order is intentional and consumed by relayer selection.
 - `forceOriginRepaymentPerChain`
 - `repaymentChainOverride`
 - `repaymentChainOverridePerChain`
-- token-level allocation settings (`targetPct`, `targetOverageBuffer`, related thresholds)
+- token-level allocation settings (`targetPct`, `targetOverageBuffer`, `overageRepaymentCapUsd`, related thresholds)
 
 ## Hand-off to selection stage
 

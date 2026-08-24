@@ -5,6 +5,7 @@ import { typeguards } from "@across-protocol/sdk";
 import {
   BigNumber,
   bnUint256Max,
+  bnZero,
   chainIsSvm,
   chainIsTvm,
   CHAIN_IDs,
@@ -325,12 +326,14 @@ export class RelayerConfig extends CommonConfig {
           unwrapWethTarget,
           targetOverageBuffer,
           withdrawExcessPeriod,
+          overageRepaymentCapUsd,
         } = rawTokenConfig;
         const tokenConfig: TokenBalanceConfig = {
           targetPct,
           thresholdPct,
           targetOverageBuffer,
           withdrawExcessPeriod,
+          overageRepaymentCapUsd,
         };
 
         assert(
@@ -351,6 +354,16 @@ export class RelayerConfig extends CommonConfig {
         // holding more tokens than the targetPct, but perhaps a better default is 100%
         tokenConfig.targetOverageBuffer = toBNWei(targetOverageBuffer ?? "1.5");
         assert(tokenConfig.targetOverageBuffer.gte(toBNWei("1.0")), "targetOverageBuffer must be >= 1.0x");
+
+        // Optional USD allowance for accepting repayment on a chain that is already over its effective target. This
+        // bounds the *standing* overage, not the per-fill size, so it cannot drift without limit. Omitted => strict.
+        if (isDefined(overageRepaymentCapUsd)) {
+          tokenConfig.overageRepaymentCapUsd = toBNWei(overageRepaymentCapUsd);
+          assert(
+            tokenConfig.overageRepaymentCapUsd.gte(bnZero),
+            `overageRepaymentCapUsd must be >= 0 for ${l1Token} on ${chainId}`
+          );
+        }
 
         // For WETH, also consider any unwrap target/threshold.
         if (l1Token === TOKEN_SYMBOLS_MAP.WETH.symbol) {
