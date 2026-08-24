@@ -1,4 +1,4 @@
-import { Contract } from "ethers";
+import { BigNumber, Contract } from "ethers";
 import {
   AnyGaslessDepositMessage,
   DepositWithBlock,
@@ -104,15 +104,22 @@ class TestableGaslessRelayer extends GaslessRelayer {
   ): boolean {
     return this.fillImmediate(deposit, spokePool);
   }
-  public getDepositKey(token: string, originChainId: number, depositId: string): string {
+  public getDepositKey(token: string, originChainId: number, depositId: BigNumber): string {
     return this._getDepositKey(token, originChainId, depositId);
   }
-  protected override getPeripheryContract(originChainId: number): Contract {
-    return this.getPeripheryContractFn(originChainId);
+  protected override getPeripheryContract(originChainId: number, targetAddress?: string): Contract {
+    return this.getPeripheryContractFn(originChainId, targetAddress);
+  }
+  public setPeripheryTargets(targets: { [chainId: number]: { [address: string]: Contract } }): void {
+    this.peripheryTargets = targets;
+  }
+  public runResolvePeriphery(chainId: number, targetAddress?: string): Contract | undefined {
+    return this.resolvePeriphery(chainId, targetAddress);
   }
 
   // Configurable function properties -- tests assign return values; overrides track call counts.
-  public getPeripheryContractFn: (chainId: number) => Contract = (chainId) => this.spokePoolPeripheries[chainId];
+  public getPeripheryContractFn: (chainId: number, targetAddress?: string) => Contract = (chainId) =>
+    this.spokePoolPeripheries[chainId];
   public queryGaslessApiFn: () => Promise<AnyGaslessDepositMessage[]> = async () => [];
   public initiateDepositFn: (msg: AnyGaslessDepositMessage) => Promise<TransactionReceipt | null> = async () => null;
   public initiateFillFn: (deposit: GaslessDeposit) => Promise<GaslessFillSubmissionResult | null> = async () => null;
@@ -182,6 +189,10 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public runFilterDepositsByIntegratorId(messages: AnyGaslessDepositMessage[]): AnyGaslessDepositMessage[] {
     return this._filterDepositsByIntegratorId(messages);
   }
+
+  public runFilterDepositsByAddress(messages: AnyGaslessDepositMessage[]): AnyGaslessDepositMessage[] {
+    return this._filterDepositsByAddress(messages);
+  }
 }
 
 /**
@@ -215,7 +226,7 @@ function makeDepositMessage(
   return {
     depositFlowType: "bridge" as const,
     originChainId: ORIGIN_CHAIN_ID,
-    depositId: "42",
+    depositId: toBN(42),
     requestId: "req-test",
     signature: DUMMY_SIGNATURE,
     permitType: "erc3009",
@@ -278,7 +289,7 @@ function makePermit2DepositMessage(
   return {
     depositFlowType: "bridge" as const,
     originChainId: ORIGIN_CHAIN_ID,
-    depositId: "42",
+    depositId: toBN(42),
     requestId: "req-permit2-test",
     signature: DUMMY_SIGNATURE,
     permitType: "permit2",
@@ -332,7 +343,7 @@ const CCTP_SPOKE_POOL = "0x" + "cc".repeat(20);
  */
 function makeSwapAndBridgePermit2CctpMessage(
   overrides: Partial<{
-    depositId: string;
+    depositId: BigNumber;
     permitNonce: string;
     depositData: Partial<SwapAndBridgeGaslessDepositMessage["depositData"]>;
   }> = {}
@@ -354,7 +365,7 @@ function makeSwapAndBridgePermit2CctpMessage(
     ...overrides.depositData,
   };
   const permitNonce = overrides.permitNonce ?? "0";
-  const depositId = overrides.depositId ?? "1000000";
+  const depositId = overrides.depositId ?? toBN(1000000);
 
   return {
     depositFlowType: "swapAndBridge",
@@ -854,7 +865,7 @@ describe("GaslessRelayer", function () {
 
   describe("Permit2 nonce bitmap (CCTP swap)", function () {
     it("updateObservedCctpDeposits adds observed key when Permit2 nonce is consumed", async function () {
-      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-1", permitNonce: "0" });
+      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: toBN(9001), permitNonce: "0" });
       const expectedKey = relayer.getDepositKey(
         EvmAddress.from(msg.depositData.inputToken).toNative(),
         ORIGIN_CHAIN_ID,
@@ -868,7 +879,7 @@ describe("GaslessRelayer", function () {
     });
 
     it("updateObservedCctpDeposits skips when Permit2 nonce is not consumed", async function () {
-      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-2", permitNonce: "0" });
+      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: toBN(9002), permitNonce: "0" });
       const expectedKey = relayer.getDepositKey(
         EvmAddress.from(msg.depositData.inputToken).toNative(),
         ORIGIN_CHAIN_ID,
@@ -882,7 +893,7 @@ describe("GaslessRelayer", function () {
     });
 
     it("CCTP swap + Permit2: null deposit receipt but consumed nonce confirms to DONE", async function () {
-      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: "obs-3", permitNonce: "0" });
+      const msg = makeSwapAndBridgePermit2CctpMessage({ depositId: toBN(9003), permitNonce: "0" });
       const nonce = depositNonceForSwap(relayer, msg);
       fakePermit2Smock.nonceBitmap.returns(ethers.BigNumber.from(1));
 
@@ -895,6 +906,73 @@ describe("GaslessRelayer", function () {
       expect(relayer.initiateDepositCalls).to.equal(1);
       expect(relayer.initiateFillCalls).to.equal(0);
       expectCctpTransitions(relayer.stateTransitions[nonce]);
+    });
+  });
+
+  describe("Periphery target resolution (multi-generation)", function () {
+    let defaultPeriphery: Contract;
+    let legacyPeriphery: Contract;
+
+    beforeEach(async function () {
+      const [signer] = await ethers.getSigners();
+      const legacySmock = await smock.fake(SPOKE_POOL_PERIPHERY_ABI);
+      defaultPeriphery = new Contract(fakePeripherySmock.address, SPOKE_POOL_PERIPHERY_ABI, signer.provider);
+      legacyPeriphery = new Contract(legacySmock.address, SPOKE_POOL_PERIPHERY_ABI, signer.provider);
+      relayer.setPeripheryTargets({
+        [ORIGIN_CHAIN_ID]: {
+          [defaultPeriphery.address.toLowerCase()]: defaultPeriphery,
+          [legacyPeriphery.address.toLowerCase()]: legacyPeriphery,
+        },
+      });
+    });
+
+    it("resolves the default periphery when the message names no target", function () {
+      const resolved = relayer.runResolvePeriphery(ORIGIN_CHAIN_ID, undefined);
+      expect(resolved?.address).to.equal(defaultPeriphery.address);
+    });
+
+    it("resolves an allowlisted legacy target case-insensitively", function () {
+      for (const form of [
+        legacyPeriphery.address,
+        legacyPeriphery.address.toLowerCase(),
+        legacyPeriphery.address.toUpperCase().replace("0X", "0x"),
+      ]) {
+        const resolved = relayer.runResolvePeriphery(ORIGIN_CHAIN_ID, form);
+        expect(resolved?.address).to.equal(legacyPeriphery.address);
+      }
+    });
+
+    it("returns undefined for a target outside the allowlist", function () {
+      expect(relayer.runResolvePeriphery(ORIGIN_CHAIN_ID, "0x" + "99".repeat(20))).to.be.undefined;
+    });
+
+    it("drops messages naming an unknown periphery generation before the state machine", async function () {
+      const msg = { ...makeTestDepositMessage(), targetAddress: "0x" + "99".repeat(20) };
+      relayer.queryGaslessApiFn = async () => [msg];
+      relayer.initiateDepositFn = async () => makeReceipt();
+
+      await relayer.runEvaluateApiSignatures();
+
+      expect(relayer.initiateDepositCalls).to.equal(0);
+      expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.be.undefined;
+    });
+
+    it("processes messages naming an allowlisted legacy generation", async function () {
+      const msg = {
+        ...makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" }),
+        targetAddress: legacyPeriphery.address,
+      };
+      const receipt = makeReceipt();
+      relayer.queryGaslessApiFn = async () => [msg];
+      relayer.initiateDepositFn = async () => receipt;
+      relayer.extractDepositFromReceiptFn = () =>
+        makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+      relayer.initiateFillFn = async () => receipt;
+
+      await relayer.runEvaluateApiSignatures();
+
+      expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+      expect(relayer.initiateDepositCalls).to.equal(1);
     });
   });
 
@@ -1091,6 +1169,103 @@ describe("GaslessRelayer", function () {
     });
   });
 
+  describe("address filters", function () {
+    const LISTED = "0x2222222222222222222222222222222222222222";
+    const OTHER = "0x3333333333333333333333333333333333333333";
+
+    it("passes through when neither address filter is set", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+      const msg = makeTestDepositMessage({ depositor: LISTED, recipient: OTHER });
+      expect(filterRelayer.runFilterDepositsByAddress([msg])).to.deep.equal([msg]);
+    });
+
+    it("allow-list keeps only deposits whose depositor is listed", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_ALLOWED_ADDRESSES: `["${LISTED}"]`,
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const allowed = makeTestDepositMessage({ depositId: "43", depositor: LISTED, recipient: OTHER });
+      const blocked = makeTestDepositMessage({ depositId: "44", depositor: OTHER, recipient: OTHER });
+      // Recipient-only match is not enough for the allow-list.
+      const recipientOnly = makeTestDepositMessage({ depositId: "45", depositor: OTHER, recipient: LISTED });
+      expect(filterRelayer.runFilterDepositsByAddress([allowed, blocked, recipientOnly])).to.deep.equal([allowed]);
+    });
+
+    it("block-list discards deposits whose depositor is listed", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_BLOCKED_ADDRESSES: `["${LISTED}"]`,
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const blocked = makeTestDepositMessage({ depositId: "43", depositor: LISTED, recipient: OTHER });
+      const allowed = makeTestDepositMessage({ depositId: "44", depositor: OTHER, recipient: OTHER });
+      expect(filterRelayer.runFilterDepositsByAddress([blocked, allowed])).to.deep.equal([allowed]);
+    });
+
+    it("block-list discards deposits whose recipient is listed", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_BLOCKED_ADDRESSES: `["${LISTED}"]`,
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const blocked = makeTestDepositMessage({ depositId: "43", depositor: OTHER, recipient: LISTED });
+      const allowed = makeTestDepositMessage({ depositId: "44", depositor: OTHER, recipient: OTHER });
+      expect(filterRelayer.runFilterDepositsByAddress([blocked, allowed])).to.deep.equal([allowed]);
+    });
+
+    it("matches addresses case-insensitively", async function () {
+      const { spyLogger } = createSpyLogger();
+      const [signer] = await ethers.getSigners();
+      const config = new GaslessRelayerConfig({
+        RELAYER_TOKEN_SYMBOLS: '["USDC"]',
+        RELAYER_ORIGIN_CHAINS: `[${ORIGIN_CHAIN_ID}]`,
+        RELAYER_DESTINATION_CHAINS: `[${DESTINATION_CHAIN_ID}]`,
+        API_GASLESS_ENDPOINT: "http://127.0.0.1",
+        SEND_TRANSACTIONS: "true",
+        RELAYER_GASLESS_BLOCKED_ADDRESSES: '["0xAbCdEf0123456789AbCdEf0123456789aBcDeF01"]',
+      });
+      const filterRelayer = new TestableGaslessRelayer(spyLogger, config, signer, []);
+
+      const blocked = makeTestDepositMessage({
+        depositId: "43",
+        depositor: "0xabcdef0123456789abcdef0123456789abcdef01",
+        recipient: OTHER,
+      });
+      expect(filterRelayer.runFilterDepositsByAddress([blocked])).to.deep.equal([]);
+    });
+  });
+
   describe("Initial observation (mark terminal state from observed deposits/fills)", function () {
     it("Bridge: sets FILLED when both origin deposit and destination fill are observed", function () {
       const msg = makeTestDepositMessage();
@@ -1159,9 +1334,9 @@ describe("GaslessRelayer", function () {
 
     it("Multiple messages: processes each independently", async function () {
       const msg1 = makeTestDepositMessage({ inputAmount: "1000000", outputAmount: "900000" }, { instantFill: true });
-      msg1.depositId = "100";
+      msg1.depositId = toBN(100);
       const msg2 = makeTestDepositMessage({ inputAmount: "2000000", outputAmount: "1900000" }, { instantFill: true });
-      msg2.depositId = "200";
+      msg2.depositId = toBN(200);
       // Set threshold based on larger of the two amounts
       setFillImmediateThreshold(msg2);
 

@@ -1,6 +1,5 @@
 import { RebalancerAdapter, RebalanceRoute } from "../src/rebalancer/utils/interfaces";
 import { CumulativeBalanceRebalancerClient } from "../src/rebalancer/clients/CumulativeBalanceRebalancerClient";
-import { SameAssetRebalancerClient } from "../src/rebalancer/clients/SameAssetRebalancerClient";
 import {
   CumulativeTargetBalanceConfig,
   MaxAmountToTransferConfig,
@@ -8,8 +7,7 @@ import {
   RebalancerConfig,
   SameAssetConfig,
 } from "../src/rebalancer/RebalancerConfig";
-import { InventoryClient, Rebalance } from "../src/clients";
-import { bnZero, CHAIN_IDs, EvmAddress, getTokenInfoFromSymbol, Signer, toBNWei } from "../src/utils";
+import { bnZero, EvmAddress, getTokenInfoFromSymbol, Signer, toBNWei } from "../src/utils";
 import { BigNumber, createSpyLogger, ethers, expect } from "./utils";
 
 describe("RebalancerClient.cumulativeRebalancing", () => {
@@ -820,6 +818,68 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
     expect(pendingRebalances[CHAIN_B]).to.be.undefined;
   });
 
+  it("Reports adapters whose pending-rebalance read failed and clears them once the read recovers", async function () {
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0 }),
+    };
+    const baseSigner = ethers.Wallet.createRandom();
+    const adapter1 = new MockRebalancerAdapter(baseSigner);
+    const adapter2 = new MockRebalancerAdapter(baseSigner);
+    adapter2.setPendingRebalancesError(new Error("HttpRequestError: 500 Internal Server Error - null"));
+    const rebalancerClient = await createClient(
+      cumulativeTargetBalances,
+      { adapter1, adapter2 },
+      [makeRoute(CHAIN_A, CHAIN_A, USDT, USDC, "adapter1")],
+      {},
+      {},
+      baseSigner
+    );
+    const account = EvmAddress.from(await rebalancerClient.baseSigner.getAddress());
+
+    expect(rebalancerClient.getAdaptersWithFailedPendingReads()).to.deep.equal([]);
+    await rebalancerClient.getPendingRebalances(account);
+    expect(rebalancerClient.getAdaptersWithFailedPendingReads()).to.deep.equal(["adapter2"]);
+
+    adapter2.clearPendingRebalancesError();
+    await rebalancerClient.getPendingRebalances(account);
+    expect(rebalancerClient.getAdaptersWithFailedPendingReads()).to.deep.equal([]);
+  });
+
+  it("Excludes a route whose cost estimation fails and rebalances via the remaining routes", async function () {
+    const deficitToken = USDC;
+    const excessToken = USDT;
+    const cumulativeBalances = {
+      [deficitToken]: bnZero,
+      [excessToken]: amount(excessToken, "100"),
+    };
+    const currentBalances = {
+      [CHAIN_A]: { [deficitToken]: bnZero, [excessToken]: amount(excessToken, "100") },
+    };
+    const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
+      [deficitToken]: buildTarget(deficitToken, "100", "90", 0, { [CHAIN_A]: 0 }),
+      [excessToken]: buildTarget(excessToken, "0", "0", 0, { [CHAIN_A]: 0 }),
+    };
+    const baseSigner = ethers.Wallet.createRandom();
+    const failingAdapter = new MockRebalancerAdapter(baseSigner);
+    const healthyAdapter = new MockRebalancerAdapter(baseSigner);
+    const failingRoute = makeRoute(CHAIN_A, CHAIN_A, excessToken, deficitToken, "failingAdapter");
+    failingAdapter.setEstimatedCostError(failingRoute, new Error("HttpRequestError: 500 Internal Server Error - null"));
+    const rebalancerClient = await createClient(
+      cumulativeTargetBalances,
+      { failingAdapter, healthyAdapter },
+      [failingRoute, makeRoute(CHAIN_A, CHAIN_A, excessToken, deficitToken, "healthyAdapter")],
+      {},
+      { failingAdapter: 10, healthyAdapter: 10 },
+      baseSigner
+    );
+
+    await rebalancerClient.rebalanceInventory(cumulativeBalances, currentBalances, MAX_FEE_PCT);
+
+    expect(failingAdapter.rebalances.length).to.equal(0);
+    expect(healthyAdapter.rebalances.length).to.equal(1);
+    expect(healthyAdapter.rebalances[0].amount).to.equal(amount(excessToken, "100"));
+  });
+
   it("Returns pending rebalances without cross-token or cross-chain merging", async function () {
     const cumulativeTargetBalances: CumulativeTargetBalanceConfig = {
       [USDC]: buildTarget(USDC, "50", "40", 0, { [CHAIN_A]: 0 }),
@@ -860,86 +920,11 @@ describe("RebalancerClient.cumulativeRebalancing", () => {
   });
 });
 
-describe("RebalancerClient.sameAssetRebalancing", () => {
-  const HUB_POOL_CHAIN_ID = CHAIN_IDs.MAINNET;
-  const DESTINATION_CHAIN_ID = CHAIN_IDs.AVALANCHE;
-  const USDT = "USDT";
-  const amount = (humanAmount: string): BigNumber => toBNWei(humanAmount, 6);
-  const route: RebalanceRoute = {
-    sourceChain: HUB_POOL_CHAIN_ID,
-    destinationChain: DESTINATION_CHAIN_ID,
-    sourceToken: USDT,
-    destinationToken: USDT,
-    adapter: "binance",
-  };
-
-  async function createSameAssetClient(adapter: MockRebalancerAdapter): Promise<SameAssetRebalancerClient> {
-    const config = new MockRebalancerConfig(
-      {},
-      { [USDT]: { [HUB_POOL_CHAIN_ID]: amount("100") } },
-      { binance: 10 },
-      HUB_POOL_CHAIN_ID,
-      { [USDT]: { [DESTINATION_CHAIN_ID]: true } }
-    );
-    const { spyLogger } = createSpyLogger();
-    const client = new SameAssetRebalancerClient(spyLogger, config, { binance: adapter }, adapter.baseSigner, false);
-    await client.initialize([route]);
-    return client;
-  }
-
-  function makeInventoryClient(rebalances: Rebalance[]): InventoryClient {
-    return {
-      rebalanceInventoryIfNeeded: async (returnRebalancesOnly?: boolean) => {
-        expect(returnRebalancesOnly).to.equal(true);
-        return rebalances;
-      },
-    } as unknown as InventoryClient;
-  }
-
-  function makeRebalance(chainId: number, humanAmount: string): Rebalance {
-    return {
-      chainId,
-      l1Token: EvmAddress.from(getTokenInfoFromSymbol(USDT, HUB_POOL_CHAIN_ID).address.toNative()),
-      l2Token: getTokenInfoFromSymbol(USDT, chainId).address,
-      balance: amount("1000"),
-      amount: amount(humanAmount),
-      isShortfallRebalance: false,
-    };
-  }
-
-  it("filters inventory rebalances and caps by the L1 source-chain limit", async () => {
-    const adapter = new MockRebalancerAdapter(ethers.Wallet.createRandom());
-    const client = await createSameAssetClient(adapter);
-
-    await client.rebalanceInventory(
-      makeInventoryClient([makeRebalance(DESTINATION_CHAIN_ID, "250"), makeRebalance(CHAIN_IDs.OPTIMISM, "250")]),
-      toBNWei("100")
-    );
-
-    expect(adapter.rebalances.length).to.equal(1);
-    expect(adapter.rebalances[0].route.sourceChain).to.equal(HUB_POOL_CHAIN_ID);
-    expect(adapter.rebalances[0].route.destinationChain).to.equal(DESTINATION_CHAIN_ID);
-    expect(adapter.rebalances[0].route.sourceToken).to.equal(USDT);
-    expect(adapter.rebalances[0].route.destinationToken).to.equal(USDT);
-    expect(adapter.rebalances[0].route.adapter).to.equal("binance");
-    expect(adapter.rebalances[0].amount.eq(amount("100"))).to.equal(true);
-  });
-
-  it("skips same-asset rebalances over the max fee", async () => {
-    const adapter = new MockRebalancerAdapter(ethers.Wallet.createRandom());
-    adapter.setEstimatedCost(route, amount("6"));
-    const client = await createSameAssetClient(adapter);
-
-    await client.rebalanceInventory(makeInventoryClient([makeRebalance(DESTINATION_CHAIN_ID, "100")]), toBNWei("5"));
-
-    expect(adapter.rebalances.length).to.equal(0);
-  });
-});
-
 class MockRebalancerAdapter implements RebalancerAdapter {
   public baseSignerAddress!: EvmAddress;
   public rebalances: { route: RebalanceRoute; amount: BigNumber }[] = [];
   public estimatedCostMapping: { [route: string]: BigNumber } = {};
+  public estimatedCostErrorMapping: { [route: string]: Error } = {};
   public initializeRebalanceResultMapping: { [route: string]: BigNumber } = {};
   private pendingOrders: string[] | undefined;
   private pendingRebalances: { [chainId: number]: { [token: string]: BigNumber } } = {};
@@ -997,8 +982,16 @@ class MockRebalancerAdapter implements RebalancerAdapter {
     this.pendingRebalancesError = error;
   }
 
+  clearPendingRebalancesError(): void {
+    this.pendingRebalancesError = undefined;
+  }
+
   setEstimatedCost(route: RebalanceRoute, cost: BigNumber): void {
     this.estimatedCostMapping[this.routeKey(route)] = cost;
+  }
+
+  setEstimatedCostError(route: RebalanceRoute, error: Error): void {
+    this.estimatedCostErrorMapping[this.routeKey(route)] = error;
   }
 
   setInitializeRebalanceResult(route: RebalanceRoute, amount: BigNumber): void {
@@ -1008,6 +1001,10 @@ class MockRebalancerAdapter implements RebalancerAdapter {
   getEstimatedCost(rebalanceRoute: RebalanceRoute, amountToTransfer: BigNumber, debugLog: boolean): Promise<BigNumber> {
     void amountToTransfer;
     void debugLog;
+    const error = this.estimatedCostErrorMapping[this.routeKey(rebalanceRoute)];
+    if (error !== undefined) {
+      return Promise.reject(error);
+    }
     return Promise.resolve(this.estimatedCostMapping[this.routeKey(rebalanceRoute)] ?? bnZero);
   }
 

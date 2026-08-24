@@ -90,6 +90,9 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
 
   let chainIds: number[];
 
+  // Set by any test that pins an SDK helper for its own duration; unwound after that test.
+  let archStub: sinon.SinonStub | undefined;
+
   const updateAllClients = async (): Promise<void> => {
     await configStoreClient.update();
     await hubPoolClient.update();
@@ -246,6 +249,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
     // Set the spokePool's time to the provider time. This is done to enable the block utility time finder identify a
     // "reasonable" block number based off the block time when looking at quote timestamps.
     await spokePool_1.setCurrentTime(await getLastBlockTime(spokePool_1.provider));
+  });
+
+  afterEach(function () {
+    archStub?.restore();
+    archStub = undefined;
   });
 
   describe("Relayer: Check for Unfilled v3 Deposits and Fill", function () {
@@ -607,7 +615,23 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
     });
 
     it("Correctly defers destination chain fills", async function () {
-      const { average: avgBlockTime } = await arch.evm.averageBlockTime(spokePool_2.provider);
+      // Pin the average block time both this test and the relayer read, rather than sampling the hardhat
+      // chain, which cannot produce a usable figure. The SDK averages over a fixed 120-block window
+      // (`latest - 10` back to `latest - 130`) and memoises the result per chainId for 15 minutes, and
+      // every spoke pool here shares hardhat's chainId — so the value is whatever the first test in this
+      // mocha process measured. Below 130 blocks that window's lower bound is negative, ethers resolves
+      // it relative to the head and clamps at genesis, and the sample collapses while the divisor stays
+      // 120: the average comes back as low as 1/120 s/block, and zero or negative at heights 120-129.
+      // minFillTime is a duration derived from the average whereas the relayer ages deposits in blocks,
+      // so too small an average desynchronises the two and the fill asserted below never happens. How
+      // long the chain is at first measurement depends on which files precede this one, which the CI
+      // test split varies — hence the sporadic failure.
+      const avgBlockTime = 1;
+      archStub = sinon.stub(arch, "evm").value({
+        ...arch.evm,
+        averageBlockTime: async () => ({ average: avgBlockTime, blockRange: 120 }),
+      });
+
       const minDepositAgeBlocks = 4; // Fill after deposit has aged this # of blocks.
       const minFillTime = Math.ceil(minDepositAgeBlocks * avgBlockTime);
 
@@ -644,8 +668,11 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
       }
       expect(lastSpyLogIncludes(spy, "due to insufficient fill time for")).to.be.true;
 
-      // Mine enough blocks such that the deposit has aged sufficiently.
-      for (let i = 0; i < minFillTime * minDepositAgeBlocks * 10; i++) {
+      // Mine enough blocks such that the deposit has aged sufficiently. The relayer ages the deposit as
+      // floor(avgBlockTime * blocksElapsed), so invert that to size the loop; scaling minFillTime by a
+      // fixed factor instead undershoots whenever avgBlockTime is below 1.
+      const blocksToMine = Math.ceil((minFillTime + 1) / avgBlockTime);
+      for (let i = 0; i < blocksToMine; i++) {
         await hre.network.provider.send("evm_mine");
       }
       await updateAllClients();
@@ -927,6 +954,18 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
     });
 
     it("Ignores deposits with quote times in future", async function () {
+      // Pin the average block time rather than sampling the hardhat chain. The relayer derives its
+      // quoteTimestamp tolerance from it (HUB_SPOKE_BLOCK_LAG * average), and the SDK memoises the
+      // sample per chainId for 15 minutes — so the tolerance this test sees is whatever the first
+      // file in the mocha process measured. Any preceding file that warps block.timestamp forward
+      // (setSpokePoolTime et al) leaves an average large enough to push the tolerance past the 100s
+      // offset used below, and the deposit gets filled instead of skipped. Which files precede this
+      // one is decided by the CI test split, so the failure moves around as test files are added.
+      archStub = sinon.stub(arch, "evm").value({
+        ...arch.evm,
+        averageBlockTime: async () => ({ average: 1, blockRange: 120 }),
+      });
+
       const { quoteTimestamp } = await depositV3(
         spokePool_1,
         destinationChainId,
@@ -1309,6 +1348,122 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       expect((await txnReceipts[destinationChainId]).length).to.equal(1);
       expect(lastSpyLogIncludes(spy, "Filled v3 deposit")).to.be.true;
+    });
+
+    describe("HubPool liquid reserves constraint", function () {
+      let acrossApiClient: AcrossApiClient;
+      let getLimit: sinon.SinonStub;
+      let determineRefundChainId: sinon.SinonStub;
+
+      const logged = (text: string): boolean => spy.getCalls().some(({ lastArg }) => lastArg.message?.includes(text));
+
+      const deposit = () =>
+        depositV3(spokePool_1, destinationChainId, depositor, inputToken, inputAmount, outputToken, outputAmount);
+
+      beforeEach(function () {
+        ({ acrossApiClient } = relayerInstance.clients);
+
+        // Simulate an exhausted HubPool: /liquid-reserves reports no liquidity available for the input token.
+        acrossApiClient.updatedLimits = true;
+        getLimit = sinon.stub(acrossApiClient, "getLimit").returns(bnZero);
+
+        // Take direct control of the eligible repayment chains, which are otherwise inventory-dependent.
+        determineRefundChainId = sinon.stub(inventoryClient, "determineRefundChainId");
+      });
+
+      afterEach(function () {
+        getLimit.restore();
+        determineRefundChainId.restore();
+      });
+
+      it("Fills deposits that are forced to take origin chain repayment", async function () {
+        determineRefundChainId.resolves([originChainId]);
+        await deposit();
+        await updateAllClients();
+
+        const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+        expect(logged(`with repayment on ${originChainId}`)).to.be.true;
+      });
+
+      it("Drops preferred repayment chains that can't be funded", async function () {
+        determineRefundChainId.resolves([destinationChainId, originChainId]);
+        await deposit();
+        await updateAllClients();
+
+        const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+        expect(logged(`with repayment on ${originChainId}`)).to.be.true;
+        expect(logged(`with repayment on ${destinationChainId}`)).to.be.false;
+      });
+
+      it("Treats an unfundable repayment as an unprofitable fill", async function () {
+        determineRefundChainId.resolves([destinationChainId]);
+        await deposit();
+        await updateAllClients();
+
+        let txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect((await txnReceipts[destinationChainId]).length).to.equal(0);
+        expect(logged("can be funded by available HubPool liquidity")).to.be.true;
+
+        // Utilisation high enough to refuse every eligible refund is a real condition rather than a transient blip, so
+        // it goes through the existing unprofitable-fill mechanism instead of a bespoke retry path.
+        expect(profitClient.getUnprofitableFills()[originChainId]?.length ?? 0).to.equal(1);
+
+        // Which also means the deposit is suppressed until runMaintenance() flushes ignoredDeposits, even once
+        // HubPool liquidity recovers.
+        getLimit.returns(inputAmount);
+        txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+        expect((await txnReceipts[destinationChainId]).length).to.equal(0);
+      });
+
+      it("Doesn't constrain hub chain origins", async function () {
+        // Funds can be JIT-bridged from the hub chain to anywhere, so a hub chain origin keeps its non-origin
+        // candidates - taking repayment out on a pool rebalance route is what keeps utilisation low.
+        const chainId = sinon.stub(hubPoolClient, "chainId").value(originChainId);
+        determineRefundChainId.resolves([destinationChainId, originChainId]);
+
+        try {
+          await deposit();
+          await updateAllClients();
+
+          const txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
+          expect((await txnReceipts[destinationChainId]).length).to.equal(1);
+          expect(logged(`with repayment on ${destinationChainId}`)).to.be.true;
+        } finally {
+          chainId.restore();
+        }
+      });
+    });
+  });
+
+  describe("AcrossApiClient: /liquid-reserves failures", function () {
+    let apiHost: string | undefined;
+
+    beforeEach(function () {
+      apiHost = process.env.ACROSS_API_HOST;
+
+      // Unroutable, so the query fails immediately without touching the network.
+      process.env.ACROSS_API_HOST = "127.0.0.1:1";
+    });
+
+    afterEach(function () {
+      if (isDefined(apiHost)) {
+        process.env.ACROSS_API_HOST = apiHost;
+      } else {
+        delete process.env.ACROSS_API_HOST;
+      }
+    });
+
+    it("Doesn't interpret a failed query as zero available liquidity", async function () {
+      await updateAllClients();
+      const apiClient = new AcrossApiClient(spyLogger, hubPoolClient, chainIds, [EvmAddress.from(l1Token.address)], 1);
+      await apiClient.update(false);
+
+      // Limits are unknown rather than zero, so no limit-based constraint may be applied.
+      expect(apiClient.updatedLimits).to.be.false;
+      expect(spy.getCalls().some(({ lastArg }) => lastArg.message?.includes("Failed to fetch HubPool liquid reserves")))
+        .to.be.true;
     });
   });
 });

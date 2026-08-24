@@ -15,8 +15,6 @@ import OP_USDC_BRIDGE_ABI from "./abi/OpStackUSDCBridge.json";
 import SPONSORED_CCTP_DST_PERIPHERY_ABI from "./abi/SponsoredCCTPDstPeriphery.json";
 import OVM_L1_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL1.json";
 import OVM_L2_STANDARD_BRIDGE_ABI from "./abi/OpStackStandardBridgeL2.json";
-import DAI_OPTIMISM_BRIDGE_L1_ABI from "./abi/DaiOptimismBridgeL1.json";
-import DAI_OPTIMISM_BRIDGE_L2_ABI from "./abi/DaiOptimismBridgeL2.json";
 import POLYGON_BRIDGE_ABI from "./abi/PolygonBridge.json";
 import POLYGON_ROOT_CHAIN_MANAGER_ABI from "./abi/PolygonRootChainManager.json";
 import POLYGON_WITHDRAWABLE_ERC20_ABI from "./abi/PolygonWithdrawableErc20.json";
@@ -24,6 +22,8 @@ import ZKSTACK_NATIVE_TOKEN_VAULT_ABI from "./abi/ZkStackNativeTokenVault.json";
 import ZKSTACK_BRIDGE_HUB_ABI from "./abi/ZkStackBridgeHub.json";
 import ZKSTACK_SHARED_BRIDGE_ABI from "./abi/ZkStackSharedBridge.json";
 import ZKSTACK_USDC_BRIDGE_ABI from "./abi/ZkStackUSDCBridge.json";
+import ZKSTACK_L2_ASSET_ROUTER_ABI from "./abi/ZkStackL2AssetRouter.json";
+import ZKSTACK_L2_BASE_TOKEN_ABI from "./abi/ZkStackL2BaseToken.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI from "./abi/ArbitrumErc20GatewayRouterL1.json";
 import ARBITRUM_ERC20_GATEWAY_ROUTER_L2_ABI from "./abi/ArbitrumErc20GatewayRouterL2.json";
 import ARBITRUM_ERC20_GATEWAY_L1_ABI from "./abi/ArbitrumErc20GatewayL1.json";
@@ -37,6 +37,30 @@ import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
 import PERMIT2_ABI from "./abi/Permit2.json";
 export { IOFT_ABI_FULL };
 import HUB_POOL_STORE_ABI from "./abi/HubPoolStore.json";
+
+// The ZK Stack system contracts are predeploys at protocol-fixed addresses, identical on every elastic chain, so
+// they are defined once and spread into each ZK Stack chain below.
+//
+// @dev This is keyed off an explicit per-chain spread rather than auto-populated from `chainIsZkStack()`, because
+// @across-protocol/constants currently records zkSync Era as `ChainFamily.NONE` (only Lens and Lens Sepolia are
+// `ZK_STACK`). A family-driven default would silently skip Era, and the finalizer treats a missing
+// `nativeTokenVault`/`l2BaseToken` entry as "not a ZK Stack deployment" rather than erroring.
+const ZK_STACK_SYSTEM_CONTRACTS = {
+  nativeTokenVault: {
+    address: "0x0000000000000000000000000000000000010004",
+    abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
+  },
+  assetRouter: {
+    address: "0x0000000000000000000000000000000000010003",
+    abi: ZKSTACK_L2_ASSET_ROUTER_ABI,
+  },
+  // Same address as `nativeToken`, but with the ABI needed to initiate and track base token withdrawals.
+  // `nativeToken` is deliberately left alone because the L1->L2 bridges rely on its Weth-shaped ABI.
+  l2BaseToken: {
+    address: "0x000000000000000000000000000000000000800A",
+    abi: ZKSTACK_L2_BASE_TOKEN_ABI,
+  },
+};
 
 // Constants file exporting hardcoded contract addresses per chain.
 export const CONTRACT_ADDRESSES: {
@@ -79,10 +103,6 @@ export const CONTRACT_ADDRESSES: {
     zkStackUSDCBridge_232: {
       address: "0xf553E6D903AA43420ED7e3bc2313bE9286A8F987",
       abi: ZKSTACK_USDC_BRIDGE_ABI,
-    },
-    daiOptimismBridge: {
-      address: "0x10e6593cdda8c58a1d0f14c5164b376352a55f2f",
-      abi: DAI_OPTIMISM_BRIDGE_L1_ABI,
     },
     // OVM, ZkSync, Linea, and Polygon can't deposit WETH directly so we use an atomic depositor contract that unwraps WETH and
     // bridges ETH other the canonical bridge.
@@ -165,7 +185,7 @@ export const CONTRACT_ADDRESSES: {
       abi: ARBITRUM_OUTBOX_ABI,
     },
     orbitErc20GatewayRouter_4663: {
-      address: "0x6a2E3a1e16FC29f27Ce61429746D558d656975bB", // Is this the right address for Robinhood?
+      address: "0x6a2E3a1e16FC29f27Ce61429746D558d656975bB",
       abi: ARBITRUM_ERC20_GATEWAY_ROUTER_L1_ABI,
     },
     orbitErc20Gateway_4663: {
@@ -254,10 +274,6 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.OPTIMISM]: {
-    daiOptimismBridge: {
-      address: "0x467194771dae2967aef3ecbedd3bf9a310c76c65",
-      abi: DAI_OPTIMISM_BRIDGE_L2_ABI,
-    },
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
@@ -362,10 +378,7 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.ZK_SYNC]: {
-    nativeTokenVault: {
-      address: "0x0000000000000000000000000000000000010004",
-      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
-    },
+    ...ZK_STACK_SYSTEM_CONTRACTS,
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,
@@ -662,10 +675,7 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.LENS]: {
-    nativeTokenVault: {
-      address: "0x0000000000000000000000000000000000010004",
-      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
-    },
+    ...ZK_STACK_SYSTEM_CONTRACTS,
     // The native token for Lens is GHO, not ETH.
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
@@ -898,10 +908,7 @@ export const CONTRACT_ADDRESSES: {
     },
   },
   [CHAIN_IDs.LENS_SEPOLIA]: {
-    nativeTokenVault: {
-      address: "0x0000000000000000000000000000000000010004",
-      abi: ZKSTACK_NATIVE_TOKEN_VAULT_ABI,
-    },
+    ...ZK_STACK_SYSTEM_CONTRACTS,
     nativeToken: {
       address: "0x000000000000000000000000000000000000800A",
       abi: WETH_ABI,

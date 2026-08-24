@@ -14,7 +14,7 @@ Full env parsing lives in `GaslessRelayerConfig.ts`. Runtime state machine is in
 
 CCTP deposits (and swap-and-bridge that uses a non-default `spokePool`) end in `DONE`. Standard bridge deposits submit a fill and end in `FILLED`, unless fills are disabled (see below).
 
-Integrator filtering runs inside `_queryGaslessApi` immediately after API responses are restructured — discarded messages never enter the state machine.
+Integrator and address filtering run inside `_queryGaslessApi` immediately after API responses are restructured — discarded messages never enter the state machine.
 
 ### Deposit log token resolution (`resolveTokenInfoForLog`)
 
@@ -49,7 +49,7 @@ The deposit transaction itself is built from the API message and is unaffected b
 | `INITIALIZATION_RETRY_ATTEMPTS` | `3` | Retries for the first API query on startup. |
 | `GASLESS_ALLOWED_PEGGED_PAIRS` | `{}` | Allowed input→output token symbol pairs (same shape as `PEGGED_TOKEN_PRICES`). |
 | `NO_PERMIT2_CONTRACT_CHAINS` | `[]` | Origin chains without canonical Permit2 (skip nonce-bitmap reads). |
-| `SPOKE_POOL_PERIPHERY_OVERRIDES` | `{}` | Per-chain SpokePool periphery address overrides. |
+| `SPOKE_POOL_PERIPHERY_OVERRIDES` | `{}` | Per-chain SpokePool periphery address overrides. An override must support the `*WithAuthorizationBytes` methods (contracts ≥5.0.26 deployments) — older peripheries revert smart-wallet (>65-byte) authorizations. |
 | `RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD` | `1000` | Page-worthy deposit size threshold (stablecoin input); `0` disables. |
 | `RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED` | `false` | Test mode: allow refund-shaped deposits; submit deposit but skip fill. |
 | `RELAYER_GASLESS_FILLS_ENABLED` | `true` | When `false`, submit origin deposits only (no destination fills). |
@@ -99,6 +99,33 @@ RELAYER_GASLESS_BLOCKED_INTEGRATOR_IDS='["0xdead"]'
 ```
 
 Filtered-out deposits log at debug: `GaslessRelayer#_queryGaslessApi`.
+
+### Address filters (mutually exclusive)
+
+Filter API messages by authorizer / depositor / recipient. Addresses are normalized to lowercase (`ethers.getAddress` after lowercasing, so mixed-case paste is fine).
+
+**Only one** of these may be set; setting both causes config construction to throw.
+
+| Variable | Behavior |
+|----------|----------|
+| `RELAYER_GASLESS_ALLOWED_ADDRESSES` | JSON string array. **Only** process deposits whose authorizer or depositor is in the list. |
+| `RELAYER_GASLESS_BLOCKED_ADDRESSES` | JSON string array. **Discard** deposits whose authorizer, depositor, or recipient is in the list. |
+
+Neither set → no address filtering.
+
+Example allow-list:
+
+```bash
+RELAYER_GASLESS_ALLOWED_ADDRESSES='["0x1111111111111111111111111111111111111111"]'
+```
+
+Example block-list:
+
+```bash
+RELAYER_GASLESS_BLOCKED_ADDRESSES='["0x2222222222222222222222222222222222222222"]'
+```
+
+Invalid addresses cause config construction to throw. Filtered-out deposits log at debug: `GaslessRelayer#_queryGaslessApi`.
 
 ## Related code
 

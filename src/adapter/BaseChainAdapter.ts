@@ -435,6 +435,13 @@ export class BaseChainAdapter {
    * constructL1ToL2Txn method. Not all adapters support this.
    * @returns Transaction response.
    */
+  /**
+   * @notice Returns the per-transfer maximum the l1Token's bridge enforces on L1 -> L2 sends, if any.
+   */
+  async getMaxL1ToL2TransferAmount(l1Token: EvmAddress): Promise<BigNumber | undefined> {
+    return this.bridges[l1Token.toNative()]?.getMaxL1ToL2TransferAmount?.();
+  }
+
   async sendTokenToTargetChain(
     address: Address,
     l1Token: EvmAddress,
@@ -445,6 +452,15 @@ export class BaseChainAdapter {
   ): Promise<TransactionResponse> {
     const bridge = this.bridges[l1Token.toNative()];
     assert(isDefined(bridge) && this.isSupportedToken(l1Token), `Token ${l1Token} is not supported`);
+    if (isDefined(bridge.sendL1ToL2Transfer)) {
+      this.log(
+        `Bridging tokens from ${getNetworkName(this.hubChainId)} to ${getNetworkName(this.chainId)}`,
+        { l1Token, l2Token, amount: amount.toString(), simMode },
+        "debug",
+        "sendTokenToTargetChain"
+      );
+      return bridge.sendL1ToL2Transfer(address, l1Token, l2Token, amount, simMode);
+    }
     let bridgeTransactionDetails: BridgeTransactionDetails;
     try {
       bridgeTransactionDetails = await bridge.constructL1ToL2Txn(address, l1Token, l2Token, amount, optionalParams);

@@ -301,6 +301,134 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
   });
 
+  it("Counts pending rebalances when sizing shortfall coverage", async function () {
+    const l1Token = EvmAddress.from(mainnetUsdc);
+    const l2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
+    const shortfall = toMegaWei(100);
+    tokenClient.setTokenShortFallData(ARBITRUM, l2Token, [BigNumber.from(1)], [shortfall]);
+    mockRebalancerClient.setPendingRebalance(ARBITRUM, "USDC", shortfall);
+
+    await inventoryClient.update();
+
+    // The pending same-asset rebalance already covers the shortfall, so no new coverage is required.
+    expect(inventoryClient._getPossibleShortfallRebalances(l1Token, ARBITRUM, l2Token)).to.be.empty;
+  });
+
+  it("Combines same-route shortfalls into one bridge transfer", async function () {
+    const l2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
+    const shortfalls = [toMegaWei(100), toMegaWei(50)];
+    tokenClient.setTokenShortFallData(ARBITRUM, l2Token, [BigNumber.from(1), BigNumber.from(2)], shortfalls);
+    inventoryConfig.rebalanceShortfalls = true;
+
+    try {
+      await inventoryClient.update();
+      const rebalances = inventoryClient
+        .getPossibleRebalances()
+        .filter(
+          ({ chainId, l2Token: token, isShortfallRebalance }) =>
+            chainId === ARBITRUM && token.eq(l2Token) && isShortfallRebalance
+        );
+
+      expect(rebalances).to.have.lengthOf(1);
+      expect(rebalances[0].amount).to.equal(shortfalls[0].add(shortfalls[1]));
+    } finally {
+      delete inventoryConfig.rebalanceShortfalls;
+    }
+  });
+
+  it("Caps combined shortfalls at the fundable prefix", async function () {
+    const l1Token = EvmAddress.from(mainnetUsdc);
+    const l2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
+    inventoryConfig.rebalanceShortfalls = true;
+
+    try {
+      await inventoryClient.update();
+      // The first shortfall alone is fundable but the pair is not, so only the fundable prefix is aggregated;
+      // aggregating both would get the whole transfer rejected downstream, stranding the fundable shortfall.
+      const l1Balance = tokenClient.getBalance(CHAIN_IDs.MAINNET, l1Token);
+      const shortfalls = [l1Balance, l1Balance.div(2)];
+      tokenClient.setTokenShortFallData(ARBITRUM, l2Token, [BigNumber.from(1), BigNumber.from(2)], shortfalls);
+
+      const rebalances = inventoryClient
+        .getPossibleRebalances()
+        .filter(
+          ({ chainId, l2Token: token, isShortfallRebalance }) =>
+            chainId === ARBITRUM && token.eq(l2Token) && isShortfallRebalance
+        );
+
+      expect(rebalances).to.have.lengthOf(1);
+      expect(rebalances[0].amount).to.equal(shortfalls[0]);
+    } finally {
+      delete inventoryConfig.rebalanceShortfalls;
+    }
+  });
+
+  it("Covers a fundable shortfall when a larger one exceeds the L1 balance", async function () {
+    const l1Token = EvmAddress.from(mainnetUsdc);
+    const l2Token = toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM);
+    inventoryConfig.rebalanceShortfalls = true;
+
+    try {
+      await inventoryClient.update();
+      const l1Balance = tokenClient.getBalance(CHAIN_IDs.MAINNET, l1Token);
+      // The largest shortfall alone exceeds the balance; skipping it must not strand the fundable smaller one.
+      const shortfalls = [l1Balance.mul(2), l1Balance.div(2)];
+      tokenClient.setTokenShortFallData(ARBITRUM, l2Token, [BigNumber.from(1), BigNumber.from(2)], shortfalls);
+
+      const shortfallRebalancesFor = () =>
+        inventoryClient
+          .getPossibleRebalances()
+          .filter(
+            ({ chainId, l2Token: token, isShortfallRebalance }) =>
+              chainId === ARBITRUM && token.eq(l2Token) && isShortfallRebalance
+          );
+
+      let rebalances = shortfallRebalancesFor();
+      expect(rebalances).to.have.lengthOf(1);
+      expect(rebalances[0].amount).to.equal(shortfalls[1]);
+
+      // When no shortfall fits, the largest is emitted so the downstream balance guard rejects and logs it
+      // (never a zero-amount transfer).
+      tokenClient.setTokenShortFallData(ARBITRUM, l2Token, [BigNumber.from(1)], [l1Balance.mul(2)]);
+      rebalances = shortfallRebalancesFor();
+      expect(rebalances).to.have.lengthOf(1);
+      expect(rebalances[0].amount).to.equal(l1Balance.mul(2));
+    } finally {
+      delete inventoryConfig.rebalanceShortfalls;
+    }
+  });
+
+  it("Skips initiation when the Binance pending-rebalance read failed", async function () {
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+    const initialMainnetBalance = tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc));
+    mockRebalancerClient.setFailedPendingReads(["binance"]);
+
+    await inventoryClient.rebalanceInventoryIfNeeded();
+
+    // Redis-tracked pending rebalances are the only in-flight accounting for Binance swap transfers, so an
+    // incomplete read must not initiate transfers that may already be in flight.
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
+    expect(tokenClient.getBalance(CHAIN_IDs.MAINNET, EvmAddress.from(mainnetUsdc))).to.equal(initialMainnetBalance);
+
+    // Other adapters' failed reads do not halt contract-bridge rebalances.
+    mockRebalancerClient.setFailedPendingReads(["hyperliquid"]);
+    await inventoryClient.update();
+    expect(await inventoryClient.rebalanceInventoryIfNeeded(true)).to.have.lengthOf(1);
+  });
+
+  it("Clamps the rebalance amount to the bridge's maximum transfer amount", async function () {
+    // A 500 USDC withdrawal from Arbitrum triggers a 515 USDC rebalance (see the target-allocation test above),
+    // but the bridge only accepts 100 per transfer, so each run sends a 100 chunk instead of never initiating.
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+    adapterManager.setMaxL1ToL2TransferAmount(ARBITRUM, EvmAddress.from(mainnetUsdc), toMegaWei(100));
+
+    await inventoryClient.update();
+    await inventoryClient.rebalanceInventoryIfNeeded();
+
+    expect(lastSpyLogIncludes(spy, "100.00 USDC rebalanced")).to.be.true;
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM][mainnetUsdc].amount.eq(toMegaWei(100))).to.be.true;
+  });
+
   // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
   // alongside that logic.
   it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {

@@ -12,11 +12,13 @@ Read docs in this order:
 
 ## Documentation maintenance
 
-Keep all relevant `AGENTS.md` and `README.md` files updated in the same change whenever behavior, configuration, interfaces, or runtime flow changes.
+Document load-bearing things only: core functionality, significant features, module interfaces, config surfaces, and runtime flows a contributor must understand to make a safe change. Bug fixes, refactors, and routine maintenance normally need no doc change — say so and move on.
 
+- These files are a shared reference, not a personal log. Don't record investigation narrative, findings you happened to make along the way, or a history of what changed — that belongs in the PR description.
+- Keep doc edits terse. Prefer amending an existing line over adding a section, and cut anything that wouldn't change what a reader does.
+- When a change does clear the bar, update the affected `AGENTS.md` / `README.md` in the same change, not as a follow-up.
 - Before writing implementation plans, surface material ambiguities first and resolve them with the user.
-- For each new task, propose 0-3 targeted updates to `README.md` and `AGENTS.md` files (or explicitly state why no updates are needed).
-- For deep-dive documentation tasks, prefer cross-module walkthroughs when behavior spans relayer, clients, dataworker, or shared utilities.
+- Write deep-dive docs only when asked, or when a flow spans modules and no single `README.md` covers it. Prefer cross-module walkthroughs over single-file explanations.
 - Write deep-dive docs as "current behavior" references first, then add a concise "contributor recommendations" section.
 
 ## Quick index
@@ -25,11 +27,11 @@ Keep all relevant `AGENTS.md` and `README.md` files updated in the same change w
 - Rebalancer behavior and adapters: `src/rebalancer/README.md`
 - Refiller behavior: `src/refiller/README.md`
 - Dataworker root-bundle flow: `src/dataworker/README.md`
-- Jussi graph builder topology/economics/upload flow: `src/jussi/README.md`
 - Deposit-address handler and withdraw lifecycle: `src/deposit-address/README.md`
+- Deposit-address service (Express + Pub/Sub push; replaces the polling handler): `src/deposit-address-service/README.md`
 - Gasless relayer (API polling, deposits-only mode, integrator filters): `src/gasless/README.md`
 - Shared runtime clients: `src/clients/README.md`
-- Cross-bot messaging transports (Redis pub/sub + GCP Pub/Sub publisher): `src/messaging/`
+- Cross-bot messaging transports (Redis pub/sub + GCP Pub/Sub publisher and push-request helpers): `src/messaging/`
 - Finalization-specific workflows: `src/finalizer/*` and `src/cctp-finalizer/*`
 - UMA and smart-contract context: `docs/uma.md` and `docs/smart-contracts.md`
 - Relayer fill and repayment deep dives: `docs/relayer-fill-decision-flow.md` and `docs/repayment-selection.md`
@@ -50,6 +52,7 @@ The main bot types in `src/`:
 - `monitor`: Runs monitoring and reporting checks.
 - `gasless`: Handles gasless relay flows.
 - `deposit-address`: Polls the across-indexer for counterfactual deposit-address transfers and executes the resulting deposits or refund withdraws.
+- `deposit-address-service`: Standalone Express service doing the same work driven by GCP Pub/Sub push instead of polling. Not part of the `index.ts` CLI dispatch — it runs as its own entrypoint, like `cctp-finalizer`. Intended to replace `deposit-address`.
 
 ## Directory tree
 
@@ -65,7 +68,8 @@ relayer-v2/
 │   ├── cctp-finalizer/           # CCTP-focused finalization runtime and utility modules.
 │   ├── monitor/                  # Monitoring and operational health checks.
 │   ├── gasless/                  # Gasless relay runtime.
-│   ├── deposit-address/          # Counterfactual deposit-address handler: deposit + refund-withdraw paths.
+│   ├── deposit-address/          # Counterfactual deposit-address handler (polling): deposit + refund-withdraw paths.
+│   ├── deposit-address-service/  # Same work as a Pub/Sub-push Express service; own entrypoint, replaces the poller.
 │   ├── hyperliquid/              # Hyperliquid-specific execution and integration flows.
 │   ├── clients/                  # Shared clients for events, txs, inventory, pricing, and bridges.
 │   │   ├── ProfitClient.ts       # Profitability evaluation for potential fills.
@@ -74,10 +78,10 @@ relayer-v2/
 │   │   ├── TokenClient.ts        # Token metadata, balances, and allowance helpers.
 │   │   ├── SpokePoolClient.ts    # SpokePool event/state client wrappers.
 │   │   └── bridges/              # Bridge adapter selection and cross-chain transfer helpers.
-│   ├── caching/                  # Redis-backed and in-memory cache helpers.
+│   ├── cache/                    # Redis-backed and in-memory cache helpers.
 │   ├── messaging/                # Cross-bot messaging transports.
 │   │   ├── redis/                # Redis pub/sub wrapper (handover signaling).
-│   │   └── gcp/                  # GCP Pub/Sub publisher (lifecycle events to the indexer).
+│   │   └── gcp/                  # GCP Pub/Sub publisher (lifecycle events) + push-request decode/auth.
 │   ├── adapter/                  # Chain/exchange adapter abstractions.
 │   ├── interfaces/               # Shared interfaces and cross-module types.
 │   ├── libexec/                  # Websocket/event listener execution helpers.

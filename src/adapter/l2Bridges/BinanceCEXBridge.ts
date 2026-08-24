@@ -24,8 +24,11 @@ import {
   BinanceTransactionType,
   getBinanceWithdrawalType,
   isCompletedBinanceWithdrawal,
+  isBinanceSweepWithdrawal,
   getOutstandingBinanceDeposits,
   isDefined,
+  getAttributedBinanceDeposits,
+  BINANCE_DEPOSIT_STATUS,
 } from "../../utils";
 import { L1Token } from "../../interfaces";
 import { BaseL2BridgeAdapter } from "./BaseL2BridgeAdapter";
@@ -33,6 +36,7 @@ import ERC20_ABI from "../../common/abi/MinimalERC20.json";
 import { AugmentedTransaction } from "../../clients/TransactionClient";
 
 export class BinanceCEXBridge extends BaseL2BridgeAdapter {
+  protected nativeDeposit = false;
   // Store the promise to be evaluated when needed so that we can construct the bridge synchronously.
   protected readonly binanceApiClientPromise;
   protected binanceApiClient: BinanceApi | undefined;
@@ -77,6 +81,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       network: this.depositNetwork,
     });
     const formatter = createFormatFunction(2, 4, false, l2TokenInfo.decimals);
+    const network = getNetworkName(this.l2chainId);
     const transferTxn: AugmentedTransaction = {
       contract: this.getL2Bridge(),
       chainId: this.l2chainId,
@@ -88,10 +93,8 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       nonMulticall: true,
       canFailInSimulation: false,
       value: bnZero,
-      message: `🎰 Withdrew BNB ${l2TokenInfo.symbol} to L1`,
-      mrkdwn: `Withdrew ${formatter(amount.toString())} ${l2TokenInfo.symbol} from ${getNetworkName(
-        this.l2chainId
-      )} to L1`,
+      message: `🎰 Withdrew ${network} ${l2TokenInfo.symbol} to L1 via Binance`,
+      mrkdwn: `Withdrew ${formatter(amount.toString())} ${l2TokenInfo.symbol} from ${network} to L1 via Binance`,
     };
     return [transferTxn];
   }
@@ -115,6 +118,8 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
       return (
         deposit.network === this.depositNetwork &&
         deposit.coin === this.l1TokenInfo.symbol &&
+        deposit.status !== BINANCE_DEPOSIT_STATUS.REJECTED &&
+        deposit.status !== BINANCE_DEPOSIT_STATUS.WRONG_DEPOSIT &&
         depositType !== BinanceTransactionType.SWAP
       );
     });
@@ -124,15 +129,20 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
         isCompletedBinanceWithdrawal(withdrawal.status) &&
         withdrawal.network === BINANCE_NETWORKS[CHAIN_IDs.MAINNET] &&
         compareAddressesSimple(withdrawal.recipient, fromAddress.toNative()) &&
-        withdrawalType !== BinanceTransactionType.SWAP
+        withdrawalType !== BinanceTransactionType.SWAP &&
+        !isBinanceSweepWithdrawal(withdrawal)
       );
     });
 
-    // FilterMap to remove all deposits from this L2 which originated from another EOA.
-    const filteredDepositHistory = await filterAsync(depositHistory, async (deposit) => {
-      const txnReceipt = await this.getL2Bridge().provider.getTransactionReceipt(deposit.txId);
-      return isDefined(txnReceipt) && compareAddressesSimple(txnReceipt.from, fromAddress.toNative());
-    });
+    const attributedDeposits = await getAttributedBinanceDeposits(
+      depositHistory,
+      this.getL2Bridge().provider,
+      l2EventConfig,
+      this.nativeDeposit ? undefined : l2Token.toNative()
+    );
+    const filteredDepositHistory = attributedDeposits.filter((deposit) =>
+      compareAddressesSimple(deposit.depositor, fromAddress.toNative())
+    );
 
     const unmatchedDeposits = getOutstandingBinanceDeposits(
       filteredDepositHistory,
@@ -147,8 +157,7 @@ export class BinanceCEXBridge extends BaseL2BridgeAdapter {
   }
 
   public pendingWithdrawalLookbackPeriodSeconds(): number {
-    // Binance withdrawals are fast, we can shorten the lookback period to also reduce the number
-    // of provider.getTransactionReceipt we have to make for each deposit event.
-    return 1 * 60 * 60;
+    // Binance deposit confirmation has exceeded one hour in production.
+    return 4 * 60 * 60;
   }
 }

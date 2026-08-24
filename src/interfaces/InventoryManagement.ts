@@ -27,8 +27,20 @@ export type SwapRoute = {
 };
 
 /**
+ * Compact swap-route config used when `RELAYER_ALLOWED_SWAP_ROUTES_VERSION=2`.
+ * `fromChain` / `toChain` may be a single chain id, `"ALL"`, or an array of chain ids.
+ * Expanded at config load into flat {@link SwapRoute} entries (same runtime shape as v1).
+ */
+export type SwapRouteV2 = {
+  fromChain: number | "ALL" | number[];
+  fromToken: string;
+  toChain: number | "ALL" | number[];
+  toToken: string;
+};
+
+/**
  * Example configuration:
- * - DAI on chains 10 & 42161.
+ * - WBTC on chains 10 & 42161.
  * - Bridged USDC (USDC.e, USDbC) on chains 10, 137, 324, 8453, 42161 & 59144.
  * - Native USDC on Polygon.
  *
@@ -37,7 +49,7 @@ export type SwapRoute = {
  * - 4% as Bridged USDC.
  *
  * "tokenConfig": {
- *   "DAI": {
+ *   "WBTC": {
  *     "10": { "targetPct": 8, "thresholdPct": 4 },
  *     "42161": { "targetPct": 8, "thresholdPct": 4 },
  *   },
@@ -73,7 +85,14 @@ export interface InventoryConfig {
   wrapEtherThreshold: BigNumber;
 
   // Allows caller to specify specific swap routes eligible for filling.
+  // After RelayerConfig load this is always the expanded flat list used at runtime.
   allowedSwapRoutes: SwapRoute[];
+
+  /**
+   * Compact swap routes (chain arrays / ALL). Used only when
+   * `RELAYER_ALLOWED_SWAP_ROUTES_VERSION=2`; otherwise ignored.
+   */
+  allowedSwapRoutes2?: SwapRouteV2[];
 
   // Optional parameter which forces relayer repayment on the specified chain ID.
   repaymentChainOverride: number | undefined;

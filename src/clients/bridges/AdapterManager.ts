@@ -30,11 +30,35 @@ import {
 } from "../../utils";
 import { SpokePoolClient, HubPoolClient, SpokePoolManager } from "../";
 import { BaseChainAdapter } from "../../adapter";
+import { BinanceStablecoinSwapBridge } from "../../adapter/bridges/BinanceStablecoinSwapBridge";
 import { TransferTokenParams } from "../../adapter/utils";
 import { CctpOftReadOnlyClient } from "../../rebalancer/clients/CctpOftReadOnlyClient";
+import { BinanceStablecoinSwapAdapter } from "../../rebalancer/adapters/binance";
+import {
+  buildAdapterManagerBinanceRoutes,
+  constructRebalancerDependencies,
+} from "../../rebalancer/RebalancerClientHelper";
+
+// One rebalancer Binance adapter, initialized with the full registry-derived route set, serves every Binance
+// swap bridge.
+async function createBinanceRebalancerAdapter(logger: winston.Logger, signer: Signer) {
+  const {
+    rebalancerConfig,
+    adapters: { binance, cctp, oft },
+  } = constructRebalancerDependencies(logger, signer);
+  assert(
+    binance instanceof BinanceStablecoinSwapAdapter && isDefined(cctp) && isDefined(oft),
+    "Binance rebalancer adapters are unavailable for the configured hub chain"
+  );
+  const routes = buildAdapterManagerBinanceRoutes(rebalancerConfig);
+  await Promise.all([cctp.initialize(routes), oft.initialize(routes)]);
+  await binance.initialize(routes);
+  return binance;
+}
 
 export class AdapterManager {
   public adapters: { [chainId: number]: BaseChainAdapter } = {};
+  private binanceRebalancerAdapter?: Promise<BinanceStablecoinSwapAdapter>;
   protected readonly pendingBridgeRedisReader?: CctpOftReadOnlyClient;
 
   // Some L2's canonical bridges send ETH, not WETH, over the canonical bridges, resulting in recipient addresses
@@ -109,18 +133,20 @@ export class AdapterManager {
             }
             const l1Token = resolveAcrossToken(symbol, hubChainId, true);
             const bridgeConstructor = CUSTOM_BRIDGE[chainId]?.[l1Token] ?? CANONICAL_BRIDGE[chainId];
-            // Some tokens are L2→L1-only (e.g. Avalanche USDT via Binance) and have no L1→L2 bridge.
+            // Some tokens are L2→L1-only and have no L1→L2 bridge.
             if (!isDefined(bridgeConstructor)) {
               return undefined;
             }
-            const bridge = new bridgeConstructor(
-              chainId,
-              hubChainId,
-              l1Signer,
-              l2SignerOrProvider,
-              EvmAddress.from(l1Token),
-              logger
-            );
+            const args = [chainId, hubChainId, l1Signer, l2SignerOrProvider, EvmAddress.from(l1Token), logger] as const;
+            if (bridgeConstructor === BinanceStablecoinSwapBridge && !isDefined(this.binanceRebalancerAdapter)) {
+              this.binanceRebalancerAdapter = createBinanceRebalancerAdapter(logger, l1Signer);
+              // Guard against an unhandled rejection in bots that never await the promise (e.g. no Binance creds).
+              this.binanceRebalancerAdapter.catch(() => {});
+            }
+            const bridge =
+              bridgeConstructor === BinanceStablecoinSwapBridge
+                ? new BinanceStablecoinSwapBridge(...args, this.binanceRebalancerAdapter)
+                : new bridgeConstructor(...args);
             return [l1Token, bridge];
           })
           .filter(isDefined) ?? []
@@ -221,6 +247,13 @@ export class AdapterManager {
       );
     });
     return this.adapters[chainId].getOutstandingCrossChainTransfers(adapterSupportedL1Tokens);
+  }
+
+  /**
+   * @notice Returns the per-transfer maximum the chain's bridge enforces on L1 -> L2 sends of l1Token, if any.
+   */
+  async getMaxL1ToL2TransferAmount(chainId: number, l1Token: EvmAddress): Promise<BigNumber | undefined> {
+    return this.adapters[chainId]?.getMaxL1ToL2TransferAmount(l1Token);
   }
 
   sendTokenCrossChain(
