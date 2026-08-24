@@ -667,6 +667,20 @@ describe("DepositAddressService v3 deposit execution", function () {
 
     // NACK, not ACK. The chain may be re-enabled and the funds are still on the deposit address, so ACKing
     // would destroy the only delivery that could ever sweep them — the polling bot skipped and revisited.
+    // An expired intent refunds to the deposit address itself, so it needs the same second hop as a
+    // mis_route. Diverted by exclusion, so it cannot fall through to the deposit path.
+    it("NACKs an intent_refund until the withdraw path exists", async function () {
+      const intentRefund = message({
+        erc20Transfer: { ...(message().erc20Transfer as object), transferClassification: "intent_refund" },
+      });
+
+      const response = await post(intentRefund);
+
+      expect(response.status).to.equal(500);
+      expect(state()).to.equal(undefined);
+      expect(failure()).to.include({ code: "WITHDRAW_ROUTE_NOT_IMPLEMENTED" });
+    });
+
     it("NACKs an origin chain that is not enabled", async function () {
       const otherChain = message({
         erc20Transfer: { ...(message().erc20Transfer as object), chainId: String(CHAIN_IDs.BASE) },

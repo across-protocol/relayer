@@ -142,8 +142,13 @@ async function processUnderLock(
 
   // Switched on the indexer's own classification rather than a deposit/withdraw label decided at parse time:
   // a `correct_transfer` the execute endpoint rejects as below the minimum becomes a refund withdraw too, so
-  // the action is not knowable here. `intent_refund` was already rejected by `parseTransfer`.
-  if (transferClassification === "mis_route") {
+  // the action is not knowable here.
+  //
+  // Both `mis_route` and `intent_refund` refund. An expired intent refunds to the deposit address itself —
+  // the SpokePool depositor of record — so it needs the same second hop out to the committed refund address
+  // as a mis_route does. Tested by exclusion rather than by listing them, so a future classification cannot
+  // silently fall through to the deposit path.
+  if (transferClassification !== "correct_transfer") {
     throw new WithdrawRouteNotImplementedError(
       `transfer ${transferId} is a ${transferClassification} and needs a refund withdraw, which is not ` +
         "implemented in this build"
