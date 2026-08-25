@@ -23,6 +23,22 @@ they fill via `fillRelayWithUpdatedDeposit` — so a speed-up can't redirect fun
 consulted; it's user-set on the origin chain and spoofable. Message deposits are gated by recipient like any other:
 allow-list the executing contract (e.g. `MulticallHandler`) to accept them, or leave it off the list to drop them.
 
+### Verifying a deposit's origin transaction
+
+`RELAYER_VERIFY_ORIGIN_TXN` (default `"true"`) makes `Relayer::evaluateFill` re-check each deposit against its origin
+transaction receipt before committing funds. The minimum-deposit-confirmations gate only compares block heights, so it
+cannot see that a re-org dropped the transaction, reverted it on replay, re-included it elsewhere, or re-included it at
+the same position on top of different preceding state — the last of which changes the SpokePool's `numberOfDeposits`
+counter and therefore the `depositId`. A fill against any of those is unmatchable and unrepayable, so the deposit is
+skipped and re-evaluated on the next loop once the SpokePoolClient has re-indexed it.
+
+The check requires the receipt to be mined successfully at the observed block and transaction index, *and* to still
+emit a `FundsDeposited` event whose relay data matches the deposit under evaluation. It applies to EVM origin chains
+only; SVM origins are skipped. It fails open — an RPC error is not evidence that a deposit is invalid, so an
+unreachable provider logs at `debug` and permits the fill. Receipts are fetched concurrently ahead of the sequential
+fill evaluation and memoised per transaction per loop, so the cost is one `eth_getTransactionReceipt` per unique
+origin transaction. Set to `"false"` to disable, e.g. to eliminate those requests on a rate-limited provider.
+
 ### Allowed swap routes (in-protocol swaps)
 
 Inventory JSON lists fillable cross-asset routes in `allowedSwapRoutes` (v1) or `allowedSwapRoutes2` (v2), selected
