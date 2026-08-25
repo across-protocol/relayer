@@ -1,4 +1,4 @@
-export { Log } from "../interfaces";
+export type { Log } from "../interfaces";
 
 export type ScraperOpts = {
   lookback?: number; // Event lookback (in seconds).

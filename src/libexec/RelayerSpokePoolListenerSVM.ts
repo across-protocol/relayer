@@ -3,7 +3,11 @@ import minimist from "minimist";
 import { address, createSolanaRpcSubscriptions, RpcSubscriptions, SolanaRpcSubscriptionsApi } from "@solana/kit";
 import { arch, typeguards } from "@across-protocol/sdk";
 import { SvmSpokeClient } from "@across-protocol/contracts";
-import { Log } from "../interfaces";
+import type { Log } from "../interfaces";
+// Deliberate exception to the libexec barrel ban below. Converting this entrypoint to leaf
+// imports measured ~8MB *worse* (259 -> 267MB RSS, median of 5), unlike the EVM and TVM
+// listeners which both improved, so it keeps the barrel until that's understood.
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports
 import {
   abortableDelay,
   EventManager,

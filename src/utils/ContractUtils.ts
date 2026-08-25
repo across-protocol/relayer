@@ -1,22 +1,12 @@
 import * as typechain from "@across-protocol/sdk/typechain";
 import { JsonFragment, ParamType } from "@ethersproject/abi";
-import {
-  CHAIN_IDs,
-  Contract,
-  Signer,
-  getDeployedAddress,
-  getDeployedBlockNumber,
-  EvmAddress,
-  chainIsEvm,
-  Address,
-  assert,
-  toAddressType,
-  isDefined,
-  chainIsTvm,
-  TvmAddress,
-} from ".";
+import assert from "assert";
+import { CHAIN_IDs } from "@across-protocol/constants";
+import { getDeployedAddress, getDeployedBlockNumber } from "@across-protocol/contracts";
+import { Contract, Signer } from "ethers";
+import { Address, chainIsEvm, chainIsTvm, EvmAddress, toAddressType, TvmAddress } from "./SDKUtils";
+import { isDefined, isKeyOf } from "./TypeGuards";
 import { CONTRACT_ADDRESSES, getContractEntry, getContractAbi } from "../common";
-import { isKeyOf } from "./TypeGuards";
 
 function getTypechainAbi(contractName: string): readonly JsonFragment[] {
   const factoryName = `${contractName}__factory`;

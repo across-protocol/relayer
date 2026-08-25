@@ -1,21 +1,21 @@
+// Installs Set/BigInt toJSON, which the IPC messages below rely on. Previously pulled in as a
+// side effect of importing the src/utils barrel; imported explicitly now that we import leaves.
+import "../utils/extensions";
 import assert from "assert";
 import minimist from "minimist";
 import { Contract } from "ethers";
-import { Log } from "../interfaces";
-import {
-  delay,
-  getBlockForTimestamp,
-  getChainQuorum,
-  getDeploymentBlockNumber,
-  getNetworkName,
-  getProvider,
-  isDefined,
-  Logger,
-  paginatedEventQuery,
-  Provider,
-  SpokePool,
-  winston,
-} from "../utils";
+import type { Log } from "../interfaces";
+import winston from "winston";
+import { Logger } from "@risk-labs/logger";
+import type { Provider } from "@ethersproject/abstract-provider";
+import { SpokePool__factory as SpokePool } from "@across-protocol/sdk/typechain";
+import { getBlockForTimestamp } from "../utils/BlockUtils";
+import { getDeploymentBlockNumber } from "../utils/ContractUtils";
+import { paginatedEventQuery } from "../utils/EventUtils";
+import { getNetworkName } from "../utils/NetworkUtils";
+import { getChainQuorum, getProvider } from "../utils/ProviderUtils";
+import { delay } from "../utils/SDKUtils";
+import { isDefined } from "../utils/TypeGuards";
 import { getRedisCache } from "../cache/Redis";
 import { bootstrap } from "./util/bootstrap";
 import { postBlock, postEvents, removeEvent } from "./util/ipc";

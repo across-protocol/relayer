@@ -1,6 +1,10 @@
 import assert from "assert";
 import { Contract, utils as ethersUtils } from "ethers";
-import { getNetworkName, paginatedEventQuery, Profiler, Provider, winston } from "../../../utils";
+import winston from "winston";
+import type { Provider } from "@ethersproject/abstract-provider";
+import { paginatedEventQuery } from "../../../utils/EventUtils";
+import { getNetworkName } from "../../../utils/NetworkUtils";
+import { Profiler } from "../../../utils/SDKUtils";
 import { Log, ScraperOpts } from "../../types";
 
 /**
