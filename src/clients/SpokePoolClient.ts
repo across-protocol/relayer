@@ -4,15 +4,7 @@ import { ChildProcess, spawn } from "child_process";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
 import { RELAYER_SPOKEPOOL_LISTENER_EVM, RELAYER_SPOKEPOOL_LISTENER_SVM } from "../common/Constants";
-import {
-  Address,
-  chainIsSvm,
-  getCurrentTime,
-  getNetworkName,
-  isDefined,
-  winston,
-  spreadEventWithBlockNumber,
-} from "../utils";
+import { Address, chainIsSvm, getNetworkName, isDefined, winston, spreadEventWithBlockNumber } from "../utils";
 import { EventsAddedMessage, EventRemovedMessage, BlockUpdateMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
@@ -196,12 +188,13 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
      * that arrives late in its slot was published late and is materially more likely to be re-orged.
      * @param blockNumber Block number that was received.
      * @param currentTime The block's timestamp.
+     * @param observedAt When the listener was pushed the block.
      * @returns void
      */
-    #recordBlockArrival(blockNumber: number, currentTime: number): void {
+    #recordBlockArrival(blockNumber: number, currentTime: number, observedAt: number): void {
       // Never lower a height's recorded lateness. Seeing a second block at the same height means the first was
       // replaced, which makes that height more suspect, not less.
-      const lateness = getCurrentTime() - currentTime;
+      const lateness = observedAt - currentTime;
       const recorded = this.#blockArrivalLateness.get(blockNumber);
       this.#blockArrivalLateness.set(blockNumber, Math.max(lateness, recorded ?? lateness));
 
@@ -240,11 +233,14 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       }
 
       if (BlockUpdateMessage.is(message)) {
-        const { blockNumber, currentTime } = message;
+        const { blockNumber, currentTime, observedAt } = message;
 
-        // Record arrival ahead of the ordering check below: a same-height replacement is precisely what the
-        // lateness gate exists to catch, and it takes the misordered branch.
-        this.#recordBlockArrival(blockNumber, currentTime);
+        // Only blocks pushed to the listener carry observedAt; polled blocks have no meaningful lateness. Record
+        // ahead of the ordering check below: a same-height replacement is precisely what the lateness gate exists
+        // to catch, and it takes the misordered branch.
+        if (isDefined(observedAt)) {
+          this.#recordBlockArrival(blockNumber, currentTime, observedAt);
+        }
 
         // nb. This condition may be indicative of re-org, but is more likely out-of-order delivery.
         // Some chains have sub-second block times, so multiple blocks may share the same timestamp.

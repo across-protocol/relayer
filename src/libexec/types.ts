@@ -10,6 +10,7 @@ export type ScraperOpts = {
 type BlockUpdate = {
   blockNumber: number;
   currentTime: number;
+  observedAt?: number; // When the listener observed the block, which may predate transmission.
 };
 
 type EventRemoved = {

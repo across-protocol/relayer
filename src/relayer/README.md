@@ -20,9 +20,12 @@ have been built on top of it. Such a block missed its slot's attestation deadlin
 height — which the height-based confirmation gate cannot observe.
 
 Requires `RELAYER_EXTERNAL_LISTENER=true`; without the listener no arrival times are recorded and the check is inert.
-Unsupported on SVM chains (the listener has no slot timestamp, so lateness always reads as ~0) and rejected at
-startup. Blocks not observed live are treated as settled, so backfilled and restarted state is unaffected. A useful
-threshold depends on the operator's own event-delivery latency and has to be measured per deployment.
+Lateness is only measured for blocks a listener is *pushed* — currently EVM chains, via `watchBlocks`. Blocks found
+by polling (the startup scrape, the TRON head poll) record no arrival time, because the interval to a poll measures
+poll phase rather than publication lateness; those blocks, and anything backfilled or restored after a restart, are
+treated as settled. Rejected at startup on SVM chains, where the listener has no slot timestamp to compare against.
+
+A useful threshold depends on the operator's own event-delivery latency and has to be measured per deployment.
 
 ### Restricting recipients on a destination chain
 

@@ -43,10 +43,11 @@ describe("Relayer: Late-arriving origin blocks", function () {
   let blockNumber: number;
 
   /**
-   * Emulates the indexer submitting a block update to the SpokePoolClient.
+   * Emulates the indexer pushing a live block update to the SpokePoolClient. observedAt defaults to now, as the
+   * live listener stamps it on receipt; pass null to emulate a polled update, which carries no observation time.
    */
-  const postBlock = (blockNumber: number, currentTime: number): void => {
-    const message: ListenerMessage = { blockNumber, currentTime };
+  const postBlock = (blockNumber: number, currentTime: number, observedAt: number | null = getCurrentTime()): void => {
+    const message: ListenerMessage = { blockNumber, currentTime, ...(observedAt === null ? {} : { observedAt }) };
     spokePoolClient.indexerUpdate(JSON.stringify(message));
   };
 
@@ -80,6 +81,21 @@ describe("Relayer: Late-arriving origin blocks", function () {
   it("Records no arrival lateness for blocks that were not observed live", async function () {
     postBlock(blockNumber, getCurrentTime());
     expect(spokePoolClient.getBlockArrivalLateness(blockNumber - 1)).to.be.undefined;
+  });
+
+  it("Records no arrival lateness for polled block updates", async function () {
+    // A polled update (the EVM startup scrape, the TVM head poll) carries no observation time: the interval
+    // between the block's timestamp and the poll measures poll phase, not how late the block was published.
+    postBlock(blockNumber, getCurrentTime() - 60, null);
+    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.be.undefined;
+  });
+
+  it("Measures lateness from the listener's observation, not message receipt", async function () {
+    // The listener saw the block promptly, but only posted it after a slow backfill. The delay in transmission
+    // is not block lateness.
+    const currentTime = getCurrentTime() - 60;
+    postBlock(blockNumber, currentTime, currentTime);
+    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.equal(0);
   });
 
   it("Records arrival lateness for a same-height replacement block", async function () {
