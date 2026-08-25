@@ -242,6 +242,35 @@ describe("IndexedSpokePoolClient: Update", function () {
     expect(droppedDeposit).to.not.exist;
   });
 
+  it("Reports pending deposit removals ahead of the next update", async function () {
+    const events: Log[] = [];
+    for (let i = 0; i < 5; ++i) {
+      events.push(getDepositEvent(blockNumber++));
+    }
+    sortEventsAscendingInPlace(events);
+
+    postBlock(blockNumber, currentTime);
+    postEvents(events);
+    await spokePoolClient.update();
+    expect(spokePoolClient.getDeposits().length).to.equal(events.length);
+
+    // A removal is only backed out of depositHashes on the next update(). Until then it must be visible to callers
+    // that can't tolerate acting on a re-orged deposit (i.e. the relayer, before submitting a queued fill).
+    const droppedEvent = events.at(-1);
+    const depositRemoved = () => spokePoolClient.depositRemovalPending(droppedEvent.transactionHash);
+    const depositKnown = () =>
+      spokePoolClient.getDeposits().some(({ txnRef }) => txnRef === droppedEvent.transactionHash);
+
+    expect(depositRemoved()).to.be.false;
+    removeEvent(droppedEvent);
+    expect(depositRemoved()).to.be.true;
+    expect(depositKnown()).to.be.true;
+
+    await spokePoolClient.update();
+    expect(depositRemoved()).to.be.false;
+    expect(depositKnown()).to.be.false;
+  });
+
   it("Correctly removes multiple deposits within the same transactionHash after update", async function () {
     const events: Log[] = [];
     const deposit = getDepositEvent(blockNumber);

@@ -61,6 +61,7 @@ interface SpokeListenerMethods {
   stopWorker(): void;
   _indexerUpdate(rawMessage: unknown): void;
   _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate>;
+  depositRemovalPending(txnRef: string): boolean;
 }
 
 export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
@@ -231,6 +232,19 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
           this.#pendingEvents[eventIdx].push(event);
         });
       }
+    }
+
+    /**
+     * Determine whether a re-org affecting a deposit has been reported by the indexer but not yet applied. Removals
+     * are queued on receipt and are only backed out of depositHashes on the next _update(), so a caller that must
+     * not act on a re-orged deposit has to consult this in addition to depositHashes.
+     * @param txnRef Transaction hash of the deposit event.
+     * @returns true if a removal is pending for a deposit made in the corresponding transaction.
+     */
+    depositRemovalPending(txnRef: string): boolean {
+      return this.#pendingEventsRemoved.some(
+        ({ event, transactionHash }) => event === "FundsDeposited" && transactionHash === txnRef
+      );
     }
 
     /**

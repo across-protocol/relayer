@@ -104,6 +104,37 @@ describe("TransactionClient", function () {
     txnResponses.slice(1).forEach((txnResponse) => expect(txnResponse.nonce).to.equal(++nonce));
   });
 
+  it("Drops transactions that are invalidated during submission", async function () {
+    const chainId = chainIds[0];
+
+    const nTxns = 3;
+    const txns: AugmentedTransaction[] = [];
+    for (let txn = 1; txn <= nTxns; ++txn) {
+      txns.push({
+        chainId,
+        contract: { address, signer } as Contract,
+        method,
+        args: [],
+        message: `Test transaction ${txn} on chain ${chainId}`,
+        mrkdwn: "",
+      });
+    }
+
+    // Invalidate the last transaction while the first one is being submitted. A filter applied before submission
+    // began would not observe this, so the last transaction must be evaluated at its own submission point.
+    let valid = true;
+    txns[0].validate = () => {
+      valid = false;
+      return true;
+    };
+    txns.at(-1).validate = () => valid;
+
+    // Only the invalidated transaction is dropped; those preceding it are unaffected.
+    const txnResponses: TransactionResponse[] = await txnClient.submit(chainId, txns);
+    expect(valid).to.be.false;
+    expect(txnResponses.length).to.equal(nTxns - 1);
+  });
+
   it("Transaction simulation result includes gasLimit", async function () {
     const chainId = chainIds[0];
 

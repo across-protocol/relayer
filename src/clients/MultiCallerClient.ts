@@ -17,8 +17,16 @@ import {
   Multicall2Call,
   assert,
 } from "../utils";
-import { AugmentedTransaction, TransactionClient } from "./TransactionClient";
+import { AugmentedTransaction, TransactionClient, TransactionValidator } from "./TransactionClient";
 import lodash from "lodash";
+
+// Combine the validators of a set of bundled transactions into a single predicate for the bundle. A bundle is
+// atomic, so it is dropped in its entirety if any of its constituent transactions is invalidated. Returns
+// undefined if none of the bundled transactions requires validation.
+function bundleValidator(validators: (TransactionValidator | undefined)[]): TransactionValidator | undefined {
+  const definedValidators = validators.filter(isDefined);
+  return definedValidators.length > 0 ? () => definedValidators.every((validate) => validate()) : undefined;
+}
 
 // @todo: MultiCallerClient should be generic. For future, permit the class instantiator to supply their own
 // set of known failures that can be suppressed/ignored.
@@ -75,6 +83,8 @@ export interface TryMulticallTransaction {
   contract: Contract;
   calldata: string[];
   gasLimit: BigNumber;
+  // Validators of the surviving calls, index-aligned with calldata.
+  callValidators: (TransactionValidator | undefined)[];
 }
 
 export class MultiCallerClient {
@@ -252,27 +262,12 @@ export class MultiCallerClient {
       return [];
     }
 
-    const validatedTxns = this.dropInvalidatedTxns(chainId, txnRequestsToSubmit);
+    // nb. Any transaction whose validate() predicate no longer holds is dropped by the TransactionClient,
+    // immediately before it would be dispatched to the network.
     const txnResponses: TransactionResponse[] =
-      validatedTxns.length > 0 ? await this.txnClient.submit(chainId, validatedTxns) : [];
+      txnRequestsToSubmit.length > 0 ? await this.txnClient.submit(chainId, txnRequestsToSubmit) : [];
 
     return txnResponses;
-  }
-
-  // A transaction's preconditions may be invalidated while its queue is being bundled and simulated. Re-evaluate
-  // them as late as possible and drop any transaction that no longer qualifies for submission.
-  protected dropInvalidatedTxns(chainId: number, txns: AugmentedTransaction[]): AugmentedTransaction[] {
-    const validated = txns.filter((txn) => txn.validate?.() ?? true);
-
-    const nDropped = txns.length - validated.length;
-    if (nDropped > 0) {
-      this.logger.warn({
-        at: "MultiCallerClient#dropInvalidatedTxns",
-        message: `Dropped ${nDropped} ${getNetworkName(chainId)} transaction(s) invalidated before submission.`,
-      });
-    }
-
-    return validated;
   }
 
   async _getMultisender(chainId: number): Promise<Contract | undefined> {
@@ -327,7 +322,7 @@ export class MultiCallerClient {
       gasLimitMultiplier: MULTICALL3_AGGREGATE_GAS_MULTIPLIER,
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
-      validate: () => transactions.every((txn) => txn.validate?.() ?? true),
+      validate: bundleValidator(transactions.map(({ validate }) => validate)),
     } as AugmentedTransaction;
   }
 
@@ -342,6 +337,9 @@ export class MultiCallerClient {
   _buildMultiCallBundle(transactions: AugmentedTransaction[]): AugmentedTransaction {
     const mrkdwn: string[] = [];
     const callData: string[] = [];
+    // Index-aligned with callData, so that a bundle rebuilt from a subset of its calls can retain the
+    // corresponding validators.
+    const callValidators = transactions.map(({ validate }) => validate);
     let gasLimit: BigNumber | undefined = bnZero;
 
     const { chainId, contract } = transactions[0];
@@ -383,7 +381,8 @@ export class MultiCallerClient {
       gasLimit,
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
-      validate: () => transactions.every((txn) => txn.validate?.() ?? true),
+      validate: bundleValidator(callValidators),
+      callValidators,
     } as AugmentedTransaction;
   }
 
@@ -578,11 +577,13 @@ export class TryMulticallClient extends MultiCallerClient {
     const buildTryMulticallTransaction = (
       contract: Contract,
       calldata: string[],
-      gasLimit: BigNumber
+      gasLimit: BigNumber,
+      callValidators: (TransactionValidator | undefined)[]
     ): TryMulticallTransaction => ({
       contract,
       calldata,
       gasLimit,
+      callValidators,
     });
 
     const txnRequestsToSubmit: AugmentedTransaction[] = [];
@@ -608,15 +609,24 @@ export class TryMulticallClient extends MultiCallerClient {
       // It is transaction.args[0], since `tryMulticall` only accepts a single argument of bytes[].
       assert(transaction.args[0].length === data.length);
 
-      // Filter the calldata array by whether it succeeded in tryMulticall().
-      const succeededTxnCalldata = transaction.args[0].filter((_: unknown, idx: number) => data[idx].success);
+      // Filter the calldata array by whether it succeeded in tryMulticall(). The bundle's validators are
+      // index-aligned with its calldata, so filter them identically to carry the surviving ones forward.
+      const succeededIdxs: number[] = data.flatMap(({ success }: { success: boolean }, idx: number) =>
+        success ? idx : []
+      );
+      const succeededTxnCalldata = succeededIdxs.map((idx) => transaction.args[0][idx]);
 
       // If |succeededTxnRequests| != # of transactions in the multicall bundle, then
       // some txns in the bundle must have failed. We take note only of the ones which succeeded.
       if (succeededTxnCalldata.length !== data.length) {
         assert(isDefined(transaction.gasLimit), "tryMulticall transaction missing gasLimit");
         txnCalldataToRebuild.push(
-          buildTryMulticallTransaction(transaction.contract, succeededTxnCalldata, transaction.gasLimit)
+          buildTryMulticallTransaction(
+            transaction.contract,
+            succeededTxnCalldata,
+            transaction.gasLimit,
+            succeededIdxs.map((idx) => transaction.callValidators?.[idx])
+          )
         );
         this.logger.debug({
           at: "tryMulticallClient#executeChainTxnQueue",
@@ -657,6 +667,8 @@ export class TryMulticallClient extends MultiCallerClient {
           args: [txn.calldata],
           message: "Across tryMulticall transaction",
           mrkdwn: mrkdwn.join(""),
+          validate: bundleValidator(txn.callValidators),
+          callValidators: txn.callValidators,
         };
       };
       const tryMulticallTxns = txnCalldataToRebuild.filter((txn) => txn.calldata.length !== 0).map(rebuildTryMulticall);
@@ -677,8 +689,10 @@ export class TryMulticallClient extends MultiCallerClient {
       return [];
     }
 
-    const validatedTxns = this.dropInvalidatedTxns(chainId, txnRequestsToSubmit);
-    const txnResponses = validatedTxns.length > 0 ? this.txnClient.submit(chainId, validatedTxns) : Promise.resolve([]);
+    // nb. Any transaction whose validate() predicate no longer holds is dropped by the TransactionClient,
+    // immediately before it would be dispatched to the network.
+    const txnResponses =
+      txnRequestsToSubmit.length > 0 ? this.txnClient.submit(chainId, txnRequestsToSubmit) : Promise.resolve([]);
 
     return txnResponses;
   }

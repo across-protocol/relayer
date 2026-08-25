@@ -400,6 +400,32 @@ describe("TryMulticallClient", function () {
         }
       }
     });
+    it("Retains validators when rebuilding a tryMulticall", async function () {
+      chainIds = chainIds.filter((chainId) => chainId !== 1);
+      const chainId = chainIds[0];
+
+      // The third transaction fails simulation, so the bundle is rebuilt from the two that succeeded. The rebuilt
+      // bundle must retain their validators, and is dropped in its entirety if any of them no longer holds.
+      for (const valid of [true, false]) {
+        [1, 1, 0].forEach((succeed, idx) => {
+          multiCaller.enqueueTransaction({
+            chainId,
+            contract: {
+              ...multicallReceiver,
+              interface: { encodeFunctionData },
+            } as Contract,
+            args: [succeed],
+            message: `Test transaction on chain ${chainId}`,
+            mrkdwn: `This transaction is expected to ${succeed === 0 ? "fail" : "pass"} simulation.`,
+            validate: () => valid || idx === 0,
+          } as AugmentedTransaction);
+        });
+
+        const results = await multiCaller.executeTxnQueue(chainId, false);
+        expect(results.length).to.equal(valid ? 1 : 0);
+      }
+    });
+
     it("Does not combine separate multicall bundles together", async function () {
       // We replace chainId 1 in chainIds since we are using the prod transaction client. Upon "submission" to the hardhat network
       // in this test, since it thinks it is on chain id 1, it will attempt to create a block explorer link and subsequently error out.

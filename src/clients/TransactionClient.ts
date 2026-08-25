@@ -70,6 +70,9 @@ function isReplacedError(
 // Define chains that require legacy (type 0) transactions
 export const LEGACY_TRANSACTION_CHAINS = [CHAIN_IDs.BSC];
 
+// Predicate re-evaluated immediately before a transaction is dispatched to the network.
+export type TransactionValidator = () => boolean;
+
 export interface AugmentedTransaction {
   contract: Contract;
   chainId: number;
@@ -93,9 +96,14 @@ export interface AugmentedTransaction {
   // If true, the contract's provider will be replaced with the TransactionClient's SpeedProvider for
   // this chain (if configured), enabling parallel multi-RPC dispatch for faster submission.
   spray?: boolean;
-  // Optional predicate re-evaluated immediately before submission. If it returns false the transaction is
-  // dropped. Use for preconditions that can be invalidated between enqueueing and submission.
-  validate?: () => boolean;
+  // Optional predicate evaluated immediately before the transaction is dispatched to the network. If it returns
+  // false the transaction is dropped. Use for preconditions that can be invalidated between enqueueing and
+  // submission (i.e. a deposit that was re-orged out after its fill was queued).
+  validate?: TransactionValidator;
+  // Set on multicall bundles: the validators of the bundled transactions, index-aligned with the bundle's calldata
+  // (undefined where a bundled transaction has no validator). Permits a bundle that is rebuilt from a subset of its
+  // calls (see TryMulticallClient) to retain the validators of the calls that survive.
+  callValidators?: (TransactionValidator | undefined)[];
 }
 
 export function isAugmentedTransaction(txn: unknown): txn is AugmentedTransaction {
@@ -315,6 +323,18 @@ export class TransactionClient {
           gasLimitMultiplier,
         });
         txn.gasLimit = txn.gasLimit?.mul(toBNWei(gasLimitMultiplier)).div(fixedPoint);
+      }
+
+      // Transactions are dispatched sequentially and the caller may not await this loop, so a transaction's
+      // preconditions can be invalidated while the transactions ahead of it are being submitted. Evaluate the
+      // predicate here, as late as possible before dispatch.
+      if (!(txn.validate?.() ?? true)) {
+        this.logger.warn({
+          at: "TransactionClient#submit",
+          message: `Dropping invalidated ${networkName} ${txn.method} transaction.`,
+          txn: { chainId, contract: txn.contract.address, method: txn.method, mrkdwn: txn.mrkdwn },
+        });
+        continue;
       }
 
       let response: TransactionResponse;

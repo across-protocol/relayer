@@ -33,7 +33,7 @@ import {
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
-import { MultiCallerClient } from "../clients";
+import { isSpokePoolClientWithListener, MultiCallerClient, TransactionValidator } from "../clients";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -1286,12 +1286,7 @@ export class Relayer {
       const chainId = deposit.destinationChainId;
       const multiCallerClient = this.getMulticaller(chainId);
 
-      // An origin chain re-org can invalidate a deposit after its fill has been queued. The origin SpokePoolClient
-      // backs the deposit out when that happens, so re-check that it is still known immediately before submitting.
-      const originSpokePoolClient = spokePoolClients[deposit.originChainId];
-      const relayKey = sdkUtils.getRelayEventKey(deposit);
-      const validate = () => isDefined(originSpokePoolClient?.depositHashes[relayKey]);
-
+      const validate = this.depositValidator(deposit);
       multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn, validate });
     } else {
       assert(isSVMSpokePoolClient(spokePoolClient));
@@ -1322,11 +1317,38 @@ export class Relayer {
         repaymentChainId,
         this.getRelayerAddrOn(repaymentChainId),
         message,
-        mrkdwn
+        mrkdwn,
+        this.depositValidator(deposit)
       );
     }
 
     this.setFillStatus(deposit, FillStatus.Filled);
+  }
+
+  /**
+   * Produce a predicate reporting whether a deposit is still valid. An origin chain re-org can back a deposit out
+   * after its fill has been queued; a fill made against such a deposit is never repaid, so the predicate is
+   * re-evaluated by the submission path immediately before the fill is dispatched.
+   * @param deposit Deposit to be verified.
+   * @returns Predicate returning true if the deposit is still known to the origin SpokePoolClient.
+   */
+  protected depositValidator(deposit: Deposit): TransactionValidator {
+    const originSpokePoolClient = this.clients.spokePoolClients[deposit.originChainId];
+    const relayKey = sdkUtils.getRelayEventKey(deposit);
+
+    return () => {
+      const originDeposit = originSpokePoolClient?.depositHashes[relayKey];
+      if (!isDefined(originDeposit)) {
+        return false;
+      }
+
+      // The listener only backs removed deposits out of depositHashes on the next update(), which ordinarily lands
+      // after submission. Consult its pending removals directly in order to cover that window.
+      return !(
+        isSpokePoolClientWithListener(originSpokePoolClient) &&
+        originSpokePoolClient.depositRemovalPending(originDeposit.txnRef)
+      );
+    };
   }
 
   getRelayerAddrOn(repaymentChainId: number): Address {

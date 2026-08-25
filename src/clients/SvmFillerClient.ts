@@ -21,6 +21,7 @@ import {
 } from "../utils";
 import { arch, typeguards } from "@across-protocol/sdk";
 import { RelayData } from "../interfaces";
+import { TransactionValidator } from "./TransactionClient";
 
 export const SOLANA_TX_SIZE_LIMIT = 1232; // bytes
 // Maximum size a message on a deposit can be in order to fill on Solana in a single transaction _and_ have that
@@ -47,6 +48,9 @@ type QueuedSvmFill = {
   kind: SvmTxKind;
   message: string;
   mrkdwn: string;
+  // Optional predicate evaluated immediately before submission; the fill is dropped if it returns false.
+  // EVM parity: `validate` on AugmentedTransaction in TransactionClient.ts.
+  validate?: TransactionValidator;
 };
 
 // Known-benign Solana error codes for fillRelay / slowFillRequest submission (recoverable: another
@@ -128,9 +132,10 @@ export class SvmFillerClient {
     txPromises: SvmFillRelayTxPromises,
     kind: SvmTxKind,
     message: string,
-    mrkdwn: string
+    mrkdwn: string,
+    validate?: TransactionValidator
   ): void {
-    this.queuedFills.push({ txPromises, kind, message, mrkdwn });
+    this.queuedFills.push({ txPromises, kind, message, mrkdwn, validate });
   }
 
   enqueueFill(
@@ -139,10 +144,11 @@ export class SvmFillerClient {
     repaymentChainId: number,
     repaymentAddress: SDKAddress,
     message: string,
-    mrkdwn: string
+    mrkdwn: string,
+    validate?: TransactionValidator
   ): void {
     const txPromises = this.buildFillRelayTxPromises(spokePool, relayData, repaymentChainId, repaymentAddress);
-    this.enqueueFillRelayTxPromises(txPromises, "fillRelay", message, mrkdwn);
+    this.enqueueFillRelayTxPromises(txPromises, "fillRelay", message, mrkdwn, validate);
   }
 
   enqueueSlowFill(spokePool: SvmAddress, relayData: ProtoFill, message: string, mrkdwn: string): void {
@@ -253,7 +259,18 @@ export class SvmFillerClient {
     }
 
     const signatures: string[][] = [];
-    for (const { txPromises, kind, message, mrkdwn } of queue) {
+    for (const { txPromises, kind, message, mrkdwn, validate } of queue) {
+      // Queued fills are submitted sequentially, so a fill's preconditions can be invalidated while the fills ahead
+      // of it are being submitted. Evaluate the predicate here, as late as possible before submission.
+      if (!(validate?.() ?? true)) {
+        this.logger.warn({
+          at: "SvmFillerClient#executeTxnQueue",
+          message: `Dropping invalidated ${kind} transaction.`,
+          mrkdwn,
+        });
+        continue;
+      }
+
       try {
         const signatureStrings = await this._executeTxnPromisesWithRetry(txPromises, maxRetries, false);
         const lastSignature = signatureStrings.at(-1);
