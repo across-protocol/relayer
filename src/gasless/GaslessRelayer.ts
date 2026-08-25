@@ -175,8 +175,8 @@ export class GaslessRelayer {
   protected droppedMessages = new Set<string>();
   /** requestIds with an unresolved in-flight failure; cleared when the message next completes. */
   protected deferredMessages = new Set<string>();
-  /** Cached validateDeposit() verdicts, keyed by deposit key. See _validateDepositMessage(). */
-  protected validatedMessages: { [depositKey: string]: boolean } = {};
+  /** Deposits already paged for exceeding the USD threshold. See _validateDepositMessage(). */
+  protected pagedDeposits = new Set<string>();
 
   private api: AcrossSwapApiClient;
   private _signerAddress?: EvmAddress;
@@ -722,8 +722,8 @@ export class GaslessRelayer {
         const messageState = getState();
         switch (messageState) {
           case MessageState.INITIAL: {
-            // Prefer the verdict computed before batching. _validateDepositMessage() can page on
-            // oversized deposits, so it must be evaluated exactly once per message per poll.
+            // Reuse the verdict computed before batching, which gates whether a message was batched at
+            // all; recomputing it here would be redundant work on the same inputs.
             const valid = preValidated ?? this._validateDepositMessage(depositMessage);
             let nextState = MessageState.ERROR;
             if (!valid) {
@@ -1636,17 +1636,28 @@ export class GaslessRelayer {
   }
 
   /*
-   * @notice Applies validateDeposit() to an API message, memoised on the deposit key.
+   * @notice Applies validateDeposit() to an API message.
    * @dev Not side-effect free: it emits a paging error log for an oversized deposit. A message can be
-   * re-presented across polls (batch estimation failure, gas deferral), so the verdict is cached to
-   * keep that page to one per deposit rather than one per poll.
+   * re-presented across polls (batch estimation failure, gas deferral), so that page is deduplicated
+   * to one per deposit rather than one per poll.
+   *
+   * Only the side effect is suppressed, never the verdict: paging sits downstream of every check that
+   * can reject and doesn't feed the return value, so withholding the logger is the whole of it. The
+   * checks themselves re-run every call, which is what makes it safe for the API to re-present a
+   * revised request under the same deposit key -- the new token pair and amounts are re-validated.
+   *
+   * The dedupe key carries the input amount because that is what the page reports and tests against
+   * the threshold; a revision that crosses the threshold pages afresh rather than inheriting silence.
    */
   protected _validateDepositMessage(depositMessage: AnyGaslessDepositMessage): boolean {
-    const depositKey = this._getDepositKeyFromMessage(depositMessage);
     const { destinationChainId, inputToken, inputAmountForValidation, outputToken, outputAmount } =
       extractGaslessDepositFields(depositMessage);
-    // @dev ??= is safe for a false verdict: false is not nullish, so it is not re-evaluated.
-    return (this.validatedMessages[depositKey] ??= validateDeposit(
+
+    const pageKey = `${this._getDepositKeyFromMessage(depositMessage)}:${inputAmountForValidation.toString()}`;
+    const pagingLogger = this.pagedDeposits.has(pageKey) ? undefined : this.logger;
+    this.pagedDeposits.add(pageKey);
+
+    return validateDeposit(
       depositMessage.originChainId,
       inputToken,
       inputAmountForValidation,
@@ -1655,10 +1666,10 @@ export class GaslessRelayer {
       outputAmount,
       this.config.refundFlowTestEnabled,
       this.config.allowedPeggedPairs,
-      this.logger,
+      pagingLogger,
       this.config.depositUsdPageThreshold,
       this.config.fillsEnabled
-    ));
+    );
   }
 
   /*

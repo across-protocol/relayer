@@ -1738,20 +1738,49 @@ describe("GaslessRelayer", function () {
       expect(relayer.getMessageState(depositNonceFor(relayer, msg2))).to.equal(MessageState.FILLED);
     });
 
-    it("Pages at most once for an oversized deposit, however often it is validated", function () {
-      // Batching releases a message's claim when it fails estimation or is gas-deferred, so the same
-      // message can be re-presented on every poll. The operational alert must not follow it.
-      const msg = makeTestDepositMessage({ inputAmount: "2000000000", outputAmount: "1999000000" });
+    describe("Oversized-deposit paging is deduplicated without caching the verdict", function () {
       const pageCount = () =>
         spy.getCalls().filter((call) => String(call.lastArg?.message ?? "").includes("exceeds USD paging threshold"))
           .length;
 
-      expect(relayer.runValidateDepositMessage(msg)).to.be.true;
-      expect(pageCount()).to.equal(1);
+      it("Pages at most once for an oversized deposit, however often it is validated", function () {
+        // Batching releases a message's claim when it fails estimation or is gas-deferred, so the same
+        // message can be re-presented on every poll. The operational alert must not follow it.
+        const msg = makeTestDepositMessage({ inputAmount: "2000000000", outputAmount: "1999000000" });
 
-      expect(relayer.runValidateDepositMessage(msg)).to.be.true;
-      expect(relayer.runValidateDepositMessage(msg)).to.be.true;
-      expect(pageCount()).to.equal(1);
+        expect(relayer.runValidateDepositMessage(msg)).to.be.true;
+        expect(pageCount()).to.equal(1);
+
+        expect(relayer.runValidateDepositMessage(msg)).to.be.true;
+        expect(relayer.runValidateDepositMessage(msg)).to.be.true;
+        expect(pageCount()).to.equal(1);
+      });
+
+      it("Re-validates a revised request sharing a deposit key with an accepted one", function () {
+        // The deposit key is (inputToken, originChainId, depositId), which doesn't pin the output side.
+        // Silencing the page must not silence the checks: a revision that no longer covers its output
+        // has to be rejected, not served the earlier message's verdict.
+        const accepted = makeTestDepositMessage({ inputAmount: "2000000000", outputAmount: "1999000000" });
+        expect(relayer.runValidateDepositMessage(accepted)).to.be.true;
+        expect(pageCount()).to.equal(1);
+
+        const revised = makeTestDepositMessage({ inputAmount: "2000000000", outputAmount: "2001000000" });
+        expect(depositNonceFor(relayer, revised)).to.equal(depositNonceFor(relayer, accepted));
+        expect(relayer.runValidateDepositMessage(revised)).to.be.false;
+        // Same input amount, so the page stays deduplicated across the revision.
+        expect(pageCount()).to.equal(1);
+      });
+
+      it("Pages again when a revision crosses the threshold the original sat under", function () {
+        const small = makeTestDepositMessage({ inputAmount: "1000000", outputAmount: "999000" });
+        expect(relayer.runValidateDepositMessage(small)).to.be.true;
+        expect(pageCount()).to.equal(0);
+
+        const oversized = makeTestDepositMessage({ inputAmount: "2000000000", outputAmount: "1999000000" });
+        expect(depositNonceFor(relayer, oversized)).to.equal(depositNonceFor(relayer, small));
+        expect(relayer.runValidateDepositMessage(oversized)).to.be.true;
+        expect(pageCount()).to.equal(1);
+      });
     });
 
     describe("Unprocessable messages are logged and dropped", function () {
