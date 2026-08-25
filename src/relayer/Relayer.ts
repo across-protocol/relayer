@@ -768,6 +768,40 @@ export class Relayer {
     return mdcPerChain;
   }
 
+  /**
+   * Determine whether fills sourced from an origin chain should be held back until later in that chain's current
+   * block. An origin chain re-org invalidates a deposit asynchronously: the SpokePoolClient backs the deposit out
+   * only once the removal is reported. Submitting early in a block leaves no room for that report to arrive, so
+   * defer until the configured proportion of the block has elapsed. A deposit backed out in the meantime is simply
+   * not re-queued on the following iteration.
+   * @param originChainId Origin chain of the deposit under evaluation.
+   * @returns True if the deposit should be reconsidered on a later iteration.
+   */
+  async deferWithinOriginBlock(originChainId: number): Promise<boolean> {
+    const minElapsedPct = this.config.minOriginBlockElapsedPct[originChainId] ?? 0;
+    if (minElapsedPct === 0) {
+      return false;
+    }
+
+    const originSpoke = this.clients.spokePoolClients[originChainId];
+    let avgBlockTime: number;
+    if (isEVMSpokePoolClient(originSpoke)) {
+      ({ average: avgBlockTime } = await arch.evm.averageBlockTime(originSpoke.spokePool.provider));
+    } else {
+      assert(isSVMSpokePoolClient(originSpoke), `Unsupported spoke client for chain ${originChainId}`);
+      ({ average: avgBlockTime } = arch.svm.averageBlockTime());
+    }
+
+    // If the origin chain view is stale then the position within the current block is indeterminate. Don't defer,
+    // since doing so could withhold fills indefinitely.
+    const elapsed = getCurrentTime() - originSpoke.getCurrentTime();
+    if (elapsed < 0 || elapsed >= avgBlockTime) {
+      return false;
+    }
+
+    return elapsed < (avgBlockTime * minElapsedPct) / 100;
+  }
+
   canSlowFill(deposit: DepositWithBlock): boolean {
     return (
       // Cannot slow fill when input and output tokens are not equivalent.
@@ -825,6 +859,16 @@ export class Relayer {
       if (this.config.sendingTransactionsEnabled) {
         return;
       }
+    }
+
+    // Hold fills back until far enough into the origin chain's current block; see deferWithinOriginBlock().
+    if (await this.deferWithinOriginBlock(originChainId)) {
+      this.logger.debug({
+        at,
+        message: `Deferring ${originChain} deposit ${depositId.toString()} until later in the current origin block.`,
+        txnRef,
+      });
+      return;
     }
 
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
