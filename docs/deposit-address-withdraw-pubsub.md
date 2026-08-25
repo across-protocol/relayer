@@ -94,14 +94,18 @@ The publisher serializes the envelope as a UTF-8 JSON string and sends it as the
 3. Builds the `deposit_executed` payload and publishes to the **same topic** as `withdraw_executed`.
 4. Same best-effort posture: on failure, log at `error` level and continue; no rollback, no retry.
 
-`DepositAddressHandler._publishWithdrawFailed` (called from `initiateWithdrawV3` only):
+`DepositAddressHandler._publishWithdrawFailed` (called from the v3 withdraw path only), on two terminal conditions:
 
-1. Runs when the defensive balance read throws with ethers `code === CALL_EXCEPTION`: the token does not implement `balanceOf`, or there is no contract at all (any address can be named in a `Transfer`-shaped log). `isTerminalBalanceReadError` gates on the `code`, never the message. Everything else — `TIMEOUT` / `SERVER_ERROR` / `NETWORK_ERROR` / rate limits, plus non-ethers throws (missing provider, base58) — is our infrastructure and stays transient: warn + return, row stays `auto_pending`, retried next poll.
-2. Sends a stable `reason` **code**, not prose: `BALANCE_CHECK_FAILED` (the only one today). Ops groups on `metadata.failureReason`, so add codes, never reword them; the token and chain are on the joined transfer row already.
-3. Publishes **before** persisting the terminal skip (`terminallySkippedWithdrawKeys` + Redis), so a Redis failure cannot swallow the event; the skip then caps this at one publish per transfer.
-4. Same gate (`ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER`), topic and best-effort posture as the executed publishes.
+1. The defensive balance read throws with ethers `code === CALL_EXCEPTION`: the token does not implement `balanceOf`, or there is no contract at all (any address can be named in a `Transfer`-shaped log). `isTerminalBalanceReadError` gates on the `code`, never the message. Everything else — `TIMEOUT` / `SERVER_ERROR` / `NETWORK_ERROR` / rate limits, plus non-ethers throws (missing provider, base58) — is our infrastructure and stays transient: warn + return, row stays `auto_pending`, retried next poll. Reason: `BALANCE_CHECK_FAILED`.
+2. The quote-api sign-withdraw returns a terminal `422` (`_getSignedWithdrawV3`): the refund cannot be executed — gas exceeds the refund amount, the refund token is unpriceable, or the leaf commits no refund address. Reason: the API's own error code (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN` / `REFUND_ADDRESS_UNSET`), or `SIGN_WITHDRAW_REJECTED` when the body carried none.
 
-Not published: the terminal quote-api `422` in `_getSignedWithdrawV3`, and every v1 (`initiateWithdraw`) failure path. Both still strand rows at `auto_pending`.
+Shared mechanics:
+
+- Sends a stable `reason` **code**, not prose. Ops groups on `metadata.failureReason`, so add codes, never reword them; the token and chain are on the joined transfer row already.
+- Publishes **before** persisting the terminal skip (`terminallySkippedWithdrawKeys` + Redis), so a Redis failure cannot swallow the event; the skip then caps this at one publish per transfer.
+- Same gate (`ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER`), topic and best-effort posture as the executed publishes.
+
+Not published: every v1 (`initiateWithdraw`) failure path — those still strand rows at `auto_pending`.
 
 A single `GcpPubSubPublisher` client serves every event type (same project + topic); it is constructed when **either** gate (`ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER` / `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER`) is on, and each publish path checks its own flag so the deposit and withdraw events toggle independently. `withdraw_failed` shares the withdraw gate.
 
@@ -124,6 +128,7 @@ A single `GcpPubSubPublisher` client serves every event type (same project + top
 | Receipt missing any Transfer log out of the deposit address (or, for native refunds, any `Withdraw` event from it) | Warn + skip publish. | Indexer row stays `auto_pending`. Withdraw is still on-chain and reflected via the bot's existing log. |
 | Balance read reverts (`CALL_EXCEPTION`): token is not a conforming ERC-20 | Publish `withdraw_failed`, persist the terminal skip, return. | Row → `failed` with `metadata.failureReason`; user sees `refund-failed` instead of a permanent `auto-refund-pending`. |
 | Balance read fails transiently (`TIMEOUT` / `SERVER_ERROR` / …) | Warn + return; no publish. | Row stays `auto_pending`; retried on the next poll. |
+| sign-withdraw returns a terminal `422` (gas ≥ refund / unpriceable token / no refund address) | Publish `withdraw_failed` with the API's error code as `reason`, persist the terminal skip, return. | Row → `failed`; user sees `refund-failed` — e.g. a deposit too small to sweep whose refund can't cover mainnet gas either. |
 | Indexer message missing `blockNumber` / `logIndex` | Type-system / runtime error. | We treat the fields as required; the indexer API always populates them. A drift would fail loudly rather than silently skip. |
 
 ## Contributor recommendations
