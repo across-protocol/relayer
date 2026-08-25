@@ -161,8 +161,18 @@ describe("DepositAddressUtils", function () {
     const raw = tronOriginIndexerMessage();
     const normalized = normalizeDepositAddressMessage(raw);
 
-    expect(getDepositKey(normalized)).to.equal(`${normalized.depositAddress}:${raw.erc20Transfer.transactionHash}`);
+    expect(getDepositKey(normalized)).to.equal(
+      `${normalized.depositAddress}:${raw.erc20Transfer.transactionHash}:${raw.erc20Transfer.logIndex}`
+    );
     expect(getDepositKey(normalized)).to.not.equal(getDepositKey(raw));
+  });
+
+  it("getDepositKey distinguishes multiple transfers within one transaction by logIndex", function () {
+    const first = tronOriginIndexerMessage();
+    const second = tronOriginIndexerMessage();
+    second.erc20Transfer.logIndex = first.erc20Transfer.logIndex + 1;
+
+    expect(getDepositKey(second)).to.not.equal(getDepositKey(first));
   });
 });
 

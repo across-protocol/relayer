@@ -142,8 +142,8 @@ export class DepositAddressHandler {
   /** Per chainId: set of deposit keys already executed (like gasless depositNonces). */
   private observedExecutedDeposits: { [chainId: number]: Set<string> } = {};
 
-  /** Set of erc20Transfer.transactionHash for deposits successfully executed (persisted in Redis for handover). */
-  private executedDepositTxHashes: Set<string> = new Set();
+  /** Set of depositKeys for deposits successfully executed (persisted in Redis for handover). */
+  private executedDepositKeys: Set<string> = new Set();
 
   /** Set of depositKeys for refund withdraws successfully executed (persisted in Redis for handover). */
   private executedWithdrawKeys: Set<string> = new Set();
@@ -300,11 +300,11 @@ export class DepositAddressHandler {
 
       throw err;
     }
-    this.executedDepositTxHashes = new Set(arr);
+    this.executedDepositKeys = new Set(arr);
     this.logger.debug({
       at: "DepositAddressHandler#_loadExecutedDepositsFromRedis",
-      message: "Loaded executed deposit tx hashes from Redis",
-      count: this.executedDepositTxHashes.size,
+      message: "Loaded executed deposit keys from Redis",
+      count: this.executedDepositKeys.size,
     });
   }
 
@@ -466,11 +466,10 @@ export class DepositAddressHandler {
     // We want to remove all executed deposits from the in-memory set if they are not returned by the indexer.
     // This is because the indexer will stop sending the deposit once it has been "expired" (internal TTL).
     // So there is no point of keeping them in Redis after Indexer API stops returning them.
-    const refTxHashesFromIndexer = new Set(depositMessages.map((m) => m.erc20Transfer.transactionHash));
     const depositKeysFromIndexer = new Set(depositMessages.map((m) => getDepositKey(m)));
-    for (const tx of [...this.executedDepositTxHashes]) {
-      if (!refTxHashesFromIndexer.has(tx)) {
-        this.executedDepositTxHashes.delete(tx);
+    for (const key of [...this.executedDepositKeys]) {
+      if (!depositKeysFromIndexer.has(key)) {
+        this.executedDepositKeys.delete(key);
       }
     }
     for (const key of [...this.executedWithdrawKeys]) {
@@ -776,14 +775,14 @@ export class DepositAddressHandler {
   }
 
   /**
-   * Overwrites Redis key with the full executedDepositTxHashes set (single SET; value is JSON array).
+   * Overwrites Redis key with the full executedDepositKeys set (single SET; value is JSON array).
    * Called at start of each poll (after filtering) and after each successful execute.
    */
   private async _persistExecutedDepositsRedis(): Promise<void> {
     assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
     const { redisCache } = this;
     const redisKey = this.getExecutedDepositsRedisKey();
-    await redisCache.set(redisKey, JSON.stringify([...this.executedDepositTxHashes]));
+    await redisCache.set(redisKey, JSON.stringify([...this.executedDepositKeys]));
   }
 
   /** Same pattern as `_persistExecutedDepositsRedis` but for refund-withdraw deposit keys. */
@@ -998,7 +997,7 @@ export class DepositAddressHandler {
     }
 
     // Skip if a previous instance (or this one) already executed this deposit (persisted in Redis).
-    if (this.executedDepositTxHashes.has(refTxHash)) {
+    if (this.executedDepositKeys.has(depositKey)) {
       this.logger.debug({
         at: "DepositAddressHandler#initiateDeposit",
         message: "Skipping already executed deposit (found in Redis)",
@@ -1135,7 +1134,7 @@ export class DepositAddressHandler {
     }
 
     // Persist full set to Redis immediately so handover cannot miss this execute.
-    this.executedDepositTxHashes.add(refTxHash);
+    this.executedDepositKeys.add(depositKey);
     await this._persistExecutedDepositsRedis();
   }
 
@@ -1159,7 +1158,7 @@ export class DepositAddressHandler {
     }
 
     // Skip if a previous instance (or this one) already executed this deposit (persisted in Redis).
-    if (this.executedDepositTxHashes.has(refTxHash)) {
+    if (this.executedDepositKeys.has(depositKey)) {
       this.logger.debug({
         at: "DepositAddressHandler#initiateDepositV3",
         message: "Skipping already executed deposit (found in Redis)",
@@ -1286,7 +1285,7 @@ export class DepositAddressHandler {
 
       // The execute is on-chain; keep the in-flight lock and persist to Redis immediately so
       // handover cannot miss this execute.
-      this.executedDepositTxHashes.add(refTxHash);
+      this.executedDepositKeys.add(depositKey);
       executeCommitted = true;
       await this._persistExecutedDepositsRedis();
       await this._publishDepositExecuted(depositReceipt, depositMessage);

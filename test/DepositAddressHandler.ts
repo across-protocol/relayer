@@ -17,7 +17,7 @@ import { AcrossApiHttpError, DepositAddressExecuteResponse, DepositAddressSignWi
 import { DepositAddressHandler } from "../src/deposit-address/DepositAddressHandler";
 import { DepositAddressHandlerConfig } from "../src/deposit-address/DepositAddressHandlerConfig";
 import { ERC20_TRANSFER_TOPIC } from "../src/deposit-address/withdrawPayload";
-import { NATIVE_TOKEN_SENTINEL_ADDRESS } from "../src/utils/DepositAddressUtils";
+import { getDepositKey, NATIVE_TOKEN_SENTINEL_ADDRESS } from "../src/utils/DepositAddressUtils";
 
 // EIP-55 checksummed: the handler round-trips the signer through `toAddressType().toNative()`,
 // which returns the checksummed form, so an un-checksummed literal fails the request-shape compares.
@@ -400,9 +400,7 @@ describe("DepositAddressHandler.processExecution v3 routing", function () {
 
   it("routes a v3 correct_transfer marked refund-only to the v3 withdraw path", async function () {
     const message = depositMessageV3();
-    (handler as unknown as { refundOnlyDepositKeys: Set<string> }).refundOnlyDepositKeys.add(
-      `${message.depositAddress}:${message.erc20Transfer.transactionHash}`
-    );
+    (handler as unknown as { refundOnlyDepositKeys: Set<string> }).refundOnlyDepositKeys.add(getDepositKey(message));
     await (handler as unknown as Internals).processExecution(message);
     expect(withdrawV3Stub.calledOnceWithExactly(message)).to.equal(true);
     expect(v3Stub.notCalled).to.equal(true);
@@ -549,7 +547,7 @@ describe("DepositAddressHandler._getExecuteTx below-minimum handling", function 
   let executeStub: sinon.SinonStub;
   let redisSetStub: sinon.SinonStub;
   let warnStub: sinon.SinonStub;
-  const depositKey = `${DEPOSIT_ADDRESS}:${"0x" + "3".repeat(64)}`;
+  const depositKey = getDepositKey(depositMessageV3());
 
   type Internals = {
     _getExecuteTx: (m: DepositAddressMessageV3) => Promise<DepositAddressExecuteResponse | undefined>;
@@ -616,7 +614,7 @@ describe("DepositAddressHandler.initiateDepositV3 below-minimum refund fallback"
   let withdrawV3Stub: sinon.SinonStub;
   let warnStub: sinon.SinonStub;
   const originChainId = 42161;
-  const depositKey = `${DEPOSIT_ADDRESS}:${"0x" + "3".repeat(64)}`;
+  const depositKey = getDepositKey(depositMessageV3());
 
   type Internals = {
     initiateDepositV3: (m: DepositAddressMessageV3) => Promise<void>;
@@ -990,7 +988,7 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
     const result = await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf);
     expect(result).to.equal(undefined);
     expect(signWithdrawStub.callCount).to.equal(1); // no retries on a terminal 422
-    const depositKey = `${DEPOSIT_ADDRESS}:${message.erc20Transfer.transactionHash}`;
+    const depositKey = getDepositKey(message);
     expect(internals().terminallySkippedWithdrawKeys.has(depositKey)).to.equal(true);
     expect(redisSetStub.calledOnce).to.equal(true);
   });
@@ -1247,7 +1245,7 @@ describe("DepositAddressHandler._publishDepositExecuted", function () {
 describe("DepositAddressHandler refund-only key persistence", function () {
   let handler: DepositAddressHandler;
   let redisGetStub: sinon.SinonStub;
-  const depositKey = `${DEPOSIT_ADDRESS}:${"0x" + "3".repeat(64)}`;
+  const depositKey = getDepositKey(depositMessageV3());
 
   type Internals = {
     _loadRefundOnlyKeysFromRedis: () => Promise<void>;
