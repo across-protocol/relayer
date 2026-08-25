@@ -124,6 +124,10 @@ const ORBIT_MIN_DEPOSIT_CONFIRMATIONS = 1;
 const SVM_MIN_DEPOSIT_CONFIRMATIONS = 4;
 const MDC_DEFAULT_THRESHOLD = 1000;
 
+// Confirmations required before an origin block that arrived late in its slot is treated as settled. Such a block
+// missed its slot's attestation deadline and can be replaced by the next proposer; one block on top resolves that.
+export const LATE_BLOCK_MIN_CONFIRMATIONS = 2;
+
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   10000: {
     [CHAIN_IDs.MAINNET]: 32,

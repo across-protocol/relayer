@@ -4,7 +4,15 @@ import { ChildProcess, spawn } from "child_process";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
 import { RELAYER_SPOKEPOOL_LISTENER_EVM, RELAYER_SPOKEPOOL_LISTENER_SVM } from "../common/Constants";
-import { Address, chainIsSvm, getNetworkName, isDefined, winston, spreadEventWithBlockNumber } from "../utils";
+import {
+  Address,
+  chainIsSvm,
+  getCurrentTime,
+  getNetworkName,
+  isDefined,
+  winston,
+  spreadEventWithBlockNumber,
+} from "../utils";
 import { EventsAddedMessage, EventRemovedMessage, BlockUpdateMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
@@ -61,7 +69,12 @@ interface SpokeListenerMethods {
   stopWorker(): void;
   _indexerUpdate(rawMessage: unknown): void;
   _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate>;
+  getBlockArrivalLateness(blockNumber: number): number | undefined;
 }
+
+// Number of recent blocks to retain arrival timings for. Only the most recent blocks are of interest, since
+// arrival lateness is only consulted while a deposit is still within its origin chain's re-org window.
+const BLOCK_ARRIVAL_HISTORY = 128;
 
 export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
   SpokePoolClient: T
@@ -81,6 +94,9 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     #pendingEventsRemoved: Log[] = [];
 
     #misorderedBlocks: number[] = [];
+
+    // blockNumber => seconds elapsed between the block's own timestamp and its arrival here.
+    #blockArrivalLateness: Map<number, number> = new Map();
 
     init(opts: IndexerOpts) {
       this.#chain = getNetworkName(this.chainId);
@@ -176,6 +192,34 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     }
 
     /**
+     * Record how late a block arrived relative to its own timestamp. On chains with fixed slot times, a block
+     * that arrives late in its slot was published late and is materially more likely to be re-orged.
+     * @param blockNumber Block number that was received.
+     * @param currentTime The block's timestamp.
+     * @returns void
+     */
+    #recordBlockArrival(blockNumber: number, currentTime: number): void {
+      this.#blockArrivalLateness.set(blockNumber, getCurrentTime() - currentTime);
+
+      // Retain only the most recent blocks.
+      const evictBelow = blockNumber - BLOCK_ARRIVAL_HISTORY;
+      this.#blockArrivalLateness.forEach((_, blockNumber) => {
+        if (blockNumber < evictBelow) {
+          this.#blockArrivalLateness.delete(blockNumber);
+        }
+      });
+    }
+
+    /**
+     * Retrieve the arrival lateness previously recorded for a block.
+     * @param blockNumber Block number to query.
+     * @returns Seconds between the block's timestamp and its arrival, or undefined if it was not observed live.
+     */
+    getBlockArrivalLateness(blockNumber: number): number | undefined {
+      return this.#blockArrivalLateness.get(blockNumber);
+    }
+
+    /**
      * Receive an update from the external indexer process.
      * @param rawMessage Message to be parsed.
      * @returns void
@@ -199,6 +243,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
         if (this.isUpdated && (blockNumber <= this.#pendingBlockNumber || currentTime < this.#pendingCurrentTime)) {
           this.#misorderedBlocks.push(blockNumber);
         } else {
+          this.#recordBlockArrival(blockNumber, currentTime);
           this.#pendingBlockNumber = blockNumber;
           this.#pendingCurrentTime = currentTime;
           this.#eventEmitter.emit("block", blockNumber, currentTime);
