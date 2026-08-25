@@ -252,10 +252,27 @@ export class MultiCallerClient {
       return [];
     }
 
+    const validatedTxns = this.dropInvalidatedTxns(chainId, txnRequestsToSubmit);
     const txnResponses: TransactionResponse[] =
-      txnRequestsToSubmit.length > 0 ? await this.txnClient.submit(chainId, txnRequestsToSubmit) : [];
+      validatedTxns.length > 0 ? await this.txnClient.submit(chainId, validatedTxns) : [];
 
     return txnResponses;
+  }
+
+  // A transaction's preconditions may be invalidated while its queue is being bundled and simulated. Re-evaluate
+  // them as late as possible and drop any transaction that no longer qualifies for submission.
+  protected dropInvalidatedTxns(chainId: number, txns: AugmentedTransaction[]): AugmentedTransaction[] {
+    const validated = txns.filter((txn) => txn.validate?.() ?? true);
+
+    const nDropped = txns.length - validated.length;
+    if (nDropped > 0) {
+      this.logger.warn({
+        at: "MultiCallerClient#dropInvalidatedTxns",
+        message: `Dropped ${nDropped} ${getNetworkName(chainId)} transaction(s) invalidated before submission.`,
+      });
+    }
+
+    return validated;
   }
 
   async _getMultisender(chainId: number): Promise<Contract | undefined> {
@@ -310,6 +327,7 @@ export class MultiCallerClient {
       gasLimitMultiplier: MULTICALL3_AGGREGATE_GAS_MULTIPLIER,
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
+      validate: () => transactions.every((txn) => txn.validate?.() ?? true),
     } as AugmentedTransaction;
   }
 
@@ -365,6 +383,7 @@ export class MultiCallerClient {
       gasLimit,
       message: "Across multicall transaction",
       mrkdwn: mrkdwn.join(""),
+      validate: () => transactions.every((txn) => txn.validate?.() ?? true),
     } as AugmentedTransaction;
   }
 
@@ -658,8 +677,8 @@ export class TryMulticallClient extends MultiCallerClient {
       return [];
     }
 
-    const txnResponses =
-      txnRequestsToSubmit.length > 0 ? this.txnClient.submit(chainId, txnRequestsToSubmit) : Promise.resolve([]);
+    const validatedTxns = this.dropInvalidatedTxns(chainId, txnRequestsToSubmit);
+    const txnResponses = validatedTxns.length > 0 ? this.txnClient.submit(chainId, validatedTxns) : Promise.resolve([]);
 
     return txnResponses;
   }

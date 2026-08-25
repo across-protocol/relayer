@@ -93,6 +93,9 @@ export interface AugmentedTransaction {
   // If true, the contract's provider will be replaced with the TransactionClient's SpeedProvider for
   // this chain (if configured), enabling parallel multi-RPC dispatch for faster submission.
   spray?: boolean;
+  // Optional predicate re-evaluated immediately before submission. If it returns false the transaction is
+  // dropped. Use for preconditions that can be invalidated between enqueueing and submission.
+  validate?: () => boolean;
 }
 
 export function isAugmentedTransaction(txn: unknown): txn is AugmentedTransaction {

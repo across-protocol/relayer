@@ -1286,7 +1286,13 @@ export class Relayer {
       const chainId = deposit.destinationChainId;
       const multiCallerClient = this.getMulticaller(chainId);
 
-      multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn });
+      // An origin chain re-org can invalidate a deposit after its fill has been queued. The origin SpokePoolClient
+      // backs the deposit out when that happens, so re-check that it is still known immediately before submitting.
+      const originSpokePoolClient = spokePoolClients[deposit.originChainId];
+      const relayKey = sdkUtils.getRelayEventKey(deposit);
+      const validate = () => isDefined(originSpokePoolClient?.depositHashes[relayKey]);
+
+      multiCallerClient.enqueueTransaction({ contract, chainId, method, args, gasLimit, message, mrkdwn, validate });
     } else {
       assert(isSVMSpokePoolClient(spokePoolClient));
       const { spokePoolAddress } = spokePoolClient;
