@@ -16,6 +16,13 @@ CCTP deposits (and swap-and-bridge that uses a non-default `spokePool`) end in `
 
 Integrator and address filtering run inside `_queryGaslessApi` immediately after API responses are restructured — discarded messages never enter the state machine.
 
+### Per-message failure policy
+
+A message never takes the poll down with it, but the failure class decides what happens next:
+
+- **Malformed** — a derivation from the message payload throws. Dropped permanently at ingestion by `_isProcessable`, logged once per `requestId`. Ingestion is the boundary because `initialize()`'s observation pass has none of its own: a malformed message reaching it fails every restart.
+- **Operational** — an RPC or submission failure inside the state machine. Never dropped; an outage hits every message at once, so that would exclude healthy deposits too. The fill lock is handed back, and the message rewinds to unclaimed only while nothing can be on chain yet — past `DEPOSIT_SUBMIT` it stays put, so a retry can't double-submit.
+
 ### Deposit log token resolution (`resolveTokenInfoForLog`)
 
 Before submitting the origin deposit in `GaslessRelayer#initiateDeposit`, the bot formats a Slack-facing log line with the user amount token’s symbol and decimals. For `swapAndBridge`, that token is the signed `swapToken` (often a long-tail asset missing from the static `TOKEN_SYMBOLS_MAP`). Resolution is **log-only** and must never throw: a failure here used to reject `initiateDeposit` and silently drop the deposit before submission (ACB-552).
@@ -53,7 +60,7 @@ The deposit transaction itself is built from the API message and is unaffected b
 | `RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD` | `1000` | Page-worthy deposit size threshold (stablecoin input); `0` disables. |
 | `RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED` | `false` | Test mode: allow refund-shaped deposits; submit deposit but skip fill. |
 | `RELAYER_GASLESS_FILLS_ENABLED` | `true` | When `false`, submit origin deposits only (no destination fills). |
-| `RELAYER_GASLESS_DEPOSIT_BATCHING` | `false` | Batch eligible origin deposits per chain via `Multicall3.tryAggregate`; each message's state machine confirms its own deposit against the shared batch receipt. CCTP deposits and deposits whose signed fee falls back to `msg.sender` always submit individually, as do deposits that fail validation. |
+| `RELAYER_GASLESS_DEPOSIT_BATCHING` | `false` | Batch eligible origin deposits per chain via `Multicall3.tryAggregate`; each message's state machine confirms its own deposit against the shared batch receipt. CCTP deposits and deposits whose signed fee falls back to `msg.sender` always submit individually, as do deposits that fail validation. A batch left with fewer than two calls after planning falls through to individual submission. |
 | `RELAYER_GASLESS_DEPOSIT_BATCH_SIZE` | `10` | Maximum deposits per `Multicall3.tryAggregate` batch. Override per chain with `RELAYER_GASLESS_DEPOSIT_BATCH_SIZE_CHAIN_${chainId}`. A batch exceeding the block gas limit fails wholesale, so size it against the origin chain's limit. |
 
 ### `RELAYER_GASLESS_FILLS_ENABLED` (deposits-only mode)

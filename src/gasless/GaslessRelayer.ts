@@ -171,6 +171,12 @@ export class GaslessRelayer {
   protected fillLock: { [key: string]: string } = {};
   /** requestIds already error-logged for an unservable periphery target (avoids per-poll log spam). */
   protected unservableTargetsLogged = new Set<string>();
+  /** requestIds dropped as unprocessable. The API re-supplies them, so this also bounds the logging. */
+  protected droppedMessages = new Set<string>();
+  /** requestIds with an unresolved in-flight failure; cleared when the message next completes. */
+  protected deferredMessages = new Set<string>();
+  /** Deposits already paged for exceeding the USD threshold. See _validateDepositMessage(). */
+  protected pagedDeposits = new Set<string>();
 
   private api: AcrossSwapApiClient;
   private _signerAddress?: EvmAddress;
@@ -616,7 +622,7 @@ export class GaslessRelayer {
    * @notice Polls the API and creates deposits/fills for all messages which are missing deposits/fills.
    */
   protected async evaluateApiSignatures(): Promise<void> {
-    const processDepositMessage = async (
+    const _processDepositMessage = async (
       depositMessage: AnyGaslessDepositMessage,
       inheritedReceipt?: Promise<TransactionReceipt | null | undefined>,
       preValidated?: boolean
@@ -716,8 +722,8 @@ export class GaslessRelayer {
         const messageState = getState();
         switch (messageState) {
           case MessageState.INITIAL: {
-            // Prefer the verdict computed before batching. _validateDepositMessage() can page on
-            // oversized deposits, so it must be evaluated exactly once per message per poll.
+            // Reuse the verdict computed before batching, which gates whether a message was batched at
+            // all; recomputing it here would be redundant work on the same inputs.
             const valid = preValidated ?? this._validateDepositMessage(depositMessage);
             let nextState = MessageState.ERROR;
             if (!valid) {
@@ -897,9 +903,26 @@ export class GaslessRelayer {
         }
       } while (!terminalStates.includes(getState()));
       releaseFillLock();
+      this.deferredMessages.delete(depositMessage.requestId);
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
       log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
+    };
+
+    // One message must not be able to abort the poll: an escaping error skips every other message
+    // this tick, and repeats every tick, since the API keeps re-supplying it. Payload derivations
+    // are already checked at ingestion (_isProcessable), so a failure here is operational -- shared
+    // with every other message during an outage, hence deferred rather than dropped.
+    const processDepositMessage = async (
+      depositMessage: AnyGaslessDepositMessage,
+      inheritedReceipt?: Promise<TransactionReceipt | null | undefined>,
+      preValidated?: boolean
+    ) => {
+      try {
+        await _processDepositMessage(depositMessage, inheritedReceipt, preValidated);
+      } catch (err) {
+        this._deferMessage(depositMessage, err);
+      }
     };
 
     const messageFilter = (deposit: AnyGaslessDepositMessage): boolean => {
@@ -938,73 +961,89 @@ export class GaslessRelayer {
 
     const apiMessages = await this._queryGaslessApi();
     const pending = apiMessages.filter(messageFilter);
-    // Claim state before the first await so overlapping poll ticks don't re-process these messages.
-    // @dev A claim is only released by reaching a terminal state or by the explicit delete in
-    // processBatch(). A throw that escapes before either strands its messages until restart, since
-    // messageFilter() skips anything with existing state. Keep new failure paths inside the state
-    // machine, where the do/while retries, rather than between the claim and processDepositMessage().
-    pending.forEach((message) => this._getState(this._getDepositKeyFromMessage(message)));
-
+    // Claim, validate and classify in one pass, before the first await, so overlapping poll ticks
+    // don't re-process these messages.
+    //
     // Validation gates batching: a batch is submitted before any of its members' state machines run,
     // so an unvalidated deposit would execute on-chain and only then be rejected, leaving a deposit we
-    // never fill. Evaluate once here and hand the verdict to processDepositMessage(), which must not
-    // re-run it (validateDeposit() pages on oversized deposits).
-    const validated = new Map<AnyGaslessDepositMessage, boolean>(
-      pending.map((message) => [message, this._validateDepositMessage(message)])
-    );
-
-    // Group deposits eligible for batched submission by origin chain. CCTP deposits confirm via the
-    // receipt hash rather than a FundsDeposited log, so they stay on the individual path.
+    // never fill. The verdict is handed to processDepositMessage() rather than recomputed there.
+    //
+    // @dev Runs outside the state machine, so it needs its own boundary: validateDeposit()'s token
+    // lookups throw for a symbol missing from TOKEN_SYMBOLS_MAP (ACB-552), which _isProcessable()
+    // does not cover. Those are message properties, so the offender is dropped. CCTP deposits confirm
+    // via the receipt hash rather than a FundsDeposited log, so they stay on the individual path.
     const now = getCurrentTime();
+    const validated = new Map<AnyGaslessDepositMessage, boolean>();
     const batchGroups: { [chainId: number]: AnyGaslessDepositMessage[] } = {};
     const individual: AnyGaslessDepositMessage[] = [];
     for (const message of pending) {
-      const { fillDeadline } = extractGaslessDepositFields(message);
-      const batchable =
-        this.config.depositBatchingEnabled &&
-        validated.get(message) &&
-        fillDeadline > now &&
-        !this._isCctpDeposit(message.originChainId, message.spokePool) &&
-        isBatchableGaslessDeposit(message);
-      if (batchable) {
-        (batchGroups[message.originChainId] ??= []).push(message);
-      } else {
-        individual.push(message);
+      try {
+        this._getState(this._getDepositKeyFromMessage(message));
+        const valid = this._validateDepositMessage(message);
+        validated.set(message, valid);
+
+        const { fillDeadline } = extractGaslessDepositFields(message);
+        const batchable =
+          this.config.depositBatchingEnabled &&
+          valid &&
+          fillDeadline > now &&
+          !this._isCctpDeposit(message.originChainId, message.spokePool) &&
+          isBatchableGaslessDeposit(message);
+        (batchable ? (batchGroups[message.originChainId] ??= []) : individual).push(message);
+      } catch (err) {
+        this._dropMessage(message, err);
       }
     }
 
     const processBatch = async (originChainId: number, messages: AnyGaslessDepositMessage[]) => {
+      const submitIndividually = (batch: AnyGaslessDepositMessage[]) =>
+        forEachAsync(batch, (message) => processDepositMessage(message, undefined, validated.get(message)));
+
       const multicall3 = this._getMulticall3(originChainId);
       // Fall back to individual submission when the chain has no Multicall3 or the batch is trivial.
       if (!isDefined(multicall3) || messages.length < 2) {
-        await forEachAsync(messages, (message) => processDepositMessage(message, undefined, validated.get(message)));
+        await submitIndividually(messages);
         return;
       }
 
-      const calls = messages.map((message) => {
-        const periphery = this.getPeripheryContract(originChainId, message.targetAddress);
-        return {
-          target: periphery.address,
-          callData: encodeGaslessDepositCalldata(buildGaslessDepositTx(message, periphery)),
-        };
-      });
+      // @dev Encoding runs outside the state machine, so a message whose calldata can't be built is
+      // dropped rather than taking every other member of the batch down with it.
+      const encodable: { message: AnyGaslessDepositMessage; call: { target: string; callData: string } }[] = [];
+      for (const message of messages) {
+        try {
+          const periphery = this.getPeripheryContract(originChainId, message.targetAddress);
+          encodable.push({
+            message,
+            call: {
+              target: periphery.address,
+              callData: encodeGaslessDepositCalldata(buildGaslessDepositTx(message, periphery)),
+            },
+          });
+        } catch (err) {
+          this._dropMessage(message, err);
+        }
+      }
 
       // Plan the batch: per-call estimation prunes calls that can't execute (spent nonce, expired
       // authorization, underfunded depositor), defers calls that would exceed the gas budget, and
       // sizes the remainder. Estimates see pre-batch state, so cross-deposit interactions are
       // absorbed by requireSuccess=false at execution and the state machine retries the loser.
-      const { included, gasLimit, failed, deferred } = await this._planDepositBatch(multicall3, calls);
+      const { included, gasLimit, failed, deferred } = await this._planDepositBatch(
+        multicall3,
+        encodable.map(({ call }) => call)
+      );
 
       const release = (index: number, level: "warn" | "debug", message: string, args: Record<string, unknown> = {}) => {
+        const { requestId, depositId } = encodable[index].message;
         this.logger[level]({
           at: "GaslessRelayer#evaluateApiSignatures",
           message,
-          requestId: messages[index].requestId,
-          depositId: messages[index].depositId,
+          requestId,
+          depositId,
           originChainId,
           ...args,
         });
-        delete this.messageState[this._getDepositKeyFromMessage(messages[index])];
+        delete this.messageState[this._getDepositKeyFromMessage(encodable[index].message)];
       };
       // Estimation failure is the primary signal that batching is misbehaving, hence warn.
       failed.forEach(({ index, error }) =>
@@ -1015,7 +1054,10 @@ export class GaslessRelayer {
       deferred.forEach((index) =>
         release(index, "debug", "Deferring gasless deposit to a later poll (batch gas budget reached).")
       );
-      if (included.length === 0) {
+      // Pruning can leave too little to be worth batching. A single-call tryAggregate pays the wrapper
+      // and forfeits the direct path's `spray`, so let whatever survived fall through.
+      if (included.length < 2) {
+        await submitIndividually(included.map((i) => encodable[i].message));
         return;
       }
 
@@ -1023,11 +1065,13 @@ export class GaslessRelayer {
       const receiptPromise = this.initiateBatchDeposit(
         originChainId,
         multicall3,
-        included.map((i) => calls[i]),
+        included.map((i) => encodable[i].call),
         gasLimit
       );
       await Promise.all(
-        included.map((i) => processDepositMessage(messages[i], receiptPromise, validated.get(messages[i])))
+        included.map((i) =>
+          processDepositMessage(encodable[i].message, receiptPromise, validated.get(encodable[i].message))
+        )
       );
     };
 
@@ -1332,7 +1376,11 @@ export class GaslessRelayer {
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryGaslessApi(--retriesRemaining) : [];
     }
-    const deposits = restructureGaslessDeposits(apiResponseData.deposits, this.logger);
+    // Drop unparseable messages here, at ingestion, so that every consumer -- initialize()'s
+    // observation pass as much as the steady-state poll -- only ever sees processable messages.
+    const deposits = restructureGaslessDeposits(apiResponseData.deposits, this.logger).filter((deposit) =>
+      this._isProcessable(deposit)
+    );
     return this._filterDepositsByAddress(this._filterDepositsByIntegratorId(deposits));
   }
 
@@ -1589,12 +1637,26 @@ export class GaslessRelayer {
 
   /*
    * @notice Applies validateDeposit() to an API message.
-   * @dev Not side-effect free: it may emit a paging error log for an oversized deposit, so it must be
-   * evaluated exactly once per message per poll and the verdict reused.
+   * @dev Not side-effect free: it emits a paging error log for an oversized deposit. A message can be
+   * re-presented across polls (batch estimation failure, gas deferral), so that page is deduplicated
+   * to one per deposit rather than one per poll.
+   *
+   * Only the side effect is suppressed, never the verdict: paging sits downstream of every check that
+   * can reject and doesn't feed the return value, so withholding the logger is the whole of it. The
+   * checks themselves re-run every call, which is what makes it safe for the API to re-present a
+   * revised request under the same deposit key -- the new token pair and amounts are re-validated.
+   *
+   * The dedupe key carries the input amount because that is what the page reports and tests against
+   * the threshold; a revision that crosses the threshold pages afresh rather than inheriting silence.
    */
   protected _validateDepositMessage(depositMessage: AnyGaslessDepositMessage): boolean {
     const { destinationChainId, inputToken, inputAmountForValidation, outputToken, outputAmount } =
       extractGaslessDepositFields(depositMessage);
+
+    const pageKey = `${this._getDepositKeyFromMessage(depositMessage)}:${inputAmountForValidation.toString()}`;
+    const pagingLogger = this.pagedDeposits.has(pageKey) ? undefined : this.logger;
+    this.pagedDeposits.add(pageKey);
+
     return validateDeposit(
       depositMessage.originChainId,
       inputToken,
@@ -1604,10 +1666,91 @@ export class GaslessRelayer {
       outputAmount,
       this.config.refundFlowTestEnabled,
       this.config.allowedPeggedPairs,
-      this.logger,
+      pagingLogger,
       this.config.depositUsdPageThreshold,
       this.config.fillsEnabled
     );
+  }
+
+  /*
+   * @notice Returns true when every derivation the pipeline performs on a message's payload succeeds.
+   * @dev Pure functions of the message, so a failure is deterministic and the message is dropped
+   * rather than retried. Nothing here touches a provider: an RPC failure is not the message's fault.
+   */
+  protected _isProcessable(depositMessage: AnyGaslessDepositMessage): boolean {
+    try {
+      getGaslessAuthorizerAddress(depositMessage);
+      getGaslessPermitNonce(depositMessage);
+      // Covers extractGaslessDepositFields(), which every consumer of a message goes through.
+      this._getDepositKeyFromMessage(depositMessage);
+      if (depositMessage.depositFlowType === "swapAndBridge") {
+        // updateObservedCctpDeposits() keys swaps on the signed swapToken.
+        toAddressType(depositMessage.swapToken, depositMessage.originChainId);
+      }
+      return true;
+    } catch (err) {
+      this._dropMessage(depositMessage, err);
+      return false;
+    }
+  }
+
+  /*
+   * @notice Releases a message that failed in flight, leaving it retryable. Logged once per streak.
+   * @dev Hands the fill lock back, else the depositor's later deposits strand on a dead owner.
+   */
+  protected _deferMessage(depositMessage: AnyGaslessDepositMessage, err: unknown): void {
+    const { requestId, depositId, originChainId } = depositMessage;
+    const depositKey = this._getDepositKeyFromMessage(depositMessage);
+
+    const fillKey = `${getGaslessAuthorizerAddress(depositMessage)}:${originChainId}`;
+    if (this.fillLock[fillKey] === depositKey) {
+      delete this.fillLock[fillKey];
+    }
+
+    // Rewind to unclaimed only while nothing can be on chain yet: initiateDeposit() is invoked and
+    // the state advanced in the same tick, so INITIAL/DEPOSIT_SUBMIT precedes any submission. Past
+    // that, leave the state where it stopped -- re-running from INITIAL could double-submit.
+    const retryable = [MessageState.INITIAL, MessageState.DEPOSIT_SUBMIT].includes(this._getState(depositKey));
+    if (retryable) {
+      delete this.messageState[depositKey];
+    }
+
+    if (this.deferredMessages.has(requestId)) {
+      return;
+    }
+    this.deferredMessages.add(requestId);
+
+    this.logger.warn({
+      at: "GaslessRelayer#_deferMessage",
+      message: "Failed to process gasless deposit message.",
+      requestId,
+      depositId,
+      originChainId,
+      retryable,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  /*
+   * @notice Permanently drops a malformed message, logging it once.
+   * @dev Only called before a message is claimed, so there is no state or lock to hand back. Keyed on
+   * requestId, which a malformed message still has when its deposit key won't parse.
+   */
+  protected _dropMessage(depositMessage: AnyGaslessDepositMessage, err: unknown): void {
+    const { requestId, depositId, originChainId } = depositMessage;
+    if (this.droppedMessages.has(requestId)) {
+      return;
+    }
+    this.droppedMessages.add(requestId);
+
+    this.logger.error({
+      at: "GaslessRelayer#_dropMessage",
+      message: "Dropping unprocessable gasless deposit message 🚮",
+      requestId,
+      depositId,
+      originChainId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   /*

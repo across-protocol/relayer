@@ -97,6 +97,15 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public getMessageState(depositNonce: string): MessageState {
     return this.messageState[depositNonce];
   }
+  public getDroppedMessages(): Set<string> {
+    return this.droppedMessages;
+  }
+  public runIsProcessable(depositMessage: AnyGaslessDepositMessage): boolean {
+    return this._isProcessable(depositMessage);
+  }
+  public runValidateDepositMessage(msg: AnyGaslessDepositMessage): boolean {
+    return this._validateDepositMessage(msg);
+  }
   public testFillImmediate(
     deposit: Pick<RelayData, "originChainId" | "outputToken" | "outputAmount"> & {
       destinationChainId: number;
@@ -162,8 +171,9 @@ class TestableGaslessRelayer extends GaslessRelayer {
   // Track state transitions, keyed by depositKey (e.g., nonce)
   public stateTransitions: { [depositKey: string]: Array<{ from: MessageState; to: MessageState }> } = {};
 
+  // Mirrors production: the real _queryGaslessApi() drops unprocessable messages at ingestion.
   protected override async _queryGaslessApi(): Promise<AnyGaslessDepositMessage[]> {
-    return this.queryGaslessApiFn();
+    return (await this.queryGaslessApiFn()).filter((deposit) => this._isProcessable(deposit));
   }
   protected override async initiateDeposit(msg: AnyGaslessDepositMessage): Promise<TransactionReceipt | null> {
     this.initiateDepositCalls++;
@@ -627,6 +637,7 @@ describe("GaslessRelayer", function () {
   let fakeSpokePoolAddress: string;
   let fakePeripherySmock: FakeContract;
   let fakePermit2Smock: FakeContract;
+  let spy: ReturnType<typeof createSpyLogger>["spy"];
 
   // Test fixture helpers that automatically use the correct spokePool address
   const makeTestDepositMessage = (
@@ -642,7 +653,8 @@ describe("GaslessRelayer", function () {
     makeCctpDepositMessage(overrides ?? {}, fakeSpokePoolAddress);
 
   beforeEach(async function () {
-    const { spyLogger } = createSpyLogger();
+    const { spyLogger, spy: logSpy } = createSpyLogger();
+    spy = logSpy;
 
     const [signer] = await ethers.getSigners();
 
@@ -1179,12 +1191,16 @@ describe("GaslessRelayer", function () {
       batchingRelayer = await makeBatchingRelayer();
     });
 
-    function makeBatchableMessages() {
-      const msg1 = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
-      msg1.depositId = toBN(100);
-      const msg2 = makeTestDepositMessage({ inputAmount: "30000000", outputAmount: "29000000" });
-      msg2.depositId = toBN(200);
-      return [msg1, msg2] as const;
+    function makeBatchableMessages(count = 2) {
+      return Array.from({ length: count }, (_, i) => {
+        const msg = makeTestDepositMessage({
+          inputAmount: `${20 + i * 10}000000`,
+          outputAmount: `${19 + i * 10}000000`,
+        });
+        msg.depositId = toBN(100 * (i + 1));
+        msg.requestId = `req-${i + 1}`;
+        return msg;
+      });
     }
 
     it("batches deposits per origin chain and confirms each from the shared receipt", async function () {
@@ -1213,12 +1229,39 @@ describe("GaslessRelayer", function () {
     });
 
     it("releases estimation failures for retry on a later poll", async function () {
+      const [msg1, msg2, msg3] = makeBatchableMessages(3);
+      const receipt = makeReceipt();
+      const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+
+      // The third call fails estimation: a call with no size is dropped rather than submitted.
+      batchingRelayer.planDepositBatchFn = async () => ({
+        included: [0, 1],
+        gasLimit: toBN(500_000),
+        failed: [{ index: 2, error: new Error("estimation failed") }],
+        deferred: [],
+      });
+      batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2, msg3];
+      batchingRelayer.initiateBatchDepositFn = async () => receipt;
+      batchingRelayer.extractDepositFromReceiptFn = (_receipt, _chainId, depositId) => ({ ...depositEvent, depositId });
+      batchingRelayer.initiateFillFn = async () => receipt;
+
+      await batchingRelayer.runEvaluateApiSignatures();
+
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg1))).to.equal(MessageState.FILLED);
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg2))).to.equal(MessageState.FILLED);
+      // The dropped message's claim is released so a later poll can retry it.
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg3))).to.equal(undefined);
+      expect(batchingRelayer.batchedCalls[0].length).to.equal(2);
+      expect(batchingRelayer.initiateDepositCalls).to.equal(0);
+    });
+
+    it("falls through to individual submission when pruning leaves a single call", async function () {
       const [msg1, msg2] = makeBatchableMessages();
       const receipt = makeReceipt();
-      const depositEvent1 = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
-      depositEvent1.depositId = toBN(100);
+      const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
 
-      // The second call fails estimation: a call with no size is dropped rather than submitted.
+      // Only one call survives planning. A single-call tryAggregate pays the wrapper and forfeits the
+      // direct path's `spray`, so the survivor must be submitted directly instead.
       batchingRelayer.planDepositBatchFn = async () => ({
         included: [0],
         gasLimit: toBN(300_000),
@@ -1226,17 +1269,16 @@ describe("GaslessRelayer", function () {
         deferred: [],
       });
       batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2];
-      batchingRelayer.initiateBatchDepositFn = async () => receipt;
-      batchingRelayer.extractDepositFromReceiptFn = () => depositEvent1;
+      batchingRelayer.initiateDepositFn = async () => receipt;
+      batchingRelayer.extractDepositFromReceiptFn = (_receipt, _chainId, depositId) => ({ ...depositEvent, depositId });
       batchingRelayer.initiateFillFn = async () => receipt;
 
       await batchingRelayer.runEvaluateApiSignatures();
 
       expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg1))).to.equal(MessageState.FILLED);
-      // The dropped message's claim is released so a later poll can retry it.
       expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg2))).to.equal(undefined);
-      expect(batchingRelayer.batchedCalls[0].length).to.equal(1);
-      expect(batchingRelayer.initiateDepositCalls).to.equal(0);
+      expect(batchingRelayer.batchedCalls.length).to.equal(0);
+      expect(batchingRelayer.initiateDepositCalls).to.equal(1);
     });
 
     it("falls back to individual submission for a single batchable message", async function () {
@@ -1343,30 +1385,30 @@ describe("GaslessRelayer", function () {
     });
 
     it("defers deposits that would push the batch over the gas budget", async function () {
-      const [msg1, msg2] = makeBatchableMessages();
+      const [msg1, msg2, msg3] = makeBatchableMessages(3);
       const receipt = makeReceipt();
-      const depositEvent1 = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
-      depositEvent1.depositId = toBN(100);
+      const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
 
-      // The second call would push the batch over the gas budget (planMulticall3Batch owns that
+      // The third call would push the batch over the gas budget (planMulticall3Batch owns that
       // policy; its own tests pin the arithmetic) and must defer to a later poll.
       batchingRelayer.planDepositBatchFn = async () => ({
-        included: [0],
+        included: [0, 1],
         gasLimit: toBN(8_100_000),
         failed: [],
-        deferred: [1],
+        deferred: [2],
       });
-      batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2];
+      batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2, msg3];
       batchingRelayer.initiateBatchDepositFn = async () => receipt;
-      batchingRelayer.extractDepositFromReceiptFn = () => depositEvent1;
+      batchingRelayer.extractDepositFromReceiptFn = (_receipt, _chainId, depositId) => ({ ...depositEvent, depositId });
       batchingRelayer.initiateFillFn = async () => receipt;
 
       await batchingRelayer.runEvaluateApiSignatures();
 
       expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg1))).to.equal(MessageState.FILLED);
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg2))).to.equal(MessageState.FILLED);
       // The deferred message's claim is released so a later poll can retry it.
-      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg2))).to.equal(undefined);
-      expect(batchingRelayer.batchedCalls[0].length).to.equal(1);
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg3))).to.equal(undefined);
+      expect(batchingRelayer.batchedCalls[0].length).to.equal(2);
       expect(batchingRelayer.batchGasLimits[0].eq(8_100_000)).to.be.true;
       expect(batchingRelayer.initiateDepositCalls).to.equal(0);
     });
@@ -1694,6 +1736,151 @@ describe("GaslessRelayer", function () {
 
       expect(relayer.getMessageState(depositNonceFor(relayer, msg1))).to.equal(MessageState.FILLED);
       expect(relayer.getMessageState(depositNonceFor(relayer, msg2))).to.equal(MessageState.FILLED);
+    });
+
+    describe("Oversized-deposit paging is deduplicated without caching the verdict", function () {
+      const pageCount = () =>
+        spy.getCalls().filter((call) => String(call.lastArg?.message ?? "").includes("exceeds USD paging threshold"))
+          .length;
+
+      it("Pages at most once for an oversized deposit, however often it is validated", function () {
+        // Batching releases a message's claim when it fails estimation or is gas-deferred, so the same
+        // message can be re-presented on every poll. The operational alert must not follow it.
+        const msg = makeTestDepositMessage({ inputAmount: "2000000000", outputAmount: "1999000000" });
+
+        expect(relayer.runValidateDepositMessage(msg)).to.be.true;
+        expect(pageCount()).to.equal(1);
+
+        expect(relayer.runValidateDepositMessage(msg)).to.be.true;
+        expect(relayer.runValidateDepositMessage(msg)).to.be.true;
+        expect(pageCount()).to.equal(1);
+      });
+
+      it("Re-validates a revised request sharing a deposit key with an accepted one", function () {
+        // The deposit key is (inputToken, originChainId, depositId), which doesn't pin the output side.
+        // Silencing the page must not silence the checks: a revision that no longer covers its output
+        // has to be rejected, not served the earlier message's verdict.
+        const accepted = makeTestDepositMessage({ inputAmount: "2000000000", outputAmount: "1999000000" });
+        expect(relayer.runValidateDepositMessage(accepted)).to.be.true;
+        expect(pageCount()).to.equal(1);
+
+        const revised = makeTestDepositMessage({ inputAmount: "2000000000", outputAmount: "2001000000" });
+        expect(depositNonceFor(relayer, revised)).to.equal(depositNonceFor(relayer, accepted));
+        expect(relayer.runValidateDepositMessage(revised)).to.be.false;
+        // Same input amount, so the page stays deduplicated across the revision.
+        expect(pageCount()).to.equal(1);
+      });
+
+      it("Pages again when a revision crosses the threshold the original sat under", function () {
+        const small = makeTestDepositMessage({ inputAmount: "1000000", outputAmount: "999000" });
+        expect(relayer.runValidateDepositMessage(small)).to.be.true;
+        expect(pageCount()).to.equal(0);
+
+        const oversized = makeTestDepositMessage({ inputAmount: "2000000000", outputAmount: "1999000000" });
+        expect(depositNonceFor(relayer, oversized)).to.equal(depositNonceFor(relayer, small));
+        expect(relayer.runValidateDepositMessage(oversized)).to.be.true;
+        expect(pageCount()).to.equal(1);
+      });
+    });
+
+    describe("Unprocessable messages are logged and dropped", function () {
+      const logCount = (needle: string) =>
+        spy.getCalls().filter((call) => String(call.lastArg?.message ?? "").includes(needle)).length;
+      const dropLogCount = () => logCount("Dropping unprocessable");
+      const deferLogCount = () => logCount("Failed to process gasless deposit message");
+
+      it("A malformed message is dropped at ingestion, without stalling its siblings", async function () {
+        const amounts = { inputAmount: "20000000", outputAmount: "19000000" };
+        const bad = makeTestDepositMessage(amounts);
+        bad.requestId = "req-bad";
+        bad.baseDepositData.inputToken = "not-an-address";
+        const good = makeTestDepositMessage(amounts);
+        good.requestId = "req-good";
+
+        relayer.queryGaslessApiFn = async () => [bad, good];
+        relayer.initiateDepositFn = async () => makeReceipt();
+        relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent(amounts);
+        relayer.initiateFillFn = async () => makeReceipt();
+
+        // The API re-supplies a dropped message on every poll; the alert must not follow it.
+        await relayer.runEvaluateApiSignatures();
+        await relayer.runEvaluateApiSignatures();
+
+        expect(relayer.getDroppedMessages().has("req-bad")).to.be.true;
+        expect(dropLogCount()).to.equal(1);
+        expect(relayer.getMessageState(depositNonceFor(relayer, good))).to.equal(MessageState.FILLED);
+        expect(relayer.initiateDepositCalls).to.equal(1);
+
+        // Why the guard belongs at ingestion rather than in the poll: initialize()'s observation
+        // pass has no boundary of its own, so a message reaching it takes down every restart.
+        expect(() => relayer.runMarkFilledFromInitialObservation([bad])).to.throw();
+        expect(() => relayer.runMarkFilledFromInitialObservation([good])).to.not.throw();
+      });
+
+      it("A message that fails mid-flight hands back its lock but is not dropped", async function () {
+        const bad = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
+        bad.requestId = "req-bad";
+        bad.depositId = toBN(100);
+
+        const good = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
+        good.requestId = "req-good";
+        good.depositId = toBN(200);
+        const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+        depositEvent.depositId = toBN(200);
+
+        relayer.queryGaslessApiFn = async () => [bad, good];
+        relayer.initiateDepositFn = async (msg) => {
+          if (msg.requestId === "req-bad") {
+            throw new Error("provider unavailable");
+          }
+          return makeReceipt();
+        };
+        relayer.extractDepositFromReceiptFn = () => depositEvent;
+        relayer.initiateFillFn = async () => makeReceipt();
+
+        await relayer.runEvaluateApiSignatures();
+
+        // A submission failure is operational, not a property of the message: it must not be
+        // classified as unprocessable, or an outage would exclude every message it touched.
+        expect(relayer.getDroppedMessages().has("req-bad")).to.be.false;
+        expect(dropLogCount()).to.equal(0);
+        expect(deferLogCount()).to.equal(1);
+        // The deposit may have been broadcast before the failure, so the message stays where it
+        // stopped rather than rewinding to a state that would re-submit it.
+        expect(relayer.getMessageState(depositNonceFor(relayer, bad))).to.equal(MessageState.DEPOSIT_CONFIRM);
+        // The sibling shares the depositor's fill lock; it only completes if the lock was returned.
+        expect(relayer.getMessageState(depositNonceFor(relayer, good))).to.equal(MessageState.FILLED);
+      });
+
+      it("A message that fails before submission is retried on the next poll", async function () {
+        const msg = makeTestDepositMessage({}, { instantFill: true });
+        msg.requestId = "req-retry";
+        setFillImmediateThreshold(msg);
+
+        const workingPeriphery = relayer.getPeripheryContractFn;
+        // Throws while building the deposit tx, i.e. before anything reaches the chain.
+        relayer.getPeripheryContractFn = () => {
+          throw new Error("provider unavailable");
+        };
+        relayer.queryGaslessApiFn = async () => [msg];
+        relayer.initiateDepositFn = async () => makeReceipt();
+        relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent();
+        relayer.initiateFillFn = async () => makeReceipt();
+
+        await relayer.runEvaluateApiSignatures();
+        await relayer.runEvaluateApiSignatures();
+
+        // Nothing was submitted, so the message is unclaimed again -- and logged once, not per poll.
+        expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(undefined);
+        expect(relayer.initiateDepositCalls).to.equal(0);
+        expect(relayer.getDroppedMessages().has("req-retry")).to.be.false;
+        expect(deferLogCount()).to.equal(1);
+
+        relayer.getPeripheryContractFn = workingPeriphery;
+        await relayer.runEvaluateApiSignatures();
+
+        expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+      });
     });
 
     it("Message with existing state is skipped on subsequent polls", async function () {
