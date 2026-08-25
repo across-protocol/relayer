@@ -30,10 +30,13 @@ import {
   isStablecoin,
   min,
   delay,
+  TransactionReceipt,
+  spreadEventWithBlockNumber,
+  unpackDepositEvent,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
-import { MultiCallerClient } from "../clients";
+import { EVMSpokePoolClient, MultiCallerClient } from "../clients";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -67,6 +70,9 @@ export class Relayer {
   public readonly fillStatus: { [depositHash: string]: number } = {};
   public readonly inventoryChainIds: number[];
   private pendingTxnHashes: { [chainId: number]: Promise<string[]> } = {};
+  // Origin transaction receipts, keyed as chainId-txnRef. Reset each loop, since a re-org between loops can
+  // invalidate a receipt that was previously verified.
+  private originTxnReceipts: { [key: string]: Promise<TransactionReceipt | null | undefined> } = {};
   private lastLogTime = 0;
   private lastMaintenance = 0;
   private profiler: InstanceType<typeof Profiler>;
@@ -768,6 +774,126 @@ export class Relayer {
     return mdcPerChain;
   }
 
+  /**
+   * Look up the receipt for an origin transaction, memoised for the duration of the current loop. Deposits are
+   * evaluated sequentially, and a single transaction can emit multiple deposits, so the result is cached per
+   * transaction to bound this to one RPC request per origin transaction per loop.
+   * @param spokePoolClient SpokePoolClient for the origin chain.
+   * @param txnRef Hash of the transaction that emitted the deposit.
+   * @returns The receipt, null if the transaction is not mined, or undefined if the lookup failed.
+   */
+  protected fetchOriginTxnReceipt(
+    spokePoolClient: EVMSpokePoolClient,
+    txnRef: string
+  ): Promise<TransactionReceipt | null | undefined> {
+    const { chainId } = spokePoolClient;
+    return (this.originTxnReceipts[`${chainId}-${txnRef}`] ??= spokePoolClient.spokePool.provider
+      .getTransactionReceipt(txnRef)
+      .catch((err) => {
+        // An RPC error is not evidence that the deposit is invalid, so callers fail open on undefined.
+        this.logger.debug({
+          at: "Relayer::fetchOriginTxnReceipt",
+          message: "Unable to verify origin transaction; proceeding.",
+          chainId,
+          txnRef,
+          err,
+        });
+        return undefined;
+      }));
+  }
+
+  /**
+   * Determine whether a transaction receipt still emits the deposit under evaluation. Matching is done on the relay
+   * data, since that is what a fill is matched against when the dataworker computes repayment.
+   * @param spokePoolClient SpokePoolClient for the origin chain.
+   * @param receipt Receipt of the transaction that emitted the deposit.
+   * @param deposit Deposit under evaluation.
+   * @returns True if the receipt contains a FundsDeposited event matching deposit.
+   */
+  protected receiptEmitsDeposit(
+    spokePoolClient: EVMSpokePoolClient,
+    receipt: TransactionReceipt,
+    deposit: DepositWithBlock
+  ): boolean {
+    const { spokePool } = spokePoolClient;
+    const { originChainId } = deposit;
+    const depositTopic = spokePool.interface.getEventTopic("FundsDeposited");
+    const relayKey = sdkUtils.getRelayEventKey(deposit);
+
+    return receipt.logs
+      .filter(({ address, topics }) => address === spokePool.address && topics[0] === depositTopic)
+      .some((log) => {
+        try {
+          const event = { event: "FundsDeposited", ...log, ...spokePool.interface.parseLog(log) };
+          const emitted = unpackDepositEvent(spreadEventWithBlockNumber(event), originChainId);
+          return sdkUtils.getRelayEventKey(emitted) === relayKey;
+        } catch {
+          // An undecodable log can't be the deposit under evaluation; keep scanning the remaining logs.
+          return false;
+        }
+      });
+  }
+
+  /**
+   * Verify that the transaction which emitted a deposit is still mined, successful, in the position where it was
+   * observed, and still emitting the same deposit. An origin chain re-org can drop that transaction, cause it to
+   * revert on replay, or re-include it elsewhere -- each of which can change or invalidate the deposit, leaving any
+   * fill unmatched and unrepayable.
+   * @param deposit Deposit under evaluation.
+   * @returns True if the origin transaction is unchanged, or if verification was skipped or inconclusive.
+   */
+  async originTxnUnchanged(deposit: DepositWithBlock): Promise<boolean> {
+    if (!this.config.verifyOriginTxn) {
+      return true;
+    }
+
+    const originSpoke = this.clients.spokePoolClients[deposit.originChainId];
+    if (!isEVMSpokePoolClient(originSpoke)) {
+      return true;
+    }
+
+    const { blockNumber, txnIndex, txnRef } = deposit;
+    const receipt = await this.fetchOriginTxnReceipt(originSpoke, txnRef);
+    if (receipt === undefined) {
+      return true; // Fail open: the lookup was inconclusive.
+    }
+
+    // A dropped transaction has no receipt; one that reverted on replay emits no deposit. Position is also pinned,
+    // because a transaction re-included at a different height has not necessarily accrued the confirmations that
+    // computeRequiredDepositConfirmations() gated on, and the cached deposit is stale until the next update().
+    if (receipt?.status !== 1 || receipt.blockNumber !== blockNumber || receipt.transactionIndex !== txnIndex) {
+      return false;
+    }
+
+    // Position alone is insufficient: a re-org can re-include the transaction at the same height and index on top of
+    // different preceding state. That changes the SpokePool's numberOfDeposits counter and therefore the depositId,
+    // so confirm the transaction still emits this exact deposit rather than a different one.
+    return this.receiptEmitsDeposit(originSpoke, receipt, deposit);
+  }
+
+  /**
+   * Warm the origin transaction receipt cache for a set of deposits. evaluateFills() evaluates deposits sequentially
+   * in order to keep balance accounting atomic, so resolving these lookups concurrently up-front keeps a serial RPC
+   * round trip per deposit off that critical path. Deposits sharing an origin transaction resolve to one request.
+   * @param deposits Deposits about to be evaluated.
+   * @returns void
+   */
+  async prefetchOriginTxns(deposits: DepositWithBlock[]): Promise<void> {
+    if (!this.config.verifyOriginTxn) {
+      return;
+    }
+
+    await Promise.all(
+      deposits.map((deposit) => {
+        const originSpoke = this.clients.spokePoolClients[deposit.originChainId];
+        // fetchOriginTxnReceipt() never rejects, so a single bad lookup can't fail the batch.
+        return isEVMSpokePoolClient(originSpoke)
+          ? this.fetchOriginTxnReceipt(originSpoke, deposit.txnRef)
+          : Promise.resolve(undefined);
+      })
+    );
+  }
+
   canSlowFill(deposit: DepositWithBlock): boolean {
     return (
       // Cannot slow fill when input and output tokens are not equivalent.
@@ -825,6 +951,18 @@ export class Relayer {
       if (this.config.sendingTransactionsEnabled) {
         return;
       }
+    }
+
+    // The confirmation gate above compares block heights and cannot detect an origin transaction that was dropped,
+    // reverted on replay, or re-included at a different position. Verify it directly before committing funds.
+    if (!(await this.originTxnUnchanged(deposit))) {
+      this.logger.warn({
+        at,
+        message: `Skipping ${originChain} deposit ${depositId.toString()}; origin transaction is no longer as observed.`,
+        blockNumber: deposit.blockNumber,
+        txnRef,
+      });
+      return;
     }
 
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
@@ -1019,6 +1157,9 @@ export class Relayer {
       HUB_SPOKE_BLOCK_LAG * (await arch.evm.averageBlockTime(hubPoolClient.hubPool.provider)).average
     );
 
+    // Drop origin transaction receipts cached on the previous loop; a re-org since then can invalidate them.
+    this.originTxnReceipts = {};
+
     // Flush any pre-existing enqueued transactions that might not have been executed.
     multiCallerClient.clearTransactionQueue();
     tryMulticallClient.clearTransactionQueue();
@@ -1096,6 +1237,9 @@ export class Relayer {
           latestHeightSearched - mdcPerChain[chainId],
         ])
       );
+
+      // Resolve origin transaction receipts concurrently before dropping into sequential evaluation below.
+      await this.prefetchOriginTxns(unfilledDeposits);
 
       await this.evaluateFills(unfilledDeposits, lpFees, maxBlockNumbers);
 

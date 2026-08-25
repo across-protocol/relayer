@@ -157,6 +157,8 @@ export class RelayerConfig extends CommonConfig {
   readonly minFillTime: { [chainId: number]: number } = {};
   readonly allowedRecipients: { [chainId: number]: Set<string> } = {};
   readonly acceptInvalidFills: boolean;
+  // Verify that a deposit's origin transaction is still mined, successful and in position before filling.
+  readonly verifyOriginTxn: boolean;
   readonly relayerUseInventoryManager: boolean;
   readonly inventoryTopic: string;
   // List of depositors we only want to send slow fills for.
@@ -196,6 +198,7 @@ export class RelayerConfig extends CommonConfig {
       SEND_SLOW_RELAYS,
       MIN_RELAYER_FEE_PCT,
       ACCEPT_INVALID_FILLS,
+      RELAYER_VERIFY_ORIGIN_TXN = "true",
       MIN_DEPOSIT_CONFIRMATIONS,
       RELAYER_IGNORE_LIMITS,
       RELAYER_EXTERNAL_LISTENER,
@@ -426,6 +429,7 @@ export class RelayerConfig extends CommonConfig {
     this.sendingRelaysEnabled = SEND_RELAYS === "true";
     this.sendingSlowRelaysEnabled = SEND_SLOW_RELAYS === "true";
     this.acceptInvalidFills = ACCEPT_INVALID_FILLS === "true";
+    this.verifyOriginTxn = RELAYER_VERIFY_ORIGIN_TXN === "true";
 
     const minDepositConfirmations = MIN_DEPOSIT_CONFIRMATIONS
       ? JSON.parse(MIN_DEPOSIT_CONFIRMATIONS)
