@@ -12,6 +12,18 @@ Therefore, the relayer's finality risk threshold can be customized as well.
 
 The full config can be found in `RelayerConfig.ts`
 
+### Deferring fills from late-arriving origin blocks
+
+`RELAYER_MAX_ORIGIN_BLOCK_LATENESS_<chainId>` (seconds, `0`/unset disables) withholds a deposit whose origin block
+reached the relayer at least that long after the block's own timestamp, until `LATE_BLOCK_MIN_CONFIRMATIONS` blocks
+have been built on top of it. Such a block missed its slot's attestation deadline and may be replaced at the same
+height — which the height-based confirmation gate cannot observe.
+
+Requires `RELAYER_EXTERNAL_LISTENER=true`; without the listener no arrival times are recorded and the check is inert.
+Unsupported on SVM chains (the listener has no slot timestamp, so lateness always reads as ~0) and rejected at
+startup. Blocks not observed live are treated as settled, so backfilled and restarted state is unaffected. A useful
+threshold depends on the operator's own event-delivery latency and has to be measured per deployment.
+
 ### Restricting recipients on a destination chain
 
 `RELAYER_ALLOWED_RECIPIENTS_<chainId>` is a JSON array of recipient addresses the relayer will fill for on that

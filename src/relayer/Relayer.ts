@@ -861,7 +861,10 @@ export class Relayer {
         blockNumber: deposit.blockNumber,
         txnRef,
       });
-      return;
+      // As with the confirmation gate above, don't early-exit in simulation mode.
+      if (this.config.sendingTransactionsEnabled) {
+        return;
+      }
     }
 
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.

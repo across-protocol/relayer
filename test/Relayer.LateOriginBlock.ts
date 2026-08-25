@@ -82,6 +82,27 @@ describe("Relayer: Late-arriving origin blocks", function () {
     expect(spokePoolClient.getBlockArrivalLateness(blockNumber - 1)).to.be.undefined;
   });
 
+  it("Records arrival lateness for a same-height replacement block", async function () {
+    const currentTime = getCurrentTime();
+    postBlock(blockNumber, currentTime);
+    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.be.below(maxLateness);
+
+    // A same-height replacement takes the misordered-block path, but is exactly what the gate exists to catch.
+    spokePoolClient.isUpdated = true;
+    postBlock(blockNumber, currentTime - 30);
+    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.be.at.least(30);
+  });
+
+  it("Never lowers a height's recorded arrival lateness", async function () {
+    const currentTime = getCurrentTime();
+    postBlock(blockNumber, currentTime - 30);
+    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.be.at.least(30);
+
+    spokePoolClient.isUpdated = true;
+    postBlock(blockNumber, currentTime);
+    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.be.at.least(30);
+  });
+
   it("Evicts arrival lateness beyond the retention window", async function () {
     const currentTime = getCurrentTime();
     postBlock(blockNumber, currentTime);
@@ -142,5 +163,61 @@ describe("Relayer: Late-arriving origin blocks", function () {
 
     spokePoolClient.latestHeightSearched = blockNumber;
     expect(relayer.originBlockUnsettled(makeDeposit(blockNumber))).to.be.false;
+  });
+});
+
+describe("RelayerConfig: Late-arriving origin block threshold", function () {
+  const chainId = CHAIN_IDs.MAINNET;
+  const svmChainId = CHAIN_IDs.SOLANA;
+  const envKey = (chainId: number) => `RELAYER_MAX_ORIGIN_BLOCK_LATENESS_${chainId}`;
+
+  let logger: winston.Logger;
+  let saved: { [key: string]: string | undefined };
+
+  beforeEach(function () {
+    ({ spyLogger: logger } = createSpyLogger());
+    saved = Object.fromEntries([chainId, svmChainId].map((chainId) => [envKey(chainId), process.env[envKey(chainId)]]));
+  });
+
+  afterEach(function () {
+    Object.entries(saved).forEach(([key, value]) => {
+      if (value === undefined) {
+        delete process.env[key];
+      } else {
+        process.env[key] = value;
+      }
+    });
+  });
+
+  const validate = (chainIds: number[]): RelayerConfig => {
+    const chains = JSON.stringify(chainIds);
+    const config = new RelayerConfig({ RELAYER_ORIGIN_CHAINS: chains, RELAYER_DESTINATION_CHAINS: chains });
+    config.validate(chainIds, logger);
+    return config;
+  };
+
+  it("Defaults to disabled", function () {
+    delete process.env[envKey(chainId)];
+    expect(validate([chainId]).maxOriginBlockLateness[chainId]).to.equal(0);
+  });
+
+  it("Accepts a positive threshold", function () {
+    process.env[envKey(chainId)] = "6";
+    expect(validate([chainId]).maxOriginBlockLateness[chainId]).to.equal(6);
+  });
+
+  it("Rejects a malformed threshold", function () {
+    process.env[envKey(chainId)] = "oops";
+    expect(() => validate([chainId])).to.throw(/Invalid max origin block lateness/);
+  });
+
+  it("Rejects a negative threshold", function () {
+    process.env[envKey(chainId)] = "-1";
+    expect(() => validate([chainId])).to.throw(/Invalid max origin block lateness/);
+  });
+
+  it("Rejects a threshold on an SVM chain, where lateness is not observable", function () {
+    process.env[envKey(svmChainId)] = "6";
+    expect(() => validate([svmChainId])).to.throw(/unsupported on chain/);
   });
 });

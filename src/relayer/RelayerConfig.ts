@@ -528,7 +528,14 @@ export class RelayerConfig extends CommonConfig {
           : Constants.RELAYER_SPOKEPOOL_LISTENER_EVM;
       const { RELAYER_SPOKEPOOL_LISTENER_PATH = defaultPath } = process.env;
       minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0);
-      maxOriginBlockLateness[chainId] = Number(process.env[`RELAYER_MAX_ORIGIN_BLOCK_LATENESS_${chainId}`] ?? 0);
+
+      const _maxLateness = process.env[`RELAYER_MAX_ORIGIN_BLOCK_LATENESS_${chainId}`];
+      const maxLateness = Number(_maxLateness ?? 0);
+      // A malformed value would otherwise parse to NaN and silently disable the check.
+      assert(Number.isFinite(maxLateness) && maxLateness >= 0, `Invalid max origin block lateness (${_maxLateness})`);
+      // The SVM listener reports slot arrival time in place of the slot timestamp, so lateness is always ~0 there.
+      assert(maxLateness === 0 || !chainIsSvm(chainId), `Max origin block lateness unsupported on chain ${chainId}`);
+      maxOriginBlockLateness[chainId] = maxLateness;
       listenerPath[chainId] =
         process.env[`RELAYER_SPOKEPOOL_LISTENER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_LISTENER_PATH;
 

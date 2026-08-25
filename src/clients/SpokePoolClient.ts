@@ -199,7 +199,11 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
      * @returns void
      */
     #recordBlockArrival(blockNumber: number, currentTime: number): void {
-      this.#blockArrivalLateness.set(blockNumber, getCurrentTime() - currentTime);
+      // Never lower a height's recorded lateness. Seeing a second block at the same height means the first was
+      // replaced, which makes that height more suspect, not less.
+      const lateness = getCurrentTime() - currentTime;
+      const recorded = this.#blockArrivalLateness.get(blockNumber);
+      this.#blockArrivalLateness.set(blockNumber, Math.max(lateness, recorded ?? lateness));
 
       // Retain only the most recent blocks.
       const evictBelow = blockNumber - BLOCK_ARRIVAL_HISTORY;
@@ -238,12 +242,15 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       if (BlockUpdateMessage.is(message)) {
         const { blockNumber, currentTime } = message;
 
+        // Record arrival ahead of the ordering check below: a same-height replacement is precisely what the
+        // lateness gate exists to catch, and it takes the misordered branch.
+        this.#recordBlockArrival(blockNumber, currentTime);
+
         // nb. This condition may be indicative of re-org, but is more likely out-of-order delivery.
         // Some chains have sub-second block times, so multiple blocks may share the same timestamp.
         if (this.isUpdated && (blockNumber <= this.#pendingBlockNumber || currentTime < this.#pendingCurrentTime)) {
           this.#misorderedBlocks.push(blockNumber);
         } else {
-          this.#recordBlockArrival(blockNumber, currentTime);
           this.#pendingBlockNumber = blockNumber;
           this.#pendingCurrentTime = currentTime;
           this.#eventEmitter.emit("block", blockNumber, currentTime);
