@@ -30,6 +30,7 @@ import {
   isStablecoin,
   min,
   delay,
+  TransactionReceipt,
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
@@ -768,6 +769,41 @@ export class Relayer {
     return mdcPerChain;
   }
 
+  /**
+   * Verify that the transaction which emitted a deposit is still mined, successful, and in the position where it was
+   * observed. An origin chain re-org can drop that transaction, cause it to revert on replay, or re-include it at a
+   * different index -- each of which can change or invalidate the deposit, leaving any fill unmatched.
+   * @param deposit Deposit under evaluation.
+   * @returns True if the origin transaction is unchanged, or if verification was skipped or inconclusive.
+   */
+  async originTxnUnchanged(deposit: DepositWithBlock): Promise<boolean> {
+    if (!this.config.verifyOriginTxn) {
+      return true;
+    }
+
+    const originSpoke = this.clients.spokePoolClients[deposit.originChainId];
+    if (!isEVMSpokePoolClient(originSpoke)) {
+      return true;
+    }
+
+    const { blockNumber, txnIndex, txnRef } = deposit;
+    let receipt: TransactionReceipt | null;
+    try {
+      receipt = await originSpoke.spokePool.provider.getTransactionReceipt(txnRef);
+    } catch (err) {
+      // Fail open: an RPC error is not evidence that the deposit is invalid.
+      this.logger.debug({
+        at: "Relayer::originTxnUnchanged",
+        message: "Unable to verify origin transaction; proceeding.",
+        txnRef,
+        err,
+      });
+      return true;
+    }
+
+    return receipt?.status === 1 && receipt.blockNumber === blockNumber && receipt.transactionIndex === txnIndex;
+  }
+
   canSlowFill(deposit: DepositWithBlock): boolean {
     return (
       // Cannot slow fill when input and output tokens are not equivalent.
@@ -825,6 +861,18 @@ export class Relayer {
       if (this.config.sendingTransactionsEnabled) {
         return;
       }
+    }
+
+    // The confirmation gate above compares block heights and cannot detect an origin transaction that was dropped,
+    // reverted on replay, or re-included at a different position. Verify it directly before committing funds.
+    if (!(await this.originTxnUnchanged(deposit))) {
+      this.logger.warn({
+        at,
+        message: `Skipping ${originChain} deposit ${depositId.toString()}; origin transaction is no longer as observed.`,
+        blockNumber: deposit.blockNumber,
+        txnRef,
+      });
+      return;
     }
 
     // If depositor is on the slow deposit list, then send a zero fill to initiate a slow relay and return early.
