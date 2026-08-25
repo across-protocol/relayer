@@ -961,73 +961,89 @@ export class GaslessRelayer {
 
     const apiMessages = await this._queryGaslessApi();
     const pending = apiMessages.filter(messageFilter);
-    // Claim state before the first await so overlapping poll ticks don't re-process these messages.
-    // @dev A claim is only released by reaching a terminal state or by the explicit delete in
-    // processBatch(). A throw that escapes before either strands its messages until restart, since
-    // messageFilter() skips anything with existing state. Keep new failure paths inside the state
-    // machine, where the do/while retries, rather than between the claim and processDepositMessage().
-    pending.forEach((message) => this._getState(this._getDepositKeyFromMessage(message)));
-
+    // Claim, validate and classify in one pass, before the first await, so overlapping poll ticks
+    // don't re-process these messages.
+    //
     // Validation gates batching: a batch is submitted before any of its members' state machines run,
     // so an unvalidated deposit would execute on-chain and only then be rejected, leaving a deposit we
-    // never fill. Evaluate once here and hand the verdict to processDepositMessage(), which must not
-    // re-run it (validateDeposit() pages on oversized deposits).
-    const validated = new Map<AnyGaslessDepositMessage, boolean>(
-      pending.map((message) => [message, this._validateDepositMessage(message)])
-    );
-
-    // Group deposits eligible for batched submission by origin chain. CCTP deposits confirm via the
-    // receipt hash rather than a FundsDeposited log, so they stay on the individual path.
+    // never fill. The verdict is handed to processDepositMessage() rather than recomputed there.
+    //
+    // @dev Runs outside the state machine, so it needs its own boundary: validateDeposit()'s token
+    // lookups throw for a symbol missing from TOKEN_SYMBOLS_MAP (ACB-552), which _isProcessable()
+    // does not cover. Those are message properties, so the offender is dropped. CCTP deposits confirm
+    // via the receipt hash rather than a FundsDeposited log, so they stay on the individual path.
     const now = getCurrentTime();
+    const validated = new Map<AnyGaslessDepositMessage, boolean>();
     const batchGroups: { [chainId: number]: AnyGaslessDepositMessage[] } = {};
     const individual: AnyGaslessDepositMessage[] = [];
     for (const message of pending) {
-      const { fillDeadline } = extractGaslessDepositFields(message);
-      const batchable =
-        this.config.depositBatchingEnabled &&
-        validated.get(message) &&
-        fillDeadline > now &&
-        !this._isCctpDeposit(message.originChainId, message.spokePool) &&
-        isBatchableGaslessDeposit(message);
-      if (batchable) {
-        (batchGroups[message.originChainId] ??= []).push(message);
-      } else {
-        individual.push(message);
+      try {
+        this._getState(this._getDepositKeyFromMessage(message));
+        const valid = this._validateDepositMessage(message);
+        validated.set(message, valid);
+
+        const { fillDeadline } = extractGaslessDepositFields(message);
+        const batchable =
+          this.config.depositBatchingEnabled &&
+          valid &&
+          fillDeadline > now &&
+          !this._isCctpDeposit(message.originChainId, message.spokePool) &&
+          isBatchableGaslessDeposit(message);
+        (batchable ? (batchGroups[message.originChainId] ??= []) : individual).push(message);
+      } catch (err) {
+        this._dropMessage(message, err);
       }
     }
 
     const processBatch = async (originChainId: number, messages: AnyGaslessDepositMessage[]) => {
+      const submitIndividually = (batch: AnyGaslessDepositMessage[]) =>
+        forEachAsync(batch, (message) => processDepositMessage(message, undefined, validated.get(message)));
+
       const multicall3 = this._getMulticall3(originChainId);
       // Fall back to individual submission when the chain has no Multicall3 or the batch is trivial.
       if (!isDefined(multicall3) || messages.length < 2) {
-        await forEachAsync(messages, (message) => processDepositMessage(message, undefined, validated.get(message)));
+        await submitIndividually(messages);
         return;
       }
 
-      const calls = messages.map((message) => {
-        const periphery = this.getPeripheryContract(originChainId, message.targetAddress);
-        return {
-          target: periphery.address,
-          callData: encodeGaslessDepositCalldata(buildGaslessDepositTx(message, periphery)),
-        };
-      });
+      // @dev Encoding runs outside the state machine, so a message whose calldata can't be built is
+      // dropped rather than taking every other member of the batch down with it.
+      const encodable: { message: AnyGaslessDepositMessage; call: { target: string; callData: string } }[] = [];
+      for (const message of messages) {
+        try {
+          const periphery = this.getPeripheryContract(originChainId, message.targetAddress);
+          encodable.push({
+            message,
+            call: {
+              target: periphery.address,
+              callData: encodeGaslessDepositCalldata(buildGaslessDepositTx(message, periphery)),
+            },
+          });
+        } catch (err) {
+          this._dropMessage(message, err);
+        }
+      }
 
       // Plan the batch: per-call estimation prunes calls that can't execute (spent nonce, expired
       // authorization, underfunded depositor), defers calls that would exceed the gas budget, and
       // sizes the remainder. Estimates see pre-batch state, so cross-deposit interactions are
       // absorbed by requireSuccess=false at execution and the state machine retries the loser.
-      const { included, gasLimit, failed, deferred } = await this._planDepositBatch(multicall3, calls);
+      const { included, gasLimit, failed, deferred } = await this._planDepositBatch(
+        multicall3,
+        encodable.map(({ call }) => call)
+      );
 
       const release = (index: number, level: "warn" | "debug", message: string, args: Record<string, unknown> = {}) => {
+        const { requestId, depositId } = encodable[index].message;
         this.logger[level]({
           at: "GaslessRelayer#evaluateApiSignatures",
           message,
-          requestId: messages[index].requestId,
-          depositId: messages[index].depositId,
+          requestId,
+          depositId,
           originChainId,
           ...args,
         });
-        delete this.messageState[this._getDepositKeyFromMessage(messages[index])];
+        delete this.messageState[this._getDepositKeyFromMessage(encodable[index].message)];
       };
       // Estimation failure is the primary signal that batching is misbehaving, hence warn.
       failed.forEach(({ index, error }) =>
@@ -1038,7 +1054,10 @@ export class GaslessRelayer {
       deferred.forEach((index) =>
         release(index, "debug", "Deferring gasless deposit to a later poll (batch gas budget reached).")
       );
-      if (included.length === 0) {
+      // Pruning can leave too little to be worth batching. A single-call tryAggregate pays the wrapper
+      // and forfeits the direct path's `spray`, so let whatever survived fall through.
+      if (included.length < 2) {
+        await submitIndividually(included.map((i) => encodable[i].message));
         return;
       }
 
@@ -1046,11 +1065,13 @@ export class GaslessRelayer {
       const receiptPromise = this.initiateBatchDeposit(
         originChainId,
         multicall3,
-        included.map((i) => calls[i]),
+        included.map((i) => encodable[i].call),
         gasLimit
       );
       await Promise.all(
-        included.map((i) => processDepositMessage(messages[i], receiptPromise, validated.get(messages[i])))
+        included.map((i) =>
+          processDepositMessage(encodable[i].message, receiptPromise, validated.get(encodable[i].message))
+        )
       );
     };
 

@@ -60,7 +60,7 @@ The deposit transaction itself is built from the API message and is unaffected b
 | `RELAYER_GASLESS_DEPOSIT_USD_PAGE_THRESHOLD` | `1000` | Page-worthy deposit size threshold (stablecoin input); `0` disables. |
 | `RELAYER_GASLESS_REFUND_FLOW_TEST_ENABLED` | `false` | Test mode: allow refund-shaped deposits; submit deposit but skip fill. |
 | `RELAYER_GASLESS_FILLS_ENABLED` | `true` | When `false`, submit origin deposits only (no destination fills). |
-| `RELAYER_GASLESS_DEPOSIT_BATCHING` | `false` | Batch eligible origin deposits per chain via `Multicall3.tryAggregate`; each message's state machine confirms its own deposit against the shared batch receipt. CCTP deposits and deposits whose signed fee falls back to `msg.sender` always submit individually, as do deposits that fail validation. |
+| `RELAYER_GASLESS_DEPOSIT_BATCHING` | `false` | Batch eligible origin deposits per chain via `Multicall3.tryAggregate`; each message's state machine confirms its own deposit against the shared batch receipt. CCTP deposits and deposits whose signed fee falls back to `msg.sender` always submit individually, as do deposits that fail validation. A batch left with fewer than two calls after planning falls through to individual submission. |
 | `RELAYER_GASLESS_DEPOSIT_BATCH_SIZE` | `10` | Maximum deposits per `Multicall3.tryAggregate` batch. Override per chain with `RELAYER_GASLESS_DEPOSIT_BATCH_SIZE_CHAIN_${chainId}`. A batch exceeding the block gas limit fails wholesale, so size it against the origin chain's limit. |
 
 ### `RELAYER_GASLESS_FILLS_ENABLED` (deposits-only mode)
