@@ -277,14 +277,15 @@ export class AcrossSwapApiClient extends BaseAcrossApiClient {
   }
 
   /**
-   * v3 (upgradeable-counterfactual) sign-withdraw (POST). Rethrows on failure (via `_postOrThrow`)
-   * so the caller can classify the HTTP status — a 422 (`GAS_EXCEEDS_REFUND` /
-   * `UNPRICEABLE_REFUND_TOKEN`) is terminal, other failures are retryable.
+   * v3 (upgradeable-counterfactual) sign-withdraw (POST). Rethrows on failure (via
+   * `_postOrThrowWithErrorCode`) so the caller can classify the HTTP status and the API's error
+   * `code` — a 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`) is terminal and its code is
+   * published as the `withdraw_failed` reason; other failures are retryable.
    */
   async signWithdrawDepositAddressV3(
     req: DepositAddressSignWithdrawRequest
   ): Promise<DepositAddressSignWithdrawResponse> {
-    return this._postOrThrow<DepositAddressSignWithdrawResponse>("deposit-addresses/sign-withdraw", req);
+    return this._postOrThrowWithErrorCode<DepositAddressSignWithdrawResponse>("deposit-addresses/sign-withdraw", req);
   }
 
   /**

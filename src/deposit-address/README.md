@@ -130,20 +130,27 @@ The flow (`initiateDepositV3`):
    Redis exactly like v1.
 8. Publish a `deposit_executed` lifecycle event to GCP Pub/Sub (if `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER=true`).
 
-**Below-minimum executes are refunded, not retried.** The execute endpoint rejects an `amount` under
-the minimum deposit with the error code `AMOUNT_BELOW_MINIMUM` (422 today). The amount is whatever
-landed on the deposit address, so no retry can change the outcome: `_getExecuteTx` stops retrying,
-records the `depositKey` in the refund-only set (below), and `initiateDepositV3` hands the transfer to
-`initiateWithdrawV3` in the same tick — the funds go back to the committed refund address instead of
-sitting on the deposit address. Later polls route straight to the withdraw path from the persisted
-marker, so the execute endpoint is never asked again. Two consequences worth knowing:
+**Terminally-rejected executes are refunded, not retried.** Two execute error codes are terminal
+(`TERMINAL_EXECUTE_ERROR_CODES`): `AMOUNT_BELOW_MINIMUM` (422 — amount under the minimum deposit) and
+`AMOUNT_TEMPORARILY_UNSWEEPABLE` (400 — the live CCTP fee exceeds the on-chain fee cap at this
+amount, or the execution fee eats the whole amount). The amount is whatever landed on the deposit
+address, so no retry can change the outcome: `_getExecuteTx` stops retrying, records the `depositKey`
+in the refund-only set (below), and `initiateDepositV3` hands the transfer to `initiateWithdrawV3` in
+the same tick — the funds go back to the committed refund address instead of sitting on the deposit
+address. Later polls route straight to the withdraw path from the persisted marker, so the execute
+endpoint is never asked again. Three consequences worth knowing:
 
+- Treating the unsweepable **400** as terminal deliberately deviates from the quote-api's documented
+  "400 = retry" contract: the fee would have to drop far below the cap to ever clear, and unbounded
+  retry parks user funds (a real 1 USDC mainnet deposit retried for 5+ minutes until manual refund).
+  The accepted cost is that a brief fee spike converts a sweepable deposit into a gas-deducted refund.
 - The refund obeys `ENABLE_V3_WITHDRAWALS`. With the gate off the marker still lands (so the API is
   no longer hammered) but nothing is refunded until the gate is on.
-- A below-minimum amount is small, and the v3 withdraw deducts gas from the refund, so the
+- A terminally-rejected amount is small, and the v3 withdraw deducts gas from the refund, so the
   sign-withdraw call can itself return a terminal `GAS_EXCEEDS_REFUND` 422. That converges correctly:
-  both markers are persisted, the bot stops making API calls for the transfer, and the funds stay put
-  for manual handling.
+  both markers are persisted, the bot stops making API calls for the transfer, a `withdraw_failed`
+  event flips the indexer row to `failed` (user sees `refund-failed`), and the funds stay put for
+  manual handling.
 
 The bot classifies on the error **code**, not the status, so the guard survives a status change on
 the API side. Seeing the code at all requires `_postOrThrowWithErrorCode` in
@@ -204,12 +211,14 @@ out to the refund address as a mis_route.) The flow (`initiateWithdrawV3`) mirro
 
 **Terminal 422 handling.** The endpoint rejects with 422 when gas can't be deducted —
 `GAS_EXCEEDS_REFUND` (fee ≥ refund, typically dust) or `UNPRICEABLE_REFUND_TOKEN` (no market price).
-A 422 is treated as **terminal**: the bot does not submit and **does not retry on later polls**. The
-depositKey is persisted to a dedicated skip set (below) so the decision survives handover. Every
-other failure (network, timeout, 5xx, transient 400 incl. `GAS_FEE_TEMPORARILY_UNAVAILABLE`) is
-retried, then skipped for the current poll and re-attempted on the next. Surfacing the 422 status
-requires the non-swallowing `_postOrThrow` base-client method (`_post` collapses errors to
-`undefined`); the bot classifies on the `HttpError.status`.
+A 422 is treated as **terminal**: the bot does not submit and **does not retry on later polls**. A
+`withdraw_failed` event carrying the API's error code as `reason` is published first (so the indexer
+row flips to `failed` instead of stranding at `auto_pending`), then the depositKey is persisted to a
+dedicated skip set (below) so the decision survives handover. Every other failure (network, timeout,
+5xx, transient 400 incl. `GAS_FEE_TEMPORARILY_UNAVAILABLE`) is retried, then skipped for the current
+poll and re-attempted on the next. Surfacing the 422 requires the non-swallowing
+`_postOrThrowWithErrorCode` base-client method (`_post` collapses errors to `undefined`); the bot
+classifies on the `HttpError.status` and forwards the body's `code` as the published reason.
 
 ## Execution fee (deposit-execute path)
 
@@ -242,7 +251,7 @@ Four sets persist across runs so handover does not double-spend, double-refund, 
 - `deposit-address:executed:<botIdentifier>` — set of `erc20Transfer.transactionHash` for successfully executed deposits.
 - `deposit-address:withdrawn-deposit-keys:<botIdentifier>` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
 - `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws that failed terminally: a quote-api 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`), or a balance read that reverted because the token is not a conforming ERC-20; never re-attempted.
-- `deposit-address:refund-only-deposit-keys:<botIdentifier>` — set of `depositKey` for v3 correct-transfers the execute endpoint rejected as `AMOUNT_BELOW_MINIMUM`; never executed again, routed to the refund-withdraw path instead.
+- `deposit-address:refund-only-deposit-keys:<botIdentifier>` — set of `depositKey` for v3 correct-transfers the execute endpoint rejected terminally (`AMOUNT_BELOW_MINIMUM` / `AMOUNT_TEMPORARILY_UNSWEEPABLE`); never executed again, routed to the refund-withdraw path instead.
 
 On each poll, entries whose source messages are no longer returned by the indexer are pruned — the indexer has its own TTL and stops returning expired messages.
 
@@ -321,11 +330,14 @@ The intentional trade-off: a dropped publish leaves the indexer row in `auto_pen
 
 ### Terminal failures (`withdraw_failed`)
 
-Most withdraw failures are retried and must **not** be published: a `failed` row shows the user `refund-failed`, and the indexer serves each transfer once (plus a ~15-minute replay window), so there is no walking it back. The one signal published today is a v3 balance read failing with ethers `CALL_EXCEPTION` — the token does not implement `balanceOf`, so no retry and no manual op can withdraw it. `isTerminalBalanceReadError` gates on the `code`, never the message; `TIMEOUT` / `SERVER_ERROR` / `NETWORK_ERROR` and non-ethers throws are our infrastructure and keep today's warn-and-return.
+Most withdraw failures are retried and must **not** be published: a `failed` row shows the user `refund-failed`, and the indexer serves each transfer once (plus a ~15-minute replay window), so there is no walking it back. Two v3 signals are published today:
 
-`_publishWithdrawFailed` carries the inbound `erc20Transfer` lookup key plus a stable `reason` code — today only `BALANCE_CHECK_FAILED` — which lands in `metadata.failureReason` for ops to group on (add codes, never reword them). It publishes **before** persisting the skip to `terminallySkippedWithdrawKeys`, so a Redis failure cannot swallow the event, and the skip caps it at one publish per transfer.
+- A balance read failing with ethers `CALL_EXCEPTION` — the token does not implement `balanceOf`, so no retry and no manual op can withdraw it. `isTerminalBalanceReadError` gates on the `code`, never the message; `TIMEOUT` / `SERVER_ERROR` / `NETWORK_ERROR` and non-ethers throws are our infrastructure and keep today's warn-and-return. Reason: `BALANCE_CHECK_FAILED`.
+- The sign-withdraw terminal `422` — the refund cannot be executed at all (gas ≥ refund / unpriceable token / no refund address committed). Reason: the API's error code (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN` / `REFUND_ADDRESS_UNSET`), falling back to `SIGN_WITHDRAW_REJECTED` when the body carried none.
 
-Still deliberately unpublished: the terminal quote-api `422` in `_getSignedWithdrawV3`, and every v1 (`initiateWithdraw`) failure path — both still strand rows at `auto_pending`.
+`_publishWithdrawFailed` carries the inbound `erc20Transfer` lookup key plus a stable `reason` code, which lands in `metadata.failureReason` for ops to group on (add codes, never reword them). It publishes **before** persisting the skip to `terminallySkippedWithdrawKeys`, so a Redis failure cannot swallow the event, and the skip caps it at one publish per transfer.
+
+Still deliberately unpublished: every v1 (`initiateWithdraw`) failure path — those still strand rows at `auto_pending`.
 
 ## Related modules
 

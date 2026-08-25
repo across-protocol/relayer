@@ -63,6 +63,11 @@ export type WithdrawFailedPayload = {
  * code — ops groups on it, so add codes, never reword them. */
 export const BALANCE_CHECK_FAILED_REASON = "BALANCE_CHECK_FAILED";
 
+/** Fallback reason for a terminal sign-withdraw 422 whose body carried no error code. The normal
+ * case forwards the API's own code (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN` / …). Same
+ * stability rule as above: ops groups on these, so add codes, never reword them. */
+export const SIGN_WITHDRAW_REJECTED_REASON = "SIGN_WITHDRAW_REJECTED";
+
 /**
  * Returns the last log in `receipt` recording `token` leaving `depositAddress`. When `to` is
  * provided, the recipient topic must match as well — used by the withdraw path to disambiguate

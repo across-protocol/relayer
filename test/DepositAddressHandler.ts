@@ -542,7 +542,7 @@ describe("DepositAddressHandler._getExecuteTx request mapping", function () {
   });
 });
 
-describe("DepositAddressHandler._getExecuteTx below-minimum handling", function () {
+describe("DepositAddressHandler._getExecuteTx terminal-code handling", function () {
   let handler: DepositAddressHandler;
   let executeStub: sinon.SinonStub;
   let redisSetStub: sinon.SinonStub;
@@ -589,6 +589,18 @@ describe("DepositAddressHandler._getExecuteTx below-minimum handling", function 
     await internals()._getExecuteTx(depositMessageV3());
     expect(executeStub.callCount).to.equal(1);
     expect(internals().refundOnlyDepositKeys.has(depositKey)).to.equal(true);
+  });
+
+  it("treats AMOUNT_TEMPORARILY_UNSWEEPABLE (400) as terminal: no retry, persists the refund-only key", async function () {
+    executeStub.rejects(
+      new AcrossApiHttpError(400, "maxFeeCctp 419883 exceeds the on-chain cap 250000", "AMOUNT_TEMPORARILY_UNSWEEPABLE")
+    );
+    const result = await internals()._getExecuteTx(depositMessageV3());
+    expect(result).to.equal(undefined);
+    expect(executeStub.callCount).to.equal(1);
+    expect(internals().refundOnlyDepositKeys.has(depositKey)).to.equal(true);
+    expect(redisSetStub.calledOnce).to.equal(true);
+    expect(redisSetStub.firstCall.args[1]).to.equal(JSON.stringify([depositKey]));
   });
 
   it("retries other terminal-looking 422s and persists no refund-only key", async function () {
@@ -914,6 +926,7 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
   let handler: DepositAddressHandler;
   let signWithdrawStub: sinon.SinonStub;
   let redisSetStub: sinon.SinonStub;
+  let publishStub: sinon.SinonStub;
 
   type Internals = {
     _getSignedWithdrawV3: (
@@ -929,7 +942,8 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
   }
 
   beforeEach(function () {
-    const config = {} as unknown as DepositAddressHandlerConfig;
+    // A terminal 422 publishes withdraw_failed; the gate must be on to observe it.
+    const config = { enableDepositAddressWithdrawPublisher: true } as unknown as DepositAddressHandlerConfig;
     const logger = { warn: sinon.stub(), debug: sinon.stub() } as unknown as winston.Logger;
     handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
     signWithdrawStub = sinon.stub();
@@ -938,6 +952,10 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
     };
     redisSetStub = sinon.stub().resolves();
     (handler as unknown as { redisCache: { set: sinon.SinonStub } }).redisCache = { set: redisSetStub };
+    publishStub = sinon.stub().resolves("msg-id");
+    (handler as unknown as { executionPublisher: { publishJson: sinon.SinonStub } }).executionPublisher = {
+      publishJson: publishStub,
+    };
   });
 
   afterEach(() => sinon.restore());
@@ -980,10 +998,11 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
     expect(signWithdrawStub.callCount).to.equal(4); // initial attempt + 3 retries
     expect(internals().terminallySkippedWithdrawKeys.size).to.equal(0);
     expect(redisSetStub.notCalled).to.equal(true);
+    expect(publishStub.notCalled).to.equal(true);
   });
 
-  it("treats a 422 as terminal: no retry, persists the skip key", async function () {
-    signWithdrawStub.rejects(new HttpError(422, "GAS_EXCEEDS_REFUND"));
+  it("treats a 422 as terminal: no retry, publishes withdraw_failed, persists the skip key", async function () {
+    signWithdrawStub.rejects(new AcrossApiHttpError(422, "gas fee exceeds refund amount", "GAS_EXCEEDS_REFUND"));
     const message = withdrawMessageV3();
     const result = await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf);
     expect(result).to.equal(undefined);
@@ -991,6 +1010,20 @@ describe("DepositAddressHandler._getSignedWithdrawV3", function () {
     const depositKey = getDepositKey(message);
     expect(internals().terminallySkippedWithdrawKeys.has(depositKey)).to.equal(true);
     expect(redisSetStub.calledOnce).to.equal(true);
+    // Publish-first ordering: a Redis throw must not swallow the event.
+    expect(publishStub.calledOnce).to.equal(true);
+    expect(publishStub.calledBefore(redisSetStub)).to.equal(true);
+    const payload = publishStub.firstCall.args[1];
+    expect(payload.type).to.equal("withdraw_failed");
+    expect(payload.data.reason).to.equal("GAS_EXCEEDS_REFUND");
+  });
+
+  it("publishes the fallback reason when the terminal 422 carries no error code", async function () {
+    signWithdrawStub.rejects(new HttpError(422, "Unprocessable Entity"));
+    const message = withdrawMessageV3();
+    await internals()._getSignedWithdrawV3(message, v3WithdrawLeaf);
+    expect(publishStub.calledOnce).to.equal(true);
+    expect(publishStub.firstCall.args[1].data.reason).to.equal("SIGN_WITHDRAW_REJECTED");
   });
 });
 
