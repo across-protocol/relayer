@@ -12,6 +12,21 @@ Therefore, the relayer's finality risk threshold can be customized as well.
 
 The full config can be found in `RelayerConfig.ts`
 
+### Deferring fills within the origin block
+
+`RELAYER_MIN_ORIGIN_BLOCK_ELAPSED_PCT_<chainId>` (integer `0`-`100`, default `0` = disabled) holds fills sourced from
+that origin chain back until that proportion of the chain's current block has elapsed, leaving room for a re-org
+removal to be reported before the fill is submitted. Nothing is cancelled: the deposit is reconsidered next iteration,
+and if it was backed out in the meantime it is not re-queued.
+
+Requires `RELAYER_EXTERNAL_LISTENER=true` (and therefore `POLLING_DELAY > 0`) — only listener-backed SpokePoolClients
+report removals, so on a polling client the delay buys latency and no protection. Startup fails if it is set without
+one. The delay is skipped, with a warning, on chains whose blocks are shorter than two seconds (including all SVM
+slots): chain time is only known to the second, so the position within such a block cannot be resolved.
+
+Scope: the delay is bounded by one block time, so it only closes the gap where the removal report was already close
+behind. It is re-checked immediately before each fill is queued, but not again when the destination queue is flushed.
+
 ### Restricting recipients on a destination chain
 
 `RELAYER_ALLOWED_RECIPIENTS_<chainId>` is a JSON array of recipient addresses the relayer will fill for on that

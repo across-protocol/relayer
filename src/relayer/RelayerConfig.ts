@@ -528,7 +528,24 @@ export class RelayerConfig extends CommonConfig {
           : Constants.RELAYER_SPOKEPOOL_LISTENER_EVM;
       const { RELAYER_SPOKEPOOL_LISTENER_PATH = defaultPath } = process.env;
       minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0);
-      minOriginBlockElapsedPct[chainId] = Number(process.env[`RELAYER_MIN_ORIGIN_BLOCK_ELAPSED_PCT_${chainId}`] ?? 0);
+
+      const minOriginBlockElapsedEnv = `RELAYER_MIN_ORIGIN_BLOCK_ELAPSED_PCT_${chainId}`;
+      const minElapsedPct = Number(process.env[minOriginBlockElapsedEnv] ?? 0);
+      // A non-numeric or out-of-range value would otherwise silently disable the requested delay, since the
+      // comparison in Relayer::deferWithinOriginBlock is never satisfied.
+      assert(
+        Number.isFinite(minElapsedPct) && minElapsedPct >= 0 && minElapsedPct <= 100,
+        `Invalid ${minOriginBlockElapsedEnv} (${process.env[minOriginBlockElapsedEnv]}); expected 0-100.`
+      );
+      // The delay exists to let a re-org removal be reported before the fill is submitted. Only listener-backed
+      // SpokePoolClients receive removals; a polling client never backs an ingested deposit out, so deferring
+      // there buys latency and no protection.
+      assert(
+        minElapsedPct === 0 || this.externalListener,
+        `${minOriginBlockElapsedEnv} requires RELAYER_EXTERNAL_LISTENER=true (and POLLING_DELAY > 0);` +
+          " polling SpokePoolClients are not notified of re-orged deposits."
+      );
+      minOriginBlockElapsedPct[chainId] = minElapsedPct;
       listenerPath[chainId] =
         process.env[`RELAYER_SPOKEPOOL_LISTENER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_LISTENER_PATH;
 

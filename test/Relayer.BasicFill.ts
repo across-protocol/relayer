@@ -14,6 +14,7 @@ import {
   bnZero,
   bnOne,
   bnUint256Max,
+  getCurrentTime,
   getNetworkName,
   getAllUnfilledDeposits,
   getMessageHash,
@@ -679,6 +680,71 @@ describe("Relayer: Check for Unfilled Deposits and Fill", function () {
       txnReceipts = await relayerInstance.checkForUnfilledDepositsAndFill();
       const receipts = await txnReceipts[destinationChainId];
       expect(receipts.length).to.equal(1);
+    });
+
+    describe("Deferring fills within the origin chain block", function () {
+      // Pin the block time rather than sampling hardhat; see "Correctly defers destination chain fills" above for
+      // why the sampled figure is not usable here.
+      const avgBlockTime = 12;
+      const minElapsedPct = 50; // Defer until 6s into the block.
+      let spokeTimeStub: sinon.SinonStub | undefined;
+
+      // Position the relayer `elapsed` seconds into the origin chain's current block. The margins used below are
+      // wide enough that a wall-clock tick between this stub and the call under test cannot flip the outcome.
+      const setElapsed = (elapsed: number): void => {
+        const originSpoke = relayerInstance.clients.spokePoolClients[originChainId];
+        spokeTimeStub = sinon.stub(originSpoke, "getCurrentTime").returns(getCurrentTime() - elapsed);
+      };
+
+      beforeEach(function () {
+        archStub = sinon.stub(arch, "evm").value({
+          ...arch.evm,
+          averageBlockTime: async () => ({ average: avgBlockTime, blockRange: 120 }),
+        });
+        relayerInstance.config.minOriginBlockElapsedPct = { [originChainId]: minElapsedPct };
+      });
+
+      afterEach(function () {
+        spokeTimeStub?.restore();
+        spokeTimeStub = undefined;
+      });
+
+      it("Defers early in the origin block", async function () {
+        setElapsed(0);
+        expect(await relayerInstance.deferWithinOriginBlock(originChainId)).to.be.true;
+      });
+
+      it("Does not defer late in the origin block", async function () {
+        setElapsed(10);
+        expect(await relayerInstance.deferWithinOriginBlock(originChainId)).to.be.false;
+      });
+
+      it("Does not defer on a stale origin chain view", async function () {
+        // Beyond one block time the position within the current block is indeterminate; deferring here could
+        // withhold fills indefinitely.
+        setElapsed(avgBlockTime * 2);
+        expect(await relayerInstance.deferWithinOriginBlock(originChainId)).to.be.false;
+      });
+
+      it("Does not defer when disabled", async function () {
+        relayerInstance.config.minOriginBlockElapsedPct = { [originChainId]: 0 };
+        setElapsed(0);
+        expect(await relayerInstance.deferWithinOriginBlock(originChainId)).to.be.false;
+      });
+
+      it("Does not defer when the origin block is too short to resolve a position within", async function () {
+        // Chain time is only known to the second, so sub-second blocks (all SVM slots, the shortest EVM chains)
+        // admit a single elapsed value and the configured percentage stops having any effect.
+        archStub?.restore();
+        archStub = sinon.stub(arch, "evm").value({
+          ...arch.evm,
+          averageBlockTime: async () => ({ average: 0.4, blockRange: 120 }),
+        });
+
+        setElapsed(0);
+        expect(await relayerInstance.deferWithinOriginBlock(originChainId)).to.be.false;
+        expect(lastSpyLogIncludes(spy, "blocks are too short to resolve a position within")).to.be.true;
+      });
     });
 
     it("Correctly tracks origin chain fill commitments", async function () {
