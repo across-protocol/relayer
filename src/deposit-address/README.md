@@ -110,7 +110,7 @@ the production rollout).
 The flow (`initiateDepositV3`):
 
 1. Filter on `relayerOriginChains` and dedup against the same Redis/in-memory sets as v1 (the dedup
-   scheme is keyed on `erc20Transfer.transactionHash` / `depositKey`, shared across versions).
+   scheme is keyed on `depositKey`, shared across versions).
 2. Skip when `depositAddressNamespace` / `refundAddress.namespace` don't match the origin chain's
    family (`evm` ⇒ EVM chains, `tron` ⇒ Tron; other families, and cross-family anomalies like a
    `tron` namespace on an EVM chainId, are skipped with a warn).
@@ -246,10 +246,10 @@ neither validates nor skips: the deposit address is already deployed from explic
 
 ## Redis persistence
 
-Four sets persist across runs so handover does not double-spend, double-refund, re-attempt a terminally-skipped refund, or re-execute a transfer already known to be unexecutable:
+Four sets persist across runs so handover does not double-spend, double-refund, re-attempt a terminally-skipped refund, or re-execute a transfer already known to be unexecutable. All are keyed on `depositKey` (`depositAddress:transactionHash:logIndex` — logIndex disambiguates multiple transfers to the same address in one tx):
 
-- `deposit-address:executed:<botIdentifier>` — set of `erc20Transfer.transactionHash` for successfully executed deposits.
-- `deposit-address:withdrawn-deposit-keys:<botIdentifier>` — set of `depositKey` (`depositAddress:transactionHash`) for successfully executed refund withdraws.
+- `deposit-address:executed:<botIdentifier>` — set of `depositKey` for successfully executed deposits.
+- `deposit-address:withdrawn-deposit-keys:<botIdentifier>` — set of `depositKey` for successfully executed refund withdraws.
 - `deposit-address:skipped-withdraw-keys:<botIdentifier>` — set of `depositKey` for v3 refund withdraws that failed terminally: a quote-api 422 (`GAS_EXCEEDS_REFUND` / `UNPRICEABLE_REFUND_TOKEN`), or a balance read that reverted because the token is not a conforming ERC-20; never re-attempted.
 - `deposit-address:refund-only-deposit-keys:<botIdentifier>` — set of `depositKey` for v3 correct-transfers the execute endpoint rejected terminally (`AMOUNT_BELOW_MINIMUM` / `AMOUNT_TEMPORARILY_UNSWEEPABLE`); never executed again, routed to the refund-withdraw path instead.
 
