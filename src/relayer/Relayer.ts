@@ -777,7 +777,7 @@ export class Relayer {
    */
   originBlockUnsettled(deposit: DepositWithBlock): boolean {
     const { originChainId, blockNumber } = deposit;
-    const maxLateness = this.config.maxOriginBlockLateness[originChainId] ?? 0;
+    const maxLateness = this.config.maxOriginBlockLateness?.[originChainId] ?? 0;
     if (maxLateness === 0) {
       return false;
     }

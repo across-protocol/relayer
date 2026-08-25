@@ -124,8 +124,9 @@ const ORBIT_MIN_DEPOSIT_CONFIRMATIONS = 1;
 const SVM_MIN_DEPOSIT_CONFIRMATIONS = 4;
 const MDC_DEFAULT_THRESHOLD = 1000;
 
-// Confirmations required before an origin block that arrived late in its slot is treated as settled. Such a block
-// missed its slot's attestation deadline and can be replaced by the next proposer; one block on top resolves that.
+// Blocks that must be built on top of a late-arriving origin block before it is treated as settled. Such a block
+// missed its slot's attestation deadline and can be replaced at the same height by the next proposer. One block on
+// top makes that unlikely, but that block's own attestations have not landed yet, so require a second.
 export const LATE_BLOCK_MIN_CONFIRMATIONS = 2;
 
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {

@@ -74,7 +74,7 @@ interface SpokeListenerMethods {
 
 // Number of recent blocks to retain arrival timings for. Only the most recent blocks are of interest, since
 // arrival lateness is only consulted while a deposit is still within its origin chain's re-org window.
-const BLOCK_ARRIVAL_HISTORY = 128;
+export const BLOCK_ARRIVAL_HISTORY = 128;
 
 export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
   SpokePoolClient: T
