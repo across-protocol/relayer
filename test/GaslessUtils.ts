@@ -272,6 +272,27 @@ describe("GaslessUtils", function () {
       expect(result.targetAddress).to.equal(DUMMY_ADDRESS);
     });
 
+    it("skips an unparseable deposit without rejecting its healthy siblings", function () {
+      const malformed = makeApiResponse();
+      malformed.requestId = "req-malformed";
+      // A shape the API shouldn't emit: destructuring the witness throws mid-flatMap.
+      delete (malformed.swapTx.data as unknown as Record<string, unknown>).witness;
+      const healthy = makeApiResponse();
+      const warn = sinon.spy();
+      const logger = { warn } as unknown as winston.Logger;
+
+      const result = restructureGaslessDeposits([malformed, healthy], logger);
+
+      expect(result.length).to.equal(1);
+      expect(result[0].requestId).to.equal(healthy.requestId);
+      expect(warn.calledOnce).to.be.true;
+      expect(warn.firstCall.args[0]).to.include({
+        at: "GaslessUtils#restructureGaslessDeposits",
+        message: "Skipping unparseable gasless deposit.",
+        requestId: "req-malformed",
+      });
+    });
+
     it("skips deposits with unsupported permit type and logs warning", function () {
       const invalidApiResponse = makeApiResponse({ type: "BridgeWitness" });
       const warn = sinon.spy();
