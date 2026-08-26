@@ -61,11 +61,11 @@ interface SpokeListenerMethods {
   stopWorker(): void;
   _indexerUpdate(rawMessage: unknown): void;
   _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate>;
-  getBlockArrivalLateness(blockNumber: number): number | undefined;
+  getBlockArrivalDelay(blockNumber: number): number | undefined;
 }
 
 // Number of recent blocks to retain arrival timings for. Only the most recent blocks are of interest, since
-// arrival lateness is only consulted while a deposit is still within its origin chain's re-org window.
+// the arrival delay is only consulted while a deposit is still within its origin chain's re-org window.
 export const BLOCK_ARRIVAL_HISTORY = 128;
 
 export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
@@ -88,7 +88,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     #misorderedBlocks: number[] = [];
 
     // blockNumber => seconds elapsed between the block's own timestamp and its arrival here.
-    #blockArrivalLateness: Map<number, number> = new Map();
+    #blockArrivalDelay: Map<number, number> = new Map();
 
     init(opts: IndexerOpts) {
       this.#chain = getNetworkName(this.chainId);
@@ -192,29 +192,29 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
      * @returns void
      */
     #recordBlockArrival(blockNumber: number, currentTime: number, observedAt: number): void {
-      // Never lower a height's recorded lateness. Seeing a second block at the same height means the first was
+      // Never lower a height's recorded arrival delay. Seeing a second block at the same height means the first was
       // replaced, which makes that height more suspect, not less.
-      const lateness = observedAt - currentTime;
-      const recorded = this.#blockArrivalLateness.get(blockNumber);
-      this.#blockArrivalLateness.set(blockNumber, Math.max(lateness, recorded ?? lateness));
+      const arrivalDelay = observedAt - currentTime;
+      const recorded = this.#blockArrivalDelay.get(blockNumber);
+      this.#blockArrivalDelay.set(blockNumber, Math.max(arrivalDelay, recorded ?? arrivalDelay));
 
       // Retain only the most recent blocks. Heights do not necessarily arrive in ascending order, so every entry
       // has to be inspected; the map is bounded by this same sweep, so it stays cheap.
       const evictBelow = blockNumber - BLOCK_ARRIVAL_HISTORY;
-      this.#blockArrivalLateness.forEach((_, height) => {
+      this.#blockArrivalDelay.forEach((_, height) => {
         if (height < evictBelow) {
-          this.#blockArrivalLateness.delete(height);
+          this.#blockArrivalDelay.delete(height);
         }
       });
     }
 
     /**
-     * Retrieve the arrival lateness previously recorded for a block.
+     * Retrieve the arrival delay previously recorded for a block.
      * @param blockNumber Block number to query.
      * @returns Seconds between the block's timestamp and its arrival, or undefined if it was not observed live.
      */
-    getBlockArrivalLateness(blockNumber: number): number | undefined {
-      return this.#blockArrivalLateness.get(blockNumber);
+    getBlockArrivalDelay(blockNumber: number): number | undefined {
+      return this.#blockArrivalDelay.get(blockNumber);
     }
 
     /**
@@ -236,8 +236,8 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       if (BlockUpdateMessage.is(message)) {
         const { blockNumber, currentTime, observedAt } = message;
 
-        // Only blocks pushed to the listener carry observedAt; polled blocks have no meaningful lateness. Record
-        // ahead of the ordering check below: a same-height replacement is precisely what the lateness gate exists
+        // Only blocks pushed to the listener carry observedAt; polled blocks have no meaningful arrival delay. Record
+        // ahead of the ordering check below: a same-height replacement is precisely what the arrival-delay gate exists
         // to catch, and it takes the misordered branch.
         if (isDefined(observedAt)) {
           this.#recordBlockArrival(blockNumber, currentTime, observedAt);

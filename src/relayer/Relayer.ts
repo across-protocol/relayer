@@ -777,8 +777,8 @@ export class Relayer {
    */
   originBlockUnsettled(deposit: DepositWithBlock): boolean {
     const { originChainId, blockNumber } = deposit;
-    const maxLateness = this.config.maxOriginBlockLateness?.[originChainId] ?? 0;
-    if (maxLateness === 0) {
+    const maxDelay = this.config.maxOriginBlockArrivalDelay?.[originChainId] ?? 0;
+    if (maxDelay === 0) {
       return false;
     }
 
@@ -788,9 +788,9 @@ export class Relayer {
     }
 
     // Blocks that were not observed live have no arrival timing recorded; treat those as settled.
-    const lateness = originSpoke.getBlockArrivalLateness(blockNumber);
+    const arrivalDelay = originSpoke.getBlockArrivalDelay(blockNumber);
     const confirmations = originSpoke.latestHeightSearched - blockNumber;
-    return isDefined(lateness) && lateness >= maxLateness && confirmations < LATE_BLOCK_MIN_CONFIRMATIONS;
+    return isDefined(arrivalDelay) && arrivalDelay >= maxDelay && confirmations < LATE_BLOCK_MIN_CONFIRMATIONS;
   }
 
   canSlowFill(deposit: DepositWithBlock): boolean {

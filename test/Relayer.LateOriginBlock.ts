@@ -35,7 +35,7 @@ function _MockSpokeListener<T extends Constructor<MinSpokeListener>>(SpokeListen
 describe("Relayer: Late-arriving origin blocks", function () {
   const MockSpokeListener = _MockSpokeListener(SpokeListener(EVMSpokePoolClient));
   const originChainId = CHAIN_IDs.MAINNET;
-  const maxLateness = 4; // Seconds.
+  const maxDelay = 4; // Seconds.
 
   let logger: winston.Logger;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -72,69 +72,69 @@ describe("Relayer: Late-arriving origin blocks", function () {
     blockNumber = 1_000;
   });
 
-  it("Records arrival lateness for blocks observed live", async function () {
-    const lateness = 10;
-    postBlock(blockNumber, getCurrentTime() - lateness);
-    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.be.at.least(lateness);
+  it("Records the arrival delay for blocks observed live", async function () {
+    const arrivalDelay = 10;
+    postBlock(blockNumber, getCurrentTime() - arrivalDelay);
+    expect(spokePoolClient.getBlockArrivalDelay(blockNumber)).to.be.at.least(arrivalDelay);
   });
 
-  it("Records no arrival lateness for blocks that were not observed live", async function () {
+  it("Records no arrival delay for blocks that were not observed live", async function () {
     postBlock(blockNumber, getCurrentTime());
-    expect(spokePoolClient.getBlockArrivalLateness(blockNumber - 1)).to.be.undefined;
+    expect(spokePoolClient.getBlockArrivalDelay(blockNumber - 1)).to.be.undefined;
   });
 
-  it("Records no arrival lateness for polled block updates", async function () {
+  it("Records no arrival delay for polled block updates", async function () {
     // A polled update (the EVM startup scrape, the TVM head poll) carries no observation time: the interval
     // between the block's timestamp and the poll measures poll phase, not how late the block was published.
     postBlock(blockNumber, getCurrentTime() - 60, null);
-    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.be.undefined;
+    expect(spokePoolClient.getBlockArrivalDelay(blockNumber)).to.be.undefined;
   });
 
-  it("Measures lateness from the listener's observation, not message receipt", async function () {
+  it("Measures the arrival delay from the listener's observation, not message receipt", async function () {
     // The listener saw the block promptly, but only posted it after a slow backfill. The delay in transmission
-    // is not block lateness.
+    // is not arrival delay.
     const currentTime = getCurrentTime() - 60;
     postBlock(blockNumber, currentTime, currentTime);
-    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.equal(0);
+    expect(spokePoolClient.getBlockArrivalDelay(blockNumber)).to.equal(0);
   });
 
-  it("Records arrival lateness for a same-height replacement block", async function () {
+  it("Records the arrival delay for a same-height replacement block", async function () {
     const currentTime = getCurrentTime();
     postBlock(blockNumber, currentTime);
-    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.be.below(maxLateness);
+    expect(spokePoolClient.getBlockArrivalDelay(blockNumber)).to.be.below(maxDelay);
 
     // A same-height replacement takes the misordered-block path, but is exactly what the gate exists to catch.
     spokePoolClient.isUpdated = true;
     postBlock(blockNumber, currentTime - 30);
-    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.be.at.least(30);
+    expect(spokePoolClient.getBlockArrivalDelay(blockNumber)).to.be.at.least(30);
   });
 
-  it("Never lowers a height's recorded arrival lateness", async function () {
+  it("Never lowers a height's recorded arrival delay", async function () {
     const currentTime = getCurrentTime();
     postBlock(blockNumber, currentTime - 30);
-    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.be.at.least(30);
+    expect(spokePoolClient.getBlockArrivalDelay(blockNumber)).to.be.at.least(30);
 
     spokePoolClient.isUpdated = true;
     postBlock(blockNumber, currentTime);
-    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.be.at.least(30);
+    expect(spokePoolClient.getBlockArrivalDelay(blockNumber)).to.be.at.least(30);
   });
 
-  it("Evicts arrival lateness beyond the retention window", async function () {
+  it("Evicts arrival delays beyond the retention window", async function () {
     const currentTime = getCurrentTime();
     postBlock(blockNumber, currentTime);
-    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.exist;
+    expect(spokePoolClient.getBlockArrivalDelay(blockNumber)).to.exist;
 
     // The oldest retained block is exactly BLOCK_ARRIVAL_HISTORY behind the most recent one.
     postBlock(blockNumber + BLOCK_ARRIVAL_HISTORY, currentTime + 1);
-    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.exist;
+    expect(spokePoolClient.getBlockArrivalDelay(blockNumber)).to.exist;
 
     postBlock(blockNumber + BLOCK_ARRIVAL_HISTORY + 1, currentTime + 2);
-    expect(spokePoolClient.getBlockArrivalLateness(blockNumber)).to.be.undefined;
+    expect(spokePoolClient.getBlockArrivalDelay(blockNumber)).to.be.undefined;
   });
 
   it("Withholds a deposit sourced from a late-arriving origin block until it is confirmed", async function () {
-    const relayer = makeRelayer({ maxOriginBlockLateness: { [originChainId]: maxLateness } });
-    postBlock(blockNumber, getCurrentTime() - maxLateness);
+    const relayer = makeRelayer({ maxOriginBlockArrivalDelay: { [originChainId]: maxDelay } });
+    postBlock(blockNumber, getCurrentTime() - maxDelay);
     const deposit = makeDeposit(blockNumber);
 
     // No block has been built on top of the deposit's origin block.
@@ -149,7 +149,7 @@ describe("Relayer: Late-arriving origin blocks", function () {
   });
 
   it("Does not withhold a deposit sourced from a punctual origin block", async function () {
-    const relayer = makeRelayer({ maxOriginBlockLateness: { [originChainId]: maxLateness } });
+    const relayer = makeRelayer({ maxOriginBlockArrivalDelay: { [originChainId]: maxDelay } });
     postBlock(blockNumber, getCurrentTime());
 
     spokePoolClient.latestHeightSearched = blockNumber;
@@ -157,8 +157,8 @@ describe("Relayer: Late-arriving origin blocks", function () {
   });
 
   it("Does not withhold a deposit whose origin block was not observed live", async function () {
-    const relayer = makeRelayer({ maxOriginBlockLateness: { [originChainId]: maxLateness } });
-    postBlock(blockNumber, getCurrentTime() - maxLateness);
+    const relayer = makeRelayer({ maxOriginBlockArrivalDelay: { [originChainId]: maxDelay } });
+    postBlock(blockNumber, getCurrentTime() - maxDelay);
 
     // Nothing was recorded for the preceding block, so it can't be known to be late.
     spokePoolClient.latestHeightSearched = blockNumber;
@@ -166,7 +166,7 @@ describe("Relayer: Late-arriving origin blocks", function () {
   });
 
   it("Does not withhold when the origin chain threshold is zero", async function () {
-    const relayer = makeRelayer({ maxOriginBlockLateness: { [originChainId]: 0 } });
+    const relayer = makeRelayer({ maxOriginBlockArrivalDelay: { [originChainId]: 0 } });
     postBlock(blockNumber, getCurrentTime() - 60);
 
     spokePoolClient.latestHeightSearched = blockNumber;
@@ -185,7 +185,7 @@ describe("Relayer: Late-arriving origin blocks", function () {
 describe("RelayerConfig: Late-arriving origin block threshold", function () {
   const chainId = CHAIN_IDs.MAINNET;
   const svmChainId = CHAIN_IDs.SOLANA;
-  const envKey = (chainId: number) => `RELAYER_MAX_ORIGIN_BLOCK_LATENESS_${chainId}`;
+  const envKey = (chainId: number) => `RELAYER_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY_${chainId}`;
 
   let logger: winston.Logger;
   let saved: { [key: string]: string | undefined };
@@ -219,25 +219,25 @@ describe("RelayerConfig: Late-arriving origin block threshold", function () {
 
   it("Defaults to disabled", function () {
     delete process.env[envKey(chainId)];
-    expect(validate([chainId]).maxOriginBlockLateness[chainId]).to.equal(0);
+    expect(validate([chainId]).maxOriginBlockArrivalDelay[chainId]).to.equal(0);
   });
 
   it("Accepts a positive threshold", function () {
     process.env[envKey(chainId)] = "6";
-    expect(validate([chainId]).maxOriginBlockLateness[chainId]).to.equal(6);
+    expect(validate([chainId]).maxOriginBlockArrivalDelay[chainId]).to.equal(6);
   });
 
   it("Rejects a malformed threshold", function () {
     process.env[envKey(chainId)] = "oops";
-    expect(() => validate([chainId])).to.throw(/Invalid max origin block lateness/);
+    expect(() => validate([chainId])).to.throw(/Invalid max origin block arrival delay/);
   });
 
   it("Rejects a negative threshold", function () {
     process.env[envKey(chainId)] = "-1";
-    expect(() => validate([chainId])).to.throw(/Invalid max origin block lateness/);
+    expect(() => validate([chainId])).to.throw(/Invalid max origin block arrival delay/);
   });
 
-  it("Rejects a threshold on an SVM chain, where lateness is not observable", function () {
+  it("Rejects a threshold on an SVM chain, where the arrival delay is not observable", function () {
     process.env[envKey(svmChainId)] = "6";
     expect(() => validate([svmChainId])).to.throw(/unsupported on chain/);
   });

@@ -60,7 +60,7 @@ async function scrapeEvents(
   ).flat();
 
   if (!abortController.signal.aborted) {
-    // No observedAt: this block was polled, not pushed, so its arrival interval isn't a lateness signal.
+    // No observedAt: this block was polled, not pushed, so its arrival interval isn't an arrival-delay signal.
     let stop = !postBlock(toBlock, currentTime);
     if (events.length > 0) {
       stop ||= !postEvents(events);
