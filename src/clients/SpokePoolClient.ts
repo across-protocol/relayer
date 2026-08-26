@@ -198,11 +198,12 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       const recorded = this.#blockArrivalLateness.get(blockNumber);
       this.#blockArrivalLateness.set(blockNumber, Math.max(lateness, recorded ?? lateness));
 
-      // Retain only the most recent blocks.
+      // Retain only the most recent blocks. Heights do not necessarily arrive in ascending order, so every entry
+      // has to be inspected; the map is bounded by this same sweep, so it stays cheap.
       const evictBelow = blockNumber - BLOCK_ARRIVAL_HISTORY;
-      this.#blockArrivalLateness.forEach((_, blockNumber) => {
-        if (blockNumber < evictBelow) {
-          this.#blockArrivalLateness.delete(blockNumber);
+      this.#blockArrivalLateness.forEach((_, height) => {
+        if (height < evictBelow) {
+          this.#blockArrivalLateness.delete(height);
         }
       });
     }

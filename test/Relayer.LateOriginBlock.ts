@@ -1,7 +1,7 @@
 import winston from "winston";
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { BLOCK_ARRIVAL_HISTORY, EVMSpokePoolClient, SpokeListener } from "../src/clients";
-import { LATE_BLOCK_MIN_CONFIRMATIONS } from "../src/common";
+import { LATE_BLOCK_MIN_CONFIRMATIONS, ProcessEnv } from "../src/common";
 import { DepositWithBlock } from "../src/interfaces";
 import { ListenerMessage } from "../src/libexec/types";
 import { Relayer } from "../src/relayer/Relayer";
@@ -205,9 +205,14 @@ describe("RelayerConfig: Late-arriving origin block threshold", function () {
     });
   });
 
-  const validate = (chainIds: number[]): RelayerConfig => {
+  const validate = (chainIds: number[], env: ProcessEnv = {}): RelayerConfig => {
     const chains = JSON.stringify(chainIds);
-    const config = new RelayerConfig({ RELAYER_ORIGIN_CHAINS: chains, RELAYER_DESTINATION_CHAINS: chains });
+    const config = new RelayerConfig({
+      RELAYER_ORIGIN_CHAINS: chains,
+      RELAYER_DESTINATION_CHAINS: chains,
+      RELAYER_EXTERNAL_LISTENER: "true",
+      ...env,
+    });
     config.validate(chainIds, logger);
     return config;
   };
@@ -235,5 +240,12 @@ describe("RelayerConfig: Late-arriving origin block threshold", function () {
   it("Rejects a threshold on an SVM chain, where lateness is not observable", function () {
     process.env[envKey(svmChainId)] = "6";
     expect(() => validate([svmChainId])).to.throw(/unsupported on chain/);
+  });
+
+  it("Rejects a threshold without the external listener, which records arrival times", function () {
+    process.env[envKey(chainId)] = "6";
+    expect(() => validate([chainId], { RELAYER_EXTERNAL_LISTENER: "false" })).to.throw(
+      /requires RELAYER_EXTERNAL_LISTENER/
+    );
   });
 });

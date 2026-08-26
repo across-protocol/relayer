@@ -535,6 +535,11 @@ export class RelayerConfig extends CommonConfig {
       assert(Number.isFinite(maxLateness) && maxLateness >= 0, `Invalid max origin block lateness (${_maxLateness})`);
       // The SVM listener reports slot arrival time in place of the slot timestamp, so lateness is always ~0 there.
       assert(maxLateness === 0 || !chainIsSvm(chainId), `Max origin block lateness unsupported on chain ${chainId}`);
+      // The external listener is the only source of block arrival times, so a threshold is inert without it.
+      assert(
+        maxLateness === 0 || this.externalListener,
+        `Max origin block lateness requires RELAYER_EXTERNAL_LISTENER (chain ${chainId})`
+      );
       maxOriginBlockLateness[chainId] = maxLateness;
       listenerPath[chainId] =
         process.env[`RELAYER_SPOKEPOOL_LISTENER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_LISTENER_PATH;
