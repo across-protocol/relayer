@@ -83,7 +83,11 @@ export const BINANCE_NETWORKS: { [chainId: number]: string } = {
 // token.
 export type Coin = {
   symbol: string;
+  // Spendable balance only. Funds reserved by an in-flight withdrawal or held by an exchange-side lock are
+  // reported separately below, so `balance` alone understates the account's total holding of this coin.
   balance: string;
+  locked?: string;
+  withdrawing?: string;
   networkList: Network[];
 };
 
@@ -583,7 +587,13 @@ export async function getFillCommission(
  */
 export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAccountCoins> {
   // accountCoins is an undocumented Binance API method not present in binance-api-node type defs.
-  type RawCoin = { coin: string; free: string; networkList?: Record<string, unknown>[] };
+  type RawCoin = {
+    coin: string;
+    free: string;
+    locked?: string;
+    withdrawing?: string;
+    networkList?: Record<string, unknown>[];
+  };
   const apiWithCoins = binanceApi as BinanceApi & {
     accountCoins(options?: { recvWindow?: number }): Promise<Record<string, RawCoin>>;
   };
@@ -605,6 +615,8 @@ export async function getAccountCoins(binanceApi: BinanceApi): Promise<ParsedAcc
     return {
       symbol: coin.coin,
       balance: coin.free,
+      locked: coin.locked ?? "0",
+      withdrawing: coin.withdrawing ?? "0",
       networkList,
     } as Coin;
   });
