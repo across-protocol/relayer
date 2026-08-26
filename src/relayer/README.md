@@ -19,9 +19,9 @@ reached the relayer at least that long after the block's own timestamp, until `L
 have been built on top of it. Such a block missed its slot's attestation deadline and may be replaced at the same
 height — which the height-based confirmation gate cannot observe.
 
-Rejected at startup unless `RELAYER_EXTERNAL_LISTENER=true`, since the listener is the only source of arrival times,
-and on SVM chains, where it has no slot timestamp to compare against. Arrival delay is only measured for blocks a listener
-is *pushed* — currently EVM chains, via `watchBlocks`. Blocks found by polling (the startup scrape, the TRON head
+Inert without `RELAYER_EXTERNAL_LISTENER=true`, since the listener is the only source of arrival times. Rejected at
+startup on SVM chains, where it has no slot timestamp to compare against. Arrival delay is only measured for blocks a
+listener is *pushed* — currently EVM chains, via `watchBlocks`. Blocks found by polling (the startup scrape, the TRON head
 poll) record no arrival time, because the interval to a poll measures poll phase rather than publication delay, so
 those and anything backfilled are treated as settled. The first block pushed after a (re)connect can still record an
 inflated interval and be held; the cost is bounded by `LATE_BLOCK_MIN_CONFIRMATIONS`.

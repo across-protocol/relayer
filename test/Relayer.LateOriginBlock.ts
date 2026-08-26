@@ -242,10 +242,10 @@ describe("RelayerConfig: Late-arriving origin block threshold", function () {
     expect(() => validate([svmChainId])).to.throw(/unsupported on chain/);
   });
 
-  it("Rejects a threshold without the external listener, which records arrival times", function () {
+  it("Accepts a threshold without the external listener, leaving it inert", function () {
     process.env[envKey(chainId)] = "6";
-    expect(() => validate([chainId], { RELAYER_EXTERNAL_LISTENER: "false" })).to.throw(
-      /requires RELAYER_EXTERNAL_LISTENER/
-    );
+    const config = validate([chainId], { RELAYER_EXTERNAL_LISTENER: "false" });
+    expect(config.externalListener).to.be.false;
+    expect(config.maxOriginBlockArrivalDelay[chainId]).to.equal(6);
   });
 });
