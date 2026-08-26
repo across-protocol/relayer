@@ -3,11 +3,7 @@ import { EventEmitter } from "node:events";
 import { ChildProcess, spawn } from "child_process";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
-import {
-  LATE_BLOCK_MIN_CONFIRMATIONS,
-  RELAYER_SPOKEPOOL_LISTENER_EVM,
-  RELAYER_SPOKEPOOL_LISTENER_SVM,
-} from "../common/Constants";
+import { RELAYER_SPOKEPOOL_LISTENER_EVM, RELAYER_SPOKEPOOL_LISTENER_SVM } from "../common/Constants";
 import {
   Address,
   chainIsSvm,
@@ -236,31 +232,24 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     }
 
     /**
-     * Report the margin the arrival-delay gate had left when a deposit's removal was reported. The gate withholds a
-     * deposit sourced from a late-arriving block for LATE_BLOCK_MIN_CONFIRMATIONS blocks; if removals routinely
-     * arrive with little or no margin then notification latency is outrunning that floor and it needs re-sizing.
-     * @param deposit Deposit whose removal has just been processed.
-     * @returns void
+     * Describe how a removed deposit's origin block was observed, for reporting alongside the removal. Deliberately
+     * states only measured facts: this layer does not know the relayer's configured threshold, so it cannot know
+     * whether the arrival-delay gate was ever engaged for this block. Compare arrivalDelay against the configured
+     * threshold to establish that, then confirmations against LATE_BLOCK_MIN_CONFIRMATIONS for the margin.
+     * @param blockNumber Origin block of the deposit whose removal is being reported.
+     * @returns Arrival timings for the block, or an empty object if it was not observed live.
      */
-    #logRemovalMargin(deposit: DepositWithBlock): void {
-      const { blockNumber } = deposit;
+    #blockArrivalContext(blockNumber: number): { arrivalDelay?: number; confirmations?: number; noticeDelay?: number } {
       const arrival = this.#blockArrivals.get(blockNumber);
       if (!isDefined(arrival)) {
-        return; // Not observed live, so the gate never had anything to hold.
+        return {}; // Not observed live, so nothing was timed.
       }
 
-      const confirmations = this.latestHeightSearched - blockNumber;
-      const toSpare = LATE_BLOCK_MIN_CONFIRMATIONS - confirmations;
-      const margin = toSpare > 0 ? `with ${toSpare} confirmation(s) to spare` : "after the gate had already released";
-      this.logger.warn({
-        at: "SpokePoolClient#removeEvent",
-        message: `Removal reported for a late-arriving ${this.#chain} block ${margin}.`,
-        blockNumber,
+      return {
         arrivalDelay: arrival.arrivalDelay,
+        confirmations: this.latestHeightSearched - blockNumber,
         noticeDelay: getCurrentTime() - arrival.blockTime,
-        confirmations,
-        confirmationsToSpare: toSpare,
-      });
+      };
     }
 
     /**
@@ -365,8 +354,12 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
           deposits.forEach(([depositKey, deposit]) => {
             delete this.depositHashes[depositKey];
             removed = true;
-            this.logger.warn({ at, message: `Removed 1 ${this.#chain} ${eventName} event.`, deposit });
-            this.#logRemovalMargin(deposit);
+            this.logger.warn({
+              at,
+              message: `Removed 1 ${this.#chain} ${eventName} event.`,
+              deposit,
+              ...this.#blockArrivalContext(deposit.blockNumber),
+            });
           });
         } else {
           this.logger.warn({

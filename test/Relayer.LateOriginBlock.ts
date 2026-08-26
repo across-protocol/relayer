@@ -147,29 +147,36 @@ describe("Relayer: Late-arriving origin blocks", function () {
     expect(spokePoolClient.getBlockArrivalDelay(blockNumber)).to.be.undefined;
   });
 
-  it("Reports the margin remaining when a removal lands for a block still being held", async function () {
+  it("Reports arrival timings alongside a removal, without asserting the gate was engaged", async function () {
     const txnRef = randomAddress();
-    postBlock(blockNumber, getCurrentTime() - 30); // Arrived late, so the gate would be holding it.
+    const arrivalDelay = 30;
+    postBlock(blockNumber, getCurrentTime() - arrivalDelay);
     spokePoolClient.depositHashes = { relayHash: { blockNumber, txnRef } };
     spokePoolClient.latestHeightSearched = blockNumber + 1;
 
     postRemoval(blockNumber, txnRef);
     await spokePoolClient._update([]);
 
-    const toSpare = LATE_BLOCK_MIN_CONFIRMATIONS - 1;
-    expect(lastSpyLogIncludes(spy, `${toSpare} confirmation(s) to spare`)).to.be.true;
+    // Measured facts only: this layer cannot know the relayer's threshold, so it must not characterise the block
+    // as late or claim any margin. A punctual block that was filled and then re-orged reaches here too.
+    expect(lastSpyLogIncludes(spy, `"arrivalDelay":${arrivalDelay}`)).to.be.true;
+    expect(lastSpyLogIncludes(spy, '"confirmations":1')).to.be.true;
+    expect(lastSpyLogIncludes(spy, "noticeDelay")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "to spare")).to.be.false;
+    expect(lastSpyLogIncludes(spy, "late-arriving")).to.be.false;
   });
 
-  it("Reports a removal that lands after the gate has already released", async function () {
+  it("Reports a removal for a block that was not observed live without arrival timings", async function () {
     const txnRef = randomAddress();
-    postBlock(blockNumber, getCurrentTime() - 30);
+    postBlock(blockNumber, getCurrentTime() - 30, null); // Polled, so nothing was timed.
     spokePoolClient.depositHashes = { relayHash: { blockNumber, txnRef } };
-    spokePoolClient.latestHeightSearched = blockNumber + LATE_BLOCK_MIN_CONFIRMATIONS;
+    spokePoolClient.latestHeightSearched = blockNumber + 1;
 
     postRemoval(blockNumber, txnRef);
     await spokePoolClient._update([]);
 
-    expect(lastSpyLogIncludes(spy, "after the gate had already released")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "Removed 1")).to.be.true;
+    expect(lastSpyLogIncludes(spy, "arrivalDelay")).to.be.false;
   });
 
   it("Withholds a deposit sourced from a late-arriving origin block until it is confirmed", async function () {
