@@ -8,7 +8,7 @@ import { Relayer } from "../src/relayer/Relayer";
 import { RelayerClients } from "../src/relayer/RelayerClientHelper";
 import { RelayerConfig } from "../src/relayer/RelayerConfig";
 import { EventSearchConfig, getCurrentTime } from "../src/utils";
-import { createSpyLogger, deploySpokePoolWithToken, expect, randomAddress } from "./utils";
+import { createSpyLogger, deploySpokePoolWithToken, expect, lastSpyLogIncludes, randomAddress } from "./utils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Constructor<T = EVMSpokePoolClient> = new (...args: any[]) => T;
@@ -39,6 +39,8 @@ describe("Relayer: Late-arriving origin blocks", function () {
 
   let logger: winston.Logger;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let spy: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let spokePoolClient: any; // nasty @todo
   let blockNumber: number;
 
@@ -49,6 +51,19 @@ describe("Relayer: Late-arriving origin blocks", function () {
   const postBlock = (blockNumber: number, currentTime: number, observedAt: number | null = getCurrentTime()): void => {
     const message: ListenerMessage = { blockNumber, currentTime, ...(observedAt === null ? {} : { observedAt }) };
     spokePoolClient.indexerUpdate(JSON.stringify(message));
+  };
+
+  /** Emulates the indexer reporting that a deposit's origin event was removed upstream. */
+  const postRemoval = (blockNumber: number, transactionHash: string): void => {
+    const event = {
+      event: "FundsDeposited",
+      blockNumber,
+      blockHash: "0xdeadbeef",
+      transactionHash,
+      logIndex: 0,
+      args: { depositId: 1 },
+    };
+    spokePoolClient.indexerUpdate(JSON.stringify({ event: JSON.stringify(event) }));
   };
 
   const makeRelayer = (config: Partial<RelayerConfig>): Relayer =>
@@ -63,7 +78,7 @@ describe("Relayer: Late-arriving origin blocks", function () {
     ({ originChainId, blockNumber }) as unknown as DepositWithBlock;
 
   beforeEach(async function () {
-    ({ spyLogger: logger } = createSpyLogger());
+    ({ spy, spyLogger: logger } = createSpyLogger());
     const { spokePool, deploymentBlock } = await deploySpokePoolWithToken(originChainId);
 
     const searchConfig: EventSearchConfig | undefined = undefined;
@@ -130,6 +145,31 @@ describe("Relayer: Late-arriving origin blocks", function () {
 
     postBlock(blockNumber + BLOCK_ARRIVAL_HISTORY + 1, currentTime + 2);
     expect(spokePoolClient.getBlockArrivalDelay(blockNumber)).to.be.undefined;
+  });
+
+  it("Reports the margin remaining when a removal lands for a block still being held", async function () {
+    const txnRef = randomAddress();
+    postBlock(blockNumber, getCurrentTime() - 30); // Arrived late, so the gate would be holding it.
+    spokePoolClient.depositHashes = { relayHash: { blockNumber, txnRef } };
+    spokePoolClient.latestHeightSearched = blockNumber + 1;
+
+    postRemoval(blockNumber, txnRef);
+    await spokePoolClient._update([]);
+
+    const toSpare = LATE_BLOCK_MIN_CONFIRMATIONS - 1;
+    expect(lastSpyLogIncludes(spy, `${toSpare} confirmation(s) to spare`)).to.be.true;
+  });
+
+  it("Reports a removal that lands after the gate has already released", async function () {
+    const txnRef = randomAddress();
+    postBlock(blockNumber, getCurrentTime() - 30);
+    spokePoolClient.depositHashes = { relayHash: { blockNumber, txnRef } };
+    spokePoolClient.latestHeightSearched = blockNumber + LATE_BLOCK_MIN_CONFIRMATIONS;
+
+    postRemoval(blockNumber, txnRef);
+    await spokePoolClient._update([]);
+
+    expect(lastSpyLogIncludes(spy, "after the gate had already released")).to.be.true;
   });
 
   it("Withholds a deposit sourced from a late-arriving origin block until it is confirmed", async function () {

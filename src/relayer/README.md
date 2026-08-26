@@ -26,7 +26,10 @@ poll) record no arrival time, because the interval to a poll measures poll phase
 those and anything backfilled are treated as settled. The first block pushed after a (re)connect can still record an
 inflated interval and be held; the cost is bounded by `LATE_BLOCK_MIN_CONFIRMATIONS`.
 
-A useful threshold depends on the operator's own event-delivery latency and has to be measured per deployment.
+A useful threshold depends on the operator's own event-delivery latency and has to be measured per deployment. Each
+removal reported for a block observed live is logged with the margin the gate had left (`confirmationsToSpare`, and
+`noticeDelay` in seconds); margins trending to zero mean notification latency is outrunning
+`LATE_BLOCK_MIN_CONFIRMATIONS`.
 
 ### Restricting recipients on a destination chain
 

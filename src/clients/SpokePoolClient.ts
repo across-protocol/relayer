@@ -3,8 +3,20 @@ import { EventEmitter } from "node:events";
 import { ChildProcess, spawn } from "child_process";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
-import { RELAYER_SPOKEPOOL_LISTENER_EVM, RELAYER_SPOKEPOOL_LISTENER_SVM } from "../common/Constants";
-import { Address, chainIsSvm, getNetworkName, isDefined, winston, spreadEventWithBlockNumber } from "../utils";
+import {
+  LATE_BLOCK_MIN_CONFIRMATIONS,
+  RELAYER_SPOKEPOOL_LISTENER_EVM,
+  RELAYER_SPOKEPOOL_LISTENER_SVM,
+} from "../common/Constants";
+import {
+  Address,
+  chainIsSvm,
+  getCurrentTime,
+  getNetworkName,
+  isDefined,
+  winston,
+  spreadEventWithBlockNumber,
+} from "../utils";
 import { EventsAddedMessage, EventRemovedMessage, BlockUpdateMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
@@ -48,6 +60,7 @@ type MinGenericSpokePoolClient = {
   spokePoolAddress: Address | undefined;
   deploymentBlock: number;
   isUpdated: boolean;
+  latestHeightSearched: number;
   _queryableEventNames: () => string[];
   eventSearchConfig: { from: number; to?: number; maxLookBack?: number };
   depositHashes: { [depositHash: string]: DepositWithBlock };
@@ -87,8 +100,8 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
 
     #misorderedBlocks: number[] = [];
 
-    // blockNumber => seconds elapsed between the block's own timestamp and its arrival here.
-    #blockArrivalDelay: Map<number, number> = new Map();
+    // blockNumber => the block's own timestamp, and the seconds that elapsed before it arrived here.
+    #blockArrivals: Map<number, { blockTime: number; arrivalDelay: number }> = new Map();
 
     init(opts: IndexerOpts) {
       this.#chain = getNetworkName(this.chainId);
@@ -194,16 +207,21 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     #recordBlockArrival(blockNumber: number, currentTime: number, observedAt: number): void {
       // Never lower a height's recorded arrival delay. Seeing a second block at the same height means the first was
       // replaced, which makes that height more suspect, not less.
+      // Both fields describe the most suspect observation of the height, so they move together: the largest delay
+      // seen, against the earliest timestamp seen.
       const arrivalDelay = observedAt - currentTime;
-      const recorded = this.#blockArrivalDelay.get(blockNumber);
-      this.#blockArrivalDelay.set(blockNumber, Math.max(arrivalDelay, recorded ?? arrivalDelay));
+      const recorded = this.#blockArrivals.get(blockNumber);
+      this.#blockArrivals.set(blockNumber, {
+        blockTime: Math.min(currentTime, recorded?.blockTime ?? currentTime),
+        arrivalDelay: Math.max(arrivalDelay, recorded?.arrivalDelay ?? arrivalDelay),
+      });
 
       // Retain only the most recent blocks. Heights do not necessarily arrive in ascending order, so every entry
       // has to be inspected; the map is bounded by this same sweep, so it stays cheap.
       const evictBelow = blockNumber - BLOCK_ARRIVAL_HISTORY;
-      this.#blockArrivalDelay.forEach((_, height) => {
+      this.#blockArrivals.forEach((_, height) => {
         if (height < evictBelow) {
-          this.#blockArrivalDelay.delete(height);
+          this.#blockArrivals.delete(height);
         }
       });
     }
@@ -214,7 +232,35 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
      * @returns Seconds between the block's timestamp and its arrival, or undefined if it was not observed live.
      */
     getBlockArrivalDelay(blockNumber: number): number | undefined {
-      return this.#blockArrivalDelay.get(blockNumber);
+      return this.#blockArrivals.get(blockNumber)?.arrivalDelay;
+    }
+
+    /**
+     * Report the margin the arrival-delay gate had left when a deposit's removal was reported. The gate withholds a
+     * deposit sourced from a late-arriving block for LATE_BLOCK_MIN_CONFIRMATIONS blocks; if removals routinely
+     * arrive with little or no margin then notification latency is outrunning that floor and it needs re-sizing.
+     * @param deposit Deposit whose removal has just been processed.
+     * @returns void
+     */
+    #logRemovalMargin(deposit: DepositWithBlock): void {
+      const { blockNumber } = deposit;
+      const arrival = this.#blockArrivals.get(blockNumber);
+      if (!isDefined(arrival)) {
+        return; // Not observed live, so the gate never had anything to hold.
+      }
+
+      const confirmations = this.latestHeightSearched - blockNumber;
+      const toSpare = LATE_BLOCK_MIN_CONFIRMATIONS - confirmations;
+      const margin = toSpare > 0 ? `with ${toSpare} confirmation(s) to spare` : "after the gate had already released";
+      this.logger.warn({
+        at: "SpokePoolClient#removeEvent",
+        message: `Removal reported for a late-arriving ${this.#chain} block ${margin}.`,
+        blockNumber,
+        arrivalDelay: arrival.arrivalDelay,
+        noticeDelay: getCurrentTime() - arrival.blockTime,
+        confirmations,
+        confirmationsToSpare: toSpare,
+      });
     }
 
     /**
@@ -320,6 +366,7 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
             delete this.depositHashes[depositKey];
             removed = true;
             this.logger.warn({ at, message: `Removed 1 ${this.#chain} ${eventName} event.`, deposit });
+            this.#logRemovalMargin(deposit);
           });
         } else {
           this.logger.warn({
