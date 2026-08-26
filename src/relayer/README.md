@@ -14,7 +14,8 @@ The full config can be found in `RelayerConfig.ts`
 
 ### Deferring fills from late-arriving origin blocks
 
-`RELAYER_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY_<chainId>` (seconds, `0`/unset disables) withholds a deposit whose origin block
+`RELAYER_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY_<chainId>` (seconds; `0` disables, unset takes the chain default from
+`DEFAULT_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY` — currently 5s on mainnet, disabled elsewhere) withholds a deposit whose origin block
 reached the relayer at least that long after the block's own timestamp, until `LATE_BLOCK_MIN_CONFIRMATIONS` blocks
 have been built on top of it. Such a block missed its slot's attestation deadline and may be replaced at the same
 height — which the height-based confirmation gate cannot observe.

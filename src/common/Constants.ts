@@ -131,6 +131,15 @@ const MDC_DEFAULT_THRESHOLD = 1000;
 // trails the replacement by appreciably more than one block time.
 export const LATE_BLOCK_MIN_CONFIRMATIONS = 3;
 
+// Per-origin-chain default arrival delay (seconds) beyond which a deposit is withheld until its origin block is
+// confirmed. Overridden by RELAYER_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY_<chainId>; an explicit 0 disables the check.
+// Chains absent here default to disabled, as the delay is only a re-org signal where slot times are fixed.
+// The mainnet figure sits well above the median arrival delay but inside the tail that replaced blocks occupy,
+// deliberately favouring protection over fill latency: the delay costs a fill, an invalid fill costs the amount.
+export const DEFAULT_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY: { [chainId: number]: number } = {
+  [CHAIN_IDs.MAINNET]: 5,
+};
+
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   10000: {
     [CHAIN_IDs.MAINNET]: 32,

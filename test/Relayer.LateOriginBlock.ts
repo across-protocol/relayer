@@ -1,7 +1,7 @@
 import winston from "winston";
 import { CHAIN_IDs } from "@across-protocol/constants";
 import { BLOCK_ARRIVAL_HISTORY, EVMSpokePoolClient, SpokeListener } from "../src/clients";
-import { LATE_BLOCK_MIN_CONFIRMATIONS, ProcessEnv } from "../src/common";
+import { DEFAULT_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY, LATE_BLOCK_MIN_CONFIRMATIONS, ProcessEnv } from "../src/common";
 import { DepositWithBlock } from "../src/interfaces";
 import { ListenerMessage } from "../src/libexec/types";
 import { Relayer } from "../src/relayer/Relayer";
@@ -232,6 +232,7 @@ describe("Relayer: Late-arriving origin blocks", function () {
 describe("RelayerConfig: Late-arriving origin block threshold", function () {
   const chainId = CHAIN_IDs.MAINNET;
   const svmChainId = CHAIN_IDs.SOLANA;
+  const noDefaultChainId = CHAIN_IDs.OPTIMISM;
   const envKey = (chainId: number) => `RELAYER_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY_${chainId}`;
 
   let logger: winston.Logger;
@@ -239,7 +240,9 @@ describe("RelayerConfig: Late-arriving origin block threshold", function () {
 
   beforeEach(function () {
     ({ spyLogger: logger } = createSpyLogger());
-    saved = Object.fromEntries([chainId, svmChainId].map((chainId) => [envKey(chainId), process.env[envKey(chainId)]]));
+    saved = Object.fromEntries(
+      [chainId, svmChainId, noDefaultChainId].map((chainId) => [envKey(chainId), process.env[envKey(chainId)]])
+    );
   });
 
   afterEach(function () {
@@ -264,8 +267,20 @@ describe("RelayerConfig: Late-arriving origin block threshold", function () {
     return config;
   };
 
-  it("Defaults to disabled", function () {
+  it("Applies the chain default when unset", function () {
     delete process.env[envKey(chainId)];
+    expect(validate([chainId]).maxOriginBlockArrivalDelay[chainId]).to.equal(
+      DEFAULT_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY[chainId]
+    );
+  });
+
+  it("Defaults to disabled on a chain with no default", function () {
+    delete process.env[envKey(noDefaultChainId)];
+    expect(validate([noDefaultChainId]).maxOriginBlockArrivalDelay[noDefaultChainId]).to.equal(0);
+  });
+
+  it("Permits an explicit zero to disable a chain that has a default", function () {
+    process.env[envKey(chainId)] = "0";
     expect(validate([chainId]).maxOriginBlockArrivalDelay[chainId]).to.equal(0);
   });
 
