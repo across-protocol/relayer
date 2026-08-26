@@ -12,6 +12,27 @@ Therefore, the relayer's finality risk threshold can be customized as well.
 
 The full config can be found in `RelayerConfig.ts`
 
+### Deferring fills from late-arriving origin blocks
+
+`RELAYER_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY_<chainId>` (seconds; `0` disables, unset takes the chain default from
+`DEFAULT_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY` — currently 5s on mainnet, disabled elsewhere) withholds a deposit whose origin block
+reached the relayer at least that long after the block's own timestamp, until `LATE_BLOCK_MIN_CONFIRMATIONS` blocks
+have been built on top of it. Such a block missed its slot's attestation deadline and may be replaced at the same
+height — which the height-based confirmation gate cannot observe.
+
+Inert without `RELAYER_EXTERNAL_LISTENER=true`, since the listener is the only source of arrival times. Rejected at
+startup on SVM chains, where it has no slot timestamp to compare against. Arrival delay is only measured for blocks a
+listener is *pushed* — currently EVM chains, via `watchBlocks`. Blocks found by polling (the startup scrape, the TRON head
+poll) record no arrival time, because the interval to a poll measures poll phase rather than publication delay, so
+those and anything backfilled are treated as settled. The first block pushed after a (re)connect can still record an
+inflated interval and be held; the cost is bounded by `LATE_BLOCK_MIN_CONFIRMATIONS`.
+
+A useful threshold depends on the operator's own event-delivery latency and has to be measured per deployment. Every
+removal of a deposit whose origin block was observed live carries that block's `arrivalDelay`, the `confirmations` it
+had accrued, and the `noticeDelay` in seconds from its timestamp to the report. Filter to removals above the
+configured threshold and compare `confirmations` against `LATE_BLOCK_MIN_CONFIRMATIONS`: a margin trending to zero
+means notification latency is outrunning the floor.
+
 ### Restricting recipients on a destination chain
 
 `RELAYER_ALLOWED_RECIPIENTS_<chainId>` is a JSON array of recipient addresses the relayer will fill for on that

@@ -4,7 +4,15 @@ import { ChildProcess, spawn } from "child_process";
 import { clients, utils as sdkUtils } from "@across-protocol/sdk";
 import { Log, DepositWithBlock } from "../interfaces";
 import { RELAYER_SPOKEPOOL_LISTENER_EVM, RELAYER_SPOKEPOOL_LISTENER_SVM } from "../common/Constants";
-import { Address, chainIsSvm, getNetworkName, isDefined, winston, spreadEventWithBlockNumber } from "../utils";
+import {
+  Address,
+  chainIsSvm,
+  getCurrentTime,
+  getNetworkName,
+  isDefined,
+  winston,
+  spreadEventWithBlockNumber,
+} from "../utils";
 import { EventsAddedMessage, EventRemovedMessage, BlockUpdateMessage } from "../utils/SuperstructUtils";
 
 export type SpokePoolClient = clients.SpokePoolClient;
@@ -48,6 +56,7 @@ type MinGenericSpokePoolClient = {
   spokePoolAddress: Address | undefined;
   deploymentBlock: number;
   isUpdated: boolean;
+  latestHeightSearched: number;
   _queryableEventNames: () => string[];
   eventSearchConfig: { from: number; to?: number; maxLookBack?: number };
   depositHashes: { [depositHash: string]: DepositWithBlock };
@@ -61,7 +70,12 @@ interface SpokeListenerMethods {
   stopWorker(): void;
   _indexerUpdate(rawMessage: unknown): void;
   _update(eventsToQuery: string[]): Promise<clients.SpokePoolUpdate>;
+  getBlockArrivalDelay(blockNumber: number): number | undefined;
 }
+
+// Number of recent blocks to retain arrival timings for. Only the most recent blocks are of interest, since
+// the arrival delay is only consulted while a deposit is still within its origin chain's re-org window.
+export const BLOCK_ARRIVAL_HISTORY = 128;
 
 export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
   SpokePoolClient: T
@@ -81,6 +95,9 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     #pendingEventsRemoved: Log[] = [];
 
     #misorderedBlocks: number[] = [];
+
+    // blockNumber => the block's own timestamp, and the seconds that elapsed before it arrived here.
+    #blockArrivals: Map<number, { blockTime: number; arrivalDelay: number }> = new Map();
 
     init(opts: IndexerOpts) {
       this.#chain = getNetworkName(this.chainId);
@@ -176,6 +193,66 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
     }
 
     /**
+     * Record how late a block arrived relative to its own timestamp. On chains with fixed slot times, a block
+     * that arrives late in its slot was published late and is materially more likely to be re-orged.
+     * @param blockNumber Block number that was received.
+     * @param currentTime The block's timestamp.
+     * @param observedAt When the listener was pushed the block.
+     * @returns void
+     */
+    #recordBlockArrival(blockNumber: number, currentTime: number, observedAt: number): void {
+      // Never lower a height's recorded arrival delay. Seeing a second block at the same height means the first was
+      // replaced, which makes that height more suspect, not less.
+      // Both fields describe the most suspect observation of the height, so they move together: the largest delay
+      // seen, against the earliest timestamp seen.
+      const arrivalDelay = observedAt - currentTime;
+      const recorded = this.#blockArrivals.get(blockNumber);
+      this.#blockArrivals.set(blockNumber, {
+        blockTime: Math.min(currentTime, recorded?.blockTime ?? currentTime),
+        arrivalDelay: Math.max(arrivalDelay, recorded?.arrivalDelay ?? arrivalDelay),
+      });
+
+      // Retain only the most recent blocks. Heights do not necessarily arrive in ascending order, so every entry
+      // has to be inspected; the map is bounded by this same sweep, so it stays cheap.
+      const evictBelow = blockNumber - BLOCK_ARRIVAL_HISTORY;
+      this.#blockArrivals.forEach((_, height) => {
+        if (height < evictBelow) {
+          this.#blockArrivals.delete(height);
+        }
+      });
+    }
+
+    /**
+     * Retrieve the arrival delay previously recorded for a block.
+     * @param blockNumber Block number to query.
+     * @returns Seconds between the block's timestamp and its arrival, or undefined if it was not observed live.
+     */
+    getBlockArrivalDelay(blockNumber: number): number | undefined {
+      return this.#blockArrivals.get(blockNumber)?.arrivalDelay;
+    }
+
+    /**
+     * Describe how a removed deposit's origin block was observed, for reporting alongside the removal. Deliberately
+     * states only measured facts: this layer does not know the relayer's configured threshold, so it cannot know
+     * whether the arrival-delay gate was ever engaged for this block. Compare arrivalDelay against the configured
+     * threshold to establish that, then confirmations against LATE_BLOCK_MIN_CONFIRMATIONS for the margin.
+     * @param blockNumber Origin block of the deposit whose removal is being reported.
+     * @returns Arrival timings for the block, or an empty object if it was not observed live.
+     */
+    #blockArrivalContext(blockNumber: number): { arrivalDelay?: number; confirmations?: number; noticeDelay?: number } {
+      const arrival = this.#blockArrivals.get(blockNumber);
+      if (!isDefined(arrival)) {
+        return {}; // Not observed live, so nothing was timed.
+      }
+
+      return {
+        arrivalDelay: arrival.arrivalDelay,
+        confirmations: this.latestHeightSearched - blockNumber,
+        noticeDelay: getCurrentTime() - arrival.blockTime,
+      };
+    }
+
+    /**
      * Receive an update from the external indexer process.
      * @param rawMessage Message to be parsed.
      * @returns void
@@ -192,7 +269,14 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
       }
 
       if (BlockUpdateMessage.is(message)) {
-        const { blockNumber, currentTime } = message;
+        const { blockNumber, currentTime, observedAt } = message;
+
+        // Only blocks pushed to the listener carry observedAt; polled blocks have no meaningful arrival delay. Record
+        // ahead of the ordering check below: a same-height replacement is precisely what the arrival-delay gate exists
+        // to catch, and it takes the misordered branch.
+        if (isDefined(observedAt)) {
+          this.#recordBlockArrival(blockNumber, currentTime, observedAt);
+        }
 
         // nb. This condition may be indicative of re-org, but is more likely out-of-order delivery.
         // Some chains have sub-second block times, so multiple blocks may share the same timestamp.
@@ -270,7 +354,12 @@ export function SpokeListener<T extends Constructor<MinGenericSpokePoolClient>>(
           deposits.forEach(([depositKey, deposit]) => {
             delete this.depositHashes[depositKey];
             removed = true;
-            this.logger.warn({ at, message: `Removed 1 ${this.#chain} ${eventName} event.`, deposit });
+            this.logger.warn({
+              at,
+              message: `Removed 1 ${this.#chain} ${eventName} event.`,
+              deposit,
+              ...this.#blockArrivalContext(deposit.blockNumber),
+            });
           });
         } else {
           this.logger.warn({

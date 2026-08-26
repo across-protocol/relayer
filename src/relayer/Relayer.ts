@@ -2,7 +2,7 @@ import assert from "assert";
 import { utils as sdkUtils, arch } from "@across-protocol/sdk";
 import { utils as ethersUtils } from "ethers";
 import { FillStatus, Deposit, DepositWithBlock, SpokePoolClientsByChain } from "../interfaces";
-import { updateSpokePoolClients } from "../common";
+import { LATE_BLOCK_MIN_CONFIRMATIONS, updateSpokePoolClients } from "../common";
 import {
   BigNumber,
   bnZero,
@@ -33,7 +33,7 @@ import {
 } from "../utils";
 import { RelayerClients } from "./RelayerClientHelper";
 import { RelayerConfig } from "./RelayerConfig";
-import { MultiCallerClient } from "../clients";
+import { isSpokePoolClientWithListener, MultiCallerClient } from "../clients";
 
 const { getAddress } = ethersUtils;
 const { isDepositSpedUp, isMessageEmpty, resolveDepositMessage } = sdkUtils;
@@ -768,6 +768,31 @@ export class Relayer {
     return mdcPerChain;
   }
 
+  /**
+   * A block that reaches the relayer late within its own slot was published after that slot's attestation deadline,
+   * making it materially more likely to be replaced by the next proposer at the same height. Deposits sourced from
+   * such a block are withheld until a subsequent block has been built on top of it.
+   * @param deposit Deposit under evaluation.
+   * @returns True if the deposit's origin block arrived late and has not yet been confirmed.
+   */
+  originBlockUnsettled(deposit: DepositWithBlock): boolean {
+    const { originChainId, blockNumber } = deposit;
+    const maxDelay = this.config.maxOriginBlockArrivalDelay?.[originChainId] ?? 0;
+    if (maxDelay === 0) {
+      return false;
+    }
+
+    const originSpoke = this.clients.spokePoolClients[originChainId];
+    if (!isSpokePoolClientWithListener(originSpoke)) {
+      return false;
+    }
+
+    // Blocks that were not observed live have no arrival timing recorded; treat those as settled.
+    const arrivalDelay = originSpoke.getBlockArrivalDelay(blockNumber);
+    const confirmations = originSpoke.latestHeightSearched - blockNumber;
+    return isDefined(arrivalDelay) && arrivalDelay >= maxDelay && confirmations < LATE_BLOCK_MIN_CONFIRMATIONS;
+  }
+
   canSlowFill(deposit: DepositWithBlock): boolean {
     return (
       // Cannot slow fill when input and output tokens are not equivalent.
@@ -822,6 +847,21 @@ export class Relayer {
       });
       // If we're in simulation mode, skip this early exit so that the user can evaluate
       // the full simulation run.
+      if (this.config.sendingTransactionsEnabled) {
+        return;
+      }
+    }
+
+    // The confirmation gate above compares block heights, so it cannot see a same-height replacement. Additionally
+    // hold deposits whose origin block was published late within its own slot; see originBlockUnsettled().
+    if (this.originBlockUnsettled(deposit)) {
+      this.logger.debug({
+        at,
+        message: `Skipping ${originChain} deposit ${depositId.toString()} sourced from a late-arriving block.`,
+        blockNumber: deposit.blockNumber,
+        txnRef,
+      });
+      // As with the confirmation gate above, don't early-exit in simulation mode.
       if (this.config.sendingTransactionsEnabled) {
         return;
       }

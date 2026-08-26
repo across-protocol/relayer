@@ -6,6 +6,7 @@ import {
   isDefined,
   getBlockForTimestamp,
   getChainQuorum,
+  getCurrentTime,
   getDeploymentBlockNumber,
   getNetworkName,
   getProvider,
@@ -59,6 +60,7 @@ async function scrapeEvents(
   ).flat();
 
   if (!abortController.signal.aborted) {
+    // No observedAt: this block was polled, not pushed, so its arrival interval isn't an arrival-delay signal.
     let stop = !postBlock(toBlock, currentTime);
     if (events.length > 0) {
       stop ||= !postEvents(events);
@@ -159,7 +161,7 @@ async function run(argv: string[]): Promise<void> {
 
   const listener = new EventListener(chainId, logger, quorum);
   listener.onBlock((blockNumber, currentTime) => {
-    if (!postBlock(blockNumber, currentTime)) {
+    if (!postBlock(blockNumber, currentTime, getCurrentTime())) {
       abortController.abort();
     }
   });
