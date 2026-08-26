@@ -125,9 +125,11 @@ const SVM_MIN_DEPOSIT_CONFIRMATIONS = 4;
 const MDC_DEFAULT_THRESHOLD = 1000;
 
 // Blocks that must be built on top of a late-arriving origin block before it is treated as settled. Such a block
-// missed its slot's attestation deadline and can be replaced at the same height by the next proposer. One block on
-// top makes that unlikely, but that block's own attestations have not landed yet, so require a second.
-export const LATE_BLOCK_MIN_CONFIRMATIONS = 2;
+// missed its slot's attestation deadline and can be replaced at the same height by the next proposer, which the
+// height-based confirmation gate cannot observe. The hold must therefore outlast the re-org *notification*, not
+// merely the replacement: a deposit is only backed out once the listener reports its removal, and that report
+// trails the replacement by appreciably more than one block time.
+export const LATE_BLOCK_MIN_CONFIRMATIONS = 3;
 
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   10000: {
