@@ -6,9 +6,11 @@ import { Log, ListenerMessage } from "./../types";
  * Post a block update to the parent process (if defined).
  * @param blockNumber Block number up to which the update applies.
  * @param currentTime The SpokePool timestamp at blockNumber.
+ * @param observedAt When the block was pushed to the listener by a live subscription. Omit it when the block was
+ * discovered by polling: the interval then measures poll phase rather than how late the block was published.
  * @returns True if message transmission succeeds, else false.
  */
-export function postBlock(blockNumber: number, currentTime: number): boolean {
+export function postBlock(blockNumber: number, currentTime: number, observedAt?: number): boolean {
   if (!isDefined(process.send)) {
     // Process was probably started standalone.
     // https://nodejs.org/api/process.html#processsendmessage-sendhandle-options-callback
@@ -18,6 +20,7 @@ export function postBlock(blockNumber: number, currentTime: number): boolean {
   const message: ListenerMessage = {
     blockNumber,
     currentTime,
+    observedAt,
   };
 
   return post(message);

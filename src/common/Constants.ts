@@ -124,6 +124,22 @@ const ORBIT_MIN_DEPOSIT_CONFIRMATIONS = 1;
 const SVM_MIN_DEPOSIT_CONFIRMATIONS = 4;
 const MDC_DEFAULT_THRESHOLD = 1000;
 
+// Blocks that must be built on top of a late-arriving origin block before it is treated as settled. Such a block
+// missed its slot's attestation deadline and can be replaced at the same height by the next proposer, which the
+// height-based confirmation gate cannot observe. The hold must therefore outlast the re-org *notification*, not
+// merely the replacement: a deposit is only backed out once the listener reports its removal, and that report
+// trails the replacement by appreciably more than one block time.
+export const LATE_BLOCK_MIN_CONFIRMATIONS = 3;
+
+// Per-origin-chain default arrival delay (seconds) beyond which a deposit is withheld until its origin block is
+// confirmed. Overridden by RELAYER_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY_<chainId>; an explicit 0 disables the check.
+// Chains absent here default to disabled, as the delay is only a re-org signal where slot times are fixed.
+// The mainnet figure sits well above the median arrival delay but inside the tail that replaced blocks occupy,
+// deliberately favouring protection over fill latency: the delay costs a fill, an invalid fill costs the amount.
+export const DEFAULT_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY: { [chainId: number]: number } = {
+  [CHAIN_IDs.MAINNET]: 5,
+};
+
 export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chainId: number]: number } } = {
   10000: {
     [CHAIN_IDs.MAINNET]: 32,

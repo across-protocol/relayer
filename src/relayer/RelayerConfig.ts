@@ -155,6 +155,9 @@ export class RelayerConfig extends CommonConfig {
   readonly relayerMessageGasMultiplier: BigNumber;
   readonly minRelayerFeePct: BigNumber;
   readonly minFillTime: { [chainId: number]: number } = {};
+  // Per-origin-chain threshold (seconds). A deposit whose origin block reached the relayer at least this long
+  // after the block's own timestamp is held back until the block is confirmed. 0 disables the check.
+  readonly maxOriginBlockArrivalDelay: { [chainId: number]: number } = {};
   readonly allowedRecipients: { [chainId: number]: Set<string> } = {};
   readonly acceptInvalidFills: boolean;
   readonly relayerUseInventoryManager: boolean;
@@ -499,7 +502,8 @@ export class RelayerConfig extends CommonConfig {
    * @param logger Optional logger object.
    */
   override validate(chainIds: number[], logger: winston.Logger): void {
-    const { listenerPath, minFillTime, relayerOriginChains, relayerDestinationChains } = this;
+    const { listenerPath, minFillTime, maxOriginBlockArrivalDelay, relayerOriginChains, relayerDestinationChains } =
+      this;
     const relayerChainIds =
       relayerOriginChains.length > 0 && relayerDestinationChains.length > 0
         ? dedupArray([...relayerOriginChains, ...relayerDestinationChains])
@@ -525,6 +529,15 @@ export class RelayerConfig extends CommonConfig {
           : Constants.RELAYER_SPOKEPOOL_LISTENER_EVM;
       const { RELAYER_SPOKEPOOL_LISTENER_PATH = defaultPath } = process.env;
       minFillTime[chainId] = Number(process.env[`RELAYER_MIN_FILL_TIME_${chainId}`] ?? 0);
+
+      // An explicitly configured 0 disables the check, overriding any default for the chain.
+      const _maxDelay = process.env[`RELAYER_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY_${chainId}`];
+      const maxDelay = Number(_maxDelay ?? Constants.DEFAULT_MAX_ORIGIN_BLOCK_ARRIVAL_DELAY[chainId] ?? 0);
+      // A malformed value would otherwise parse to NaN and silently disable the check.
+      assert(Number.isFinite(maxDelay) && maxDelay >= 0, `Invalid max origin block arrival delay (${_maxDelay})`);
+      // The SVM listener reports slot arrival time in place of the slot timestamp, so the arrival delay is always ~0 there.
+      assert(maxDelay === 0 || !chainIsSvm(chainId), `Max origin block arrival delay unsupported on chain ${chainId}`);
+      maxOriginBlockArrivalDelay[chainId] = maxDelay;
       listenerPath[chainId] =
         process.env[`RELAYER_SPOKEPOOL_LISTENER_PATH_${chainId}`] ?? RELAYER_SPOKEPOOL_LISTENER_PATH;
 
