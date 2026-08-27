@@ -97,6 +97,12 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public getMessageState(depositNonce: string): MessageState {
     return this.messageState[depositNonce];
   }
+  public getDroppedMessages(): Set<string> {
+    return this.droppedMessages;
+  }
+  public runIsProcessable(depositMessage: AnyGaslessDepositMessage): boolean {
+    return this._isProcessable(depositMessage);
+  }
   public testFillImmediate(
     deposit: Pick<RelayData, "originChainId" | "outputToken" | "outputAmount"> & {
       destinationChainId: number;
@@ -162,8 +168,9 @@ class TestableGaslessRelayer extends GaslessRelayer {
   // Track state transitions, keyed by depositKey (e.g., nonce)
   public stateTransitions: { [depositKey: string]: Array<{ from: MessageState; to: MessageState }> } = {};
 
+  // Mirrors production: the real _queryGaslessApi() drops unprocessable messages at ingestion.
   protected override async _queryGaslessApi(): Promise<AnyGaslessDepositMessage[]> {
-    return this.queryGaslessApiFn();
+    return (await this.queryGaslessApiFn()).filter((deposit) => this._isProcessable(deposit));
   }
   protected override async initiateDeposit(msg: AnyGaslessDepositMessage): Promise<TransactionReceipt | null> {
     this.initiateDepositCalls++;
@@ -627,6 +634,7 @@ describe("GaslessRelayer", function () {
   let fakeSpokePoolAddress: string;
   let fakePeripherySmock: FakeContract;
   let fakePermit2Smock: FakeContract;
+  let spy: ReturnType<typeof createSpyLogger>["spy"];
 
   // Test fixture helpers that automatically use the correct spokePool address
   const makeTestDepositMessage = (
@@ -642,7 +650,8 @@ describe("GaslessRelayer", function () {
     makeCctpDepositMessage(overrides ?? {}, fakeSpokePoolAddress);
 
   beforeEach(async function () {
-    const { spyLogger } = createSpyLogger();
+    const { spyLogger, spy: logSpy } = createSpyLogger();
+    spy = logSpy;
 
     const [signer] = await ethers.getSigners();
 
@@ -1239,6 +1248,44 @@ describe("GaslessRelayer", function () {
       expect(batchingRelayer.initiateDepositCalls).to.equal(0);
     });
 
+    it("retries the whole batch on a later poll when planning fails", async function () {
+      // Batch-level work runs outside every member's state machine, so the per-message boundary in
+      // processDepositMessage() cannot see a throw here. Members are claimed before the first await
+      // and messageFilter() skips a claimed message, so an unhandled throw strands the entire batch
+      // until restart -- the failure mode the per-message boundary exists to prevent, one level up.
+      const [msg1, msg2] = makeBatchableMessages();
+      const receipt = makeReceipt();
+      const depositEvent1 = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+      depositEvent1.depositId = toBN(100);
+      const depositEvent2 = makeFakeDepositEvent({ inputAmount: "30000000", outputAmount: "29000000" });
+      depositEvent2.depositId = toBN(200);
+
+      let planCalls = 0;
+      batchingRelayer.planDepositBatchFn = async (_multicall3, calls) => {
+        if (++planCalls === 1) {
+          throw new Error("provider unavailable");
+        }
+        return { included: calls.map((_call, index) => index), gasLimit: toBN(1_000_000), failed: [], deferred: [] };
+      };
+      batchingRelayer.queryGaslessApiFn = async () => [msg1, msg2];
+      batchingRelayer.initiateBatchDepositFn = async () => receipt;
+      batchingRelayer.extractDepositFromReceiptFn = (_receipt, _chainId, depositId) =>
+        depositId.eq(100) ? depositEvent1 : depositEvent2;
+      batchingRelayer.initiateFillFn = async () => receipt;
+
+      // Nothing reached the chain, so both members must be unclaimed again rather than stranded.
+      await batchingRelayer.runEvaluateApiSignatures();
+      expect(batchingRelayer.initiateBatchDepositCalls).to.equal(0);
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg1))).to.equal(undefined);
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg2))).to.equal(undefined);
+
+      await batchingRelayer.runEvaluateApiSignatures();
+
+      expect(batchingRelayer.initiateBatchDepositCalls).to.equal(1);
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg1))).to.equal(MessageState.FILLED);
+      expect(batchingRelayer.getMessageState(depositNonceFor(batchingRelayer, msg2))).to.equal(MessageState.FILLED);
+    });
+
     it("falls back to individual submission for a single batchable message", async function () {
       const msg = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
       const receipt = makeReceipt();
@@ -1694,6 +1741,106 @@ describe("GaslessRelayer", function () {
 
       expect(relayer.getMessageState(depositNonceFor(relayer, msg1))).to.equal(MessageState.FILLED);
       expect(relayer.getMessageState(depositNonceFor(relayer, msg2))).to.equal(MessageState.FILLED);
+    });
+
+    describe("Unprocessable messages are logged and dropped", function () {
+      const logCount = (needle: string) =>
+        spy.getCalls().filter((call) => String(call.lastArg?.message ?? "").includes(needle)).length;
+      const dropLogCount = () => logCount("Dropping unprocessable");
+      const deferLogCount = () => logCount("Failed to process gasless deposit message");
+
+      it("A malformed message is dropped at ingestion, without stalling its siblings", async function () {
+        const amounts = { inputAmount: "20000000", outputAmount: "19000000" };
+        const bad = makeTestDepositMessage(amounts);
+        bad.requestId = "req-bad";
+        bad.baseDepositData.inputToken = "not-an-address";
+        const good = makeTestDepositMessage(amounts);
+        good.requestId = "req-good";
+
+        relayer.queryGaslessApiFn = async () => [bad, good];
+        relayer.initiateDepositFn = async () => makeReceipt();
+        relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent(amounts);
+        relayer.initiateFillFn = async () => makeReceipt();
+
+        // The API re-supplies a dropped message on every poll; the alert must not follow it.
+        await relayer.runEvaluateApiSignatures();
+        await relayer.runEvaluateApiSignatures();
+
+        expect(relayer.getDroppedMessages().has("req-bad")).to.be.true;
+        expect(dropLogCount()).to.equal(1);
+        expect(relayer.getMessageState(depositNonceFor(relayer, good))).to.equal(MessageState.FILLED);
+        expect(relayer.initiateDepositCalls).to.equal(1);
+
+        // Why the guard belongs at ingestion rather than in the poll: initialize()'s observation
+        // pass has no boundary of its own, so a message reaching it takes down every restart.
+        expect(() => relayer.runMarkFilledFromInitialObservation([bad])).to.throw();
+        expect(() => relayer.runMarkFilledFromInitialObservation([good])).to.not.throw();
+      });
+
+      it("A message that fails mid-flight hands back its lock but is not dropped", async function () {
+        const bad = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
+        bad.requestId = "req-bad";
+        bad.depositId = toBN(100);
+
+        const good = makeTestDepositMessage({ inputAmount: "20000000", outputAmount: "19000000" });
+        good.requestId = "req-good";
+        good.depositId = toBN(200);
+        const depositEvent = makeFakeDepositEvent({ inputAmount: "20000000", outputAmount: "19000000" });
+        depositEvent.depositId = toBN(200);
+
+        relayer.queryGaslessApiFn = async () => [bad, good];
+        relayer.initiateDepositFn = async (msg) => {
+          if (msg.requestId === "req-bad") {
+            throw new Error("provider unavailable");
+          }
+          return makeReceipt();
+        };
+        relayer.extractDepositFromReceiptFn = () => depositEvent;
+        relayer.initiateFillFn = async () => makeReceipt();
+
+        await relayer.runEvaluateApiSignatures();
+
+        // A submission failure is operational, not a property of the message: it must not be
+        // classified as unprocessable, or an outage would exclude every message it touched.
+        expect(relayer.getDroppedMessages().has("req-bad")).to.be.false;
+        expect(dropLogCount()).to.equal(0);
+        expect(deferLogCount()).to.equal(1);
+        // The deposit may have been broadcast before the failure, so the message stays where it
+        // stopped rather than rewinding to a state that would re-submit it.
+        expect(relayer.getMessageState(depositNonceFor(relayer, bad))).to.equal(MessageState.DEPOSIT_CONFIRM);
+        // The sibling shares the depositor's fill lock; it only completes if the lock was returned.
+        expect(relayer.getMessageState(depositNonceFor(relayer, good))).to.equal(MessageState.FILLED);
+      });
+
+      it("A message that fails before submission is retried on the next poll", async function () {
+        const msg = makeTestDepositMessage({}, { instantFill: true });
+        msg.requestId = "req-retry";
+        setFillImmediateThreshold(msg);
+
+        const workingPeriphery = relayer.getPeripheryContractFn;
+        // Throws while building the deposit tx, i.e. before anything reaches the chain.
+        relayer.getPeripheryContractFn = () => {
+          throw new Error("provider unavailable");
+        };
+        relayer.queryGaslessApiFn = async () => [msg];
+        relayer.initiateDepositFn = async () => makeReceipt();
+        relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent();
+        relayer.initiateFillFn = async () => makeReceipt();
+
+        await relayer.runEvaluateApiSignatures();
+        await relayer.runEvaluateApiSignatures();
+
+        // Nothing was submitted, so the message is unclaimed again -- and logged once, not per poll.
+        expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(undefined);
+        expect(relayer.initiateDepositCalls).to.equal(0);
+        expect(relayer.getDroppedMessages().has("req-retry")).to.be.false;
+        expect(deferLogCount()).to.equal(1);
+
+        relayer.getPeripheryContractFn = workingPeriphery;
+        await relayer.runEvaluateApiSignatures();
+
+        expect(relayer.getMessageState(depositNonceFor(relayer, msg))).to.equal(MessageState.FILLED);
+      });
     });
 
     it("Message with existing state is skipped on subsequent polls", async function () {
