@@ -58,6 +58,7 @@ export const {
   getCurrentTime,
   bnZero,
   bnOne,
+  bnMax,
   bnUint32Max,
   bnUint256Max,
   chainIsOPStack,
