@@ -64,6 +64,7 @@ export * from "./ObjectUtils";
 export * from "./ContractUtils";
 export * from "./ExecutionUtils";
 export * from "./NetworkUtils";
+export * from "./Multicall3Utils";
 export * from "./TransactionUtils";
 export * from "./MerkleTreeUtils";
 export * from "./AddressUtils";
