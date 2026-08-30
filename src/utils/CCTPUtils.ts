@@ -342,6 +342,11 @@ export async function getV2DepositForBurnMaxFee(
   destinationChainId: number,
   amount: BigNumber
 ): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
+  // Circle degrades a fast burn to a standard one whenever the origin isn't a fast-transfer source, so evaluating
+  // it costs two API calls to arrive at the standard transfer we'd have sent anyway.
+  if (!isCctpFastTransferSource(originChainId)) {
+    return { maxFee: bnZero, finalityThreshold: CCTPV2_FINALITY_THRESHOLD_STANDARD };
+  }
   const [_fastBurnAllowance, transferFees] = await Promise.all([
     utils.getV2FastBurnAllowance(chainIsProd(destinationChainId)),
     utils.getV2MinTransferFees(originChainId, destinationChainId),
@@ -365,6 +370,30 @@ export async function getV2DepositForBurnMaxFee(
     maxFee,
     finalityThreshold,
   };
+}
+
+// Circle offers Fast Transfer only from source chains where it beats that chain's standard attestation time; from
+// any other source a fast burn is accepted on-chain and then silently attested as standard. Circle publishes the set
+// as the row list of its Fast Transfer tables, and exposes no API that reports it.
+// https://developers.circle.com/cctp/concepts/finality-and-block-confirmations
+const CCTP_FAST_TRANSFER_SOURCES = new Set([
+  CHAIN_IDs.ARBITRUM,
+  CHAIN_IDs.BASE,
+  CHAIN_IDs.INK,
+  CHAIN_IDs.LINEA,
+  CHAIN_IDs.MAINNET,
+  CHAIN_IDs.OPTIMISM,
+  CHAIN_IDs.SOLANA,
+  CHAIN_IDs.UNICHAIN,
+  CHAIN_IDs.WORLD_CHAIN,
+]);
+
+/**
+ * @notice Returns whether Circle supports Fast Transfer for burns originating on this chain.
+ * @param sourceChainId The source chain ID of the transfer.
+ */
+export function isCctpFastTransferSource(sourceChainId: number): boolean {
+  return CCTP_FAST_TRANSFER_SOURCES.has(sourceChainId);
 }
 
 /**
@@ -1071,6 +1100,7 @@ export async function constructCctpDepositForBurnTxn(
   const sourceChainName = getNetworkName(sourceChainId);
   const destinationChainName = getNetworkName(destinationChainId);
   const destinationDomain = getCctpDomainForChainId(destinationChainId);
+  const fastTransfer = finalityThreshold !== CCTPV2_FINALITY_THRESHOLD_STANDARD;
 
   return {
     contract: bridgeContract,
@@ -1078,10 +1108,10 @@ export async function constructCctpDepositForBurnTxn(
     method: "depositForBurn",
     nonMulticall: true,
     message: `🎰 Bridged CCTP USDC from ${sourceChainName} to ${destinationChainName}${
-      optionalParams?.fastMode ? " using fast mode" : ""
+      fastTransfer ? " using fast mode" : ""
     }`,
     mrkdwn: `Bridged ${formatter(amountToSend)} USDC from ${sourceChainName} to ${destinationChainName} via CCTP${
-      optionalParams?.fastMode ? ` using fast mode with a max fee of ${formatter(maxFee)}` : ""
+      fastTransfer ? ` using fast mode with a max fee of ${formatter(maxFee)}` : ""
     }`,
     args: [
       amountToSend,
