@@ -340,11 +340,12 @@ export async function getV2DepositForBurnMaxFee(
   originUsdcToken: Address,
   originChainId: number,
   destinationChainId: number,
-  amount: BigNumber
+  amount: BigNumber,
+  logger?: winston.Logger
 ): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
   // Circle degrades a fast burn to a standard one whenever the origin isn't a fast-transfer source, so evaluating
   // it costs two API calls to arrive at the standard transfer we'd have sent anyway.
-  if (!isCctpFastTransferSource(originChainId)) {
+  if (!isCctpFastTransferSource(originChainId, logger)) {
     return { maxFee: bnZero, finalityThreshold: CCTPV2_FINALITY_THRESHOLD_STANDARD };
   }
   const [_fastBurnAllowance, transferFees] = await Promise.all([
@@ -373,14 +374,16 @@ export async function getV2DepositForBurnMaxFee(
 }
 
 // Circle offers Fast Transfer only from source chains where it beats that chain's standard attestation time; from
-// any other source a fast burn is accepted on-chain and then silently attested as standard. Circle publishes the set
-// as the row list of its Fast Transfer tables, and exposes no API that reports it.
+// any other source a fast burn is accepted on-chain and then silently attested as standard. Circle publishes both
+// sets as the row lists of its Fast and Standard Transfer tables, and exposes no API that reports either.
+// https://developers.circle.com/cctp/concepts/supported-chains-and-domains
 // https://developers.circle.com/cctp/concepts/finality-and-block-confirmations
 //
 // Keyed by CCTP domain rather than chain ID because Circle assigns a testnet the same domain as its mainnet
 // counterpart, so one entry covers both (e.g. domain 6 is Base and Base Sepolia) and testnet deployments keep
-// evaluating fast mode against the sandbox APIs. Circle lists further fast domains (12, 22, 25, 28, 30, 37) for
-// chains Across doesn't run on; they're omitted so that onboarding such a chain forces a decision here.
+// evaluating fast mode against the sandbox APIs. Both sets carry Circle's tables in full, including domains Across
+// doesn't run on, so that a domain in neither means Circle has published a new one rather than that we onboarded a
+// chain without looking.
 const CCTP_FAST_TRANSFER_SOURCE_DOMAINS = new Set([
   0, // Ethereum
   2, // Optimism
@@ -389,18 +392,66 @@ const CCTP_FAST_TRANSFER_SOURCE_DOMAINS = new Set([
   6, // Base
   10, // Unichain
   11, // Linea
+  12, // Codex
   14, // World Chain
   21, // Ink
+  22, // Plume
+  25, // Starknet
+  28, // EDGE
+  30, // Morph
+  37, // X Layer
 ]);
 
+const CCTP_STANDARD_ONLY_SOURCE_DOMAINS = new Set([
+  1, // Avalanche
+  7, // Polygon PoS
+  9, // Aptos
+  13, // Sonic
+  15, // Monad
+  16, // Sei
+  17, // BNB Smart Chain
+  18, // XDC
+  19, // HyperEVM
+  26, // Arc
+  27, // Stellar
+  29, // Injective
+  31, // Pharos
+  32, // Cronos
+  33, // Plasma
+]);
+
+const unclassifiedCctpDomains = new Set<number>();
+
 /**
- * @notice Returns whether Circle supports Fast Transfer for burns originating on this chain.
+ * @notice Returns whether Circle supports Fast Transfer for burns originating on this chain. A CCTP domain in
+ * neither published set warns once and falls back to standard, which is what Circle would have attested anyway.
  * @param sourceChainId The source chain ID of the transfer.
+ * @param logger Optional logger, used to surface a domain belonging to neither set.
  */
-export function isCctpFastTransferSource(sourceChainId: number): boolean {
+export function isCctpFastTransferSource(sourceChainId: number, logger?: winston.Logger): boolean {
   const cctpDomain = PUBLIC_NETWORKS[sourceChainId]?.cctpDomain;
-  return isDefined(cctpDomain) && cctpDomain !== CCTP_NO_DOMAIN && CCTP_FAST_TRANSFER_SOURCE_DOMAINS.has(cctpDomain);
+  if (!isDefined(cctpDomain) || cctpDomain === CCTP_NO_DOMAIN) {
+    return false;
+  }
+  if (CCTP_FAST_TRANSFER_SOURCE_DOMAINS.has(cctpDomain)) {
+    return true;
+  }
+  if (!CCTP_STANDARD_ONLY_SOURCE_DOMAINS.has(cctpDomain) && !unclassifiedCctpDomains.has(cctpDomain)) {
+    unclassifiedCctpDomains.add(cctpDomain);
+    logger?.warn({
+      at: "CCTPUtils#isCctpFastTransferSource",
+      message: `Unrecognised CCTP domain ${cctpDomain} on ${getNetworkName(sourceChainId)}; sending standard.`,
+      mrkdwn:
+        "Circle has published a CCTP domain that is in neither the fast nor the standard-only set. Classify it in" +
+        " CCTP_FAST_TRANSFER_SOURCE_DOMAINS or CCTP_STANDARD_ONLY_SOURCE_DOMAINS.",
+      sourceChainId,
+      cctpDomain,
+    });
+  }
+  return false;
 }
+
+export { CCTP_FAST_TRANSFER_SOURCE_DOMAINS, CCTP_STANDARD_ONLY_SOURCE_DOMAINS };
 
 /**
  * @notice Returns the maximum expected transfer fees that we can use to avoid overpaying for
@@ -1093,7 +1144,8 @@ export async function constructCctpDepositForBurnTxn(
       sourceUsdcTokenAddress,
       sourceChainId,
       destinationChainId,
-      amount
+      amount,
+      logger
     );
     maxFee = feeResult.maxFee;
     finalityThreshold = feeResult.finalityThreshold;

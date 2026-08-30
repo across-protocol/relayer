@@ -1,6 +1,11 @@
 import { expect } from "./utils";
+import { CCTP_NO_DOMAIN, PRODUCTION_NETWORKS } from "@across-protocol/constants";
 import { CHAIN_IDs } from "../src/utils";
-import { isCctpFastTransferSource } from "../src/utils/CCTPUtils";
+import {
+  CCTP_FAST_TRANSFER_SOURCE_DOMAINS,
+  CCTP_STANDARD_ONLY_SOURCE_DOMAINS,
+  isCctpFastTransferSource,
+} from "../src/utils/CCTPUtils";
 
 // Circle's Fast Transfer source list, as published at
 // https://developers.circle.com/cctp/concepts/finality-and-block-confirmations. Chains Across doesn't run on are
@@ -57,9 +62,31 @@ describe("CCTP fast transfer sources", function () {
   });
 
   it("rejects chains with no CCTP deployment", function () {
-    // Plasma has no CCTP domain either, despite appearing alongside standard-only chains in Circle's fee tables.
+    // Plasma resolves the same way for now: Circle lists domain 33 as standard-only, but @across-protocol/constants
+    // doesn't carry that domain yet, so it short-circuits alongside chains that have no CCTP deployment at all.
     expect(isCctpFastTransferSource(CHAIN_IDs.BSC)).to.be.false;
     expect(isCctpFastTransferSource(CHAIN_IDs.LENS)).to.be.false;
     expect(isCctpFastTransferSource(CHAIN_IDs.PLASMA)).to.be.false;
+  });
+
+  it("classifies each domain as exactly one of fast or standard-only", function () {
+    const overlap = [...CCTP_FAST_TRANSFER_SOURCE_DOMAINS].filter((domain) =>
+      CCTP_STANDARD_ONLY_SOURCE_DOMAINS.has(domain)
+    );
+    expect(overlap).to.deep.equal([]);
+  });
+
+  // The runtime warning covers domains Circle publishes later; this covers chains already in
+  // @across-protocol/constants, so a constants bump introducing one can't reach production unclassified.
+  it("classifies every CCTP chain we already know about", function () {
+    const unclassified = Object.entries(PRODUCTION_NETWORKS)
+      .filter(
+        ([, { cctpDomain }]) =>
+          cctpDomain !== CCTP_NO_DOMAIN &&
+          !CCTP_FAST_TRANSFER_SOURCE_DOMAINS.has(cctpDomain) &&
+          !CCTP_STANDARD_ONLY_SOURCE_DOMAINS.has(cctpDomain)
+      )
+      .map(([chainId]) => Number(chainId));
+    expect(unclassified).to.deep.equal([]);
   });
 });
