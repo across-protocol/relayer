@@ -45,8 +45,8 @@ export class Disputer {
     // signer.connect() is unsupported in test.
     this.signer = signer.provider ? signer : signer.connect(hubPool.provider);
     this.bondMultiplier = {
-      min: 4,
-      target: 8,
+      min: 8,
+      target: 12,
     };
     this.txnClient = new TransactionClient(this.logger);
     this.initPromise = this._getOrCreateInitPromise();
@@ -58,10 +58,10 @@ export class Disputer {
     const { bondAmount, logger } = this;
     const minBondAmount = bondAmount.mul(this.bondMultiplier.min);
 
-    // Balance checks.
+    // Balance checks. Mint up to the target multiple, otherwise the balance settles on its own floor.
     const balance = await this.balance();
-    const mintAmount = minBondAmount.sub(balance);
-    if (mintAmount.gt(bnZero)) {
+    if (balance.lt(minBondAmount)) {
+      const mintAmount = bondAmount.mul(this.bondMultiplier.target).sub(balance);
       const nativeBalance = await this.provider.getBalance(await this.signer.getAddress());
       if (nativeBalance.gt(mintAmount)) {
         await this.mintBond(mintAmount);

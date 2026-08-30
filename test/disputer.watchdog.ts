@@ -43,6 +43,13 @@ describe("Disputer: Watchdog", function () {
     await disputer.validate();
   });
 
+  it("Disputer::validate mints up to the target multiple", async function () {
+    // validate() runs in beforeEach; the balance must land on the target multiple, not the minimum.
+    // hubPool.bondAmount() is the configured bond plus the UMA final fee.
+    const balance = await bondToken.balanceOf(signerAddr);
+    expect(balance.eq((await hubPool.bondAmount()).mul(12))).to.be.true;
+  });
+
   it("Disputer::mintBond", async function () {
     let balance = await bondToken.balanceOf(signerAddr);
     expect(balance.gt(bnZero)).to.be.true;
