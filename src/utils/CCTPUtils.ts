@@ -374,59 +374,48 @@ export async function getV2DepositForBurnMaxFee(
 }
 
 // Circle offers Fast Transfer only from source chains where it beats that chain's standard attestation time; from
-// any other source a fast burn is accepted on-chain and then silently attested as standard. Circle publishes both
-// sets as the row lists of its Fast and Standard Transfer tables, and exposes no API that reports either.
-// https://developers.circle.com/cctp/concepts/supported-chains-and-domains
+// any other source a fast burn is accepted on-chain and then silently attested as standard.
 // https://developers.circle.com/cctp/concepts/finality-and-block-confirmations
 //
-// Keyed by CCTP domain rather than chain ID because Circle assigns a testnet the same domain as its mainnet
-// counterpart, so one entry covers both (e.g. domain 6 is Base and Base Sepolia) and testnet deployments keep
-// evaluating fast mode against the sandbox APIs. Both sets carry Circle's tables in full, including domains Across
-// doesn't run on, so that a domain in neither means Circle has published a new one rather than that we onboarded a
-// chain without looking.
-const CCTP_FAST_TRANSFER_SOURCE_DOMAINS = new Set([
-  0, // Ethereum
-  2, // Optimism
-  3, // Arbitrum
-  5, // Solana
-  6, // Base
-  10, // Unichain
-  11, // Linea
-  12, // Codex
-  14, // World Chain
-  21, // Ink
-  22, // Plume
-  25, // Starknet
-  28, // EDGE
-  30, // Morph
-  37, // X Layer
+// Listed by chain so that the domain numbering stays owned by @across-protocol/constants. Membership is still tested
+// by domain, which also covers testnets: Circle assigns them the same domain as their mainnet counterpart. Circle's
+// tables include chains Across doesn't run on; onboarding one lands in neither set and warns below.
+const toCctpDomains = (chainIds: number[]): Set<number> =>
+  new Set(
+    chainIds
+      .map((chainId) => PUBLIC_NETWORKS[chainId]?.cctpDomain)
+      .filter((cctpDomain): cctpDomain is number => isDefined(cctpDomain) && cctpDomain !== CCTP_NO_DOMAIN)
+  );
+
+const CCTP_FAST_TRANSFER_SOURCE_DOMAINS = toCctpDomains([
+  CHAIN_IDs.ARBITRUM,
+  CHAIN_IDs.BASE,
+  CHAIN_IDs.INK,
+  CHAIN_IDs.LINEA,
+  CHAIN_IDs.MAINNET,
+  CHAIN_IDs.OPTIMISM,
+  CHAIN_IDs.SOLANA,
+  CHAIN_IDs.UNICHAIN,
+  CHAIN_IDs.WORLD_CHAIN,
 ]);
 
-const CCTP_STANDARD_ONLY_SOURCE_DOMAINS = new Set([
-  1, // Avalanche
-  7, // Polygon PoS
-  9, // Aptos
-  13, // Sonic
-  15, // Monad
-  16, // Sei
-  17, // BNB Smart Chain
-  18, // XDC
-  19, // HyperEVM
-  26, // Arc
-  27, // Stellar
-  29, // Injective
-  31, // Pharos
-  32, // Cronos
-  33, // Plasma
+// Plasma and BNB Smart Chain are standard-only in Circle's table, but @across-protocol/constants carries no domain
+// for either, so they resolve to CCTP_NO_DOMAIN and are omitted rather than listed here.
+const CCTP_STANDARD_ONLY_SOURCE_DOMAINS = toCctpDomains([
+  CHAIN_IDs.ARC,
+  CHAIN_IDs.AVALANCHE,
+  CHAIN_IDs.HYPEREVM,
+  CHAIN_IDs.MONAD,
+  CHAIN_IDs.POLYGON,
 ]);
 
 const unclassifiedCctpDomains = new Set<number>();
 
 /**
  * @notice Returns whether Circle supports Fast Transfer for burns originating on this chain. A CCTP domain in
- * neither published set warns once and falls back to standard, which is what Circle would have attested anyway.
+ * neither list warns once and falls back to standard, which is what Circle would have attested anyway.
  * @param sourceChainId The source chain ID of the transfer.
- * @param logger Optional logger, used to surface a domain belonging to neither set.
+ * @param logger Optional logger, used to surface a domain belonging to neither list.
  */
 export function isCctpFastTransferSource(sourceChainId: number, logger?: winston.Logger): boolean {
   const cctpDomain = PUBLIC_NETWORKS[sourceChainId]?.cctpDomain;
@@ -440,10 +429,10 @@ export function isCctpFastTransferSource(sourceChainId: number, logger?: winston
     unclassifiedCctpDomains.add(cctpDomain);
     logger?.warn({
       at: "CCTPUtils#isCctpFastTransferSource",
-      message: `Unrecognised CCTP domain ${cctpDomain} on ${getNetworkName(sourceChainId)}; sending standard.`,
+      message: `Unclassified CCTP domain ${cctpDomain} on ${getNetworkName(sourceChainId)}; sending standard.`,
       mrkdwn:
-        "Circle has published a CCTP domain that is in neither the fast nor the standard-only set. Classify it in" +
-        " CCTP_FAST_TRANSFER_SOURCE_DOMAINS or CCTP_STANDARD_ONLY_SOURCE_DOMAINS.",
+        "This chain has a CCTP domain but appears in neither the fast nor the standard-only list. Add it to" +
+        " CCTP_FAST_TRANSFER_SOURCE_DOMAINS or CCTP_STANDARD_ONLY_SOURCE_DOMAINS per Circle's Fast Transfer table.",
       sourceChainId,
       cctpDomain,
     });
