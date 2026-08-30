@@ -1,5 +1,5 @@
-import { Disputer } from "../src/dataworker/Disputer";
-import { bnUint256Max, bnZero, bnOne, toBNWei, ZERO_BYTES } from "../src/utils";
+import { BondMultiplier, Disputer } from "../src/dataworker/Disputer";
+import { BigNumber, bnUint256Max, bnZero, bnOne, toBNWei, ZERO_BYTES } from "../src/utils";
 import { setupUmaEcosystem } from "./fixtures/UmaEcosystemFixture";
 import {
   Contract,
@@ -12,20 +12,33 @@ import {
   winston,
 } from "./utils";
 
+// Exposes the bond multiples so tests can assert against them instead of duplicating the literals.
+class TestDisputer extends Disputer {
+  get multiplier(): BondMultiplier {
+    return this.bondMultiplier;
+  }
+}
+
+// Overwrite an account's native balance; used to drive validate()'s insufficient-balance branches.
+async function setNativeBalance(address: string, amount: BigNumber): Promise<void> {
+  // hardhat_setBalance takes a QUANTITY, which must not carry leading zeroes.
+  await ethers.provider.send("hardhat_setBalance", [address, amount.toHexString().replace(/^0x0+(.)/, "0x$1")]);
+}
+
 describe("Disputer: Watchdog", function () {
   let chainId: number;
   const simulate = false;
   const bondAmount = toBNWei(1);
 
   let hubPool: Contract, bondToken: Contract;
-  let owner: SignerWithAddress, signer: SignerWithAddress;
+  let owner: SignerWithAddress, signer: SignerWithAddress, poorSigner: SignerWithAddress;
   let logger: winston.Logger;
-  let disputer: Disputer;
+  let disputer: TestDisputer;
   let signerAddr: string;
 
   beforeEach(async function () {
     ({ spyLogger: logger } = createSpyLogger());
-    [owner, signer] = await ethers.getSigners();
+    [owner, signer, poorSigner] = await ethers.getSigners();
     signerAddr = await signer.getAddress();
 
     const umaEcosystem = await setupUmaEcosystem(owner);
@@ -35,12 +48,61 @@ describe("Disputer: Watchdog", function () {
 
     bondToken = await (await getContractFactory("BondToken", owner)).deploy(hubPool.address);
     await bondToken.setProposer(signerAddr, true);
+    await bondToken.setProposer(await poorSigner.getAddress(), true);
     await umaEcosystem.collateralWhitelist.addToWhitelist(bondToken.address);
     await umaEcosystem.store.setFinalFee(bondToken.address, { rawValue: toBNWei("0.1") });
     await hubPool.setBond(bondToken.address, bondAmount);
 
-    disputer = new Disputer(chainId, logger, hubPool, signer, simulate);
+    disputer = new TestDisputer(chainId, logger, hubPool, signer, simulate);
     await disputer.validate();
+  });
+
+  it("Disputer::validate mints up to the target multiple", async function () {
+    // validate() runs in beforeEach; the balance must land on the target multiple, not the threshold.
+    // hubPool.bondAmount() is the configured bond plus the UMA final fee.
+    const balance = await bondToken.balanceOf(signerAddr);
+    expect(balance.eq((await hubPool.bondAmount()).mul(disputer.multiplier.target))).to.be.true;
+  });
+
+  it("Disputer::validate honours configured bond multipliers", async function () {
+    const bondMultiplier = { threshold: 2, target: 3 };
+    const configured = new Disputer(chainId, logger, hubPool, signer, simulate, bondMultiplier);
+
+    // Drain the balance minted by beforeEach so that validate() has to top up again.
+    await bondToken.connect(signer).transfer(await owner.getAddress(), await bondToken.balanceOf(signerAddr));
+    await configured.validate();
+
+    const balance = await bondToken.balanceOf(signerAddr);
+    expect(balance.eq((await hubPool.bondAmount()).mul(bondMultiplier.target))).to.be.true;
+  });
+
+  it("Disputer rejects a target below its threshold", async function () {
+    expect(() => new Disputer(chainId, logger, hubPool, signer, simulate, { threshold: 4, target: 2 })).to.throw();
+  });
+
+  it("Disputer::validate mints what it can afford when the target is out of reach", async function () {
+    // Enough native token for several bonds, but short of the full target top-up; mint anyway.
+    const poorAddr = await poorSigner.getAddress();
+    const nativeBalance = (await hubPool.bondAmount()).mul(3);
+    await setNativeBalance(poorAddr, nativeBalance);
+
+    const poorDisputer = new TestDisputer(chainId, logger, hubPool, poorSigner, simulate);
+    await poorDisputer.validate();
+
+    const balance = await bondToken.balanceOf(poorAddr);
+    expect(balance.gte(await hubPool.bondAmount())).to.be.true;
+    expect(balance.lt((await hubPool.bondAmount()).mul(poorDisputer.multiplier.target))).to.be.true;
+    // Gas money must survive the mint, otherwise the dispute itself can't be submitted.
+    expect((await ethers.provider.getBalance(poorAddr)).gt(bnZero)).to.be.true;
+  });
+
+  it("Disputer::validate throws when it can't cover a single bond", async function () {
+    // Below one bond even after minting everything available: the watchdog can't dispute, so fail loudly.
+    const poorAddr = await poorSigner.getAddress();
+    await setNativeBalance(poorAddr, (await hubPool.bondAmount()).div(2));
+
+    const poorDisputer = new TestDisputer(chainId, logger, hubPool, poorSigner, simulate);
+    await expect(poorDisputer.validate()).to.be.rejectedWith("Insufficient native token balance");
   });
 
   it("Disputer::mintBond", async function () {
