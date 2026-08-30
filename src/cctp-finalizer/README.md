@@ -72,6 +72,24 @@ Typed errors in `errors.ts` drive retry decisions:
 
 ---
 
+## Finality & Fast Transfer
+
+Finality is a property of the burn leg, not the mint leg: all waiting happens on the source chain before Circle attests, and the destination `MessageTransmitter` only verifies the attestation signature. Once `GET /v2/messages` reports `status: complete`, `receiveMessage` can go out immediately.
+
+Burns carry a `minFinalityThreshold`, of which Circle honours two values: 1000 (Fast, soft finality, fee-bearing) and 2000 (Standard, hard finality, free). `getV2DepositForBurnMaxFee` in `src/utils/CCTPUtils.ts` chooses between them using Circle's fee endpoint and the global fast-burn allowance. Fast is offered only on source chains where it beats their standard attestation, so chains that are already fast — Plasma and Monad among them — don't get it. Both are unaffected as destinations; an Ethereum-sourced Fast burn mints on Plasma normally. Per [Circle's table](https://developers.circle.com/cctp/concepts/finality-and-block-confirmations):
+
+| Source | Standard (2000) | Fast (1000) |
+| --- | --- | --- |
+| Plasma | 3 confirmations, ~1s | not offered |
+| Ethereum | ~65 confirmations, ~15-19 min | 2 confirmations, ~20s |
+
+Two things to know before changing this code:
+
+- **A threshold-1000 fee entry doesn't mean Fast is available.** Circle returns both thresholds for every route, non-Fast sources included, where the fast entry reads `minimumFee: 0`. `getV2DepositForBurnMaxFee` therefore picks threshold 1000 with a zero `maxFee` for Plasma-sourced burns, and Circle silently downgrades them to 2000. Costless, and already true of Monad — but the requested threshold is not evidence of the executed one. Read `finalityThresholdExecuted`.
+- **CCTP finality on Plasma says nothing about Across deposit finality on Plasma.** `MIN_DEPOSIT_CONFIRMATIONS` and `BUNDLE_END_BLOCK_BUFFERS` in `src/common/Constants.ts` stay deliberately conservative there. Circle attesting after 3 blocks is not a reason to relax them.
+
+---
+
 ## Configuration
 
 ### Core Environment Variables
@@ -89,7 +107,7 @@ Typed errors in `errors.ts` drive retry decisions:
 
 `getRpcUrlForChain` enforces explicit RPC URLs. Set only the ones you need, but missing values for active destinations throw `RpcUrlNotConfiguredError`.
 
-- Mainnets: `ETHEREUM_RPC_URL`, `OPTIMISM_RPC_URL`, `POLYGON_RPC_URL`, `ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `UNICHAIN_RPC_URL`, `LINEA_RPC_URL`, `WORLD_CHAIN_RPC_URL`, `HYPEREVM_RPC_URL`, `BSC_RPC_URL`, `MONAD_RPC_URL`, `INK_RPC_URL`, `AVALANCHE_RPC_URL`, `SOLANA_RPC_URL`.
+- Mainnets: `ETHEREUM_RPC_URL`, `OPTIMISM_RPC_URL`, `POLYGON_RPC_URL`, `ARBITRUM_RPC_URL`, `BASE_RPC_URL`, `UNICHAIN_RPC_URL`, `LINEA_RPC_URL`, `WORLD_CHAIN_RPC_URL`, `HYPEREVM_RPC_URL`, `BSC_RPC_URL`, `MONAD_RPC_URL`, `INK_RPC_URL`, `AVALANCHE_RPC_URL`, `PLASMA_RPC_URL`, `SOLANA_RPC_URL`.
 - Testnets: `SEPOLIA_RPC_URL`, `OPTIMISM_SEPOLIA_RPC_URL`, `ARBITRUM_SEPOLIA_RPC_URL`, `BASE_SEPOLIA_RPC_URL`, `POLYGON_AMOY_RPC_URL`, `ARBITRUM_NOVA_SEPOLIA_RPC_URL`, `HYPEREVM_TESTNET_RPC_URL`, `SOLANA_DEVNET_RPC_URL`.
 
 All RPC URLs should include authentication if the upstream provider requires it.
