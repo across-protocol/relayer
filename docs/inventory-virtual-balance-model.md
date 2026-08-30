@@ -34,7 +34,7 @@ This gives a "virtual" balance intended to better reflect near-future executable
 
 ## Core primitives
 
-### `getBalanceOnChain(chainId, l1Token, l2Token?, ignorePending?)`
+### `getBalanceOnChain(chainId, l1Token, l2Token?, ignoreL1ToL2PendingAmount?)`
 
 This is the base virtual-balance primitive. It:
 
@@ -43,6 +43,8 @@ This is the base virtual-balance primitive. It:
 - includes pending rebalance credits from `ReadOnlyRebalancerClient`
 - includes outstanding L1->L2 transfer amounts via CrossChainTransferClient
 - returns either per-token (`l2Token`) or aggregate-per-chain balance
+
+When `ignoreL1ToL2PendingAmount=true`, both positive virtual-inbound sources are suppressed: outstanding `CrossChainTransferClient` L1->L2 transfers and positive `pendingRebalances` entries. Callers like `withdrawExcessBalances` use this to avoid sizing a withdraw off inbound that hasn't physically landed. Negative `pendingRebalances` entries are preserved because adapters use them to reserve already-arrived intermediate funds for an onward bridge step (e.g. `HyperliquidStablecoinSwapAdapter` subtracts finalized Hypercore withdrawals from HyperEVM); dropping those would let a withdraw race the in-flight rebalance.
 
 ### `getCumulativeBalance(l1Token)`
 
