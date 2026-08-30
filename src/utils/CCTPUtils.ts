@@ -1,6 +1,6 @@
 import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { CCTP_NO_DOMAIN, CHAIN_IDs, PUBLIC_NETWORKS, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { Contract, ethers } from "ethers";
 import {
   CONTRACT_ADDRESSES,
@@ -376,16 +376,21 @@ export async function getV2DepositForBurnMaxFee(
 // any other source a fast burn is accepted on-chain and then silently attested as standard. Circle publishes the set
 // as the row list of its Fast Transfer tables, and exposes no API that reports it.
 // https://developers.circle.com/cctp/concepts/finality-and-block-confirmations
-const CCTP_FAST_TRANSFER_SOURCES = new Set([
-  CHAIN_IDs.ARBITRUM,
-  CHAIN_IDs.BASE,
-  CHAIN_IDs.INK,
-  CHAIN_IDs.LINEA,
-  CHAIN_IDs.MAINNET,
-  CHAIN_IDs.OPTIMISM,
-  CHAIN_IDs.SOLANA,
-  CHAIN_IDs.UNICHAIN,
-  CHAIN_IDs.WORLD_CHAIN,
+//
+// Keyed by CCTP domain rather than chain ID because Circle assigns a testnet the same domain as its mainnet
+// counterpart, so one entry covers both (e.g. domain 6 is Base and Base Sepolia) and testnet deployments keep
+// evaluating fast mode against the sandbox APIs. Circle lists further fast domains (12, 22, 25, 28, 30, 37) for
+// chains Across doesn't run on; they're omitted so that onboarding such a chain forces a decision here.
+const CCTP_FAST_TRANSFER_SOURCE_DOMAINS = new Set([
+  0, // Ethereum
+  2, // Optimism
+  3, // Arbitrum
+  5, // Solana
+  6, // Base
+  10, // Unichain
+  11, // Linea
+  14, // World Chain
+  21, // Ink
 ]);
 
 /**
@@ -393,7 +398,8 @@ const CCTP_FAST_TRANSFER_SOURCES = new Set([
  * @param sourceChainId The source chain ID of the transfer.
  */
 export function isCctpFastTransferSource(sourceChainId: number): boolean {
-  return CCTP_FAST_TRANSFER_SOURCES.has(sourceChainId);
+  const cctpDomain = PUBLIC_NETWORKS[sourceChainId]?.cctpDomain;
+  return isDefined(cctpDomain) && cctpDomain !== CCTP_NO_DOMAIN && CCTP_FAST_TRANSFER_SOURCE_DOMAINS.has(cctpDomain);
 }
 
 /**
