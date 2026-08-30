@@ -12,8 +12,12 @@ import {
   TransactionResponse,
   submitTransaction,
   Provider,
+  toBNWei,
   winston,
 } from "../utils";
+
+// Native token held back from a bond mint, so gas remains for the approval and the dispute itself.
+const GAS_RESERVE = toBNWei("0.05");
 
 export class Disputer {
   private _bondToken?: Contract;
@@ -61,17 +65,26 @@ export class Disputer {
     // Balance checks. Mint up to the target multiple, otherwise the balance settles on its own floor.
     const balance = await this.balance();
     if (balance.lt(minBondAmount)) {
-      const mintAmount = bondAmount.mul(this.bondMultiplier.target).sub(balance);
+      const targetMintAmount = bondAmount.mul(this.bondMultiplier.target).sub(balance);
       const nativeBalance = await this.provider.getBalance(await this.signer.getAddress());
-      if (nativeBalance.gt(mintAmount)) {
-        await this.mintBond(mintAmount);
-      } else {
-        const fmtAmount = formatEther(mintAmount);
+
+      // Top up to the target where affordable, otherwise mint what we can: a partial mint may still
+      // cover the proposal in flight, whereas skipping it entirely strands the watchdog.
+      const affordable = nativeBalance.gt(GAS_RESERVE) ? nativeBalance.sub(GAS_RESERVE) : bnZero;
+      const mintAmount = targetMintAmount.lt(affordable) ? targetMintAmount : affordable;
+
+      if (mintAmount.lt(targetMintAmount)) {
+        const fmtAmount = formatEther(targetMintAmount);
         const message = `Insufficient native token balance to mint ${fmtAmount} bond tokens.`;
-        if (!this.simulate && balance.lt(bondAmount)) {
+        // Only fatal if the topped-up balance still can't cover one dispute; bail before spending gas.
+        if (!this.simulate && balance.add(mintAmount).lt(bondAmount)) {
           throw new Error(message);
         }
-        logger.warn({ at: "Disputer::validate", message, nativeBalance, mintAmount });
+        logger.warn({ at: "Disputer::validate", message, nativeBalance, mintAmount, targetMintAmount });
+      }
+
+      if (mintAmount.gt(bnZero)) {
+        await this.mintBond(mintAmount);
       }
     }
 
