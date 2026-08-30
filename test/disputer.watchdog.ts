@@ -1,4 +1,4 @@
-import { Disputer } from "../src/dataworker/Disputer";
+import { BondMultiplier, Disputer } from "../src/dataworker/Disputer";
 import { BigNumber, bnUint256Max, bnZero, bnOne, toBNWei, ZERO_BYTES } from "../src/utils";
 import { setupUmaEcosystem } from "./fixtures/UmaEcosystemFixture";
 import {
@@ -14,7 +14,7 @@ import {
 
 // Exposes the bond multiples so tests can assert against them instead of duplicating the literals.
 class TestDisputer extends Disputer {
-  get multiplier(): { min: number; target: number } {
+  get multiplier(): BondMultiplier {
     return this.bondMultiplier;
   }
 }
@@ -58,10 +58,26 @@ describe("Disputer: Watchdog", function () {
   });
 
   it("Disputer::validate mints up to the target multiple", async function () {
-    // validate() runs in beforeEach; the balance must land on the target multiple, not the minimum.
+    // validate() runs in beforeEach; the balance must land on the target multiple, not the threshold.
     // hubPool.bondAmount() is the configured bond plus the UMA final fee.
     const balance = await bondToken.balanceOf(signerAddr);
     expect(balance.eq((await hubPool.bondAmount()).mul(disputer.multiplier.target))).to.be.true;
+  });
+
+  it("Disputer::validate honours configured bond multipliers", async function () {
+    const bondMultiplier = { threshold: 2, target: 3 };
+    const configured = new Disputer(chainId, logger, hubPool, signer, simulate, bondMultiplier);
+
+    // Drain the balance minted by beforeEach so that validate() has to top up again.
+    await bondToken.connect(signer).transfer(await owner.getAddress(), await bondToken.balanceOf(signerAddr));
+    await configured.validate();
+
+    const balance = await bondToken.balanceOf(signerAddr);
+    expect(balance.eq((await hubPool.bondAmount()).mul(bondMultiplier.target))).to.be.true;
+  });
+
+  it("Disputer rejects a target below its threshold", async function () {
+    expect(() => new Disputer(chainId, logger, hubPool, signer, simulate, { threshold: 4, target: 2 })).to.throw();
   });
 
   it("Disputer::validate mints what it can afford when the target is out of reach", async function () {

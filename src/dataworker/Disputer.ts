@@ -19,10 +19,15 @@ import {
 // Native token held back from a bond mint, so gas remains for the approval and the dispute itself.
 const GAS_RESERVE = toBNWei("0.05");
 
+// Bond token holdings are maintained as a multiple of the HubPool bond amount: top up to `target` whenever the
+// balance drops below `threshold`. Deployments needing a deeper buffer should raise these via configuration.
+export type BondMultiplier = { threshold: number; target: number };
+export const DEFAULT_BOND_MULTIPLIER: BondMultiplier = { threshold: 4, target: 8 };
+
 export class Disputer {
   private _bondToken?: Contract;
   protected bondAmount = bnZero;
-  protected bondMultiplier: { min: number; target: number };
+  protected bondMultiplier: BondMultiplier;
   protected provider: Provider;
   protected txnClient: TransactionClient;
   protected chain: string;
@@ -42,16 +47,16 @@ export class Disputer {
     protected readonly logger: winston.Logger,
     protected readonly hubPool: Contract,
     readonly signer: Signer,
-    protected readonly simulate = true
+    protected readonly simulate = true,
+    bondMultiplier: BondMultiplier = DEFAULT_BOND_MULTIPLIER
   ) {
     this.chain = getNetworkName(chainId);
     this.provider = hubPool.provider;
     // signer.connect() is unsupported in test.
     this.signer = signer.provider ? signer : signer.connect(hubPool.provider);
-    this.bondMultiplier = {
-      min: 8,
-      target: 12,
-    };
+    const { threshold, target } = bondMultiplier;
+    assert(threshold > 0 && target >= threshold, `Invalid bond multiplier (threshold ${threshold}, target ${target}).`);
+    this.bondMultiplier = bondMultiplier;
     this.txnClient = new TransactionClient(this.logger);
     this.initPromise = this._getOrCreateInitPromise();
   }
@@ -60,11 +65,11 @@ export class Disputer {
     await this._getOrCreateInitPromise();
 
     const { bondAmount, logger } = this;
-    const minBondAmount = bondAmount.mul(this.bondMultiplier.min);
+    const thresholdBondAmount = bondAmount.mul(this.bondMultiplier.threshold);
 
-    // Balance checks. Mint up to the target multiple, otherwise the balance settles on its own floor.
+    // Balance checks. Mint up to the target multiple, otherwise the balance settles on its own threshold.
     const balance = await this.balance();
-    if (balance.lt(minBondAmount)) {
+    if (balance.lt(thresholdBondAmount)) {
       const targetMintAmount = bondAmount.mul(this.bondMultiplier.target).sub(balance);
       const nativeBalance = await this.provider.getBalance(await this.signer.getAddress());
 
