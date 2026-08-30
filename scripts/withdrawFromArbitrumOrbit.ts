@@ -69,7 +69,7 @@ export async function run(): Promise<void> {
     contract = new Contract(arbErc20GatewayObj.address, arbErc20GatewayObj.abi, connectedSigner);
     functionName = "outboundTransfer";
     functionArgs = [
-      l1TokenAddress, // l1Token
+      l1TokenAddress.toNative(), // l1Token
       signerAddr, // to
       amount, // amount
       "0x", // data
