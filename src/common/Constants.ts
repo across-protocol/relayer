@@ -37,7 +37,6 @@ import {
   OpStackUSDCBridge,
   UsdcCCTPBridge,
   ZKStackBridge,
-  ZKStackUSDCBridge,
   ZKStackWethBridge,
   OFTBridge,
   BinanceCEXBridge,
@@ -158,7 +157,6 @@ export const MIN_DEPOSIT_CONFIRMATIONS: { [threshold: number | string]: { [chain
     [CHAIN_IDs.ARC]: 1,
     [CHAIN_IDs.AVALANCHE]: 1,
     [CHAIN_IDs.HYPEREVM]: 1,
-    [CHAIN_IDs.LENS]: 0,
     [CHAIN_IDs.LINEA]: 1,
     [CHAIN_IDs.MAINNET]: 2, // Mainnet reorgs are rarely > 1 - 2 blocks in depth.
     [CHAIN_IDs.MONAD]: 1,
@@ -322,7 +320,6 @@ export const DEFAULT_NO_TTL_DISTANCE: { [chainId: number]: number } = {
   [CHAIN_IDs.BOBA]: 86400,
   [CHAIN_IDs.HYPEREVM]: 86400,
   [CHAIN_IDs.INK]: 86400,
-  [CHAIN_IDs.LENS]: 172800,
   [CHAIN_IDs.LINEA]: 57600,
   [CHAIN_IDs.LISK]: 86400,
   [CHAIN_IDs.MAINNET]: 14400,
@@ -382,7 +379,6 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.BSC]: ["WBNB", "USDC", "USDT", "WETH"],
   [CHAIN_IDs.HYPEREVM]: ["USDC", "USDT"],
   [CHAIN_IDs.INK]: ["ETH", "WETH", "USDT", "USDC"],
-  [CHAIN_IDs.LENS]: ["WETH", "WGHO", "USDC"],
   [CHAIN_IDs.LINEA]: ["USDC", "USDT", "WETH", "WBTC"],
   [CHAIN_IDs.LISK]: ["WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.MEGAETH]: ["WETH", "USDT"],
@@ -406,7 +402,6 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.BASE_SEPOLIA]: ["WETH", "USDC"],
   [CHAIN_IDs.BLAST_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.POLYGON_AMOY]: ["WETH", "USDC"],
-  [CHAIN_IDs.LENS_SEPOLIA]: ["WETH", "GRASS"],
   [CHAIN_IDs.LISK_SEPOLIA]: ["WETH"],
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: ["WETH", "USDC"],
   [CHAIN_IDs.MODE_SEPOLIA]: ["WETH"],
@@ -527,10 +522,6 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
   },
-  [CHAIN_IDs.LENS]: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: ZKStackWethBridge,
-    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: ZKStackUSDCBridge,
-  },
   [CHAIN_IDs.LINEA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: LineaWethBridge,
@@ -634,9 +625,6 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: PolygonWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge, // Only support CCTP USDC.
   },
-  [CHAIN_IDs.LENS_SEPOLIA]: {
-    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: ZKStackWethBridge,
-  },
   [CHAIN_IDs.UNICHAIN_SEPOLIA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.SEPOLIA]]: OpStackWethBridge,
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.SEPOLIA]]: UsdcCCTPBridge,
@@ -671,8 +659,9 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
     // L2→L1 excess withdrawals via Binance (same pattern as Optimism USDT). No L1→L2 Binance route.
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: L2BinanceCEXBridge,
   },
-  // Lens is wired per-token rather than via CANONICAL_L2_BRIDGE because only one of its three supported tokens can
-  // take the asset router route:
+  // @dev Lens is retired and absent from SUPPORTED_TOKENS, so AdapterManager builds no Lens adapters. Retained
+  // because scripts/withdrawTokenFromL2.ts reads this map directly to drain any residual balance.
+  // Wired per-token rather than via CANONICAL_L2_BRIDGE because only WETH can take the asset router route:
   //   - USDC arrives over the standalone ZK Stack USDC bridge and is unknown to the native token vault, so it has
   //     its own adapter. The finalizer routes every Lens USDC withdrawal to that standalone bridge on
   //     (chain, token) alone, which could not settle an asset router message.

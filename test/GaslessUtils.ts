@@ -304,11 +304,9 @@ describe("GaslessUtils", function () {
           "0xe05E3798Ce2ae9afCb637fb53BF5a51253BBe2af",
         ]);
       }
-      for (const chainId of [CHAIN_IDs.LENS, CHAIN_IDs.ZK_SYNC]) {
-        expect(getLegacySpokePoolPeripheryAddresses(chainId)).to.deep.equal([
-          "0x5a148a9260c1f670429361c34d40b477280f01a9",
-        ]);
-      }
+      expect(getLegacySpokePoolPeripheryAddresses(CHAIN_IDs.ZK_SYNC)).to.deep.equal([
+        "0x5a148a9260c1f670429361c34d40b477280f01a9",
+      ]);
     });
   });
 

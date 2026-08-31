@@ -958,21 +958,6 @@ export const CONTRACT_ADDRESSES: {
       abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
   },
-  [CHAIN_IDs.LENS_SEPOLIA]: {
-    ...ZK_STACK_SYSTEM_CONTRACTS,
-    nativeToken: {
-      address: "0x000000000000000000000000000000000000800A",
-      abi: WETH_ABI,
-    },
-    wrappedNativeToken: {
-      address: "0xeee5a340Cdc9c179Db25dea45AcfD5FE8d4d3eB8",
-      abi: WETH_ABI,
-    },
-    weth: {
-      address: "0xaA91D645D7a6C1aeaa5988e0547267B77d33fe16",
-      abi: WETH_ABI,
-    },
-  },
   [CHAIN_IDs.LISK_SEPOLIA]: {
     ovmStandardBridge: {
       address: "0x4200000000000000000000000000000000000010",

@@ -314,13 +314,6 @@ describe("Cross Chain Adapter: ZK Stack L2 bridge configuration", function () {
 
   // Every supported token is pinned so that adding one to SUPPORTED_TOKENS cannot silently inherit a route.
   const expectedBridges: { [chainId: number]: { [symbol: string]: unknown } } = {
-    [CHAIN_IDs.LENS]: {
-      WETH: ZKStackBridge,
-      // Standalone bridge, unknown to the native token vault, and misfinalized if sent via the asset router.
-      USDC: ZKStackUSDCBridge,
-      // Lens's wrapped base token, unburnable by the vault; exits via L2BaseToken and lands on L1 as LGHO.
-      WGHO: ZKStackNativeBridge,
-    },
     [CHAIN_IDs.ZK_SYNC]: {
       USDT: ZKStackBridge,
       WBTC: ZKStackBridge,
@@ -337,6 +330,16 @@ describe("Cross Chain Adapter: ZK Stack L2 bridge configuration", function () {
       expect(supported.slice().sort()).to.deep.equal(Object.keys(expected).sort());
       supported.forEach((symbol) => expect(resolveL2Bridge(Number(chainId), symbol)).to.equal(expected[symbol]));
     });
+  });
+
+  // Lens is retired, so it is absent from SUPPORTED_TOKENS and AdapterManager builds it no adapters. Its withdrawal
+  // routes are retained for scripts/withdrawTokenFromL2.ts, which resolves them from CUSTOM_L2_BRIDGE directly.
+  it("retains the Lens withdrawal routes for the operator drain script", function () {
+    expect(SUPPORTED_TOKENS[CHAIN_IDs.LENS]).to.be.undefined;
+    const expected = { WETH: ZKStackBridge, USDC: ZKStackUSDCBridge, WGHO: ZKStackNativeBridge };
+    Object.entries(expected).forEach(([symbol, bridge]) =>
+      expect(resolveL2Bridge(CHAIN_IDs.LENS, symbol)).to.equal(bridge)
+    );
   });
 });
 
