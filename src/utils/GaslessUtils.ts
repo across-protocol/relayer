@@ -30,7 +30,7 @@ import {
   toBNWei,
   winston,
   isDefined,
-  getInventoryEquivalentL1TokenAddress,
+  tryGetInventoryEquivalentL1TokenAddress,
   getTokenSymbol,
 } from "../utils";
 import { isStablecoin } from "./TokenUtils";
@@ -228,10 +228,15 @@ export function isAllowedGaslessPair(
     return true;
   }
 
-  const inputL1 = getInventoryEquivalentL1TokenAddress(inputAddr, originChainId);
-  const outputL1 = getInventoryEquivalentL1TokenAddress(outputAddr, destinationChainId);
+  // A token with no hub-chain equivalent cannot be half of a same-L1 pair. Resolution throws for such tokens,
+  // so use the non-throwing variant: an unrecognised token is a routine rejection, not an error.
+  const inputL1 = tryGetInventoryEquivalentL1TokenAddress(inputAddr, originChainId);
+  const outputL1 = tryGetInventoryEquivalentL1TokenAddress(outputAddr, destinationChainId);
+  if (!isDefined(inputL1) || !isDefined(outputL1)) {
+    return false;
+  }
 
-  return inputL1.eq(outputL1) ?? false;
+  return inputL1.eq(outputL1);
 }
 
 /**

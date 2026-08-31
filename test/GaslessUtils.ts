@@ -7,9 +7,10 @@ import {
   buildGaslessDepositTx,
   getLegacySpokePoolPeripheryAddresses,
   isErc2612PermitNonceConsumed,
+  isAllowedGaslessPair,
   resolveTokenInfoForLog,
 } from "../src/utils/GaslessUtils";
-import { CHAIN_IDs, toAddressType, getTokenInfo } from "../src/utils";
+import { CHAIN_IDs, TOKEN_SYMBOLS_MAP, toAddressType, getTokenInfo } from "../src/utils";
 import { APIGaslessDepositResponse } from "../src/interfaces";
 import SPOKE_POOL_PERIPHERY_ABI from "../src/common/abi/SpokePoolPeriphery.json";
 
@@ -463,6 +464,31 @@ describe("GaslessUtils", function () {
       expect(tx.method).to.equal("swapAndBridgeWithPermit");
       expect(tx.args.length).to.equal(5);
       expect(tx.ensureConfirmation).to.be.true;
+    });
+  });
+
+  describe("isAllowedGaslessPair", function () {
+    const USDC_MAINNET = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET];
+    const USDC_BASE = TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.BASE];
+    // Wrapped native of a remote chain: present in TOKEN_SYMBOLS_MAP, but with no hub-chain address.
+    const WHYPE_HYPEREVM = TOKEN_SYMBOLS_MAP.WHYPE.addresses[CHAIN_IDs.HYPEREVM];
+
+    it("accepts a pair sharing an L1 token", function () {
+      expect(isAllowedGaslessPair(USDC_MAINNET, USDC_BASE, CHAIN_IDs.MAINNET, CHAIN_IDs.BASE)).to.be.true;
+    });
+
+    it("rejects rather than throws when a token has no hub-chain equivalent", function () {
+      // Resolving WHYPE to an L1 equivalent asserts, since it is only listed on HyperEVM. That must surface
+      // as an ordinary rejection: throwing here aborts the caller's whole batch.
+      expect(() => isAllowedGaslessPair(WHYPE_HYPEREVM, USDC_BASE, CHAIN_IDs.HYPEREVM, CHAIN_IDs.BASE)).to.not.throw();
+      expect(isAllowedGaslessPair(WHYPE_HYPEREVM, USDC_BASE, CHAIN_IDs.HYPEREVM, CHAIN_IDs.BASE)).to.be.false;
+      expect(isAllowedGaslessPair(USDC_BASE, WHYPE_HYPEREVM, CHAIN_IDs.BASE, CHAIN_IDs.HYPEREVM)).to.be.false;
+    });
+
+    it("rejects rather than throws for a token absent from the token map", function () {
+      const unknownToken = "0x" + "99".repeat(20);
+      expect(() => isAllowedGaslessPair(unknownToken, USDC_BASE, CHAIN_IDs.MAINNET, CHAIN_IDs.BASE)).to.not.throw();
+      expect(isAllowedGaslessPair(unknownToken, USDC_BASE, CHAIN_IDs.MAINNET, CHAIN_IDs.BASE)).to.be.false;
     });
   });
 

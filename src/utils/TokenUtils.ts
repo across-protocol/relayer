@@ -82,6 +82,22 @@ export function getInventoryEquivalentL1TokenAddress(
   }
 }
 
+// As `getInventoryEquivalentL1TokenAddress`, but returns undefined instead of throwing when the token has
+// no hub-chain equivalent. Tokens that exist only on a remote chain (a chain's wrapped native asset, for
+// example) have no `hubChainId` entry in TOKEN_SYMBOLS_MAP, so resolution asserts. Callers for which "no L1
+// equivalent" is a routine negative answer should prefer this over catching around the throwing variant.
+export function tryGetInventoryEquivalentL1TokenAddress(
+  l2Token: Address,
+  chainId: number,
+  hubChainId = CHAIN_IDs.MAINNET
+): EvmAddress | undefined {
+  try {
+    return getInventoryEquivalentL1TokenAddress(l2Token, chainId, hubChainId);
+  } catch {
+    return undefined;
+  }
+}
+
 // Returns the L2 tokens that are equivalent for a given `l1Token` within the context of the inventory.
 // Equivalency is defined by tokens that share the same L1 token within TOKEN_SYMBOLS_MAP or are
 // mapped to each other in TOKEN_EQUIVALENCE_REMAPPING.
