@@ -1,6 +1,10 @@
 import { expect } from "./utils";
 import { CHAIN_IDs } from "../src/utils";
-import { isCctpFastTransferSource } from "../src/utils/CCTPUtils";
+import {
+  CCTPV2_FINALITY_THRESHOLD_FAST,
+  CCTPV2_FINALITY_THRESHOLD_STANDARD,
+  isCctpFastTransferSource,
+} from "../src/utils/CCTPUtils";
 
 // Circle's Fast Transfer source list, as published at
 // https://developers.circle.com/cctp/concepts/finality-and-block-confirmations.
@@ -64,5 +68,15 @@ describe("CCTP fast transfer sources", function () {
 
   it("rejects chains with no CCTP deployment", function () {
     NO_CCTP_DEPLOYMENT_SOURCES.forEach((chainId) => expect(isCctpFastTransferSource(chainId)).to.be.false);
+  });
+});
+
+describe("CCTP finality thresholds", function () {
+  // These are SDK constants, and we both send them as depositForBurn's minFinalityThreshold and derive the "fast
+  // mode" log line from them. Circle's fee endpoint reports its two tiers as finalityThreshold 1000 and 2000, so pin
+  // those values: an SDK bump that moved them would otherwise silently change what we sign.
+  it("matches the thresholds Circle attests against", function () {
+    expect(CCTPV2_FINALITY_THRESHOLD_FAST).to.equal(1000);
+    expect(CCTPV2_FINALITY_THRESHOLD_STANDARD).to.equal(2000);
   });
 });
