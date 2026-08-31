@@ -399,13 +399,15 @@ const CCTP_FAST_TRANSFER_SOURCE_DOMAINS = toCctpDomains([
   CHAIN_IDs.WORLD_CHAIN,
 ]);
 
-// Plasma and BNB Smart Chain are standard-only in Circle's table, but @across-protocol/constants carries no domain
-// for either, so they resolve to CCTP_NO_DOMAIN and are omitted rather than listed here.
+// Plasma is standard-only on domain 33, but the pinned @across-protocol/constants has no domain for it, so it filters
+// out here and short-circuits on CCTP_NO_DOMAIN instead. Listed now so a constants bump classifies it with no
+// follow-up.
 const CCTP_STANDARD_ONLY_SOURCE_DOMAINS = toCctpDomains([
   CHAIN_IDs.ARC,
   CHAIN_IDs.AVALANCHE,
   CHAIN_IDs.HYPEREVM,
   CHAIN_IDs.MONAD,
+  CHAIN_IDs.PLASMA,
   CHAIN_IDs.POLYGON,
 ]);
 

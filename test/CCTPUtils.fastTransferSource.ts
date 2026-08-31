@@ -62,8 +62,9 @@ describe("CCTP fast transfer sources", function () {
   });
 
   it("rejects chains with no CCTP deployment", function () {
-    // Plasma resolves the same way for now: Circle lists domain 33 as standard-only, but @across-protocol/constants
-    // doesn't carry that domain yet, so it short-circuits alongside chains that have no CCTP deployment at all.
+    // Plasma resolves the same way for now: it's listed as standard-only, but the pinned @across-protocol/constants
+    // carries no domain for it, so it short-circuits alongside chains that have no CCTP deployment at all. The
+    // assertion holds either way, so it stays valid once a bump moves Plasma onto domain 33.
     expect(isCctpFastTransferSource(CHAIN_IDs.BSC)).to.be.false;
     expect(isCctpFastTransferSource(CHAIN_IDs.LENS)).to.be.false;
     expect(isCctpFastTransferSource(CHAIN_IDs.PLASMA)).to.be.false;
