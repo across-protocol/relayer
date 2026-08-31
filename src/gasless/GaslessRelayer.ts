@@ -627,10 +627,10 @@ export class GaslessRelayer {
       } = extractGaslessDepositFields(depositMessage);
 
       const depositKey = this._getDepositKeyFromMessage(depositMessage);
-      const fillKey = `${authorizer}:${originChainId}`;
+      const fillKey = this._getFillLockKeyFromMessage(depositMessage);
 
       const at = "GaslessRelayer#evaluateApiSignatures";
-      const log = (level: "debug" | "info" | "warn" | "error", message: string, args: Record<string, unknown> = {}) =>
+      const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) =>
         this.logger[level]({
           at,
           message,
@@ -673,228 +673,211 @@ export class GaslessRelayer {
 
       const bridgeMessage = depositMessage as GaslessDepositMessage;
 
-      try {
-        do {
-          // If we are currently processing a fill for the user, then do not process another fill until the first fill is completed.
-          if (isDefined(this.fillLock[fillKey]) && this.fillLock[fillKey] !== depositKey) {
-            log("debug", `Skipping deposit due to held lock on key ${fillKey} (held by ${this.fillLock[fillKey]})`);
-            await delay(1);
-            continue;
-          }
-          this.fillLock[fillKey] ??= depositKey;
+      do {
+        // If we are currently processing a fill for the user, then do not process another fill until the first fill is completed.
+        if (isDefined(this.fillLock[fillKey]) && this.fillLock[fillKey] !== depositKey) {
+          log("debug", `Skipping deposit due to held lock on key ${fillKey} (held by ${this.fillLock[fillKey]})`);
+          await delay(1);
+          continue;
+        }
+        this.fillLock[fillKey] ??= depositKey;
 
-          if (expired()) {
-            log("warn", `Skipping expired deposit destined for ${origin}.`);
-            setState(MessageState.ERROR);
+        if (expired()) {
+          log("warn", `Skipping expired deposit destined for ${origin}.`);
+          setState(MessageState.ERROR);
+        }
+
+        const messageState = getState();
+        switch (messageState) {
+          case MessageState.INITIAL: {
+            const valid = validateDeposit(
+              originChainId,
+              inputToken,
+              inputAmountForValidation,
+              destinationChainId,
+              outputToken,
+              outputAmount,
+              this.config.refundFlowTestEnabled,
+              this.config.allowedPeggedPairs,
+              this.logger,
+              this.config.depositUsdPageThreshold,
+              this.config.fillsEnabled
+            );
+            let nextState = MessageState.ERROR;
+            if (!valid) {
+              log("warn", `Rejected malformed deposit destined for ${origin}.`);
+            } else {
+              fillImmediate =
+                !isSwap &&
+                instantFill &&
+                this.fillImmediate(
+                  { originChainId, destinationChainId, outputToken, outputAmount, exclusivityParameter },
+                  spokePool
+                );
+              log("debug", `Fill immediate: ${fillImmediate}`);
+              nextState = MessageState.DEPOSIT_SUBMIT;
+            }
+            setState(nextState);
+            break;
           }
 
-          const messageState = getState();
-          switch (messageState) {
-            case MessageState.INITIAL: {
-              const valid = validateDeposit(
-                originChainId,
-                inputToken,
-                inputAmountForValidation,
-                destinationChainId,
-                outputToken,
-                outputAmount,
-                this.config.refundFlowTestEnabled,
-                this.config.allowedPeggedPairs,
-                this.logger,
-                this.config.depositUsdPageThreshold,
-                this.config.fillsEnabled
+          case MessageState.DEPOSIT_SUBMIT: {
+            if (fillImmediate) {
+              const depositTx = buildGaslessDepositTx(
+                depositMessage,
+                this.getPeripheryContract(originChainId, depositMessage.targetAddress)
               );
-              let nextState = MessageState.ERROR;
-              if (!valid) {
-                log("warn", `Rejected malformed deposit destined for ${origin}.`);
+              const { succeed, reason } = await willSucceed(depositTx);
+              if (!succeed) {
+                log("warn", "Deposit simulation failed, falling back to standard path.", { reason });
+                fillImmediate = false;
+                // Drop synthetic (or any in-memory) deposit so DEPOSIT_CONFIRM's standard branch must re-resolve from receipt / chain.
+                deposit = undefined;
+              }
+            }
+
+            depositReceiptPromise = this.initiateDeposit(depositMessage);
+            const nextState = fillImmediate ? MessageState.FILL_PENDING : MessageState.DEPOSIT_CONFIRM;
+            setState(nextState);
+            break;
+          }
+
+          case MessageState.DEPOSIT_CONFIRM: {
+            const depositReceipt = await depositReceiptPromise;
+
+            // Swap-and-bridge and CCTP bridge: no fill; confirm via receipt hash and/or nonce/auth usage.
+            // Permit2: nonceBitmap, Permit (EIP-2612): token nonce advancement, EIP-3009: AuthorizationUsed.
+            if (isCctpDeposit) {
+              let found: string | undefined = depositReceipt?.transactionHash;
+
+              if (!found) {
+                const authToken = isSwap ? toAddressType(depositMessage.swapToken, originChainId) : inputToken;
+                if (depositMessage.permitType === "erc3009") {
+                  found = await this._findAuthorizationUsed(originChainId, authToken, authorizer, nonce);
+                } else if (depositMessage.permitType === "permit") {
+                  const nonceConsumed = await isErc2612PermitNonceConsumed({
+                    // permitNonces is periphery-local storage: read the generation the message binds.
+                    spokePoolPeriphery: this.getPeripheryContract(originChainId, depositMessage.targetAddress),
+                    owner: authorizer,
+                    signedNonce: nonce,
+                  });
+                  if (nonceConsumed) {
+                    found = "permit-nonce-consumed";
+                  }
+                } else if (depositMessage.permitType === "permit2") {
+                  const nonceUsed = await isPermit2NonceUsed(this.permit2Contracts[originChainId], authorizer, nonce);
+                  // Same outcome as AuthorizationUsed: confirm origin submission without a tx receipt (no EIP-3009 event).
+                  if (nonceUsed) {
+                    found = "permit2-nonce-consumed";
+                  }
+                }
+              }
+
+              if (isDefined(found)) {
+                const hasTxHash = utils.isHexString(found);
+                log(
+                  "info",
+                  `Gasless ${isSwap ? "swapAndBridge" : "cctp"} deposit confirmed on ${origin}. Moving to DONE.`,
+                  { txHash: hasTxHash ? blockExplorerLink(found, originChainId) : found }
+                );
+                setState(MessageState.DONE);
               } else {
-                fillImmediate =
-                  !isSwap &&
-                  instantFill &&
-                  this.fillImmediate(
-                    { originChainId, destinationChainId, outputToken, outputAmount, exclusivityParameter },
-                    spokePool
-                  );
-                log("debug", `Fill immediate: ${fillImmediate}`);
+                log("info", `Could not locate ${isSwap ? "swapAndBridge" : "cctp"} deposit on ${origin}. Retrying.`);
+                await delay(1);
+                setState(MessageState.DEPOSIT_SUBMIT);
+              }
+              break;
+            }
+
+            let nextState: MessageState;
+            if (fillImmediate && isDefined(deposit)) {
+              const verifiedDeposit = depositReceipt
+                ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId, depositId)
+                : await this._findDeposit(bridgeMessage);
+
+              if (isDefined(verifiedDeposit)) {
+                log("info", `Verified deposit on ${origin} after immediate fill.`, {
+                  txHash: blockExplorerLink(verifiedDeposit.txnRef, originChainId),
+                });
+                deposit = verifiedDeposit;
+                nextState = MessageState.FILLED;
+              } else {
+                log("warn", `Deposit not found on ${origin} after immediate fill - unreimbursable fill risk!`);
+                await delay(1);
                 nextState = MessageState.DEPOSIT_SUBMIT;
               }
-              setState(nextState);
-              break;
-            }
-
-            case MessageState.DEPOSIT_SUBMIT: {
-              if (fillImmediate) {
-                const depositTx = buildGaslessDepositTx(
-                  depositMessage,
-                  this.getPeripheryContract(originChainId, depositMessage.targetAddress)
-                );
-                const { succeed, reason } = await willSucceed(depositTx);
-                if (!succeed) {
-                  log("warn", "Deposit simulation failed, falling back to standard path.", { reason });
-                  fillImmediate = false;
-                  // Drop synthetic (or any in-memory) deposit so DEPOSIT_CONFIRM's standard branch must re-resolve from receipt / chain.
-                  deposit = undefined;
-                }
-              }
-
-              depositReceiptPromise = this.initiateDeposit(depositMessage);
-              const nextState = fillImmediate ? MessageState.FILL_PENDING : MessageState.DEPOSIT_CONFIRM;
-              setState(nextState);
-              break;
-            }
-
-            case MessageState.DEPOSIT_CONFIRM: {
-              const depositReceipt = await depositReceiptPromise;
-
-              // Swap-and-bridge and CCTP bridge: no fill; confirm via receipt hash and/or nonce/auth usage.
-              // Permit2: nonceBitmap, Permit (EIP-2612): token nonce advancement, EIP-3009: AuthorizationUsed.
-              if (isCctpDeposit) {
-                let found: string | undefined = depositReceipt?.transactionHash;
-
-                if (!found) {
-                  const authToken = isSwap ? toAddressType(depositMessage.swapToken, originChainId) : inputToken;
-                  if (depositMessage.permitType === "erc3009") {
-                    found = await this._findAuthorizationUsed(originChainId, authToken, authorizer, nonce);
-                  } else if (depositMessage.permitType === "permit") {
-                    const nonceConsumed = await isErc2612PermitNonceConsumed({
-                      // permitNonces is periphery-local storage: read the generation the message binds.
-                      spokePoolPeriphery: this.getPeripheryContract(originChainId, depositMessage.targetAddress),
-                      owner: authorizer,
-                      signedNonce: nonce,
-                    });
-                    if (nonceConsumed) {
-                      found = "permit-nonce-consumed";
-                    }
-                  } else if (depositMessage.permitType === "permit2") {
-                    const nonceUsed = await isPermit2NonceUsed(this.permit2Contracts[originChainId], authorizer, nonce);
-                    // Same outcome as AuthorizationUsed: confirm origin submission without a tx receipt (no EIP-3009 event).
-                    if (nonceUsed) {
-                      found = "permit2-nonce-consumed";
-                    }
-                  }
-                }
-
-                if (isDefined(found)) {
-                  const hasTxHash = utils.isHexString(found);
-                  log(
-                    "info",
-                    `Gasless ${isSwap ? "swapAndBridge" : "cctp"} deposit confirmed on ${origin}. Moving to DONE.`,
-                    { txHash: hasTxHash ? blockExplorerLink(found, originChainId) : found }
-                  );
-                  setState(MessageState.DONE);
+            } else {
+              deposit ??= depositReceipt
+                ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId, depositId)
+                : await this._findDeposit(bridgeMessage);
+              if (isDefined(deposit)) {
+                if (this._skipsDestinationFill(depositMessage)) {
+                  log("info", `Verified deposit on ${origin}. Marking DONE (no destination fill).`);
+                  nextState = MessageState.DONE;
                 } else {
-                  log("info", `Could not locate ${isSwap ? "swapAndBridge" : "cctp"} deposit on ${origin}. Retrying.`);
-                  await delay(1);
-                  setState(MessageState.DEPOSIT_SUBMIT);
-                }
-                break;
-              }
-
-              let nextState: MessageState;
-              if (fillImmediate && isDefined(deposit)) {
-                const verifiedDeposit = depositReceipt
-                  ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId, depositId)
-                  : await this._findDeposit(bridgeMessage);
-
-                if (isDefined(verifiedDeposit)) {
-                  log("info", `Verified deposit on ${origin} after immediate fill.`, {
-                    txHash: blockExplorerLink(verifiedDeposit.txnRef, originChainId),
-                  });
-                  deposit = verifiedDeposit;
-                  nextState = MessageState.FILLED;
-                } else {
-                  log("warn", `Deposit not found on ${origin} after immediate fill - unreimbursable fill risk!`);
-                  await delay(1);
-                  nextState = MessageState.DEPOSIT_SUBMIT;
+                  log("info", `Verified deposit on ${origin}`);
+                  nextState = MessageState.FILL_PENDING;
                 }
               } else {
-                deposit ??= depositReceipt
-                  ? this._extractDepositFromTransactionReceipt(depositReceipt, originChainId, depositId)
-                  : await this._findDeposit(bridgeMessage);
-                if (isDefined(deposit)) {
-                  if (this._skipsDestinationFill(depositMessage)) {
-                    log("info", `Verified deposit on ${origin}. Marking DONE (no destination fill).`);
-                    nextState = MessageState.DONE;
-                  } else {
-                    log("info", `Verified deposit on ${origin}`);
-                    nextState = MessageState.FILL_PENDING;
-                  }
-                } else {
-                  log("info", `Could not locate deposit on ${origin}.`);
-                  // It's possible the deposit will always fail in simulation (e.g. insufficient balance). In this
-                  // case, drop the lock on the deposit in case there were follow-up requests we need to unblock.
-                  delete this.fillLock[fillKey];
-                  nextState = MessageState.DEPOSIT_SUBMIT;
-                  await delay(1);
-                }
-              }
-              setState(nextState);
-              break;
-            }
-
-            case MessageState.FILL_PENDING: {
-              if (this._skipsDestinationFill(depositMessage)) {
-                log("info", `Marking DONE without fill on ${destination}.`);
-                setState(MessageState.DONE);
-                break;
-              }
-
-              let fillStatus: FillStatus;
-
-              if (deposit) {
-                if (this.isRefundFlowTestDeposit(deposit.outputAmount)) {
-                  log("info", `Skipped fill on ${destination} for ${origin} deposit (deposit refund test).`);
-                  setState(MessageState.FILLED);
-                  break;
-                }
-
-                const fillSubmission = await this.initiateFill(deposit, spokePool);
-                if (isDefined(fillSubmission)) {
-                  log("info", `Completed fill on ${destination} for ${origin} deposit.`);
-                  fillStatus = FillStatus.Filled;
-                }
-              } else {
-                deposit = buildSyntheticDeposit(bridgeMessage);
-                const fillSubmission = await this.initiateFill(deposit, spokePool);
-                if (isDefined(fillSubmission)) {
-                  log("info", `Completed immediate fill on ${destination} for ${origin} deposit.`);
-                  fillStatus = FillStatus.Filled;
-                }
-              }
-
-              fillStatus ??= await this._getDestinationFillStatus(deposit);
-
-              if (fillStatus === FillStatus.Filled) {
-                log("info", `Recognised fill on ${destination}.`);
-                const nextState = fillImmediate ? MessageState.DEPOSIT_CONFIRM : MessageState.FILLED;
-                setState(nextState);
-              } else {
+                log("info", `Could not locate deposit on ${origin}.`);
+                // It's possible the deposit will always fail in simulation (e.g. insufficient balance). In this
+                // case, drop the lock on the deposit in case there were follow-up requests we need to unblock.
+                delete this.fillLock[fillKey];
+                nextState = MessageState.DEPOSIT_SUBMIT;
                 await delay(1);
               }
+            }
+            setState(nextState);
+            break;
+          }
+
+          case MessageState.FILL_PENDING: {
+            if (this._skipsDestinationFill(depositMessage)) {
+              log("info", `Marking DONE without fill on ${destination}.`);
+              setState(MessageState.DONE);
               break;
             }
+
+            let fillStatus: FillStatus;
+
+            if (deposit) {
+              if (this.isRefundFlowTestDeposit(deposit.outputAmount)) {
+                log("info", `Skipped fill on ${destination} for ${origin} deposit (deposit refund test).`);
+                setState(MessageState.FILLED);
+                break;
+              }
+
+              const fillSubmission = await this.initiateFill(deposit, spokePool);
+              if (isDefined(fillSubmission)) {
+                log("info", `Completed fill on ${destination} for ${origin} deposit.`);
+                fillStatus = FillStatus.Filled;
+              }
+            } else {
+              deposit = buildSyntheticDeposit(bridgeMessage);
+              const fillSubmission = await this.initiateFill(deposit, spokePool);
+              if (isDefined(fillSubmission)) {
+                log("info", `Completed immediate fill on ${destination} for ${origin} deposit.`);
+                fillStatus = FillStatus.Filled;
+              }
+            }
+
+            fillStatus ??= await this._getDestinationFillStatus(deposit);
+
+            if (fillStatus === FillStatus.Filled) {
+              log("info", `Recognised fill on ${destination}.`);
+              const nextState = fillImmediate ? MessageState.DEPOSIT_CONFIRM : MessageState.FILLED;
+              setState(nextState);
+            } else {
+              await delay(1);
+            }
+            break;
           }
-        } while (!terminalStates.includes(getState()));
-        const tEnd = performance.now();
-        const delta = (tEnd - tStart) / 1000;
-        log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
-      } catch (error) {
-        // One failing message must not abort the batch. Mark it terminal so it is not retried
-        // indefinitely, and let `finally` release any fill lock it already acquired. Unsupported deposits
-        // are rejected in the INITIAL case above, so anything reaching here is genuinely unexpected and
-        // still warrants an alert. Log before the transition so `state` records where it died, not ERROR.
-        log("error", "Failed to process deposit; skipping this message", {
-          error: error instanceof Error ? error.message : String(error),
-        });
-        setState(MessageState.ERROR);
-      } finally {
-        // Release the lock only if this message is the holder. A throw from the lock-wait branch above
-        // leaves the lock owned by another message, and deleting it there would let a second fill for the
-        // same authorizer start while the first is still in flight.
-        if (this.fillLock[fillKey] === depositKey) {
-          delete this.fillLock[fillKey];
         }
-      }
+      } while (!terminalStates.includes(getState()));
+      delete this.fillLock[fillKey];
+      const tEnd = performance.now();
+      const delta = (tEnd - tStart) / 1000;
+      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
     };
 
     const messageFilter = (deposit: AnyGaslessDepositMessage): boolean => {
@@ -931,8 +914,39 @@ export class GaslessRelayer {
       return !isDefined(this.messageState[depositKey]);
     };
 
+    // forEachAsync is Promise.all, so an unhandled rejection from one message would skip every other
+    // message this tick and leave the thrower non-terminal, re-queued on each subsequent poll. Contain
+    // each message at the batch boundary instead: mark only the thrower ERROR, and release the fill lock
+    // it was holding so later deposits from the same authorizer aren't wedged behind it.
+    const processDepositMessageSafely = async (depositMessage: AnyGaslessDepositMessage) => {
+      const depositKey = this._getDepositKeyFromMessage(depositMessage);
+      const fillKey = this._getFillLockKeyFromMessage(depositMessage);
+      try {
+        await processDepositMessage(depositMessage);
+      } catch (error) {
+        this.logger.error({
+          at: "GaslessRelayer#evaluateApiSignatures",
+          message: "Failed to process deposit; skipping this message",
+          // The state the message died in, not the ERROR it is about to be set to.
+          state: stateToStr(this._getState(depositKey)),
+          originChainId: depositMessage.originChainId,
+          depositId: depositMessage.depositId,
+          requestId: depositMessage.requestId,
+          fillKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        this._setState(depositKey, MessageState.ERROR);
+      } finally {
+        // Only if this message is the holder: a throw from the lock-wait branch leaves the lock owned by
+        // another message, and releasing it there would let two fills for one authorizer overlap.
+        if (this.fillLock[fillKey] === depositKey) {
+          delete this.fillLock[fillKey];
+        }
+      }
+    };
+
     const apiMessages = await this._queryGaslessApi();
-    await forEachAsync(apiMessages.filter(messageFilter), processDepositMessage);
+    await forEachAsync(apiMessages.filter(messageFilter), processDepositMessageSafely);
   }
 
   /*
@@ -1405,6 +1419,13 @@ export class GaslessRelayer {
   protected _getDepositKeyFromMessage(depositMessage: AnyGaslessDepositMessage): string {
     const { inputToken } = extractGaslessDepositFields(depositMessage);
     return this._getDepositKey(inputToken.toNative(), depositMessage.originChainId, depositMessage.depositId);
+  }
+
+  /*
+   * @notice Identifies the fill lock serialising a single authorizer's fills on one origin chain.
+   */
+  protected _getFillLockKeyFromMessage(depositMessage: AnyGaslessDepositMessage): string {
+    return `${getGaslessAuthorizerAddress(depositMessage)}:${depositMessage.originChainId}`;
   }
 
   /*
