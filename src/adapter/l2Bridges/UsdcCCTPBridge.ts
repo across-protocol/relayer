@@ -162,7 +162,7 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
   }
 
   async _getCctpV2DepositForBurnMaxFee(amount: BigNumber): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
-    return getV2DepositForBurnMaxFee(this.l2UsdcTokenAddress, this.l2chainId, this.hubChainId, amount, this.logger);
+    return getV2DepositForBurnMaxFee(this.l2UsdcTokenAddress, this.l2chainId, this.hubChainId, amount);
   }
 
   override getRebalancerPendingBridgeAdapterName(): PendingBridgeAdapterName {

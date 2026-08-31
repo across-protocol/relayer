@@ -1,15 +1,9 @@
 import { expect } from "./utils";
-import { CCTP_NO_DOMAIN, PRODUCTION_NETWORKS } from "@across-protocol/constants";
 import { CHAIN_IDs } from "../src/utils";
-import {
-  CCTP_FAST_TRANSFER_SOURCE_DOMAINS,
-  CCTP_STANDARD_ONLY_SOURCE_DOMAINS,
-  isCctpFastTransferSource,
-} from "../src/utils/CCTPUtils";
+import { isCctpFastTransferSource } from "../src/utils/CCTPUtils";
 
 // Circle's Fast Transfer source list, as published at
-// https://developers.circle.com/cctp/concepts/finality-and-block-confirmations. Chains Across doesn't run on are
-// omitted; every CCTP chain Across does run on is asserted here so that adding one forces a decision.
+// https://developers.circle.com/cctp/concepts/finality-and-block-confirmations.
 const FAST_SOURCES = [
   CHAIN_IDs.ARBITRUM,
   CHAIN_IDs.BASE,
@@ -34,15 +28,22 @@ const FAST_TESTNET_SOURCES = [
   CHAIN_IDs.UNICHAIN_SEPOLIA,
 ];
 
+// Circle downgrades a fast burn from these to standard. Unlisted rather than enumerated in the source, so these
+// assert the opt-in default rather than a second list.
 const STANDARD_ONLY_SOURCES = [
   CHAIN_IDs.ARC,
   CHAIN_IDs.AVALANCHE,
   CHAIN_IDs.HYPEREVM,
   CHAIN_IDs.MONAD,
+  CHAIN_IDs.PLASMA,
   CHAIN_IDs.POLYGON,
 ];
 
 const STANDARD_ONLY_TESTNET_SOURCES = [CHAIN_IDs.HYPEREVM_TESTNET, CHAIN_IDs.MONAD_TESTNET, CHAIN_IDs.POLYGON_AMOY];
+
+// Chains with no CCTP deployment at all resolve to CCTP_NO_DOMAIN (-1). Asserting these guards the set builder: were
+// -1 ever admitted to the fast set, every one of them would evaluate as a fast source.
+const NO_CCTP_DEPLOYMENT_SOURCES = [CHAIN_IDs.BSC, CHAIN_IDs.LENS];
 
 describe("CCTP fast transfer sources", function () {
   it("accepts every chain Circle attests fast", function () {
@@ -62,32 +63,6 @@ describe("CCTP fast transfer sources", function () {
   });
 
   it("rejects chains with no CCTP deployment", function () {
-    // Plasma resolves the same way for now: it's listed as standard-only, but the pinned @across-protocol/constants
-    // carries no domain for it, so it short-circuits alongside chains that have no CCTP deployment at all. The
-    // assertion holds either way, so it stays valid once a bump moves Plasma onto domain 33.
-    expect(isCctpFastTransferSource(CHAIN_IDs.BSC)).to.be.false;
-    expect(isCctpFastTransferSource(CHAIN_IDs.LENS)).to.be.false;
-    expect(isCctpFastTransferSource(CHAIN_IDs.PLASMA)).to.be.false;
-  });
-
-  it("classifies each domain as exactly one of fast or standard-only", function () {
-    const overlap = [...CCTP_FAST_TRANSFER_SOURCE_DOMAINS].filter((domain) =>
-      CCTP_STANDARD_ONLY_SOURCE_DOMAINS.has(domain)
-    );
-    expect(overlap).to.deep.equal([]);
-  });
-
-  // The runtime warning covers domains Circle publishes later; this covers chains already in
-  // @across-protocol/constants, so a constants bump introducing one can't reach production unclassified.
-  it("classifies every CCTP chain we already know about", function () {
-    const unclassified = Object.entries(PRODUCTION_NETWORKS)
-      .filter(
-        ([, { cctpDomain }]) =>
-          cctpDomain !== CCTP_NO_DOMAIN &&
-          !CCTP_FAST_TRANSFER_SOURCE_DOMAINS.has(cctpDomain) &&
-          !CCTP_STANDARD_ONLY_SOURCE_DOMAINS.has(cctpDomain)
-      )
-      .map(([chainId]) => Number(chainId));
-    expect(unclassified).to.deep.equal([]);
+    NO_CCTP_DEPLOYMENT_SOURCES.forEach((chainId) => expect(isCctpFastTransferSource(chainId)).to.be.false);
   });
 });
