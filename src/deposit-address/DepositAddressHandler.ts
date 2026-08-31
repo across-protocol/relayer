@@ -14,6 +14,7 @@ import {
   getProvider,
   Contract,
   sendAndConfirmTransaction,
+  sendAndConfirmTransactionWithHash,
   getCounterfactualDepositFactory,
   buildDeployTx,
   toBN,
@@ -95,6 +96,19 @@ const INTEGRATOR_ID_REGEX = /^0x[0-9a-fA-F]{4}$/;
  *   accepted cost is that a brief fee spike converts a sweepable deposit into a gas-deducted refund.
  */
 const TERMINAL_EXECUTE_ERROR_CODES = new Set(["AMOUNT_BELOW_MINIMUM", "AMOUNT_TEMPORARILY_UNSWEEPABLE"]);
+
+/**
+ * Cross-instance execute lock TTL. Must outlive an execute's API round-trip + broadcast +
+ * confirmation so a concurrent instance (e.g. during coordinator handover) cannot re-execute the
+ * same funding transfer while the first attempt is in flight.
+ */
+const EXECUTE_LOCK_TTL_MS = 180_000;
+
+/** How long an unknown-outcome broadcast record survives so later polls verify it on-chain. */
+const ATTEMPTED_EXECUTE_TTL_SECONDS = 24 * 60 * 60;
+
+/** How long an unreceipted attempted broadcast blocks a re-execute before being presumed dropped. */
+const ATTEMPTED_EXECUTE_GRACE_SECONDS = 15 * 60;
 
 /**
  * Indexer message versions the bot knows how to execute. Anything else (e.g. v2, or a future
@@ -285,6 +299,130 @@ export class DepositAddressHandler {
 
   private getRefundOnlyKeysRedisKey(): string {
     return `deposit-address:refund-only-deposit-keys:${this.config.botIdentifier}`;
+  }
+
+  private getExecuteLockRedisKey(depositKey: string): string {
+    return `deposit-address:execute-lock:${this.config.botIdentifier}:${depositKey}`;
+  }
+
+  private getAttemptedExecuteRedisKey(depositKey: string): string {
+    return `deposit-address:attempted-execute:${this.config.botIdentifier}:${depositKey}`;
+  }
+
+  /**
+   * Cross-instance write-ahead lock taken before an execute is requested/broadcast. The in-memory
+   * in-flight set only guards a single process; during coordinator handover two instances overlap
+   * and both receive the same queue row, so the lock must live in shared state. Fails OPEN: a
+   * Redis blip must not stop sweeping — the cost is reverting to single-instance dedupe only.
+   */
+  private async _acquireExecuteLock(depositKey: string): Promise<boolean> {
+    try {
+      assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+      return await this.redisCache.acquireLock(
+        this.getExecuteLockRedisKey(depositKey),
+        this.config.runIdentifier,
+        EXECUTE_LOCK_TTL_MS
+      );
+    } catch (err) {
+      this.logger.warn({
+        at: "DepositAddressHandler#_acquireExecuteLock",
+        message: "Failed to acquire execute lock; proceeding without cross-instance dedupe",
+        depositKey,
+        error: String(err),
+      });
+      return true;
+    }
+  }
+
+  private async _releaseExecuteLock(depositKey: string): Promise<void> {
+    try {
+      await this.redisCache?.releaseLock(this.getExecuteLockRedisKey(depositKey), this.config.runIdentifier);
+    } catch {
+      // TTL expiry is the fallback release.
+    }
+  }
+
+  private async _persistAttemptedExecute(depositKey: string, txHash: string): Promise<void> {
+    try {
+      assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+      await this.redisCache.set(
+        this.getAttemptedExecuteRedisKey(depositKey),
+        JSON.stringify({ txHash, at: getCurrentTime() }),
+        ATTEMPTED_EXECUTE_TTL_SECONDS
+      );
+    } catch (err) {
+      this.logger.warn({
+        at: "DepositAddressHandler#_persistAttemptedExecute",
+        message: "Failed to persist attempted execute; a duplicate execute is possible on retry",
+        depositKey,
+        txHash,
+        error: String(err),
+      });
+    }
+  }
+
+  /**
+   * True when an earlier unknown-outcome broadcast for this depositKey must block a new execute:
+   * its receipt confirms (the deposit is promoted to executed), it may still be pending within the
+   * grace window, or it cannot be verified right now. A reverted or presumed-dropped attempt clears
+   * the record and allows the retry.
+   */
+  private async _resolvePriorExecuteAttempt(depositMessage: DepositAddressMessageV3): Promise<boolean> {
+    const depositKey = getDepositKey(depositMessage);
+    const { transactionHash: refTxHash } = depositMessage.erc20Transfer;
+    const originChainId = Number(depositMessage.erc20Transfer.chainId);
+    const redisKey = this.getAttemptedExecuteRedisKey(depositKey);
+
+    let raw: string | undefined;
+    try {
+      assert(isDefined(this.redisCache), "DepositAddressHandler: redisCache accessed before initialize()");
+      raw = (await this.redisCache.get<string>(redisKey)) ?? undefined;
+    } catch {
+      return false;
+    }
+    if (!isDefined(raw)) {
+      return false;
+    }
+
+    let attempted: { txHash: string; at: number };
+    try {
+      attempted = JSON.parse(raw);
+    } catch {
+      await this.redisCache?.del(redisKey);
+      return false;
+    }
+
+    let receipt: TransactionReceipt | null;
+    try {
+      receipt = await this.providersByChain[originChainId].getTransactionReceipt(attempted.txHash);
+    } catch {
+      // Unverifiable this poll: err on the side of not double-executing.
+      return true;
+    }
+
+    if (receipt?.status === 1) {
+      this.executedDepositTxHashes.add(refTxHash);
+      await this._persistExecutedDepositsRedis();
+      await this.redisCache?.del(redisKey);
+      this.logger.info({
+        at: "DepositAddressHandler#_resolvePriorExecuteAttempt",
+        message: "Earlier execute broadcast landed on-chain; promoted to executed without re-executing",
+        depositKey,
+        executeTxHash: attempted.txHash,
+        chainId: originChainId,
+      });
+      return true;
+    }
+    if (isDefined(receipt)) {
+      // Reverted: the attempt is dead, a fresh execute is safe.
+      await this.redisCache?.del(redisKey);
+      return false;
+    }
+    if (getCurrentTime() - attempted.at < ATTEMPTED_EXECUTE_GRACE_SECONDS) {
+      return true;
+    }
+    await this.redisCache?.del(redisKey);
+    return false;
   }
 
   /** Loads executed deposit tx hashes from Redis (e.g. after handover). */
@@ -1185,6 +1323,8 @@ export class DepositAddressHandler {
     // Release the in-flight lock on every exit path except a confirmed on-chain execute; an
     // unexpected throw must not strand the depositKey, since the next poll would silently skip it.
     let executeCommitted = false;
+    let executeLockHeld = false;
+    let broadcastTxHash: string | undefined;
     try {
       // The execute endpoint identity (userAddress) must be native to the origin chain's family
       // (evm ⇒ 0x-hex, tron ⇒ base58). A cross-family namespace (e.g. tron on an EVM chain) is a
@@ -1241,6 +1381,21 @@ export class DepositAddressHandler {
         return;
       }
 
+      if (await this._resolvePriorExecuteAttempt(depositMessage)) {
+        return;
+      }
+
+      executeLockHeld = await this._acquireExecuteLock(depositKey);
+      if (!executeLockHeld) {
+        this.logger.debug({
+          at: "DepositAddressHandler#initiateDepositV3",
+          message: "Skipping deposit: execute lock held by a concurrent attempt",
+          depositKey,
+          chainId: originChainId,
+        });
+        return;
+      }
+
       const executeResponse = await this._getExecuteTx(depositMessage);
       if (!isDefined(executeResponse)) {
         // `_getExecuteTx` marks a terminal rejection refund-only. Refund in this same tick
@@ -1278,12 +1433,23 @@ export class DepositAddressHandler {
         )}, using deposit address ${blockExplorerLink(depositAddress, originChainId)}`,
       };
 
-      const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
+      const { receipt: depositReceipt, txHash } = await sendAndConfirmTransactionWithHash(
+        executeTx,
+        this.transactionClient,
+        useDispatcher
+      );
+      broadcastTxHash = txHash;
       if (!isDefined(depositReceipt)) {
+        if (isDefined(txHash)) {
+          // Broadcast with unknown outcome: the tx may still land. Record it so later polls verify
+          // the receipt instead of re-executing, and leave the execute lock to expire as cool-down.
+          await this._persistAttemptedExecute(depositKey, txHash);
+        }
         this.logger.warn({
           at: "DepositAddressHandler#initiateDepositV3",
           message: "Failed to submit execute tx",
           depositKey,
+          broadcastTxHash: txHash ?? "not broadcast",
           executeTx: {
             ...executeTx,
             contract: executeTx.contract.address,
@@ -1301,6 +1467,11 @@ export class DepositAddressHandler {
     } finally {
       if (!executeCommitted) {
         this.observedExecutedDeposits[originChainId].delete(depositKey);
+        // Release only when nothing was broadcast; after an unknown-outcome broadcast the lock's
+        // TTL is the cool-down that keeps a concurrent instance from re-executing immediately.
+        if (executeLockHeld && !isDefined(broadcastTxHash)) {
+          await this._releaseExecuteLock(depositKey);
+        }
       }
     }
   }
