@@ -630,7 +630,7 @@ export class GaslessRelayer {
       const fillKey = `${authorizer}:${originChainId}`;
 
       const at = "GaslessRelayer#evaluateApiSignatures";
-      const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) =>
+      const log = (level: "debug" | "info" | "warn" | "error", message: string, args: Record<string, unknown> = {}) =>
         this.logger[level]({
           at,
           message,
@@ -882,18 +882,18 @@ export class GaslessRelayer {
         // One failing message must not abort the batch. Mark it terminal so it is not retried
         // indefinitely, and let `finally` release any fill lock it already acquired. Unsupported deposits
         // are rejected in the INITIAL case above, so anything reaching here is genuinely unexpected and
-        // still warrants an alert.
-        setState(MessageState.ERROR);
-        this.logger.error({
-          at: "GaslessRelayer#evaluateApiSignatures",
-          message: "Failed to process deposit; skipping this message",
-          originChainId,
-          depositId,
-          requestId: depositMessage.requestId,
+        // still warrants an alert. Log before the transition so `state` records where it died, not ERROR.
+        log("error", "Failed to process deposit; skipping this message", {
           error: error instanceof Error ? error.message : String(error),
         });
+        setState(MessageState.ERROR);
       } finally {
-        delete this.fillLock[fillKey];
+        // Release the lock only if this message is the holder. A throw from the lock-wait branch above
+        // leaves the lock owned by another message, and deleting it there would let a second fill for the
+        // same authorizer start while the first is still in flight.
+        if (this.fillLock[fillKey] === depositKey) {
+          delete this.fillLock[fillKey];
+        }
       }
     };
 
