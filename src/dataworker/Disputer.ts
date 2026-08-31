@@ -12,13 +12,22 @@ import {
   TransactionResponse,
   submitTransaction,
   Provider,
+  toBNWei,
   winston,
 } from "../utils";
+
+// Native token held back from a bond mint, so gas remains for the approval and the dispute itself.
+const GAS_RESERVE = toBNWei("0.05");
+
+// Bond token holdings are maintained as a multiple of the HubPool bond amount: top up to `target` whenever the
+// balance drops below `threshold`. Deployments needing a deeper buffer should raise these via configuration.
+export type BondMultiplier = { threshold: number; target: number };
+export const DEFAULT_BOND_MULTIPLIER: BondMultiplier = { threshold: 4, target: 8 };
 
 export class Disputer {
   private _bondToken?: Contract;
   protected bondAmount = bnZero;
-  protected bondMultiplier: { min: number; target: number };
+  protected bondMultiplier: BondMultiplier;
   protected provider: Provider;
   protected txnClient: TransactionClient;
   protected chain: string;
@@ -38,16 +47,16 @@ export class Disputer {
     protected readonly logger: winston.Logger,
     protected readonly hubPool: Contract,
     readonly signer: Signer,
-    protected readonly simulate = true
+    protected readonly simulate = true,
+    bondMultiplier: BondMultiplier = DEFAULT_BOND_MULTIPLIER
   ) {
     this.chain = getNetworkName(chainId);
     this.provider = hubPool.provider;
     // signer.connect() is unsupported in test.
     this.signer = signer.provider ? signer : signer.connect(hubPool.provider);
-    this.bondMultiplier = {
-      min: 4,
-      target: 8,
-    };
+    const { threshold, target } = bondMultiplier;
+    assert(threshold > 0 && target >= threshold, `Invalid bond multiplier (threshold ${threshold}, target ${target}).`);
+    this.bondMultiplier = bondMultiplier;
     this.txnClient = new TransactionClient(this.logger);
     this.initPromise = this._getOrCreateInitPromise();
   }
@@ -56,22 +65,31 @@ export class Disputer {
     await this._getOrCreateInitPromise();
 
     const { bondAmount, logger } = this;
-    const minBondAmount = bondAmount.mul(this.bondMultiplier.min);
+    const thresholdBondAmount = bondAmount.mul(this.bondMultiplier.threshold);
 
-    // Balance checks.
+    // Balance checks. Mint up to the target multiple, otherwise the balance settles on its own threshold.
     const balance = await this.balance();
-    const mintAmount = minBondAmount.sub(balance);
-    if (mintAmount.gt(bnZero)) {
+    if (balance.lt(thresholdBondAmount)) {
+      const targetMintAmount = bondAmount.mul(this.bondMultiplier.target).sub(balance);
       const nativeBalance = await this.provider.getBalance(await this.signer.getAddress());
-      if (nativeBalance.gt(mintAmount)) {
-        await this.mintBond(mintAmount);
-      } else {
-        const fmtAmount = formatEther(mintAmount);
+
+      // Top up to the target where affordable, otherwise mint what we can: a partial mint may still
+      // cover the proposal in flight, whereas skipping it entirely strands the watchdog.
+      const affordable = nativeBalance.gt(GAS_RESERVE) ? nativeBalance.sub(GAS_RESERVE) : bnZero;
+      const mintAmount = targetMintAmount.lt(affordable) ? targetMintAmount : affordable;
+
+      if (mintAmount.lt(targetMintAmount)) {
+        const fmtAmount = formatEther(targetMintAmount);
         const message = `Insufficient native token balance to mint ${fmtAmount} bond tokens.`;
-        if (!this.simulate && balance.lt(bondAmount)) {
+        // Only fatal if the topped-up balance still can't cover one dispute; bail before spending gas.
+        if (!this.simulate && balance.add(mintAmount).lt(bondAmount)) {
           throw new Error(message);
         }
-        logger.warn({ at: "Disputer::validate", message, nativeBalance, mintAmount });
+        logger.warn({ at: "Disputer::validate", message, nativeBalance, mintAmount, targetMintAmount });
+      }
+
+      if (mintAmount.gt(bnZero)) {
+        await this.mintBond(mintAmount);
       }
     }
 

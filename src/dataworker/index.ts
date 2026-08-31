@@ -33,7 +33,7 @@ import {
 } from "./DataworkerClientHelper";
 import { BalanceAllocator } from "../clients/BalanceAllocator";
 import { PendingRootBundle, ProposedRootBundle, BundleData } from "../interfaces";
-import { Disputer } from "./Disputer";
+import { DEFAULT_BOND_MULTIPLIER, Disputer } from "./Disputer";
 
 config();
 let logger: winston.Logger;
@@ -439,13 +439,22 @@ export async function runDisputerWatchdog(logger: winston.Logger, signer: Signer
   const config = new DataworkerConfig(process.env);
   const { hubPoolChainId: hubChainId, sendingTransactionsEnabled: enabled } = config;
 
-  const { DISPUTER_WATCHDOG_MIN_ATTESTATIONS = "3", DISPUTER_WATCHDOG_CHALLENGE_LIMIT = "600" } = process.env; // @todo Watchdog config.
+  const {
+    DISPUTER_WATCHDOG_MIN_ATTESTATIONS = "3",
+    DISPUTER_WATCHDOG_CHALLENGE_LIMIT = "600",
+    DISPUTER_WATCHDOG_BOND_THRESHOLD_MULTIPLIER,
+    DISPUTER_WATCHDOG_BOND_TARGET_MULTIPLIER,
+  } = process.env; // @todo Watchdog config.
   const minValidations = Number(DISPUTER_WATCHDOG_MIN_ATTESTATIONS);
   const challengeLimit = Number(DISPUTER_WATCHDOG_CHALLENGE_LIMIT);
+  const bondMultiplier = {
+    threshold: Number(DISPUTER_WATCHDOG_BOND_THRESHOLD_MULTIPLIER ?? DEFAULT_BOND_MULTIPLIER.threshold),
+    target: Number(DISPUTER_WATCHDOG_BOND_TARGET_MULTIPLIER ?? DEFAULT_BOND_MULTIPLIER.target),
+  };
 
   const provider = await getProvider(hubChainId, logger);
   const hubPool = getDeployedContract("HubPool", hubChainId).connect(provider);
-  const disputer = new Disputer(hubChainId, logger, hubPool, signer, !enabled);
+  const disputer = new Disputer(hubChainId, logger, hubPool, signer, !enabled, bondMultiplier);
 
   logger.debug({ at, message: "Starting Disputer Watchdog." });
 
