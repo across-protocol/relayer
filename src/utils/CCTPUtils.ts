@@ -1,6 +1,6 @@
 import { arch, utils } from "@across-protocol/sdk";
 import { TokenMessengerMinterIdl } from "@across-protocol/contracts";
-import { CHAIN_IDs, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
+import { CCTP_NO_DOMAIN, CHAIN_IDs, PUBLIC_NETWORKS, TOKEN_SYMBOLS_MAP } from "@across-protocol/constants";
 import { Contract, ethers } from "ethers";
 import {
   CONTRACT_ADDRESSES,
@@ -342,6 +342,11 @@ export async function getV2DepositForBurnMaxFee(
   destinationChainId: number,
   amount: BigNumber
 ): Promise<{ maxFee: BigNumber; finalityThreshold: number }> {
+  // Circle degrades a fast burn to a standard one whenever the origin isn't a fast-transfer source, so evaluating
+  // it costs two API calls to arrive at the standard transfer we'd have sent anyway.
+  if (!isCctpFastTransferSource(originChainId)) {
+    return { maxFee: bnZero, finalityThreshold: CCTPV2_FINALITY_THRESHOLD_STANDARD };
+  }
   const [_fastBurnAllowance, transferFees] = await Promise.all([
     utils.getV2FastBurnAllowance(chainIsProd(destinationChainId)),
     utils.getV2MinTransferFees(originChainId, destinationChainId),
@@ -365,6 +370,40 @@ export async function getV2DepositForBurnMaxFee(
     maxFee,
     finalityThreshold,
   };
+}
+
+// Circle offers Fast Transfer only from source chains where it beats that chain's standard attestation time; from
+// any other source a fast burn is accepted on-chain and then silently attested as standard. Opt-in, so an
+// unlisted source gets standard — which is what Circle would have attested anyway.
+// https://developers.circle.com/cctp/concepts/finality-and-block-confirmations
+//
+// Listed by chain so that the domain numbering stays owned by @across-protocol/constants. Membership is tested by
+// domain, which also covers testnets: Circle assigns them the same domain as their mainnet counterpart. The
+// CCTP_NO_DOMAIN filter keeps a chain whose domain constants doesn't carry yet out of the set, rather than
+// admitting -1 and matching every chain without a CCTP deployment.
+const CCTP_FAST_TRANSFER_SOURCE_DOMAINS = new Set(
+  [
+    CHAIN_IDs.ARBITRUM,
+    CHAIN_IDs.BASE,
+    CHAIN_IDs.INK,
+    CHAIN_IDs.LINEA,
+    CHAIN_IDs.MAINNET,
+    CHAIN_IDs.OPTIMISM,
+    CHAIN_IDs.SOLANA,
+    CHAIN_IDs.UNICHAIN,
+    CHAIN_IDs.WORLD_CHAIN,
+  ]
+    .map((chainId) => PUBLIC_NETWORKS[chainId]?.cctpDomain)
+    .filter((cctpDomain): cctpDomain is number => isDefined(cctpDomain) && cctpDomain !== CCTP_NO_DOMAIN)
+);
+
+/**
+ * @notice Returns whether Circle supports Fast Transfer for burns originating on this chain.
+ * @param sourceChainId The source chain ID of the transfer.
+ */
+export function isCctpFastTransferSource(sourceChainId: number): boolean {
+  const cctpDomain = PUBLIC_NETWORKS[sourceChainId]?.cctpDomain;
+  return isDefined(cctpDomain) && CCTP_FAST_TRANSFER_SOURCE_DOMAINS.has(cctpDomain);
 }
 
 /**
@@ -1071,6 +1110,7 @@ export async function constructCctpDepositForBurnTxn(
   const sourceChainName = getNetworkName(sourceChainId);
   const destinationChainName = getNetworkName(destinationChainId);
   const destinationDomain = getCctpDomainForChainId(destinationChainId);
+  const fastTransfer = finalityThreshold !== CCTPV2_FINALITY_THRESHOLD_STANDARD;
 
   return {
     contract: bridgeContract,
@@ -1078,10 +1118,10 @@ export async function constructCctpDepositForBurnTxn(
     method: "depositForBurn",
     nonMulticall: true,
     message: `🎰 Bridged CCTP USDC from ${sourceChainName} to ${destinationChainName}${
-      optionalParams?.fastMode ? " using fast mode" : ""
+      fastTransfer ? " using fast mode" : ""
     }`,
     mrkdwn: `Bridged ${formatter(amountToSend)} USDC from ${sourceChainName} to ${destinationChainName} via CCTP${
-      optionalParams?.fastMode ? ` using fast mode with a max fee of ${formatter(maxFee)}` : ""
+      fastTransfer ? ` using fast mode with a max fee of ${formatter(maxFee)}` : ""
     }`,
     args: [
       amountToSend,

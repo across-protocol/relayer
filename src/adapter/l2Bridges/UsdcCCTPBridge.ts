@@ -72,15 +72,16 @@ export class UsdcCCTPBridge extends BaseL2BridgeAdapter {
     // Add maxFee so that we end up with desired amount of tokens on destination chain.
     const amountWithFee = amount.add(maxFee);
     const amountToSend = amountWithFee.gt(CCTP_MAX_SEND_AMOUNT) ? CCTP_MAX_SEND_AMOUNT : amountWithFee;
+    const fastTransfer = finalityThreshold !== CCTPV2_FINALITY_THRESHOLD_STANDARD;
     return Promise.resolve([
       {
         contract: this.getL2Bridge(),
         chainId: this.l2chainId,
         method: "depositForBurn",
         nonMulticall: true,
-        message: `🎰 Withdrew CCTP USDC to L1${optionalParams?.fastMode ? " using fast mode" : ""}`,
+        message: `🎰 Withdrew CCTP USDC to L1${fastTransfer ? " using fast mode" : ""}`,
         mrkdwn: `Withdrew ${formatter(amountToSend)} USDC from ${getNetworkName(this.l2chainId)} to L1 via CCTP${
-          optionalParams?.fastMode ? ` using fast mode with a max fee of ${formatter(maxFee)}` : ""
+          fastTransfer ? ` using fast mode with a max fee of ${formatter(maxFee)}` : ""
         }`,
         args: [
           amountToSend,
