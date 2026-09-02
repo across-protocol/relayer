@@ -191,20 +191,20 @@ export async function getProvider(
     async (attempt: number, url: string): Promise<boolean> => {
       // Implement a slightly aggressive exponential backoff to account for fierce parallelism.
       // @todo: Start w/ maxConcurrency low and increase until 429 responses start arriving.
-      const baseDelay = 1000 * Math.pow(2, attempt); // ms; attempt = [0, 1, 2, ...]
-      const delayMs = baseDelay + baseDelay * Math.random();
+      const baseDelay = Math.pow(2, attempt); // seconds; attempt = [0, 1, 2, ...]
+      const retryAfter = baseDelay + baseDelay * Math.random();
 
       if (logger && rateLimitLogCounter++ % logEveryNRateLimitErrors === 0) {
         logger.debug({
           at: "ProviderUtils#rpcRateLimited",
           message: `Got rate-limit (429) response on ${chain} attempt ${attempt}.`,
           rpc: getOriginFromURL(url),
-          retryAfter: `${delayMs} ms`,
+          retryAfter: `${retryAfter.toFixed(2)} s`,
           workers: nodeMaxConcurrency,
           datadog: true,
         });
       }
-      await delay(delayMs);
+      await delay(retryAfter);
 
       return attempt < retries;
     };
