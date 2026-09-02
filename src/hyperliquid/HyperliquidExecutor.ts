@@ -578,19 +578,93 @@ export class HyperliquidExecutor {
     const bpsFromParity = priceXe8.sub(HL_FIXED_ADJUSTMENT).mul(pair.baseForFinal ? -1 : 1);
     const maxSlippage = this.config.maxSlippageByRoute[pair.name] ?? this.config.maxSlippageBps;
     if (bpsFromParity.gt(maxSlippage)) {
-      const usdFormatter = createFormatFunction(2, 4, false, 8); // USD is represented w/ 8 decimals.
-      const bpsFormatter = createFormatFunction(2, 4, false, 4);
-      this.logger.warn({
-        at: "HyperliquidExecutor#updateOrderAmount",
-        message: "Not submitting new limit order due to excessive slippage",
-        bestAsk: usdFormatter(priceXe8),
-        maxSlippage: bpsFormatter(this.config.maxSlippageBps),
-      });
-      return { actionable: false, mrkdwn: "Slippage too high to submit order" };
+      // The configured cap is exceeded, but the order may still be placed if every outstanding flow's quoted
+      // min-out tolerates execution at the current price, since then the users pay the slippage, not the
+      // sponsor. Sponsored flows are quoted with minAmountToSend == maxAmountToSend, so they never tolerate a
+      // price beyond the configured cap and keep the pair pinned to it.
+      const userToleranceCoversSlippage = await this.allOutstandingFlowsTolerateSlippage(pair, bpsFromParity, sizeXe8);
+      if (!userToleranceCoversSlippage) {
+        const usdFormatter = createFormatFunction(2, 4, false, 8); // USD is represented w/ 8 decimals.
+        const bpsFormatter = createFormatFunction(2, 4, false, 4);
+        this.logger.warn({
+          at: "HyperliquidExecutor#updateOrderAmount",
+          message: "Not submitting new limit order due to excessive slippage",
+          bestAsk: usdFormatter(priceXe8),
+          bpsFromParity: bpsFormatter(bpsFromParity),
+          maxSlippage: bpsFormatter(maxSlippage),
+        });
+        return { actionable: false, mrkdwn: "Slippage too high to submit order" };
+      }
     }
     // Finally enqueue an order with the derived price and total swap handler's balance of baseToken.
     this.placeOrder(baseToken, finalToken, priceXe8, sizeXe8, oid);
     return { actionable: true, mrkdwn: `Placed new limit order at px: ${bestAsk} and sz: ${sizeXe8}.` };
+  }
+
+  /*
+   * @notice Determines whether every outstanding swap flow on the pair can absorb the current distance from
+   * parity within its own quoted min-out (the maxUserSlippageBps set at quote time), in which case the users
+   * pay the slippage and the order may be placed beyond the configured max slippage.
+   * @param pair Pair whose outstanding flows are evaluated.
+   * @param bpsFromParity Distance from parity of the price the order would be placed at, in 1e8-fixed units.
+   * @param sizeXe8 Size the order would be placed for, i.e. the swap handler's entire baseToken core balance.
+   * @dev Sponsored flows are initialized with minAmountToSend == maxAmountToSend (a one-to-one guarantee to
+   * the user), so their tolerance is zero: a single sponsored flow in the queue keeps the pair pinned to the
+   * configured max slippage, which caps the sponsorship spend. Each flow's tolerance is further reduced by
+   * the fees already charged against it — executing within the reduced tolerance keeps the payout above
+   * minAmountToSend without a donation-box top-up.
+   */
+  private async allOutstandingFlowsTolerateSlippage(
+    pair: Pair,
+    bpsFromParity: BigNumber,
+    sizeXe8: BigNumber
+  ): Promise<boolean> {
+    const toBlock = await this.clients.dstProvider.getBlockNumber();
+    const [outstandingFlows, userFees] = await Promise.all([
+      this.getOutstandingOrdersOnPair(pair, toBlock),
+      getUserFees(this.infoClient, { user: pair.swapHandler.toNative() }),
+    ]);
+    // With no outstanding flows there is no user tolerance to rely on.
+    if (outstandingFlows.length === 0) {
+      return false;
+    }
+    // The order trades the swap handler's entire baseToken balance, which backs every unfinalized flow —
+    // including any initialized before dstSearchConfig.from and so invisible to the query above. coreAmountIn
+    // is the baseToken core amount each flow funded the handler with, and funds only leave that balance once
+    // swapped, so a balance exceeding the sum of the visible flows means an unseen flow is being traded too.
+    // Its tolerance cannot be checked, and it may be sponsored or quoted tighter, so fail closed.
+    const visibleCoreAmountIn = outstandingFlows.reduce((acc, { coreAmountIn }) => acc.add(coreAmountIn), bnZero);
+    if (sizeXe8.gt(visibleCoreAmountIn)) {
+      const formatter = createFormatFunction(2, 4, false, pair.baseTokenDecimals);
+      this.logger.warn({
+        at: "HyperliquidExecutor#allOutstandingFlowsTolerateSlippage",
+        message: "Cannot exceed the configured max slippage: order size exceeds the outstanding flows found",
+        pair: pair.name,
+        orderSize: formatter(sizeXe8),
+        visibleCoreAmountIn: formatter(visibleCoreAmountIn),
+        outstandingFlows: outstandingFlows.length,
+        searchFromBlock: this.dstSearchConfig.from,
+      });
+      return false;
+    }
+    // The HL fee rate applied to the payout at finalization, in 1e8-fixed units. Mirrors finalizeSwapFlows.
+    const stableSwapFeeRate = toBN(
+      Math.floor(Number(userFees.userSpotCrossRate) * STABLE_SWAP_DISCOUNT * HL_FIXED_ADJUSTMENT)
+    );
+    return outstandingFlows.every(({ minAmountToSend, maxAmountToSend, evmAmountIn, bridgingFeesIncurred }) => {
+      // minAmountToSend and maxAmountToSend are both in finalToken core units, so their ratio measures the
+      // quoted tolerance from a one-to-one conversion irrespective of decimals; maxAmountToSend is the
+      // one-to-one amount.
+      const feelessAmountIn = evmAmountIn.add(bridgingFeesIncurred);
+      if (maxAmountToSend.eq(bnZero) || feelessAmountIn.eq(bnZero)) {
+        return false;
+      }
+      const userTolerance = maxAmountToSend.sub(minAmountToSend).mul(HL_FIXED_ADJUSTMENT).div(maxAmountToSend);
+      // maxAmountToSend is quoted off evmAmountIn + bridgingFeesIncurred, but only evmAmountIn reaches the
+      // swap handler and is traded, so the bridge fee has already consumed this much of the quoted tolerance.
+      const bridgingFeeRate = bridgingFeesIncurred.mul(HL_FIXED_ADJUSTMENT).div(feelessAmountIn);
+      return userTolerance.sub(stableSwapFeeRate).sub(bridgingFeeRate).gte(bpsFromParity);
+    });
   }
 
   // Onchain function wrappers.
