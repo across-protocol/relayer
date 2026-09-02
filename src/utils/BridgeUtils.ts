@@ -1,7 +1,6 @@
 import {
   CHAIN_IDs,
   Address,
-  delay,
   TOKEN_SYMBOLS_MAP,
   toBN,
   winston,
@@ -19,6 +18,7 @@ import {
   postWithTimeout,
   FetchHeaders,
   mapAsync,
+  retryWithBackoff,
 } from "./";
 import { Log } from "../interfaces";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
@@ -224,21 +224,18 @@ export class BridgeApiClient {
   }
 
   async getWithRetry<T>(endpoint: string, headers: FetchHeaders, nRetries = this.nRetries): Promise<T> {
-    try {
-      return await fetchWithTimeout<T>(`${this.bridgeApiBase}/${endpoint}`, {}, headers);
-    } catch (e) {
-      this.logger?.debug({
-        at: "BridgeApi#_get",
-        message: "Failed to query bridge API",
-        endpoint,
-        e,
-      });
-      if (nRetries > 0) {
-        await delay(1);
-        return this.getWithRetry<T>(endpoint, headers, --nRetries);
-      }
-      throw e;
-    }
+    return retryWithBackoff(
+      () => fetchWithTimeout<T>(`${this.bridgeApiBase}/${endpoint}`, {}, headers),
+      nRetries,
+      (e, retriesRemaining) =>
+        this.logger?.debug({
+          at: "BridgeApi#_get",
+          message: "Failed to query bridge API",
+          endpoint,
+          e,
+          retriesRemaining,
+        })
+    );
   }
 
   async postWithRetry<T>(
@@ -247,21 +244,18 @@ export class BridgeApiClient {
     headers: FetchHeaders,
     nRetries = this.nRetries
   ): Promise<T> {
-    try {
-      return await postWithTimeout<T>(`${this.bridgeApiBase}/${endpoint}`, data, {}, headers);
-    } catch (e) {
-      this.logger?.debug({
-        at: "BridgeApi#_post",
-        message: "Failed to post to bridge API",
-        endpoint,
-        data,
-        e,
-      });
-      if (nRetries > 0) {
-        await delay(1);
-        return this.postWithRetry<T>(endpoint, data, headers, --nRetries);
-      }
-      throw e;
-    }
+    return retryWithBackoff(
+      () => postWithTimeout<T>(`${this.bridgeApiBase}/${endpoint}`, data, {}, headers),
+      nRetries,
+      (e, retriesRemaining) =>
+        this.logger?.debug({
+          at: "BridgeApi#_post",
+          message: "Failed to post to bridge API",
+          endpoint,
+          data,
+          e,
+          retriesRemaining,
+        })
+    );
   }
 }
