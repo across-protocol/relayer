@@ -31,10 +31,6 @@ import ARBITRUM_OUTBOX_ABI from "./abi/ArbitrumOutbox.json";
 import ARBSYS_L2_ABI from "./abi/ArbSysL2.json";
 import LINEA_MESSAGE_SERVICE_ABI from "./abi/LineaMessageService.json";
 import LINEA_TOKEN_BRIDGE_ABI from "./abi/LineaTokenBridge.json";
-import BLAST_BRIDGE_ABI from "./abi/BlastBridge.json";
-import BLAST_YIELD_MANAGER_ABI from "./abi/BlastYieldManager.json";
-import BLAST_DAI_RETRIEVER_ABI from "./abi/BlastDaiRetriever.json";
-import BLAST_OPTIMISM_PORTAL_ABI from "./abi/BlastOptimismPortal.json";
 import IOFT_ABI_FULL from "./abi/IOFT.json";
 import HYPERLIQUID_DEPOSIT_HANDLER_ABI from "./abi/HyperliquidDepositHandler.json";
 import SPOKE_POOL_PERIPHERY_ABI from "./abi/SpokePoolPeriphery.json";
@@ -168,10 +164,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0x88FF1e5b602916615391F55854588EFcBB7663f0",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
-    ovmStandardBridge_81457: {
-      address: "0x697402166Fbf2F22E970df8a6486Ef171dbfc524",
-      abi: OVM_L1_STANDARD_BRIDGE_ABI,
-    },
     ovmStandardBridge_7777777: {
       address: "0x3e2Ea9B92B7E48A52296fD261dc26fd995284631",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
@@ -243,26 +235,6 @@ export const CONTRACT_ADDRESSES: {
     hubPoolStore: {
       address: "0x1Ace3BbD69b63063F859514Eca29C9BDd8310E61",
       abi: HUB_POOL_STORE_ABI,
-    },
-    blastBridge: {
-      address: "0x3a05E5d33d7Ab3864D53aaEc93c8301C1Fa49115",
-      abi: BLAST_BRIDGE_ABI,
-    },
-    blastEthYieldManager: {
-      address: "0x98078db053902644191f93988341E31289E1C8FE",
-      abi: BLAST_YIELD_MANAGER_ABI,
-    },
-    blastUsdYieldManager: {
-      address: "0xa230285d5683C74935aD14c446e137c8c8828438",
-      abi: BLAST_YIELD_MANAGER_ABI,
-    },
-    blastDaiRetriever: {
-      address: "0x98Dd57048d7d5337e92D9102743528ea4Fea64aB",
-      abi: BLAST_DAI_RETRIEVER_ABI,
-    },
-    blastOptimismPortal: {
-      address: "0x0Ec68c5B10F21EFFb74f2A5C61DFe6b08C0Db6Cb",
-      abi: BLAST_OPTIMISM_PORTAL_ABI,
     },
     atomicDepositorTransferProxy: {
       address: "0xd8938466fE02dA664b806583edE9c77dCD968692",
@@ -620,19 +592,6 @@ export const CONTRACT_ADDRESSES: {
       abi: PERMIT2_ABI,
     },
   },
-  [CHAIN_IDs.BLAST]: {
-    ovmStandardBridge: {
-      address: "0x4200000000000000000000000000000000000010",
-      abi: OVM_L2_STANDARD_BRIDGE_ABI,
-    },
-    nativeToken: {
-      address: "0xDeadDeAddeAddEAddeadDEaDDEAdDeaDDeAD0000",
-    },
-    blastBridge: {
-      address: "0x4300000000000000000000000000000000000005",
-      abi: BLAST_BRIDGE_ABI,
-    },
-  },
   [CHAIN_IDs.HYPEREVM_TESTNET]: {
     cctpV2MessageTransmitter: {
       address: "0xE737e5cEBEEBa77EFE34D4aa090756590b1CE275",
@@ -811,10 +770,6 @@ export const CONTRACT_ADDRESSES: {
       address: "0xbC5C679879B2965296756CD959C3C739769995E2",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
     },
-    ovmStandardBridge_168587773: {
-      address: "0xDeDa8D3CCf044fE2A16217846B6e1f1cfD8e122f",
-      abi: OVM_L1_STANDARD_BRIDGE_ABI,
-    },
     ovmStandardBridge_1301: {
       address: "0xea58fcA6849d79EAd1f26608855c2D6407d54Ce2",
       abi: OVM_L1_STANDARD_BRIDGE_ABI,
@@ -950,12 +905,6 @@ export const CONTRACT_ADDRESSES: {
     permit2: {
       address: "0x000000000022D473030F116dDEE9F6B43aC78BA3",
       abi: PERMIT2_ABI,
-    },
-  },
-  [CHAIN_IDs.BLAST_SEPOLIA]: {
-    ovmStandardBridge: {
-      address: "0x4200000000000000000000000000000000000010",
-      abi: OVM_L2_STANDARD_BRIDGE_ABI,
     },
   },
   [CHAIN_IDs.LENS_SEPOLIA]: {

@@ -858,6 +858,14 @@ export class InventoryClient {
           return;
         }
 
+        // The InventoryConfig may still reference chains or tokens whose bridges have been removed. Never plan
+        // a rebalance the adapter cannot send: trackCrossChainTransfer() would reserve the inventory before
+        // sendTokenToTargetChain() rejects the transfer, and that reservation is never rolled back.
+        const adapter = this.adapterManager.adapters[chainId];
+        if (isDefined(adapter) && !adapter.canBridgeTokenToL2(l1Token)) {
+          return;
+        }
+
         const l2Tokens = this.getRemoteTokensForL1Token(l1Token, chainId);
         l2Tokens.forEach((l2Token) => {
           // Make sure to prioritize shortfall rebalances over ordinary rebalances by pushing them into the array first

@@ -10,7 +10,6 @@ export * from "./PolygonERC20Bridge";
 export * from "./PolygonWethBridge";
 export * from "./OpStackDefaultErc20Bridge";
 export * from "./LineaWethBridge";
-export * from "./BlastBridge";
 export * from "./OpStackUSDCBridge";
 export * from "./UsdcCCTPBridge";
 export * from "./ZKStackBridge";
