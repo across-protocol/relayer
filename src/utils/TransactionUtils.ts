@@ -307,6 +307,41 @@ export async function dispatchTransaction(
   return dispatcher.dispatch(transaction, transaction.contract, transaction.contract.provider);
 }
 
+export type SendAndConfirmResult = {
+  receipt?: TransactionReceipt;
+  // Defined whenever the transaction was broadcast, even if confirmation failed — an undefined
+  // receipt with a defined txHash is an UNKNOWN outcome (the tx may still land), not a failure.
+  txHash?: string;
+};
+
+/**
+ * Like sendAndConfirmTransaction, but also surfaces the broadcast tx hash so callers can
+ * distinguish "never broadcast" from "broadcast, outcome unknown" and verify the latter on-chain.
+ */
+export async function sendAndConfirmTransactionWithHash(
+  tx: AugmentedTransaction,
+  transactionClient: TransactionClient,
+  useDispatcher = false
+): Promise<SendAndConfirmResult> {
+  const txWithConfirmation: AugmentedTransaction = { ...tx, ensureConfirmation: true };
+  let txHash: string | undefined;
+  try {
+    const txResponse = useDispatcher
+      ? await dispatchTransaction(txWithConfirmation, transactionClient)
+      : await submitTransaction(txWithConfirmation, transactionClient);
+    if (!txResponse) {
+      return {};
+    }
+    // The submission path has already confirmed the transaction, so the receipt should be
+    // available immediately; bound the lookup rather than risk an indefinite wait().
+    txHash = txResponse.hash.startsWith("0x") ? txResponse.hash : `0x${txResponse.hash}`;
+    const receipt = await tx.contract.provider.waitForTransaction(txHash, 1, RECEIPT_TIMEOUT_MS);
+    return { receipt: receipt ?? undefined, txHash };
+  } catch {
+    return { txHash };
+  }
+}
+
 /**
  * Submits a transaction (via submitTransaction or dispatchTransaction), awaits the receipt, and returns it.
  * Ensures ensureConfirmation is true on the tx. On failure catches errors and returns undefined; callers should
@@ -317,19 +352,5 @@ export async function sendAndConfirmTransaction(
   transactionClient: TransactionClient,
   useDispatcher = false
 ): Promise<TransactionReceipt | undefined> {
-  const txWithConfirmation: AugmentedTransaction = { ...tx, ensureConfirmation: true };
-  try {
-    const txResponse = useDispatcher
-      ? await dispatchTransaction(txWithConfirmation, transactionClient)
-      : await submitTransaction(txWithConfirmation, transactionClient);
-    if (!txResponse) {
-      return undefined;
-    }
-    // The submission path has already confirmed the transaction, so the receipt should be
-    // available immediately; bound the lookup rather than risk an indefinite wait().
-    const hash = txResponse.hash.startsWith("0x") ? txResponse.hash : `0x${txResponse.hash}`;
-    return await tx.contract.provider.waitForTransaction(hash, 1, RECEIPT_TIMEOUT_MS);
-  } catch {
-    return undefined;
-  }
+  return (await sendAndConfirmTransactionWithHash(tx, transactionClient, useDispatcher)).receipt;
 }

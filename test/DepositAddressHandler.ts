@@ -1330,3 +1330,117 @@ describe("DepositAddressHandler refund-only key persistence", function () {
     expect([...internals().refundOnlyDepositKeys]).to.deep.equal([depositKey]);
   });
 });
+
+describe("DepositAddressHandler.initiateDepositV3 execute write-ahead lock", function () {
+  let handler: DepositAddressHandler;
+  let executeStub: sinon.SinonStub;
+  let acquireLockStub: sinon.SinonStub;
+  let releaseLockStub: sinon.SinonStub;
+  let redisGetStub: sinon.SinonStub;
+  let redisSetStub: sinon.SinonStub;
+  let redisDelStub: sinon.SinonStub;
+  let receiptStub: sinon.SinonStub;
+  const originChainId = 42161;
+  const refTxHash = "0x" + "3".repeat(64);
+  const depositKey = `${DEPOSIT_ADDRESS}:${refTxHash}`;
+  const lockKey = `deposit-address:execute-lock:test-bot:${depositKey}`;
+  const attemptedKey = `deposit-address:attempted-execute:test-bot:${depositKey}`;
+  const broadcastHash = "0x" + "7".repeat(64);
+
+  type Internals = {
+    initiateDepositV3: (m: DepositAddressMessageV3) => Promise<void>;
+    executedDepositTxHashes: Set<string>;
+    observedExecutedDeposits: Record<number, Set<string>>;
+  };
+
+  function internals(): Internals {
+    return handler as unknown as Internals;
+  }
+
+  beforeEach(function () {
+    const config = {
+      relayerOriginChains: [originChainId],
+      botIdentifier: "test-bot",
+      runIdentifier: "run-1",
+    } as unknown as DepositAddressHandlerConfig;
+    const logger = { warn: sinon.stub(), debug: sinon.stub(), info: sinon.stub() } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    (handler as unknown as { _signerAddress: EvmAddress })._signerAddress = EvmAddress.from(SIGNER);
+    executeStub = sinon.stub().rejects(new AcrossApiHttpError(500, "boom", "UNEXPECTED_ERROR"));
+    (handler as unknown as { api: { executeDepositAddress: sinon.SinonStub } }).api = {
+      executeDepositAddress: executeStub,
+    };
+    acquireLockStub = sinon.stub().resolves(true);
+    releaseLockStub = sinon.stub().resolves(true);
+    redisGetStub = sinon.stub().resolves(undefined);
+    redisSetStub = sinon.stub().resolves();
+    redisDelStub = sinon.stub().resolves(1);
+    (handler as unknown as { redisCache: unknown }).redisCache = {
+      acquireLock: acquireLockStub,
+      releaseLock: releaseLockStub,
+      get: redisGetStub,
+      set: redisSetStub,
+      del: redisDelStub,
+    };
+    (handler as unknown as { observedExecutedDeposits: Record<number, Set<string>> }).observedExecutedDeposits = {
+      [originChainId]: new Set<string>(),
+    };
+    receiptStub = sinon.stub().resolves(null);
+    (handler as unknown as { providersByChain: Record<number, unknown> }).providersByChain = {
+      [originChainId]: { getTransactionReceipt: receiptStub },
+    };
+    (handler as unknown as { getDepositAddressBalance: sinon.SinonStub }).getDepositAddressBalance = sinon
+      .stub()
+      .resolves(toBN("5000"));
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("skips the execute when the cross-instance lock is held elsewhere", async function () {
+    acquireLockStub.resolves(false);
+    await internals().initiateDepositV3(depositMessageV3());
+    expect(acquireLockStub.calledOnceWith(lockKey, "run-1")).to.equal(true);
+    expect(executeStub.notCalled).to.equal(true);
+    expect(internals().observedExecutedDeposits[originChainId].has(depositKey)).to.equal(false);
+  });
+
+  it("releases the execute lock when the execute fails before broadcast", async function () {
+    await internals().initiateDepositV3(depositMessageV3());
+    expect(executeStub.called).to.equal(true);
+    expect(releaseLockStub.calledOnceWith(lockKey, "run-1")).to.equal(true);
+  });
+
+  it("promotes a landed prior broadcast to executed without re-executing", async function () {
+    redisGetStub.withArgs(attemptedKey).resolves(JSON.stringify({ txHash: broadcastHash, at: getCurrentTime() }));
+    receiptStub.resolves({ status: 1 });
+    await internals().initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+    expect(internals().executedDepositTxHashes.has(refTxHash)).to.equal(true);
+    expect(redisDelStub.calledWith(attemptedKey)).to.equal(true);
+  });
+
+  it("skips while a prior broadcast is unreceipted within the grace window", async function () {
+    redisGetStub.withArgs(attemptedKey).resolves(JSON.stringify({ txHash: broadcastHash, at: getCurrentTime() }));
+    await internals().initiateDepositV3(depositMessageV3());
+    expect(executeStub.notCalled).to.equal(true);
+    expect(internals().executedDepositTxHashes.has(refTxHash)).to.equal(false);
+    expect(redisDelStub.notCalled).to.equal(true);
+  });
+
+  it("clears a reverted prior broadcast and proceeds with a fresh execute", async function () {
+    redisGetStub.withArgs(attemptedKey).resolves(JSON.stringify({ txHash: broadcastHash, at: getCurrentTime() }));
+    receiptStub.resolves({ status: 0 });
+    await internals().initiateDepositV3(depositMessageV3());
+    expect(redisDelStub.calledWith(attemptedKey)).to.equal(true);
+    expect(executeStub.called).to.equal(true);
+  });
+
+  it("re-executes after the grace window when the prior broadcast never landed", async function () {
+    redisGetStub
+      .withArgs(attemptedKey)
+      .resolves(JSON.stringify({ txHash: broadcastHash, at: getCurrentTime() - 16 * 60 }));
+    await internals().initiateDepositV3(depositMessageV3());
+    expect(redisDelStub.calledWith(attemptedKey)).to.equal(true);
+    expect(executeStub.called).to.equal(true);
+  });
+});
