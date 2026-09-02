@@ -6,6 +6,7 @@ import {
   Provider,
   paginatedEventQuery,
   assert,
+  bnZero,
   EvmAddress,
   Address,
   winston,
@@ -29,6 +30,11 @@ type OFTBridgeArguments = {
 };
 
 const MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT = 120000;
+
+// Placeholder `quoteOFT` reports for `oftLimit.maxAmountLD` when the path enforces no capacity limit. Vanilla
+// OFTCore returns it verbatim; metered paths (Stargate pools, legacy-mesh adapters) return real capacity instead.
+// @dev Kept as a string: `BigNumber` is not resolved yet when this module is first evaluated.
+const OFT_UNLIMITED_CAPACITY = "0xffffffffffffffff"; // type(uint64).max
 
 export class OFTBridge extends BaseBridgeAdapter {
   public readonly l2TokenAddress: string;
@@ -86,6 +92,23 @@ export class OFTBridge extends BaseBridgeAdapter {
       args: [sendParamStruct, feeStruct, refundAddress],
       value: BigNumber.from(feeStruct.nativeFee),
     };
+  }
+
+  /**
+   * @notice Returns the destination path's currently available capacity, or undefined if the path is uncapped.
+   * @dev Metered OFT paths (Stargate pools, and legacy-mesh adapters that meter per-destination credit) revert
+   * `send`/`quoteSend` outright for anything above capacity rather than sizing the transfer down, so the caller
+   * has to clamp beforehand. Only `oftLimit.maxAmountLD` reports capacity across all path types: Stargate pools
+   * also cap `oftReceipt.amountSentLD`, but legacy-mesh adapters echo the requested amount there. Capacity is
+   * independent of the quoted amount and recipient, so a zero-amount quote reads it without further inputs.
+   */
+  async getMaxL1ToL2TransferAmount(): Promise<BigNumber | undefined> {
+    const recipient = EvmAddress.from(await this.getL1Bridge().signer.getAddress());
+    const [oftLimit] = await this.getL1Bridge().quoteOFT(
+      OFT.buildSimpleSendParamEvm(recipient, this.l2ChainEid, bnZero)
+    );
+    const maxAmountLD = BigNumber.from(oftLimit.maxAmountLD);
+    return maxAmountLD.gte(OFT_UNLIMITED_CAPACITY) ? undefined : maxAmountLD;
   }
 
   /**

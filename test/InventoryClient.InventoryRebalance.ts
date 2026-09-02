@@ -429,6 +429,18 @@ describe("InventoryClient: Rebalancing inventory", function () {
     expect(adapterManager.tokensSentCrossChain[ARBITRUM][mainnetUsdc].amount.eq(toMegaWei(100))).to.be.true;
   });
 
+  it("Skips the rebalance when the bridge reports no remaining transfer capacity", async function () {
+    // Metered bridges (e.g. OFT paths) drain to zero capacity, at which point clamping to the maximum would
+    // otherwise initiate a zero-amount transfer that pays full per-message costs to move nothing.
+    tokenClient.decrementLocalBalance(ARBITRUM, toAddressType(l2TokensForUsdc[ARBITRUM], ARBITRUM), toMegaWei(500));
+    adapterManager.setMaxL1ToL2TransferAmount(ARBITRUM, EvmAddress.from(mainnetUsdc), toMegaWei(0));
+
+    await inventoryClient.update();
+    await inventoryClient.rebalanceInventoryIfNeeded();
+
+    expect(adapterManager.tokensSentCrossChain[ARBITRUM]).to.be.undefined;
+  });
+
   // Skipped: shortfall rebalances are temporarily disabled in InventoryClient.getPossibleRebalances(). Re-enable
   // alongside that logic.
   it.skip("Correctly decides when to execute rebalances: token shortfall", async function () {
