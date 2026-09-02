@@ -337,19 +337,39 @@ async function getOVMStdEvents(
     ethEvents.push(...blastEthEvents);
   }
 
+  // If we're aware of this token, then save the event as one we can finalize.
+  const keepKnownTokens = (events: Log[]) =>
+    events
+      .map((event) => {
+        try {
+          getTokenInfo(EvmAddress.from(event.args.localToken), chainId);
+          return { ...event, l2TokenAddress: event.args.localToken };
+        } catch {
+          logger.debug({ at, message: `Skipping unknown ${chain} token withdrawal: ${event.args.localToken}`, event });
+          return undefined;
+        }
+      })
+      .filter(isDefined);
+
   const erc20filter = bridge.filters.ERC20BridgeInitiated(null, null, fromAddresses);
-  const erc20Events = (await paginatedEventQuery(bridge, erc20filter, searchConfig))
-    .map((event) => {
-      // If we're aware of this token, then save the event as one we can finalize.
-      try {
-        getTokenInfo(EvmAddress.from(event.args.localToken), chainId);
-        return { ...event, l2TokenAddress: event.args.localToken };
-      } catch {
-        logger.debug({ at, message: `Skipping unknown ${chain} token withdrawal: ${event.args.localToken}`, event });
-        return undefined;
-      }
-    })
-    .filter(isDefined);
+  const erc20Events = keepKnownTokens(await paginatedEventQuery(bridge, erc20filter, searchConfig));
+
+  // @dev USDB and other ERC20s leave Blast over the Blast bridge, not the OVM standard bridge, and emit an
+  // identical ERC20BridgeInitiated there. Only that bridge's ETH events were queried above, so ERC20
+  // withdrawals by tracked EOAs were invisible to this finalizer -- a 324.36 USDB withdrawal sat unproven
+  // because of it. Query the Blast bridge for ERC20 events too.
+  if (chainIsBlast(chainId)) {
+    const { address: blastBridgeAddress } = getContractEntry(chainId, "blastBridge");
+    const blastBridge = new Contract(blastBridgeAddress, ovmStandardBridge.abi, provider);
+    const blastErc20Events = keepKnownTokens(
+      await paginatedEventQuery(
+        blastBridge,
+        blastBridge.filters.ERC20BridgeInitiated(null, null, fromAddresses),
+        searchConfig
+      )
+    );
+    erc20Events.push(...blastErc20Events);
+  }
 
   return [...ethEvents, ...erc20Events];
 }
@@ -728,10 +748,32 @@ async function finalizeOptimismMessage(
       crossChainMessenger.l1Provider
     );
 
+    // @dev queryFilter() without an explicit block range defaults to genesis->latest, i.e. one unchunked
+    // eth_getLogs spanning all of mainnet. Providers reject that outright (QuickNode and Chainstack both
+    // cap the range), so with NODE_QUORUM > 1 the call cannot reach quorum and throws. Because the caller
+    // iterates messages without per-message error handling, that aborted every Blast finalization rather
+    // than just this one -- observed erroring on every run from 2026-07-20 onwards.
+    //
+    // A proof cannot predate its own withdrawal, so bound the search below at the L1 block corresponding
+    // to the L2 withdrawal. That alone is not enough: any message reaching this path has cleared the 7-day
+    // challenge period, so the bounded range is still ~50k mainnet blocks. paginatedEventQuery() only splits
+    // a range when maxLookBack is set -- otherwise it issues the same single oversized eth_getLogs -- so pass
+    // the L1 lookback to get provider-safe chunks.
+    const redis = await getRedisCache(logger);
+    const l2WithdrawalBlock = await crossChainMessenger.l2Provider.getBlock(message.event.blockNumber);
+    const [fromBlock, toBlock] = await Promise.all([
+      getBlockForTimestamp(logger, MAINNET, l2WithdrawalBlock.timestamp, undefined, redis),
+      crossChainMessenger.l1Provider.getBlockNumber(),
+    ]);
+
     // @dev The withdrawal hash should be unique for the L2 withdrawal so there should be exactly 1 event for this query.
     // If the withdrawal hasn't been proven yet then this will error.
     const [proofReceipt, latestCheckpointId, lastFinalizedRequestId] = await Promise.all([
-      blastPortal.queryFilter(blastPortal.filters.WithdrawalProven(withdrawalHash)),
+      paginatedEventQuery(blastPortal, blastPortal.filters.WithdrawalProven(withdrawalHash), {
+        from: fromBlock,
+        to: toBlock,
+        maxLookBack: CHAIN_MAX_BLOCK_LOOKBACK[MAINNET],
+      }),
       blastEthYield.getLastCheckpointId(),
       blastEthYield.getLastFinalizedRequestId(),
     ]);
@@ -809,22 +851,34 @@ async function multicallOptimismFinalizations(
   const withdrawals: CrossChainMessage[] = [];
 
   await forEachAsync(finalizableMessages, async (message) => {
-    const _callData = await finalizeOptimismMessage(logger, chainId, crossChainMessenger, message, message.logIndex);
-    if (!isDefined(_callData)) {
-      return;
-    }
-    const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress, chainId);
-    const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), decimals);
-    const withdrawal: CrossChainMessage = {
-      originationChainId: chainId,
-      l1TokenSymbol: symbol,
-      amount: amountFromWei,
-      type: "withdrawal",
-      destinationChainId: hubPoolClient.chainId,
-    };
+    // @dev Isolate per-message failures. Without this, one message that throws -- an RPC quorum failure, a
+    // missing proof receipt, an unknown token -- rejects the whole forEachAsync and drops every other
+    // finalization for this chain, including ones that would have succeeded.
+    try {
+      const _callData = await finalizeOptimismMessage(logger, chainId, crossChainMessenger, message, message.logIndex);
+      if (!isDefined(_callData)) {
+        return;
+      }
+      const { symbol, decimals } = getTokenInfo(message.event.l2TokenAddress, chainId);
+      const amountFromWei = convertFromWei(message.event.amountToReturn.toString(), decimals);
+      const withdrawal: CrossChainMessage = {
+        originationChainId: chainId,
+        l1TokenSymbol: symbol,
+        amount: amountFromWei,
+        type: "withdrawal",
+        destinationChainId: hubPoolClient.chainId,
+      };
 
-    callData.push(_callData);
-    withdrawals.push(withdrawal);
+      callData.push(_callData);
+      withdrawals.push(withdrawal);
+    } catch (error) {
+      logger.warn({
+        at: `${getNetworkName(chainId)}Finalizer`,
+        message: `Failed to build finalization for withdrawal ${message.event.txnRef}; skipping it.`,
+        txnRef: message.event.txnRef,
+        error,
+      });
+    }
   });
 
   // Blast USDB withdrawals have a two step withdrawal process involving a separate claim that can be made
