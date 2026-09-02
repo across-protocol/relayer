@@ -1021,130 +1021,136 @@ export class DepositAddressHandler {
     }
 
     this.observedExecutedDeposits[originChainId].add(depositKey);
-
-    let isDepositAddressDeployed = false;
+    // Release the in-flight lock on every exit path except a confirmed on-chain execute; an
+    // unexpected throw or an early return (e.g. insufficient balance) must not strand the depositKey,
+    // since the next poll would silently skip it for the process lifetime.
+    let executeCommitted = false;
     try {
-      isDepositAddressDeployed = await this.isContractDeployed(originChainId, depositMessage.depositAddress);
-    } catch {
-      this.observedExecutedDeposits[originChainId].delete(depositKey);
-      this.logger.warn({
-        at: "DepositAddressHandler#initiateDeposit",
-        message: "Failed to check if deposit address is deployed",
-        depositKey,
-      });
-      return;
-    }
-
-    const baseFactoryContract = getCounterfactualDepositFactory(
-      depositMessage.counterfactualFactoryContractAddress
-    ).connect(this.providersByChain[originChainId]);
-
-    const useDispatcher = this.depositAddressSigners.length > 0;
-    const factoryContract = useDispatcher
-      ? baseFactoryContract
-      : baseFactoryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
-
-    // Before initiating any transactions, check if the deposit address has been credited with the
-    // input token on the origin chain. If it has not, then we either (1) have already processed this
-    // deposit, or (2) received a transaction from the indexer which has been reorged and will be processed
-    // once the funds arrive to the deposit address.
-    const balanceOfContract = await this.getDepositAddressBalance(
-      originChainId,
-      inputToken,
-      depositMessage.depositAddress
-    );
-    if (balanceOfContract.lt(inputAmount)) {
-      this.logger.debug({
-        at: "DepositAddressHandler#initiateDeposit",
-        message: "Contract does not have sufficient input token balance to initiate deposit.",
-        depositKey,
-        depositAddress: depositMessage.depositAddress,
-        inputToken,
-      });
-      return;
-    }
-
-    if (!isDepositAddressDeployed) {
-      const _deployTx = buildDeployTx(
-        factoryContract,
-        originChainId,
-        depositMessage.counterfactualDepositContractAddress,
-        depositMessage.paramsHash,
-        depositMessage.salt
-      );
-
-      const deployTx = {
-        ..._deployTx,
-        message: "Deposit Address Deployed Successfully 📦",
-        mrkdwn: `Completed deployemnt of DepositAddress ${depositMessage.depositAddress} on ${getNetworkName(
-          originChainId
-        )}`,
-      };
-
-      const deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
-      if (!isDefined(deployReceipt)) {
-        this.observedExecutedDeposits[originChainId].delete(depositKey);
+      let isDepositAddressDeployed = false;
+      try {
+        isDepositAddressDeployed = await this.isContractDeployed(originChainId, depositMessage.depositAddress);
+      } catch {
         this.logger.warn({
           at: "DepositAddressHandler#initiateDeposit",
-          message: "Failed to submit deploy tx",
+          message: "Failed to check if deposit address is deployed",
           depositKey,
-          deployTx: {
-            ...deployTx,
-            contract: deployTx.contract.address,
+        });
+        return;
+      }
+
+      const baseFactoryContract = getCounterfactualDepositFactory(
+        depositMessage.counterfactualFactoryContractAddress
+      ).connect(this.providersByChain[originChainId]);
+
+      const useDispatcher = this.depositAddressSigners.length > 0;
+      const factoryContract = useDispatcher
+        ? baseFactoryContract
+        : baseFactoryContract.connect(this.baseSigner.connect(this.providersByChain[originChainId]));
+
+      // Before initiating any transactions, check if the deposit address has been credited with the
+      // input token on the origin chain. If it has not, then we either (1) have already processed this
+      // deposit, or (2) received a transaction from the indexer which has been reorged and will be processed
+      // once the funds arrive to the deposit address.
+      const balanceOfContract = await this.getDepositAddressBalance(
+        originChainId,
+        inputToken,
+        depositMessage.depositAddress
+      );
+      if (balanceOfContract.lt(inputAmount)) {
+        this.logger.debug({
+          at: "DepositAddressHandler#initiateDeposit",
+          message: "Contract does not have sufficient input token balance to initiate deposit.",
+          depositKey,
+          depositAddress: depositMessage.depositAddress,
+          inputToken,
+        });
+        return;
+      }
+
+      if (!isDepositAddressDeployed) {
+        const _deployTx = buildDeployTx(
+          factoryContract,
+          originChainId,
+          depositMessage.counterfactualDepositContractAddress,
+          depositMessage.paramsHash,
+          depositMessage.salt
+        );
+
+        const deployTx = {
+          ..._deployTx,
+          message: "Deposit Address Deployed Successfully 📦",
+          mrkdwn: `Completed deployemnt of DepositAddress ${depositMessage.depositAddress} on ${getNetworkName(
+            originChainId
+          )}`,
+        };
+
+        const deployReceipt = await sendAndConfirmTransaction(deployTx, this.transactionClient, useDispatcher);
+        if (!isDefined(deployReceipt)) {
+          this.logger.warn({
+            at: "DepositAddressHandler#initiateDeposit",
+            message: "Failed to submit deploy tx",
+            depositKey,
+            deployTx: {
+              ...deployTx,
+              contract: deployTx.contract.address,
+            },
+          });
+          return;
+        }
+      }
+
+      // At this point, the user's deposit contract is deployed on the origin network.
+      const swapTx = await this._getSwapApiQuote(depositMessage);
+      if (!isDefined(swapTx) || !swapTx.swapTx.simulationSuccess) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDeposit",
+          message: "Failed to fetch swap tx from swap API",
+          depositKey,
+          cctpExecutionFee,
+          spokePoolExecutionFee,
+        });
+        return;
+      }
+
+      const { data: executeTxInput } = swapTx.swapTx;
+      const executeTx = {
+        contract: this.getExecuteContract(swapTx.swapTx.to, originChainId, useDispatcher),
+        method: "",
+        args: [executeTxInput],
+        chainId: originChainId,
+        message: "Completed Deposit Execution Successfully 🎯",
+        mrkdwn: `Completed execution of Deposit on ${getNetworkName(originChainId)} to ${getNetworkName(
+          destinationChainId
+        )}, using deposit address ${blockExplorerLink(
+          depositMessage.depositAddress,
+          originChainId
+        )} (cctpExecutionFee: ${cctpExecutionFee}, spokePoolExecutionFee: ${spokePoolExecutionFee})`,
+      };
+
+      const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
+
+      if (!depositReceipt) {
+        this.logger.warn({
+          at: "DepositAddressHandler#initiateDeposit",
+          message: "Failed to submit execute tx",
+          depositKey,
+          executeTx: {
+            ...executeTx,
+            contract: executeTx.contract.address,
           },
         });
         return;
       }
+
+      // Persist full set to Redis immediately so handover cannot miss this execute.
+      this.executedDepositTxHashes.add(refTxHash);
+      executeCommitted = true;
+      await this._persistExecutedDepositsRedis();
+    } finally {
+      if (!executeCommitted) {
+        this.observedExecutedDeposits[originChainId].delete(depositKey);
+      }
     }
-
-    // At this point, the user's deposit contract is deployed on the origin network.
-    const swapTx = await this._getSwapApiQuote(depositMessage);
-    if (!isDefined(swapTx) || !swapTx.swapTx.simulationSuccess) {
-      this.logger.warn({
-        at: "DepositAddressHandler#initiateDeposit",
-        message: "Failed to fetch swap tx from swap API",
-        depositKey,
-        cctpExecutionFee,
-        spokePoolExecutionFee,
-      });
-      this.observedExecutedDeposits[originChainId].delete(depositKey);
-      return;
-    }
-
-    const { data: executeTxInput } = swapTx.swapTx;
-    const executeTx = {
-      contract: this.getExecuteContract(swapTx.swapTx.to, originChainId, useDispatcher),
-      method: "",
-      args: [executeTxInput],
-      chainId: originChainId,
-      message: "Completed Deposit Execution Successfully 🎯",
-      mrkdwn: `Completed execution of Deposit on ${getNetworkName(originChainId)} to ${getNetworkName(
-        destinationChainId
-      )}, using deposit address ${blockExplorerLink(
-        depositMessage.depositAddress,
-        originChainId
-      )} (cctpExecutionFee: ${cctpExecutionFee}, spokePoolExecutionFee: ${spokePoolExecutionFee})`,
-    };
-
-    const depositReceipt = await sendAndConfirmTransaction(executeTx, this.transactionClient, useDispatcher);
-
-    if (!depositReceipt) {
-      this.logger.warn({
-        at: "DepositAddressHandler#initiateDeposit",
-        message: "Failed to submit execute tx",
-        depositKey,
-        executeTx: {
-          ...executeTx,
-          contract: executeTx.contract.address,
-        },
-      });
-      this.observedExecutedDeposits[originChainId].delete(depositKey);
-      return;
-    }
-
-    // Persist full set to Redis immediately so handover cannot miss this execute.
-    this.executedDepositTxHashes.add(refTxHash);
-    await this._persistExecutedDepositsRedis();
   }
 
   /**
@@ -1789,7 +1795,15 @@ export class DepositAddressHandler {
       // Error log should have been emitted in IndexerApiClient.
     }
     if (!isDefined(apiResponseData)) {
-      return retriesRemaining > 0 ? this._queryIndexerApi(--retriesRemaining) : [];
+      if (retriesRemaining > 0) {
+        return this._queryIndexerApi(--retriesRemaining);
+      }
+      // Signal a failed query distinctly from a genuinely-empty result (an empty response is a defined
+      // []). Throwing skips the whole tick (see pollAndExecute's handler) so evaluateDepositAddresses
+      // does not prune persisted replay-protection state (executedDepositTxHashes/executedWithdrawKeys/
+      // terminallySkippedWithdrawKeys/refundOnlyDepositKeys) on the basis of a transient indexer failure,
+      // which a bare `[]` return could not be distinguished from and would erase.
+      throw new Error("Deposit-address indexer query failed after exhausting retries");
     }
     // Drop unsupported message versions BEFORE normalization. Unsupported payloads (e.g. v2) may
     // not carry the v1 shape (routeParams/erc20Transfer/counterfactualMaterials), and
