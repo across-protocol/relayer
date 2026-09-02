@@ -109,7 +109,10 @@ export function getAddressLookupTableInstructions(
 ): LookupTableDefinitions {
   // @todo Fine-tune 32 to an appropriate number. For now, 32 is convenient since it divides 256, the maximum number of addresses an ALT can have.
   const LUT_WRITE_SIZE = 32;
-  const nInstructions = Math.floor(lutAddresses.length / LUT_WRITE_SIZE) + 1;
+  // Use ceil, not floor+1: floor+1 always appended one extra chunk, and when lutAddresses.length is an
+  // exact multiple of LUT_WRITE_SIZE (including 0) that extra chunk was an empty slice, producing an
+  // ExtendLookupTable instruction with zero addresses which the on-chain ALT program rejects.
+  const nInstructions = Math.ceil(lutAddresses.length / LUT_WRITE_SIZE);
   // Create the instructions.
   const instructions = [];
   for (let idx = 0; idx < nInstructions; idx++) {
