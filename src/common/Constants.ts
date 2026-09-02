@@ -54,6 +54,8 @@ import {
   OpStackUSDCBridge as L2OpStackUSDCBridge,
   OpStackWethBridge as L2OpStackWethBridge,
   OpStackBridge as L2OpStackBridge,
+  PolygonERC20Bridge as L2PolygonERC20Bridge,
+  PolygonWethBridge as L2PolygonWethBridge,
   BinanceCEXBridge as L2BinanceCEXBridge,
   UsdcCCTPBridge as L2UsdcCCTPBridge,
   BinanceCEXNativeBridge as L2BinanceCEXNativeBridge,
@@ -489,6 +491,9 @@ export const CANONICAL_L2_BRIDGE: Record<number, L2BridgeConstructor<BaseL2Bridg
   [CHAIN_IDs.BSC]: L2BinanceCEXBridge,
   // @dev Lens is deliberately absent: each of its tokens needs a different exit, wired per-token in CUSTOM_L2_BRIDGE.
   [CHAIN_IDs.LISK]: L2OpStackBridge,
+  // @dev Chain-level default: standard PoS bridged ERC20s (WETH, WBTC, ...) exit by burning the child token.
+  // USDC and USDT override this in CUSTOM_L2_BRIDGE with their faster CCTP/OFT exits.
+  [CHAIN_IDs.POLYGON]: L2PolygonERC20Bridge,
   [CHAIN_IDs.ZK_SYNC]: L2ZKStackBridge,
   [CHAIN_IDs.ZORA]: L2OpStackBridge,
 };
@@ -745,6 +750,9 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   [CHAIN_IDs.POLYGON]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+    // WETH still exits over PoS, but Polygon maps it to L1 ether, so its claim settles on the Ether predicate
+    // rather than the ERC20 predicate that CANONICAL_L2_BRIDGE binds.
+    [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: L2PolygonWethBridge,
   },
   [CHAIN_IDs.SOLANA]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2SolanaUsdcCCTPBridge,

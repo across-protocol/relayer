@@ -5,6 +5,8 @@ export * from "./BinanceCEXNativeBridge";
 export * from "./OpStackBridge";
 export * from "./OpStackUSDCBridge";
 export * from "./OpStackWethBridge";
+export * from "./PolygonERC20Bridge";
+export * from "./PolygonWethBridge";
 export * from "./UsdcCCTPBridge";
 export * from "./SolanaUsdcCCTPBridge";
 export * from "./BridgeApi";
