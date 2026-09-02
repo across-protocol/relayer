@@ -199,7 +199,7 @@ export async function getProvider(
           at: "ProviderUtils#rpcRateLimited",
           message: `Got rate-limit (429) response on ${chain} attempt ${attempt}.`,
           rpc: getOriginFromURL(url),
-          retryAfter: `${retryAfter} s`,
+          retryAfter: `${retryAfter.toFixed(2)} s`,
           workers: nodeMaxConcurrency,
           datadog: true,
         });
