@@ -1779,7 +1779,7 @@ export class DepositAddressHandler {
   }
 
   /*
-   * @notice Queries the Indexer API for all pending deposit addresses transactions. By default, do not retry since this endpoing is being polled.
+   * @notice Queries the Indexer API for all pending deposit address transactions. By default, do not retry since this endpoint is being polled.
    */
   private async _queryIndexerApi(retriesRemaining = 3): Promise<AnyDepositAddressMessage[]> {
     let apiResponseData: AnyDepositAddressMessage[] | undefined = undefined;
