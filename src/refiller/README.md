@@ -6,6 +6,24 @@ Unlike the `InventoryClient`, the refiller was originally designed to handle ref
 
 The primary use case for the refiller originally was to send native token balances from one bot's EOA to another. When combining this logic with the InventoryClient's wrapping and unwrapping of native token functions, we can ensure that bot native tokens never get too low.
 
+## Config: `REFILL_BALANCES_2`
+
+Nested map: account → chainId → **one object or an array of objects** (multiple tokens / targets on the same chain). Each entry: `target`, `trigger`, optional `token` (defaults to native), optional `isHubPool`.
+
+```bash
+REFILL_BALANCES_2='{
+  "0xAccount": {
+    "8453": [
+      { "target": 0.05, "trigger": 0.02 },
+      { "target": 1000, "trigger": 500, "token": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" }
+    ],
+    "1": { "target": 0.5, "trigger": 0.2 }
+  }
+}'
+```
+
+A single object per chain remains valid (same as an array of length 1).
+
 ## Refilling native gas tokens via Across Swap
 
 When a configured native-token balance (e.g. HYPE on HyperEVM, AVAX on Avalanche) falls below its trigger and the signer cannot transfer enough on-chain, the refiller submits an async cross-chain swap via the Across Swap API using the hardcoded route in `SWAP_ROUTES` (`src/common/Constants.ts`). Routes currently source Arbitrum USDC for Avalanche and HyperEVM (and WETH or USDT for other chains). The swap lands as native gas on the destination; a later run can then transfer to the target account if needed.
