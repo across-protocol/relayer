@@ -8,8 +8,8 @@ import {
   bnZero,
   ConvertDecimals,
   delay,
-  fetchWithTimeout,
   FetchHeaders,
+  HttpError,
   isDefined,
   MAX_SAFE_ALLOWANCE,
   Signer,
@@ -224,6 +224,71 @@ export function getPaxosTransitDestinationToken(dstChainId: number, l1Token: Add
   return PAXOS_TRANSIT_DESTINATION_TOKENS[dstChainId]?.[l1Token.toNative()];
 }
 
+/**
+ * Non-2xx response from the Paxos Transit API, carrying the structured error body Paxos returns:
+ * `{ error: { code, message, status } }`. Extends the SDK's `HttpError` so status-based callers
+ * (`isHttpError(err) && err.status === 404`) keep working; `apiStatus` is Paxos's canonical status
+ * string (e.g. `INVALID_ARGUMENT`).
+ *
+ * The SDK's fetch helpers only lift a *string* `error` key off the body, so a Paxos rejection would
+ * otherwise reach the logs as `HttpError: [object Object]` with the operator-facing message lost.
+ */
+export class PaxosTransitApiError extends HttpError {
+  constructor(
+    status: number,
+    message: string,
+    readonly apiStatus?: string
+  ) {
+    super(status, message);
+    this.name = "PaxosTransitApiError";
+  }
+}
+
+function toPaxosTransitApiError(status: number, statusText: string, body: string): PaxosTransitApiError {
+  let parsed: { error?: { message?: unknown; status?: unknown } } | undefined;
+  try {
+    parsed = JSON.parse(body);
+  } catch {
+    // Non-JSON error body (e.g. an upstream proxy's HTML); fall back to the status line below.
+  }
+  const asString = (value: unknown) => (typeof value === "string" && value.length > 0 ? value : undefined);
+  return new PaxosTransitApiError(
+    status,
+    asString(parsed?.error?.message) ?? `HTTP ${status}: ${statusText}`,
+    asString(parsed?.error?.status)
+  );
+}
+
+/**
+ * Paxos rejects orders below a per-route minimum that floats with execution costs, so it can sit
+ * well above the documented {@link PAXOS_TRANSIT_MINIMUMS} floor (observed at $160.93 for
+ * mainnet -> Robinhood on 2026-08-15). Paxos returns no machine-readable discriminator for it, so
+ * the message is the only signal.
+ */
+export function isPaxosTransitAmountBelowMinimumError(error: unknown): error is PaxosTransitApiError {
+  return error instanceof PaxosTransitApiError && /below the minimum/i.test(error.message);
+}
+
+/**
+ * Extracts the live order minimum, in offer-asset base units, from a below-minimum rejection.
+ * Returns undefined if Paxos stops quoting the amount in the message.
+ */
+export function getPaxosTransitMinimumOfferAmount(error: PaxosTransitApiError): BigNumber | undefined {
+  const [, minimum] = /\((\d+) base units\)/.exec(error.message) ?? [];
+  return isDefined(minimum) ? toBN(minimum) : undefined;
+}
+
+/**
+ * Paxos returns the same answer to an identical bad request, so only transient failures are worth a
+ * retry: transport errors (no status) plus the usual back-off statuses.
+ */
+function isRetryablePaxosTransitError(error: unknown): boolean {
+  if (!(error instanceof PaxosTransitApiError)) {
+    return true;
+  }
+  return error.status >= 500 || [408, 425, 429].includes(error.status);
+}
+
 export class PaxosTransitClient {
   constructor(
     readonly baseUrl: string,
@@ -328,23 +393,54 @@ export class PaxosTransitClient {
     };
   }
 
+  /**
+   * GETs `endpoint`, throwing a {@link PaxosTransitApiError} on a non-2xx response. Bypasses the
+   * SDK's fetch helpers so that Paxos's `{ error: { message, status } }` body survives into the
+   * thrown error.
+   */
+  protected async get<T>(endpoint: string): Promise<T> {
+    const url = `${this.baseUrl}/${endpoint}`;
+    const response = await fetch(url, { headers: toStringHeaders(this.defaultHeaders()) });
+    const text = await response.text();
+    if (!response.ok) {
+      throw toPaxosTransitApiError(response.status, response.statusText, text);
+    }
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      const contentType = response.headers.get("content-type") ?? "unknown";
+      throw new Error(`Expected JSON response from ${url} but received content-type: ${contentType}`);
+    }
+  }
+
   async getWithRetry<T>(endpoint: string, nRetries = this.nRetries): Promise<T> {
     try {
-      return await fetchWithTimeout<T>(`${this.baseUrl}/${endpoint}`, {}, this.defaultHeaders());
+      return await this.get<T>(endpoint);
     } catch (e) {
+      const apiError = e instanceof PaxosTransitApiError ? e : undefined;
       this.logger?.debug({
         at: "PaxosTransitClient#getWithRetry",
         message: "Failed to query Paxos Transit API",
         endpoint,
-        e,
+        status: apiError?.status,
+        apiStatus: apiError?.apiStatus,
+        error: (e as Error).message,
       });
-      if (nRetries > 0) {
+      if (nRetries > 0 && isRetryablePaxosTransitError(e)) {
         await delay(1);
         return this.getWithRetry<T>(endpoint, --nRetries);
       }
       throw e;
     }
   }
+}
+
+function toStringHeaders(headers: FetchHeaders): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers)
+      .filter(([, value]) => isDefined(value))
+      .map(([key, value]) => [key, String(value)])
+  );
 }
 
 export function createPaxosTransitClient(logger?: winston.Logger): PaxosTransitClient {

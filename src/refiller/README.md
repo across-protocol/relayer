@@ -20,7 +20,7 @@ However, ideally this logic for refilling USDH is moved into a separate client. 
 
 ## Sweeping mainnet USDG to Robinhood
 
-Robinhood inventory holds USDG on chain 4663; mainnet USDG (`USDG-MAINNET`, `0xe343167631d89B6Ffc58B88d6b7fB0228795491D`) should not accumulate. When a `REFILL_BALANCES` entry targets that token on mainnet (`chainId: 1`, `token: 0xe343167631d89B6Ffc58B88d6b7fB0228795491D`), the refiller routes to a bespoke handler that sweeps the base signer's full mainnet USDG balance to Robinhood USDG via the Paxos Transit API when the balance exceeds `MIN_USDG_SWEEP_AMOUNT` (default 10 USDG). Paxos Transit enforces a separate $5 minimum per order.
+Robinhood inventory holds USDG on chain 4663; mainnet USDG (`USDG-MAINNET`, `0xe343167631d89B6Ffc58B88d6b7fB0228795491D`) should not accumulate. When a `REFILL_BALANCES` entry targets that token on mainnet (`chainId: 1`, `token: 0xe343167631d89B6Ffc58B88d6b7fB0228795491D`), the refiller routes to a bespoke handler that sweeps the base signer's full mainnet USDG balance to Robinhood USDG via the Paxos Transit API when the balance exceeds `MIN_USDG_SWEEP_AMOUNT` (default 10 USDG). Paxos Transit enforces its own per-order minimum on top of that, and it floats with execution costs — the $5 floor in `PAXOS_TRANSIT_MINIMUMS` is the documented lower bound, not the live value (observed at $160.93 on 2026-08-15). A balance above `MIN_USDG_SWEEP_AMOUNT` but below the live minimum is logged and skipped, not treated as a failure, so `MIN_USDG_SWEEP_AMOUNT` only controls how often the sweep is attempted.
 
 Required environment variables:
 

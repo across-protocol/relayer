@@ -40,9 +40,12 @@ import {
   getNativeTokenInfoForChain,
   retry,
   getMainnetUsdgAddress,
+  getPaxosTransitMinimumOfferAmount,
+  isPaxosTransitAmountBelowMinimumError,
 } from "../utils";
 import { getRedisCache, RedisCache } from "../cache/Redis";
 import { SWAP_ROUTES, SwapRoute, CUSTOM_BRIDGE, CANONICAL_BRIDGE } from "../common";
+import { BridgeTransactionDetails } from "../adapter/bridges/BaseBridgeAdapter";
 import { PaxosTransitBridge } from "../adapter/bridges/PaxosTransitBridge";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 import { arch } from "@across-protocol/sdk";
@@ -651,17 +654,30 @@ export class Refiller {
       l1Token,
       this.logger
     );
-    const {
-      contract,
-      method,
-      args,
-      value = bnZero,
-    } = await tokenBridge.constructL1ToL2Txn(
-      this.baseSignerAddress,
-      l1Token,
-      toAddressType(rhUsdgAddress, CHAIN_IDs.ROBINHOOD),
-      amountToTransfer
-    );
+    let bridgeTxn: BridgeTransactionDetails;
+    try {
+      bridgeTxn = await tokenBridge.constructL1ToL2Txn(
+        this.baseSignerAddress,
+        l1Token,
+        toAddressType(rhUsdgAddress, CHAIN_IDs.ROBINHOOD),
+        amountToTransfer
+      );
+    } catch (error) {
+      if (!isPaxosTransitAmountBelowMinimumError(error)) {
+        throw error;
+      }
+      // Paxos's order minimum floats with execution costs and can sit above MIN_USDG_SWEEP_AMOUNT.
+      // The balance is swept once it clears that minimum, so this is a wait, not a failure.
+      this.logger.debug({
+        at: "Refiller#sweepMainnetUsdgToRobinhood",
+        message: "Mainnet USDG balance is below the Paxos Transit order minimum",
+        amountToTransfer,
+        paxosMinimum: getPaxosTransitMinimumOfferAmount(error),
+        minUsdgSweepAmount: this.config.minUsdgSweepAmount,
+      });
+      return;
+    }
+    const { contract, method, args, value = bnZero } = bridgeTxn;
 
     const txn = await sendAndConfirmTransaction(
       {
