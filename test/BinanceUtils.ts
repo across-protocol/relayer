@@ -4,6 +4,7 @@ import {
   BINANCE_ORDER_RECV_WINDOW_MS,
   BINANCE_READ_RECV_WINDOW_MS,
   BINANCE_WITHDRAW_RECV_WINDOW_MS,
+  BINANCE_WITHDRAWAL_STATUS,
   BinanceDeposit,
   SpotMarketMeta,
   BinanceWithdrawal,
@@ -236,6 +237,19 @@ describe("BinanceUtils withdrawal helpers", function () {
     expect(isCompletedBinanceWithdrawal(4)).to.equal(false);
     expect(isCompletedBinanceWithdrawal(5)).to.equal(false);
     expect(isCompletedBinanceWithdrawal(undefined)).to.equal(false);
+  });
+
+  it("only releases balance for terminally failed withdrawals", function () {
+    // Deposit/withdrawal reconciliation keys off this: anything not failed still holds the account's balance,
+    // including a withdrawal Binance has accepted but not yet settled.
+    expect(isFailedBinanceWithdrawal(BINANCE_WITHDRAWAL_STATUS.CANCELLED)).to.equal(true);
+    expect(isFailedBinanceWithdrawal(BINANCE_WITHDRAWAL_STATUS.REJECTED)).to.equal(true);
+    expect(isFailedBinanceWithdrawal(BINANCE_WITHDRAWAL_STATUS.FAILURE)).to.equal(true);
+    expect(isFailedBinanceWithdrawal(BINANCE_WITHDRAWAL_STATUS.EMAIL_SENT)).to.equal(false);
+    expect(isFailedBinanceWithdrawal(BINANCE_WITHDRAWAL_STATUS.AWAITING_APPROVAL)).to.equal(false);
+    expect(isFailedBinanceWithdrawal(BINANCE_WITHDRAWAL_STATUS.PROCESSING)).to.equal(false);
+    expect(isFailedBinanceWithdrawal(BINANCE_WITHDRAWAL_STATUS.COMPLETED)).to.equal(false);
+    expect(isFailedBinanceWithdrawal(undefined)).to.equal(false);
   });
 });
 

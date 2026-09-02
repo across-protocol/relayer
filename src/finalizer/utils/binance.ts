@@ -24,7 +24,7 @@ import {
   BinanceTransactionType,
   getBinanceWithdrawalType,
   submitBinanceWithdrawal,
-  isCompletedBinanceWithdrawal,
+  isFailedBinanceWithdrawal,
   resolveBinanceCoinSymbol,
   truncate,
   ethers,
@@ -237,10 +237,12 @@ export async function binanceFinalizer(
       // Similar to the reasoning for filtering deposits, we need to filter withdrawals by removing any
       // that are explicitly marked as related to a swap. To make this backwards compatible, we check "!== SWAP" instead of "=== BRIDGE"
       // as the existing inventory client logic does not yet tag withdrawals with this BRIDGE type.
+      // Count every withdrawal Binance has not terminally failed, not just settled ones: an accepted withdrawal
+      // already committed the balance, so ignoring it until settlement lets a later run reissue the same amount.
       const withdrawals = await filterAsync(_withdrawals, async (withdrawal) => {
         const withdrawalType = await dependencies.getBinanceWithdrawalType(withdrawal);
         return (
-          isCompletedBinanceWithdrawal(withdrawal.status) &&
+          !isFailedBinanceWithdrawal(withdrawal.status) &&
           withdrawalType !== BinanceTransactionType.SWAP &&
           !isBinanceSweepWithdrawal(withdrawal)
         );
@@ -311,6 +313,10 @@ export async function binanceFinalizer(
             message: `(X -> ${withdrawNetwork}) Need to reduce the amount to finalize since hot wallet balance is less than desired withdrawal amount.`,
             amountToFinalize,
             balance: coinBalance,
+            // A shortfall against a healthy deposit history usually means the balance is reserved rather than
+            // absent, which is indistinguishable from a spend without these.
+            lockedBalance: coin.locked,
+            withdrawingBalance: coin.withdrawing,
           });
           amountToFinalize = coinBalance;
         }
@@ -348,6 +354,8 @@ export async function binanceFinalizer(
             availableCoinBalance: coinBalance - creditedDepositAmount,
             coinBalance,
             creditedDepositAmount,
+            lockedBalance: coin.locked,
+            withdrawingBalance: coin.withdrawing,
           });
         }
       }

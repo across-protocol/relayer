@@ -396,6 +396,21 @@ describe("Binance finalizer helpers", function () {
     expect(submitted).to.be.empty;
   });
 
+  it("counts an accepted but unsettled withdrawal instead of reissuing it", async function () {
+    expect(await finalizeAgainstPriorWithdrawal(BINANCE_WITHDRAWAL_STATUS.PROCESSING)).to.deep.equal([]);
+    expect(await finalizeAgainstPriorWithdrawal(BINANCE_WITHDRAWAL_STATUS.AWAITING_APPROVAL)).to.deep.equal([]);
+    expect(await finalizeAgainstPriorWithdrawal(BINANCE_WITHDRAWAL_STATUS.EMAIL_SENT)).to.deep.equal([]);
+  });
+
+  it("reissues a withdrawal that Binance terminally failed", async function () {
+    const expected = [
+      { address: EvmAddress.from(FIRST_EOA).toNative(), network: BINANCE_NETWORKS[CHAIN_IDs.BSC], amount: 10 },
+    ];
+    expect(await finalizeAgainstPriorWithdrawal(BINANCE_WITHDRAWAL_STATUS.FAILURE)).to.deep.equal(expected);
+    expect(await finalizeAgainstPriorWithdrawal(BINANCE_WITHDRAWAL_STATUS.CANCELLED)).to.deep.equal(expected);
+    expect(await finalizeAgainstPriorWithdrawal(BINANCE_WITHDRAWAL_STATUS.REJECTED)).to.deep.equal(expected);
+  });
+
   it("skips non-EVM addresses when collecting pending rebalance accounts", function () {
     const evmAddress = "0x0000000000000000000000000000000000000001";
     const svmAddress = "11111111111111111111111111111111";
@@ -437,6 +452,67 @@ function runTestFinalizer(
     addresses,
     dependencies
   );
+}
+
+/**
+ * Runs the finalizer against a single 10 USDC L1 deposit that a prior BSC withdrawal of the same size already
+ * covers, with that withdrawal left in `status`. Returns the bridge finalizations submitted, excluding the
+ * orphan-balance sweep, which is not under test.
+ */
+async function finalizeAgainstPriorWithdrawal(status: number) {
+  const submitted: Array<Record<string, unknown>> = [];
+  const coin = {
+    symbol: "USDC",
+    // Comfortably above the deposit so the fee-aware cap never becomes the binding constraint.
+    balance: "20",
+    networkList: [BINANCE_NETWORKS[CHAIN_IDs.MAINNET], BINANCE_NETWORKS[CHAIN_IDs.BSC]].map((name) => ({
+      name,
+      coin: "USDC",
+      withdrawMin: "0.01",
+      withdrawMax: "1000",
+      withdrawFee: "0.1",
+      contractAddress: "",
+    })),
+  };
+  const dependencies = {
+    getTimestampForBlock: sinon.stub().resolves(0),
+    getBinanceApiClient: sinon.stub().resolves({} as never),
+    getBinanceDeposits: sinon.stub().resolves([makeDeposit({ amount: 10, txId: "l1-deposit", status: 1 })]),
+    getAccountCoins: sinon.stub().resolves([coin]),
+    getBinanceDepositType: sinon.stub().resolves(BinanceTransactionType.UNKNOWN),
+    getOwnedBinanceDeposits: sinon
+      .stub()
+      .callsFake(async (items: BinanceDeposit[]) =>
+        items.map((deposit) => ({ ...deposit, depositor: EvmAddress.from(FIRST_EOA).toNative() }))
+      ),
+    getBinanceWithdrawals: sinon.stub().resolves([
+      {
+        amount: 10,
+        coin: "USDC",
+        recipient: EvmAddress.from(FIRST_EOA).toNative(),
+        network: BINANCE_NETWORKS[CHAIN_IDs.BSC],
+        txId: "",
+        status,
+        transactionFee: 0.1,
+        applyTime: "",
+      },
+    ]),
+    getBinanceWithdrawalType: sinon.stub().resolves(BinanceTransactionType.BRIDGE),
+    getBlockForTimestamp: sinon.stub().resolves(0),
+    getProvider: sinon.stub().resolves({ getBlockNumber: sinon.stub().resolves(0) }),
+    hasBinanceRoute: sinon.stub().returns(true),
+    isEVMSpokePoolClient: sinon.stub().returns(true),
+    submitBinanceWithdrawal: sinon.stub().callsFake(async (_api, withdrawal) => {
+      submitted.push(withdrawal);
+      return { ...withdrawal, id: `withdrawal-${submitted.length}` };
+    }),
+    constructAdapter: sinon.stub().resolves({ getPendingRebalances: sinon.stub().resolves({}) } as never),
+  } as unknown as BinanceFinalizerDependencies;
+
+  await runTestFinalizer(dependencies);
+  return submitted
+    .filter(({ withdrawOrderId }) => withdrawOrderId === undefined)
+    .map(({ address, network, amount }) => ({ address, network, amount }));
 }
 
 function getDepositAttributionTestClient(chainId: number) {
