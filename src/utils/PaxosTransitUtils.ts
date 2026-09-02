@@ -6,8 +6,10 @@ import {
   assert,
   BigNumber,
   bnZero,
+  compareAddressesSimple,
   ConvertDecimals,
   delay,
+  ethers,
   fetchWithTimeout,
   FetchHeaders,
   isDefined,
@@ -378,6 +380,93 @@ async function submitPaxosTransitApproval(
   await provider.waitForTransaction(tx.hash);
 }
 
+const ERC20_APPROVE_INTERFACE = new ethers.utils.Interface(["function approve(address spender, uint256 amount)"]);
+
+// The Paxos Transit API returns raw approval calldata / EIP-712 permit data that we sign or submit from
+// the rebalancer's hot wallet. Validate both against the parameters we requested before acting on them, so
+// a compromised/misbehaving endpoint cannot redirect an approval to an arbitrary spender, target an
+// unexpected token, or authorize an unbounded amount.
+function assertValidPaxosTransitApprove(approvalCalldata: string, expectedSpender: string): void {
+  let decoded: ethers.utils.TransactionDescription;
+  try {
+    decoded = ERC20_APPROVE_INTERFACE.parseTransaction({ data: approvalCalldata });
+  } catch {
+    throw new Error("Paxos Transit approval calldata is not a valid ERC-20 approve(spender, amount) call");
+  }
+  assert(decoded.name === "approve", "Paxos Transit authorization method is not an approve call");
+  assert(
+    compareAddressesSimple(decoded.args.spender, expectedSpender),
+    `Paxos Transit approve spender ${decoded.args.spender} does not match the requested spender ${expectedSpender}`
+  );
+  assert(
+    BigNumber.from(decoded.args.amount).lte(toBN(MAX_SAFE_ALLOWANCE)),
+    "Paxos Transit approve amount exceeds the maximum allowance"
+  );
+}
+
+// EIP-2612 `Permit` is the only schema we are willing to sign from the rebalancer's hot wallet. What gets
+// signed is determined entirely by `types` -- ethers derives the primary type from it and ignores any
+// `value` properties the schema doesn't name -- so validating `value` alone is not sufficient. A
+// compromised endpoint could otherwise return another schema the token also supports (e.g. an EIP-3009
+// `TransferWithAuthorization`) carrying decoy `owner`/`spender` properties that satisfy the value checks,
+// and walk away with a signature authorizing a transfer to an arbitrary recipient. Pin the schema instead.
+const EIP2612_PERMIT_FIELDS: ReadonlyArray<{ name: string; type: string }> = [
+  { name: "owner", type: "address" },
+  { name: "spender", type: "address" },
+  { name: "value", type: "uint256" },
+  { name: "nonce", type: "uint256" },
+  { name: "deadline", type: "uint256" },
+];
+
+function assertCanonicalEip2612PermitTypes(types: PaxosTransitPermitData["types"]): void {
+  assert(isDefined(types), "Paxos Transit permit is missing its EIP-712 type definitions");
+  // EIP712Domain is descriptive only and is stripped before signing. Any other entry could become the
+  // primary type and change what we sign, so exactly one `Permit` type is permitted.
+  const signedTypes = Object.keys(types).filter((name) => name !== "EIP712Domain");
+  assert(
+    signedTypes.length === 1 && signedTypes[0] === "Permit",
+    `Paxos Transit permit must declare exactly one EIP-712 type "Permit", got: ${signedTypes.join(", ") || "none"}`
+  );
+  const fields = types.Permit;
+  assert(
+    isDefined(fields) &&
+      fields.length === EIP2612_PERMIT_FIELDS.length &&
+      EIP2612_PERMIT_FIELDS.every(({ name, type }, idx) => fields[idx]?.name === name && fields[idx]?.type === type),
+    "Paxos Transit permit does not use the canonical EIP-2612 Permit field schema"
+  );
+}
+
+function assertValidPaxosTransitPermit(
+  permitData: PaxosTransitPermitData,
+  params: { spenderAddress: string; tokenAddress: string; userAddress: string; chainId: number }
+): void {
+  const { domain, types, value, deadline } = permitData;
+  assertCanonicalEip2612PermitTypes(types);
+  assert(
+    isDefined(domain?.verifyingContract) && compareAddressesSimple(domain.verifyingContract, params.tokenAddress),
+    "Paxos Transit permit verifyingContract does not match the requested token"
+  );
+  assert(Number(domain?.chainId) === params.chainId, "Paxos Transit permit chainId does not match the requested chain");
+  assert(
+    isDefined(value?.owner) && compareAddressesSimple(value.owner, params.userAddress),
+    "Paxos Transit permit owner does not match the requested user"
+  );
+  assert(
+    isDefined(value?.spender) && compareAddressesSimple(value.spender, params.spenderAddress),
+    "Paxos Transit permit spender does not match the requested spender"
+  );
+  assert(
+    isDefined(value?.value) && BigNumber.from(value.value).lte(toBN(MAX_SAFE_ALLOWANCE)),
+    "Paxos Transit permit value exceeds the maximum allowance"
+  );
+  // `deadline` is forwarded verbatim to the order-quote endpoint alongside the signature, so it has to be
+  // the deadline we actually signed -- otherwise the submitted permit wouldn't match the signature.
+  assert(
+    isDefined(value?.deadline) && isDefined(deadline) && BigNumber.from(value.deadline).eq(BigNumber.from(deadline)),
+    "Paxos Transit permit deadline does not match the signed permit value"
+  );
+}
+
 export async function resolvePaxosTransitAuthorization(
   client: PaxosTransitClient,
   signer: Signer,
@@ -406,12 +495,14 @@ export async function resolvePaxosTransitAuthorization(
 
   const approve = auth.methods.find((method) => method.type === "erc20_approve");
   if (isDefined(approve?.transaction?.encoded)) {
+    assertValidPaxosTransitApprove(approve.transaction.encoded, params.spenderAddress);
     await submitPaxosTransitApproval(signer, params.tokenAddress, approve.transaction.encoded);
     return {};
   }
 
   const permit = auth.methods.find((method) => method.type === "eip2612_permit");
   if (isDefined(permit?.permitData)) {
+    assertValidPaxosTransitPermit(permit.permitData, params);
     const { domain, types, value, deadline } = permit.permitData;
     assert(isTypedDataSigner(signer), "Signer must support EIP-712 signing for Paxos Transit permit flow");
     const permitSignature = await signer._signTypedData(domain as TypedDataDomain, permitTypesForSigning(types), value);

@@ -98,6 +98,43 @@ class MockPaxosTransitBridge extends PaxosTransitBridge {
 
 const toAddress = (address: string): EvmAddress => EvmAddress.from(address);
 
+const STATION_ADDRESS = "0x2222222222222222222222222222222222222222";
+const PERMIT_DEADLINE = "9999999999";
+
+const ERC20_APPROVE_INTERFACE = new ethers.utils.Interface(["function approve(address spender, uint256 amount)"]);
+const encodeApprove = (spender: string, amount: string): string =>
+  ERC20_APPROVE_INTERFACE.encodeFunctionData("approve", [spender, amount]);
+
+// The canonical EIP-2612 schema the validator requires before we sign anything from the hot wallet.
+const EIP2612_PERMIT_TYPES = {
+  Permit: [
+    { name: "owner", type: "address" },
+    { name: "spender", type: "address" },
+    { name: "value", type: "uint256" },
+    { name: "nonce", type: "uint256" },
+    { name: "deadline", type: "uint256" },
+  ],
+};
+
+const buildPermitData = (owner: string, overrides: Record<string, unknown> = {}) => ({
+  domain: {
+    name: "USD Coin",
+    version: "2",
+    chainId: CHAIN_IDs.MAINNET,
+    verifyingContract: TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET],
+  },
+  types: EIP2612_PERMIT_TYPES,
+  value: {
+    owner,
+    spender: STATION_ADDRESS,
+    value: MAX_SAFE_ALLOWANCE,
+    nonce: "0",
+    deadline: PERMIT_DEADLINE,
+  },
+  deadline: PERMIT_DEADLINE,
+  ...overrides,
+});
+
 describe("Cross Chain Adapter: PaxosTransitBridge", function () {
   let adapter: MockPaxosTransitBridge;
   let mockClient: MockPaxosTransitClient;
@@ -210,46 +247,23 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
     });
 
     it("submits erc20_approve when available, even if permit is also offered", async function () {
+      const userAddress = await adapter["l1Signer"].getAddress();
       mockClient.authorizationProbeResponse = {
-        spenderAddress: "0x2222222222222222222222222222222222222222",
+        spenderAddress: STATION_ADDRESS,
         alreadyApproved: false,
         methods: [],
       };
       mockClient.authorizationResponse = {
-        spenderAddress: "0x2222222222222222222222222222222222222222",
+        spenderAddress: STATION_ADDRESS,
         alreadyApproved: false,
         methods: [
           {
             type: "eip2612_permit",
-            permitData: {
-              domain: {
-                name: "USD Coin",
-                version: "2",
-                chainId: CHAIN_IDs.MAINNET,
-                verifyingContract: TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET],
-              },
-              types: {
-                Permit: [
-                  { name: "owner", type: "address" },
-                  { name: "spender", type: "address" },
-                  { name: "value", type: "uint256" },
-                  { name: "nonce", type: "uint256" },
-                  { name: "deadline", type: "uint256" },
-                ],
-              },
-              value: {
-                owner: "0x0000000000000000000000000000000000000001",
-                spender: "0x0000000000000000000000000000000000000002",
-                value: "1000000",
-                nonce: "0",
-                deadline: "9999999999",
-              },
-              deadline: "9999999999",
-            },
+            permitData: buildPermitData(userAddress),
           },
           {
             type: "erc20_approve",
-            transaction: { encoded: "0xapprove" },
+            transaction: { encoded: encodeApprove(STATION_ADDRESS, MAX_SAFE_ALLOWANCE) },
           },
         ],
       };
@@ -281,42 +295,19 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
     });
 
     it("signs an EIP-2612 permit when approval is not offered", async function () {
+      const userAddress = await adapter["l1Signer"].getAddress();
       mockClient.authorizationProbeResponse = {
-        spenderAddress: "0x2222222222222222222222222222222222222222",
+        spenderAddress: STATION_ADDRESS,
         alreadyApproved: false,
         methods: [],
       };
       mockClient.authorizationResponse = {
-        spenderAddress: "0x2222222222222222222222222222222222222222",
+        spenderAddress: STATION_ADDRESS,
         alreadyApproved: false,
         methods: [
           {
             type: "eip2612_permit",
-            permitData: {
-              domain: {
-                name: "USD Coin",
-                version: "2",
-                chainId: CHAIN_IDs.MAINNET,
-                verifyingContract: TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET],
-              },
-              types: {
-                Permit: [
-                  { name: "owner", type: "address" },
-                  { name: "spender", type: "address" },
-                  { name: "value", type: "uint256" },
-                  { name: "nonce", type: "uint256" },
-                  { name: "deadline", type: "uint256" },
-                ],
-              },
-              value: {
-                owner: "0x0000000000000000000000000000000000000001",
-                spender: "0x0000000000000000000000000000000000000002",
-                value: "1000000",
-                nonce: "0",
-                deadline: "9999999999",
-              },
-              deadline: "9999999999",
-            },
+            permitData: buildPermitData(userAddress),
           },
         ],
       };
@@ -337,7 +328,150 @@ describe("Cross Chain Adapter: PaxosTransitBridge", function () {
       expect(getOrderQuoteSpy.calledOnce).to.be.true;
       const quoteParams = getOrderQuoteSpy.firstCall.args[0];
       expect(quoteParams.permitSignature).to.be.a("string");
-      expect(quoteParams.permitDeadline).to.equal("9999999999");
+      expect(quoteParams.permitDeadline).to.equal(PERMIT_DEADLINE);
+    });
+
+    describe("rejects malformed partner-API authorizations", function () {
+      const expectRejection = async (expectedMessage: string) => {
+        const signTypedData = sinon.spy(adapter["l1Signer"], "_signTypedData");
+        const sendTransaction = sinon.stub(adapter["l1Signer"], "sendTransaction");
+        try {
+          await adapter.constructL1ToL2Txn(
+            toAddress(await adapter["l1Signer"].getAddress()),
+            toAddress(l1UsdcAddress),
+            toAddress(l2UsdgAddress),
+            toBNWei("100", 6)
+          );
+          expect.fail("Should have thrown");
+        } catch (e: unknown) {
+          expect((e as Error).message).to.include(expectedMessage);
+        }
+        // Nothing may be signed or broadcast from the hot wallet once validation fails.
+        expect(signTypedData.called).to.be.false;
+        expect(sendTransaction.called).to.be.false;
+      };
+
+      const setAuthorizationMethods = (methods: unknown[]) => {
+        mockClient.authorizationProbeResponse = {
+          spenderAddress: STATION_ADDRESS,
+          alreadyApproved: false,
+          methods: [],
+        };
+        mockClient.authorizationResponse = {
+          spenderAddress: STATION_ADDRESS,
+          alreadyApproved: false,
+          methods: methods as never,
+        };
+      };
+
+      it("rejects approve calldata redirected to another spender", async function () {
+        setAuthorizationMethods([
+          {
+            type: "erc20_approve",
+            transaction: {
+              encoded: encodeApprove("0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef", MAX_SAFE_ALLOWANCE),
+            },
+          },
+        ]);
+        await expectRejection("does not match the requested spender");
+      });
+
+      it("rejects approve calldata that is not an approve call", async function () {
+        const transferCalldata = new ethers.utils.Interface([
+          "function transfer(address to, uint256 amount)",
+        ]).encodeFunctionData("transfer", [STATION_ADDRESS, MAX_SAFE_ALLOWANCE]);
+        setAuthorizationMethods([{ type: "erc20_approve", transaction: { encoded: transferCalldata } }]);
+        await expectRejection("not a valid ERC-20 approve");
+      });
+
+      // A permit-shaped `value` is not enough: ethers signs whatever `types` describes and ignores the
+      // properties it doesn't name, so an EIP-3009 schema carrying decoy owner/spender fields would
+      // otherwise yield a signature authorizing a transfer straight to the attacker.
+      it("rejects a non-EIP-2612 typed-data schema carrying decoy permit fields", async function () {
+        const userAddress = await adapter["l1Signer"].getAddress();
+        setAuthorizationMethods([
+          {
+            type: "eip2612_permit",
+            permitData: buildPermitData(userAddress, {
+              types: {
+                TransferWithAuthorization: [
+                  { name: "from", type: "address" },
+                  { name: "to", type: "address" },
+                  { name: "value", type: "uint256" },
+                  { name: "validAfter", type: "uint256" },
+                  { name: "validBefore", type: "uint256" },
+                  { name: "nonce", type: "bytes32" },
+                ],
+              },
+              value: {
+                // Decoys that satisfy the owner/spender/value checks.
+                owner: userAddress,
+                spender: STATION_ADDRESS,
+                value: "1000000",
+                deadline: PERMIT_DEADLINE,
+                // The payload actually covered by the schema above.
+                from: userAddress,
+                to: "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+                validAfter: "0",
+                validBefore: PERMIT_DEADLINE,
+                nonce: `0x${"ab".repeat(32)}`,
+              },
+            }),
+          },
+        ]);
+        await expectRejection('must declare exactly one EIP-712 type "Permit"');
+      });
+
+      it("rejects a Permit schema with tampered fields", async function () {
+        const userAddress = await adapter["l1Signer"].getAddress();
+        setAuthorizationMethods([
+          {
+            type: "eip2612_permit",
+            permitData: buildPermitData(userAddress, {
+              types: {
+                Permit: [
+                  { name: "owner", type: "address" },
+                  { name: "spender", type: "address" },
+                  { name: "value", type: "uint256" },
+                  { name: "nonce", type: "uint256" },
+                  // EIP-2612 requires `deadline`; anything else changes the struct hash we sign.
+                  { name: "expiry", type: "uint256" },
+                ],
+              },
+            }),
+          },
+        ]);
+        await expectRejection("canonical EIP-2612 Permit field schema");
+      });
+
+      it("rejects a permit whose returned deadline differs from the signed one", async function () {
+        const userAddress = await adapter["l1Signer"].getAddress();
+        setAuthorizationMethods([
+          {
+            type: "eip2612_permit",
+            permitData: buildPermitData(userAddress, { deadline: "1234567890" }),
+          },
+        ]);
+        await expectRejection("deadline does not match");
+      });
+
+      it("rejects a permit bound to an unexpected token", async function () {
+        const userAddress = await adapter["l1Signer"].getAddress();
+        setAuthorizationMethods([
+          {
+            type: "eip2612_permit",
+            permitData: buildPermitData(userAddress, {
+              domain: {
+                name: "USD Coin",
+                version: "2",
+                chainId: CHAIN_IDs.MAINNET,
+                verifyingContract: "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+              },
+            }),
+          },
+        ]);
+        await expectRejection("verifyingContract does not match");
+      });
     });
   });
 
