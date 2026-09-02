@@ -439,6 +439,22 @@ describe("InventoryClient: Refund chain selection", function () {
         }
       );
     });
+    it("Handles zero cumulative balance for the deposited token", async function () {
+      // A zero allocation denominator must not throw; every candidate chain reads as unallocated.
+      enabledChainIds.forEach((chainId) =>
+        tokenClient.setTokenData(chainId, toAddressType(l2TokensForWeth[chainId], chainId), bnZero)
+      );
+      await inventoryClient.update();
+
+      expect(
+        inventoryClient.getCumulativeBalanceWithApproximateUpcomingRefunds(EvmAddress.from(mainnetWeth))
+      ).to.deep.equal(bnZero);
+      expect(await inventoryClient.determineRefundChainId(sampleDepositData)).to.deep.equal([
+        sampleDepositData.destinationChainId,
+        sampleDepositData.originChainId,
+        hubPoolClient.chainId,
+      ]);
+    });
   });
 
   describe("lifecycle tests", function () {

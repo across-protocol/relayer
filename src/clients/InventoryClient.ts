@@ -764,9 +764,11 @@ export class InventoryClient {
       const chainVirtualBalanceWithShortfallPostRelay = chainVirtualBalanceWithShortfall
         .add(inputAmountAddedPostRelay)
         .add(totalRefundsPerChain[chainId] ?? bnZero);
-      const expectedPostRelayAllocation = chainVirtualBalanceWithShortfallPostRelay
-        .mul(this.scalar)
-        .div(cumulativeVirtualBalancePostRefunds);
+      // A zero denominator means no virtual balance for this token on any chain, so treat every chain as
+      // unallocated rather than dividing by zero. Mirrors getCurrentAllocationPct()/getChainDistribution().
+      const expectedPostRelayAllocation = cumulativeVirtualBalancePostRefunds.eq(bnZero)
+        ? bnZero
+        : chainVirtualBalanceWithShortfallPostRelay.mul(this.scalar).div(cumulativeVirtualBalancePostRefunds);
 
       // Consider configured buffer for target to allow relayer to support slight overages.
       const tokenConfig = this.getTokenConfig(l1Token, chainId, repaymentToken);
