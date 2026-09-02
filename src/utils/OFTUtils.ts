@@ -35,12 +35,19 @@ export type MessagingFeeStruct = {
 
 export type LzTransactionDetails = {
   status: string;
+  // @dev The origin transaction hash, not the destination execution -- see LzDestinationTransactionDetails.failedTx
+  // for the latter.
   source: { tx: string };
-  destination: LzDestinationTransactionDetails;
+  // @dev Absent until LZ has indexed the message arriving on the far side, so every read must be guarded. Callers
+  // that treat a missing destination as a terminal status will misclassify messages that are merely in flight.
+  destination?: LzDestinationTransactionDetails;
   pathway: Pathway;
 };
 
-export type LzDestinationTransactionDetails = { status: string; failedTx: TransactionOutcome[] };
+// @dev failedTx is populated only once a destination execution has actually reverted; LZ appends one entry per
+// attempt. A message can carry a non-SUCCEEDED status with no failedTx at all (e.g. blocked behind an earlier
+// nonce), in which case there is no destination transaction to replay.
+export type LzDestinationTransactionDetails = { status: string; failedTx?: TransactionOutcome[] };
 
 export type LzBridgeEvent = SortableEvent;
 
