@@ -8,7 +8,6 @@ import {
   chainIsEvm,
   chainIsSvm,
   Contract,
-  delay,
   ERC20,
   EvmAddress,
   fetchWithTimeout,
@@ -23,7 +22,6 @@ import {
   parseUnits,
   postWithTimeout,
   sendAndConfirmTransaction,
-  submitTransaction,
   Signer,
   toAddressType,
   toBN,
@@ -297,40 +295,35 @@ export class Refiller {
         const nativeSymbolForChain = getNativeTokenSymbol(chainId);
         // To send a raw transaction, we need to create a fake Contract instance at the recipient address and
         // set the method param to be an empty string.
-        let txn;
-        if (chainHasNativeToken(chainId)) {
-          const sendRawTransactionContract = new Contract(
-            account.toEvmAddress(),
-            [],
-            this.baseSigner.connect(l2Provider)
-          );
-          txn = await (
-            await submitTransaction(
+        const txn = chainHasNativeToken(chainId)
+          ? await sendAndConfirmTransaction(
               {
-                contract: sendRawTransactionContract,
+                contract: new Contract(account.toEvmAddress(), [], this.baseSigner.connect(l2Provider)),
                 method: "",
                 args: [],
                 value: deficit,
-                ensureConfirmation: true,
                 chainId,
               },
               this.transactionClient
             )
-          ).wait();
-        } else {
-          const sendTokenContract = new Contract(token.toEvmAddress(), ERC20_ABI, this.baseSigner.connect(l2Provider));
-          txn = await (
-            await submitTransaction(
+          : await sendAndConfirmTransaction(
               {
-                contract: sendTokenContract,
+                contract: new Contract(token.toEvmAddress(), ERC20_ABI, this.baseSigner.connect(l2Provider)),
                 method: "transfer",
                 args: [account.toEvmAddress(), deficit],
-                ensureConfirmation: true,
                 chainId,
               },
               this.transactionClient
-            )
-          ).wait();
+            );
+        if (!isDefined(txn)) {
+          this.logger.warn({
+            at: "Refiller#refillNativeTokenBalances",
+            message: `Failed to refill ${formatUnits(deficit, decimals)} ${nativeSymbolForChain} for ${account}`,
+            from: this.baseSignerAddress,
+            to: account,
+            chainId,
+          });
+          return;
         }
         this.logger.info({
           at: "Refiller#refillBalances",
@@ -417,28 +410,22 @@ export class Refiller {
     } = await tokenBridge.constructL1ToL2Txn(account, l1Token, token, amount);
 
     // Execute the l1 to l2 rebalance.
-    let txn;
-    try {
-      txn = await (
-        await submitTransaction(
-          {
-            contract: contract,
-            method: method,
-            args: args,
-            value: value,
-            chainId: chainId,
-          },
-          this.transactionClient
-        )
-      ).wait();
-    } catch (error) {
-      // Log the error and do not retry.
+    const txn = await sendAndConfirmTransaction(
+      {
+        contract,
+        method,
+        args,
+        value,
+        chainId,
+      },
+      this.transactionClient
+    );
+    if (!isDefined(txn)) {
       this.logger.warn({
         at: "Refiller#refillBalances",
         message: `Failed to refill ${formatUnits(amount, decimals)} ${l2TokenInfo.symbol} for ${account} from ${
           this.baseSignerAddress
         }`,
-        error,
       });
       return;
     }
@@ -465,17 +452,15 @@ export class Refiller {
       amount
     );
     if (hasSufficientWethBalance) {
-      return await (
-        await submitTransaction(
-          {
-            contract: weth,
-            method: "withdraw",
-            args: [amount],
-            chainId: chainId,
-          },
-          this.transactionClient
-        )
-      ).wait();
+      return await sendAndConfirmTransaction(
+        {
+          contract: weth,
+          method: "withdraw",
+          args: [amount],
+          chainId,
+        },
+        this.transactionClient
+      );
     } else {
       this.logger.warn({
         at: "Refiller#refillNativeTokenBalances",
@@ -723,7 +708,7 @@ export class Refiller {
       return;
     }
     if (swapData.approval) {
-      const txnReceipt = await submitTransaction(
+      const approvalReceipt = await sendAndConfirmTransaction(
         {
           contract: new Contract(swapData.approval.target.toNative(), [], originSigner),
           method: "",
@@ -732,19 +717,26 @@ export class Refiller {
         },
         this.transactionClient
       );
+      if (!isDefined(approvalReceipt)) {
+        this.logger.warn({
+          at: "Monitor#refillBalances",
+          message: "Failed to submit approval transaction for swap route.",
+          swapRoute,
+          swapper: this.baseSignerAddress,
+        });
+        return;
+      }
       this.logger.info({
         at: "Monitor#refillBalances",
         message: "Submitted approval transaction for swap route.",
-        transaction: blockExplorerLink(txnReceipt.hash, swapRoute.originChainId),
+        transaction: blockExplorerLink(approvalReceipt.transactionHash, swapRoute.originChainId),
         swapRoute,
         swapper: this.baseSignerAddress,
       });
-      await delay(1);
-      await txnReceipt.wait();
     }
 
     const { swap } = swapData;
-    const txnResponse = await submitTransaction(
+    const txnReceipt = await sendAndConfirmTransaction(
       {
         contract: new Contract(swap.target.toNative(), [], originSigner),
         value: swap.value,
@@ -754,8 +746,17 @@ export class Refiller {
       },
       this.transactionClient
     );
-    await delay(1);
-    const txnReceipt = await txnResponse.wait();
+    if (!isDefined(txnReceipt)) {
+      this.logger.warn({
+        at: "Monitor#refillBalances",
+        message: `Failed to execute swap route on ${getNetworkName(swapRoute.originChainId)}`,
+        swapRoute,
+        amount,
+        swapper: this.baseSignerAddress,
+        recipient,
+      });
+      return;
+    }
 
     // Cache the swap for 10 minutes
     // @todo Consider caching for some time relative to the estimated fill time returned by API, but
