@@ -77,6 +77,33 @@ describe("Cross Chain Adapter: OFTBridge", function () {
     });
   });
 
+  // `getDecimalConversionRate` backs both the send-amount rounding (all OFT paths, including withdrawals and
+  // dataworker refund leaves) and the uncapped-placeholder scaling above, so pin both branches of it.
+  describe("getDecimalConversionRate", function () {
+    it("scales by the local/shared decimal difference", function () {
+      expect(OFT.getDecimalConversionRate(18, 6).toString()).to.equal("1000000000000");
+    });
+
+    it("is 1 when the token carries no more precision than the path", function () {
+      expect(OFT.getDecimalConversionRate(6, 6).toString()).to.equal("1");
+      // Guards the rounding callers: a rate below 1 would zero out every amount it divides.
+      expect(OFT.getDecimalConversionRate(6, 18).toString()).to.equal("1");
+    });
+  });
+
+  describe("roundAmountToSend", function () {
+    it("truncates dust below the path's shared precision", function () {
+      const amount = ethers.BigNumber.from("1234567890123456789");
+      expect(OFT.roundAmountToSend(amount, 18, 6).toString()).to.equal("1234567000000000000");
+    });
+
+    it("leaves the amount untouched when the path needs no truncation", function () {
+      const amount = ethers.BigNumber.from("1234567");
+      expect(OFT.roundAmountToSend(amount, 6, 6).toString()).to.equal("1234567");
+      expect(OFT.roundAmountToSend(amount, 6, 18).toString()).to.equal("1234567");
+    });
+  });
+
   // protects us from any changes to dependencies of `oftAddressToBytes32` that would silently break (potentially blackhole funds) on OFT sends
   // values taken from real oft send: https://etherscan.io/tx/0xa861d4c752914bf0757045b8d9119a074806bedaf7beb626a4eba2dc2bece5d7
   it("oftAddressToBytes32 produces correct zero-padded bytes32 string to pass into the OFT messenger contract", function () {

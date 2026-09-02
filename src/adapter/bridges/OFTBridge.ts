@@ -117,9 +117,9 @@ export class OFTBridge extends BaseBridgeAdapter {
     // capacity above `type(uint64).max` local units as unlimited and skip the clamp this hook exists to drive
     // — on an 18-decimal path that threshold is only ~18.45 tokens.
     const uncapped = BigNumber.from(OFT_UNLIMITED_CAPACITY);
-    const sharedDecimals = (this.sharedDecimals ??= await this.getL1Bridge().sharedDecimals());
-    const decimalDifference = this.l1TokenInfo.decimals - sharedDecimals;
-    const scaledUncapped = decimalDifference > 0 ? uncapped.mul(BigNumber.from(10).pow(decimalDifference)) : uncapped;
+    const scaledUncapped = uncapped.mul(
+      OFT.getDecimalConversionRate(this.l1TokenInfo.decimals, await this.getSharedDecimals())
+    );
     return maxAmountLD.eq(uncapped) || maxAmountLD.eq(scaledUncapped) ? undefined : maxAmountLD;
   }
 
@@ -129,9 +129,14 @@ export class OFTBridge extends BaseBridgeAdapter {
    * @returns amount rounded down
    */
   async roundAmountToSend(amount: BigNumber): Promise<BigNumber> {
-    // Fetch `sharedDecimals` if not already fetched
-    const sharedDecimals = (this.sharedDecimals ??= await this.getL1Bridge().sharedDecimals());
-    return OFT.roundAmountToSend(amount, this.l1TokenInfo.decimals, sharedDecimals);
+    return OFT.roundAmountToSend(amount, this.l1TokenInfo.decimals, await this.getSharedDecimals());
+  }
+
+  /**
+   * @returns The path's shared decimals, queried once per bridge instance and cached thereafter.
+   */
+  private async getSharedDecimals(): Promise<number> {
+    return (this.sharedDecimals ??= await this.getL1Bridge().sharedDecimals());
   }
 
   async buildOftTransactionArgs(
