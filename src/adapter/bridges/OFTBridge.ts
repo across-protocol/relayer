@@ -32,7 +32,9 @@ type OFTBridgeArguments = {
 const MONAD_EXECUTOR_LZ_RECEIVE_GAS_LIMIT = 120000;
 
 // Placeholder `quoteOFT` reports for `oftLimit.maxAmountLD` when the path enforces no capacity limit. Vanilla
-// OFTCore returns it verbatim; metered paths (Stargate pools, legacy-mesh adapters) return real capacity instead.
+// OFTCore returns it verbatim; implementations that express limits in local decimals return it scaled by the
+// shared -> local decimal conversion rate. Metered paths (Stargate pools, legacy-mesh adapters) return real
+// capacity instead.
 // @dev Kept as a string: `BigNumber` is not resolved yet when this module is first evaluated.
 const OFT_UNLIMITED_CAPACITY = "0xffffffffffffffff"; // type(uint64).max
 
@@ -108,7 +110,17 @@ export class OFTBridge extends BaseBridgeAdapter {
       OFT.buildSimpleSendParamEvm(recipient, this.l2ChainEid, bnZero)
     );
     const maxAmountLD = BigNumber.from(oftLimit.maxAmountLD);
-    return maxAmountLD.gte(OFT_UNLIMITED_CAPACITY) ? undefined : maxAmountLD;
+
+    // Match the sentinel exactly, in both encodings mainnet returns today: the USDT messenger reports
+    // `type(uint64).max` verbatim, while the WETH messenger reports it scaled by the shared -> local decimal
+    // conversion rate. Treating anything >= the unscaled sentinel as uncapped would instead misread genuine
+    // capacity above `type(uint64).max` local units as unlimited and skip the clamp this hook exists to drive
+    // — on an 18-decimal path that threshold is only ~18.45 tokens.
+    const uncapped = BigNumber.from(OFT_UNLIMITED_CAPACITY);
+    const sharedDecimals = (this.sharedDecimals ??= await this.getL1Bridge().sharedDecimals());
+    const decimalDifference = this.l1TokenInfo.decimals - sharedDecimals;
+    const scaledUncapped = decimalDifference > 0 ? uncapped.mul(BigNumber.from(10).pow(decimalDifference)) : uncapped;
+    return maxAmountLD.eq(uncapped) || maxAmountLD.eq(scaledUncapped) ? undefined : maxAmountLD;
   }
 
   /**
