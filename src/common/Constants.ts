@@ -389,7 +389,7 @@ export const SUPPORTED_TOKENS: { [chainId: number]: string[] } = {
   [CHAIN_IDs.MODE]: ["ETH", "WETH", "USDC", "USDT", "WBTC"],
   [CHAIN_IDs.MONAD]: ["USDC", "USDT"], // @TODO: Add WBTC after its added to the chain token list
   [CHAIN_IDs.OPTIMISM]: ["WETH", "USDC", "USDT", "WBTC", "WLD"],
-  [CHAIN_IDs.PLASMA]: ["USDT", "WETH"],
+  [CHAIN_IDs.PLASMA]: ["USDC", "USDT", "WETH"],
   [CHAIN_IDs.POLYGON]: ["USDC", "USDT", "WETH", "WBTC"],
   [CHAIN_IDs.SOLANA]: ["USDC"],
   [CHAIN_IDs.SONEIUM]: ["WETH", "USDC"],
@@ -559,6 +559,7 @@ export const CUSTOM_BRIDGE: Record<number, Record<string, L1BridgeConstructor<Ba
   [CHAIN_IDs.PLASMA]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OFTWethBridge,
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTBridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: UsdcCCTPBridge,
   },
   [CHAIN_IDs.POLYGON]: {
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: PolygonWethBridge,
@@ -741,6 +742,7 @@ export const CUSTOM_L2_BRIDGE: Record<number, Record<string, L2BridgeConstructor
   [CHAIN_IDs.PLASMA]: {
     [TOKEN_SYMBOLS_MAP.USDT.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
     [TOKEN_SYMBOLS_MAP.WETH.addresses[CHAIN_IDs.MAINNET]]: OFTL2Bridge,
+    [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
   },
   [CHAIN_IDs.POLYGON]: {
     [TOKEN_SYMBOLS_MAP.USDC.addresses[CHAIN_IDs.MAINNET]]: L2UsdcCCTPBridge,
