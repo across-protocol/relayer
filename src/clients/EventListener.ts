@@ -28,13 +28,14 @@ function resolveProviders(chainId: number, quorum = 1) {
   const protocol = process.env[`RPC_PROVIDERS_TRANSPORT_${chainId}`] ?? "wss";
   assert(protocol === "wss" || protocol === "https");
 
-  const urls = Object.values(getNodeUrlList(chainId, quorum, protocol));
-  const nProviders = urls.length;
+  const urls = getNodeUrlList(chainId, quorum, protocol);
+  const entries = Object.entries(urls);
+  const nProviders = entries.length;
   const chain = getNetworkName(chainId);
   assert(nProviders >= quorum, `Insufficient providers for ${chain} (minimum ${quorum} required by quorum)`);
 
   const viemChain = getViemChain(chainId);
-  const providers = Object.entries(urls).map(([provider, url]) => {
+  const providers = entries.map(([provider, url]) => {
     const headers = getProviderHeaders(provider, chainId);
     const transport = protocol === "wss" ? webSocket(url) : http(url, { fetchOptions: { headers } });
 
