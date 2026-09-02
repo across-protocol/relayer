@@ -20,7 +20,7 @@ import {
   getProvider,
   paginatedEventQuery,
   getNetworkName,
-  getL2TokenAddresses,
+  getRemoteTokenForL1Token,
   getNativeTokenSymbol,
   getTokenInfo,
   assert,
@@ -144,47 +144,46 @@ export async function arbStackFinalizer(
       to: latestBlockToFinalize,
     }
   );
+  // @dev A token we can't map is a withdrawal we can't finalise, which strands funds on the L2 indefinitely. Drop
+  // the individual event rather than the chain's entire withdrawal set, and make the omission loud.
+  const skipUnmappedToken = (token: string, txnRef: string) => {
+    logger.warn({
+      at: `Finalizer#${networkName}Finalizer`,
+      message: `Skipping ${networkName} withdrawal for unmapped token ${token} 🤢!`,
+      txnRef,
+      notificationPath: "across-error",
+    });
+    return [];
+  };
+
   const _withdrawalEvents = [
-    ...withdrawalErc20Events.map((e) => {
-      const l2Token = getL2TokenAddresses(e.args.l1Token)?.[chainId];
-      assert(isDefined(l2Token), `Missing L2 token mapping for L1 token ${e.args.l1Token} on chain ${chainId}`);
-      return {
-        ...e,
-        amount: e.args._amount,
-        l2TokenAddress: EvmAddress.from(l2Token),
-      };
+    ...withdrawalErc20Events.flatMap((e) => {
+      const l2Token = getRemoteTokenForL1Token(EvmAddress.from(e.args.l1Token), chainId, hubPoolClient.chainId);
+      return isDefined(l2Token)
+        ? [{ ...e, amount: e.args._amount, l2TokenAddress: l2Token }]
+        : skipUnmappedToken(e.args.l1Token, e.transactionHash);
     }),
-    ...withdrawalNativeEvents.map((e) => {
+    ...withdrawalNativeEvents.flatMap((e) => {
       const nativeTokenSymbol = getNativeTokenSymbol(chainId);
-      const l2Token = resolveAcrossToken(nativeTokenSymbol, chainId, true);
-      return {
-        ...e,
-        amount: e.args.callvalue,
-        l2TokenAddress: EvmAddress.from(l2Token),
-      };
+      const l2Token = resolveAcrossToken(nativeTokenSymbol, chainId);
+      return isDefined(l2Token)
+        ? [{ ...e, amount: e.args.callvalue, l2TokenAddress: EvmAddress.from(l2Token) }]
+        : skipUnmappedToken(nativeTokenSymbol, e.transactionHash);
     }),
   ];
   // If there are any found withdrawal initiated events, then add them to the list of TokenBridged events we'll
   // submit proofs and finalizations for.
   _withdrawalEvents.forEach(({ transactionHash, transactionIndex, ...event }) => {
-    try {
-      const tokenBridgedEvent: TokensBridged = {
-        ...event,
-        amountToReturn: event.amount,
-        chainId,
-        leafId: 0,
-        l2TokenAddress: event.l2TokenAddress,
-        txnRef: transactionHash,
-        txnIndex: transactionIndex,
-      };
-      withdrawalEvents.push(tokenBridgedEvent);
-    } catch {
-      logger.debug({
-        at: `Finalizer#${networkName}Finalizer`,
-        message: `Skipping ERC20 withdrawal event for unknown token ${event.l2TokenAddress} on chain ${networkName}`,
-        event: event,
-      });
-    }
+    const tokenBridgedEvent: TokensBridged = {
+      ...event,
+      amountToReturn: event.amount,
+      chainId,
+      leafId: 0,
+      l2TokenAddress: event.l2TokenAddress,
+      txnRef: transactionHash,
+      txnIndex: transactionIndex,
+    };
+    withdrawalEvents.push(tokenBridgedEvent);
   });
 
   return await multicallArbitrumFinalizations(withdrawalEvents, signer, hubPoolClient, logger, chainId);
