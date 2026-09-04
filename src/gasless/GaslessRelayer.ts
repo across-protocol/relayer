@@ -28,6 +28,8 @@ import {
   getNetworkName,
   relayFillStatus,
   sendAndConfirmTransaction,
+  TransactionSimulationError,
+  describeTransactionFailure,
   getTokenInfo,
   createFormatFunction,
   toAddressType,
@@ -59,10 +61,13 @@ import {
 } from "../interfaces";
 import { AcrossSwapApiClient, SvmFillerClient, TransactionClient } from "../clients";
 import EIP3009_ABI from "../common/abi/EIP3009.json";
+import ERC20_ABI from "../common/abi/MinimalERC20.json";
 import {
   buildGaslessDepositTx,
   buildGaslessFillRelayTx,
   buildSyntheticDeposit,
+  findGaslessSubmitBlocker,
+  GaslessSubmitBlocker,
   getGaslessAuthorizerAddress,
   getLegacySpokePoolPeripheryAddresses,
   extractGaslessDepositFields,
@@ -163,6 +168,12 @@ export class GaslessRelayer {
   protected fillLock: { [key: string]: string } = {};
   /** requestIds already error-logged for an unservable periphery target (avoids per-poll log spam). */
   protected unservableTargetsLogged = new Set<string>();
+  /**
+   * Last {@link findGaslessSubmitBlocker} diagnosis per depositKey, recorded by {@link _logSubmitFailure}.
+   * A blocked deposit is re-attempted every poll, so the diagnosis warns once and drops to debug while it
+   * stays the same; a *permanent* blocker also suppresses re-diagnosis, since it cannot clear.
+   */
+  protected submitBlockers = new Map<string, GaslessSubmitBlocker>();
 
   private api: AcrossSwapApiClient;
   private _signerAddress?: EvmAddress;
@@ -996,26 +1007,113 @@ export class GaslessRelayer {
       mrkdwn,
     };
 
+    let submitError: unknown;
     const txReceipt = await sendAndConfirmTransaction(
       gaslessDeposit,
       this.transactionClient,
-      this.depositSigners.length > 0
+      this.depositSigners.length > 0,
+      (err) => (submitError = err)
     );
     if (!isDefined(txReceipt)) {
-      this.logger.warn({
-        at: "GaslessRelayer#initiateDeposit",
-        message: "Failed to submit gasless deposit",
-        depositId,
-        originChainId,
-        destinationChainId,
-      });
-      this.logger.debug({
-        at: "GaslessRelayer#initiateDeposit",
-        message: "Failed to submit gasless deposit. Debug information:",
-        depositMessage,
-      });
+      await this._logSubmitFailure(depositMessage, { destinationChainId, amountToken, submitError });
     }
     return txReceipt;
+  }
+
+  /**
+   * Logs a failed origin-chain deposit submission with the reason it failed.
+   *
+   * The state machine returns a blocked deposit to DEPOSIT_SUBMIT every poll, so an unsubmittable deposit
+   * (underfunded depositor, spent authorization) retries at the polling interval until its authorization
+   * expires. Previously each attempt logged a bare "Failed to submit gasless deposit" with no reason,
+   * because `sendAndConfirmTransaction` swallowed the simulation revert — so an unservable deposit was
+   * indistinguishable from a transient RPC failure. This attaches both the revert reason and, where one
+   * of the {@link findGaslessSubmitBlocker} checks identifies it, the specific blocker.
+   *
+   * Diagnosis runs only for a failure that predates broadcast ({@link TransactionSimulationError}). Once a
+   * transaction is in flight the on-chain reads stop being evidence about the deposit: a submission that
+   * lands but whose receipt lookup times out returns no receipt here, and the nonce the checks would find
+   * consumed is the one our own transaction just spent — a permanent `authorization-consumed` verdict on a
+   * deposit that in fact succeeded, which DEPOSIT_CONFIRM goes on to locate.
+   */
+  protected async _logSubmitFailure(
+    depositMessage: AnyGaslessDepositMessage,
+    opts: { destinationChainId: number; amountToken: string; submitError?: unknown }
+  ): Promise<void> {
+    const { originChainId, depositId } = depositMessage;
+    const { destinationChainId, amountToken, submitError } = opts;
+    const provider = this.providersByChain[originChainId];
+    // Not `submitError.message`: for an integrator-tagged deposit that message carries the full signed
+    // calldata. See describeTransactionFailure.
+    const reason = describeTransactionFailure(submitError);
+    const depositKey = this._getDepositKeyFromMessage(depositMessage);
+
+    const common = {
+      at: "GaslessRelayer#initiateDeposit",
+      depositId,
+      originChainId,
+      destinationChainId,
+      reason,
+    };
+    const logBlocker = (blocker: GaslessSubmitBlocker, level: "warn" | "debug") =>
+      this.logger[level]({
+        ...common,
+        message: `Failed to submit gasless deposit: ${blocker.detail}`,
+        blocker: blocker.code,
+        permanent: blocker.permanent,
+        ...blocker.context,
+      });
+
+    // No conclusive blocker, or none we are entitled to look for: either a transient failure or a revert
+    // the checks don't cover. Keep warning — silence here is what made the cause invisible in the first place.
+    const warnUndiagnosed = () => this.logger.warn({ ...common, message: "Failed to submit gasless deposit" });
+
+    // Only a simulation failure guarantees the transaction never left this process. Past that, the
+    // deposit may be in flight — a submission that lands but whose receipt lookup times out arrives here
+    // too — and the on-chain state the checks read is no longer evidence about the deposit: the nonce
+    // they would find consumed is the one our own transaction spent. Leave the verdict to DEPOSIT_CONFIRM.
+    if (submitError instanceof TransactionSimulationError) {
+      // A permanent blocker cannot clear, so re-diagnosing it on every poll only burns RPC.
+      const known = this.submitBlockers.get(depositKey);
+      if (known?.permanent) {
+        logBlocker(known, "debug");
+        return;
+      }
+
+      const blocker = await findGaslessSubmitBlocker({
+        depositMessage,
+        currentTime: getCurrentTime(),
+        amountToken: isDefined(provider) ? new Contract(amountToken, ERC20_ABI, provider) : undefined,
+        // EIP-3009 authorizations live on the token the depositor signed over, which for swap-and-bridge
+        // is the swap token — the same token as the amount being pulled.
+        authToken: isDefined(provider) ? new Contract(amountToken, EIP3009_ABI, provider) : undefined,
+        permit2: this.permit2Contracts[originChainId],
+        spokePoolPeriphery: this.getPeripheryContract(originChainId, depositMessage.targetAddress),
+      });
+
+      if (isDefined(blocker)) {
+        // Warn on the first sighting and whenever the diagnosis changes; otherwise drop to debug so a
+        // deposit blocked for hours does not bury every other warning in the log.
+        logBlocker(blocker, known?.code === blocker.code ? "debug" : "warn");
+        this.submitBlockers.set(depositKey, blocker);
+      } else {
+        // The checks ran and came back clean, so a cached (necessarily recoverable) diagnosis has
+        // cleared. Drop it: leaving it in place would make a later recurrence of the same code look like
+        // an unchanged blocker and log it at debug, when the depositor has actually lapsed twice.
+        this.submitBlockers.delete(depositKey);
+        warnUndiagnosed();
+      }
+    } else {
+      // No diagnosis ran, so any cached blocker still stands — an in-flight transaction tells us nothing
+      // about whether the depositor's balance or authorization changed.
+      warnUndiagnosed();
+    }
+
+    this.logger.debug({
+      at: "GaslessRelayer#initiateDeposit",
+      message: "Failed to submit gasless deposit. Debug information:",
+      depositMessage,
+    });
   }
 
   /*

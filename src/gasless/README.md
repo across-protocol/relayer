@@ -29,6 +29,23 @@ Lookup order in `GaslessUtils#resolveTokenInfoForLog`:
 
 The deposit transaction itself is built from the API message and is unaffected by probe/cache/placeholder outcomes. Production passes the shared Gasless Redis client into the resolver; tests inject a mock cache and/or `probeOnChain`.
 
+### Unsubmittable deposits (`findGaslessSubmitBlocker`)
+
+`DEPOSIT_CONFIRM` returns a deposit it cannot locate on-chain to `DEPOSIT_SUBMIT`, so a deposit the API keeps serving but that can never land is re-attempted every `API_POLLING_INTERVAL` until its authorization expires — potentially for the authorization's full lifetime. `sendAndConfirmTransaction` swallows the simulation revert, so those attempts used to log a bare "Failed to submit gasless deposit" with no reason, indistinguishable from a transient RPC failure.
+
+`GaslessRelayer#_logSubmitFailure` now attaches the revert reason (via `sendAndConfirmTransaction`'s `onError`) and runs `GaslessUtils#findGaslessSubmitBlocker` to name the cause. The reason comes from `describeTransactionFailure`, **not** from the thrown error's message: `submitTransaction` composes that message from `args.join(", ")`, and an integrator-tagged deposit is a raw transaction whose single argument is the entire ABI-encoded calldata, so logging it verbatim would publish the depositor's signed authorization on every poll. Checks run cheapest-first and stop at the first hit:
+
+1. **Signed validity window** — free, no RPC. EIP-3009 `validAfter`/`validBefore` and Permit2 `deadline`, both of which bound the authorization itself. Yields `authorization-expired` (permanent) or `authorization-not-yet-valid`. `getGaslessAuthorizationWindow` normalizes each flow to inclusive bounds first, because the contracts disagree on their boundaries: EIP-3009 requires `validAfter < now < validBefore` (both exclusive), while Permit2 and EIP-2612 reject only `now > deadline` (inclusive). Comparing against the raw signed value would call a Permit2 deposit on its deadline second permanently expired.
+2. **Nonce consumption** — `authorizationState` (EIP-3009), `nonceBitmap` (Permit2), `permitNonces` (ERC-2612). A consumed nonce with no located deposit means the authorization was redeemed elsewhere: `authorization-consumed` (permanent).
+3. **Depositor balance** — `balanceOf(authorizer)` against `getGaslessRequiredBalance`, which is the witnessed transfer amount plus `submissionFees.amount`: exactly what every periphery entrypoint pulls, and what neither the witness amount alone (omits the fee) nor a Permit2 `permitted.amount` (an upper bound, not the requested transfer) reports. Yields `insufficient-balance` with `balance` / `required` / `shortfall`.
+4. **Standing allowance** — ERC-2612 only, and only past `permitApprovalDeadline`. `swapAndBridgeWithPermit` try/catches its `permit` call and pulls with `transferFrom` regardless, so an expired approval blocks the deposit only when no allowance is already in place. Yields `insufficient-allowance`; the deadline alone is deliberately *not* treated as an expiry. Known gap: a permit redeemed externally and then revoked leaves the allowance short while the deadline is still future, and that case goes undiagnosed — a short allowance is the normal pre-permit state, so checking earlier would report a false blocker on every unrelated failure. Closing it needs the signed approval nonce, which the API does not currently send.
+
+`permanent` distinguishes "can never succeed" (spent or expired authorization) from "blocked now, could clear" (an underfunded depositor who tops up in time). Diagnosis is purely observational — it does not change the state machine, so a recoverable deposit still lands if the blocker clears.
+
+Diagnosis runs only when the submission failed *before* broadcast, which `sendAndConfirmTransaction` signals by passing a `TransactionSimulationError` to `onError`. Past that point the reads stop being evidence: a deposit that lands but whose receipt lookup times out also arrives here with no receipt, and the consumed nonce the checks would find is the one our own transaction spent. Those failures warn plainly and leave the verdict to `DEPOSIT_CONFIRM`, which looks for the deposit itself.
+
+Log volume is bounded without losing the signal: a blocker warns on first sighting and whenever the diagnosis changes, and drops to debug while unchanged; a `permanent` blocker also suppresses re-diagnosis, since it cannot clear. Failures with no conclusive blocker keep warning every attempt. The checks are read-only and never throw — an RPC failure returns no blocker rather than masking the underlying error.
+
 ## Configuration
 
 ### Required
