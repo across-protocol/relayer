@@ -8,13 +8,14 @@ import Binance, {
 } from "binance-api-node";
 export type { BinanceApi };
 import minimist from "minimist";
+import { is, number, type } from "superstruct";
 import { JsonFragment } from "@ethersproject/abi";
 import { Contract, providers, utils as ethersUtils } from "ethers";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, CHAIN_IDs, truncate } from "./";
 import { getRedisCache } from "../cache/Redis";
 import { CONTRACT_ADDRESSES, isJsonAbi } from "../common";
 import { BigNumber } from "./BNUtils";
-import { chunk, EvmAddress, fromWei, retry, toBNWei } from "./SDKUtils";
+import { chunk, delay, EvmAddress, fromWei, toBNWei } from "./SDKUtils";
 import { EventSearchConfig, getPaginatedBlockRanges, paginatedEventQuery } from "./EventUtils";
 import ERC20_ABI from "../common/abi/MinimalERC20.json";
 
@@ -31,6 +32,48 @@ export const BINANCE_READ_RECV_WINDOW_MS = 60_000;
 export const BINANCE_ORDER_RECV_WINDOW_MS = 60_000;
 // Withdrawals remain tight so delayed accepted requests cannot submit funds transfers much later than intended.
 export const BINANCE_WITHDRAW_RECV_WINDOW_MS = 5_000;
+
+// Binance reports throttling as error code -1003/-1015 and escalates repeated offences into an HTTP 418
+// IP ban. binance-api-node discards the HTTP status whenever the response body is JSON, which it is for
+// these responses, so a ban is indistinguishable from an ordinary throttle here. Treat every rate-limit
+// signal as terminal for the call: another attempt is what escalates a throttle into a ban, and the
+// caller is scheduled to run again anyway.
+const BINANCE_RATE_LIMIT_CODES = new Set([-1003, -1015]);
+const BINANCE_RATE_LIMIT_STATUSES = new Set([429, 418]);
+
+// The two error shapes binance-api-node produces: a JSON API error carrying `code`, and a non-JSON proxy
+// error that retains the HTTP `response`. `type()` over `object()` so the rest of the error -- message,
+// stack, url -- is ignored rather than rejected. Matched independently, so a malformed field in one shape
+// cannot mask a valid signal in the other.
+const BinanceApiErrorSS = type({ code: number() });
+const BinanceHttpErrorSS = type({ response: type({ status: number() }) });
+
+/** @returns true if `err` is a Binance rate-limit response, which must not be retried. */
+export function isBinanceRateLimitError(err: unknown): boolean {
+  if (is(err, BinanceApiErrorSS) && BINANCE_RATE_LIMIT_CODES.has(err.code)) {
+    return true;
+  }
+  return is(err, BinanceHttpErrorSS) && BINANCE_RATE_LIMIT_STATUSES.has(err.response.status);
+}
+
+/**
+ * Retry a Binance request, but never retry a rate-limit response.
+ * @param fn The request to make.
+ * @param maxRetries Retries attempted after the initial call.
+ * @param delayS Base for the exponential backoff applied between retries.
+ */
+export async function retryBinanceRequest<T>(fn: () => Promise<T>, maxRetries = 3, delayS = 2): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (isBinanceRateLimitError(err) || attempt >= maxRetries) {
+        throw err;
+      }
+      await delay(delayS ** attempt + Math.random());
+    }
+  }
+}
 
 export type WithdrawalQuota = {
   wdQuota: number;
@@ -510,7 +553,7 @@ export async function getBinanceDeposits(
   delayS = 2
 ): Promise<BinanceDeposit[]> {
   const fn = () => binanceApi.depositHistory.bind(binanceApi)({ startTime, recvWindow: BINANCE_READ_RECV_WINDOW_MS });
-  const depositHistory = await retry<DepositHistoryResponse>(fn, maxRetries, delayS);
+  const depositHistory = await retryBinanceRequest<DepositHistoryResponse>(fn, maxRetries, delayS);
   return Object.values(depositHistory).map((deposit) => {
     return {
       amount: Number(deposit.amount),
@@ -541,7 +584,7 @@ export async function getBinanceWithdrawals(
       startTime,
       recvWindow: BINANCE_READ_RECV_WINDOW_MS,
     });
-  const withdrawHistory = await retry<WithdrawHistoryResponse>(fn, maxRetries, delayS);
+  const withdrawHistory = await retryBinanceRequest<WithdrawHistoryResponse>(fn, maxRetries, delayS);
   return Object.values(withdrawHistory).map((withdrawal) => {
     return {
       amount: Number(withdrawal.amount),
@@ -623,7 +666,7 @@ async function getBinanceFillTrades(
       orderId,
       limit: BINANCE_TRADES_FETCH_LIMIT,
     });
-  return retry(fn, maxRetries, delayS);
+  return retryBinanceRequest(fn, maxRetries, delayS);
 }
 
 /**
