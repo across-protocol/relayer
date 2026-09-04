@@ -270,83 +270,100 @@ export function restructureGaslessDeposits(
   logger: winston.Logger
 ): AnyGaslessDepositMessage[] {
   return depositMessages.flatMap((msg): AnyGaslessDepositMessage[] => {
-    const { swapTx, requestId, signature } = msg;
-    const { chainId: originChainId, to: targetAddress, data } = swapTx;
-    const { depositId, witness, integratorId, metadata, type: permitType } = data;
-    if (!isGaslessPermitType(permitType)) {
+    try {
+      return restructureGaslessDeposit(msg, logger);
+    } catch (err) {
+      // One unparseable record must not reject the entire response. The API re-supplies every
+      // pending record on each poll, so a throw here would starve the healthy ones indefinitely.
       logger.warn({
         at: "GaslessUtils#restructureGaslessDeposits",
-        message: "Skipping gasless deposit with unsupported permit type.",
-        requestId,
-        depositId,
-        permitType,
+        message: "Skipping unparseable gasless deposit.",
+        requestId: msg?.requestId,
+        error: err instanceof Error ? err.message : String(err),
       });
       return [];
     }
+  });
+}
 
-    if ("BridgeAndSwapWitness" in witness) {
-      const raw = witness.BridgeAndSwapWitness.data;
-      const swapMsg = msg as APIGaslessSwapAndBridgeDepositResponse;
-      // Unwrap protobuf-style objects to plain primitives.
-      const transferType = typeof raw.transferType === "number" ? raw.transferType : raw.transferType.long;
-      const enableProportionalAdjustment =
-        typeof raw.enableProportionalAdjustment === "boolean"
-          ? raw.enableProportionalAdjustment
-          : raw.enableProportionalAdjustment.boolean;
-      return [
-        {
-          depositFlowType: "swapAndBridge",
-          originChainId,
-          depositId: BigNumber.from(depositId),
-          requestId,
-          signature,
-          permitType,
-          // permit type for this branch is erc3009 | Permit2SwapAndBridgePermit | EIP-2612 witness.
-          // Cast required because data is still the union type after narrowing witness.
-          permit: data.permit as SwapAndBridgeGaslessDepositMessage["permit"],
-          permitApprovalSignature: swapMsg.permitApprovalSignature,
-          permitApprovalDeadline: swapMsg.permitApprovalDeadline,
-          targetAddress,
-          depositData: raw.depositData,
-          submissionFees: raw.submissionFees,
-          swapToken: raw.swapToken,
-          exchange: raw.exchange,
-          transferType,
-          swapTokenAmount: raw.swapTokenAmount,
-          minExpectedInputTokenAmount: raw.minExpectedInputTokenAmount,
-          routerCalldata: raw.routerCalldata,
-          enableProportionalAdjustment,
-          spokePool: raw.spokePool,
-          nonce: raw.nonce,
-          integratorId,
-          metadata,
-        },
-      ];
-    }
+/** Restructures a single raw record; throws on malformed input, which the caller isolates. */
+function restructureGaslessDeposit(msg: APIGaslessDepositResponse, logger: winston.Logger): AnyGaslessDepositMessage[] {
+  const { swapTx, requestId, signature } = msg;
+  const { chainId: originChainId, to: targetAddress, data } = swapTx;
+  const { depositId, witness, integratorId, metadata, type: permitType } = data;
+  if (!isGaslessPermitType(permitType)) {
+    logger.warn({
+      at: "GaslessUtils#restructureGaslessDeposits",
+      message: "Skipping gasless deposit with unsupported permit type.",
+      requestId,
+      depositId,
+      permitType,
+    });
+    return [];
+  }
 
-    const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witness.BridgeWitness.data;
+  if ("BridgeAndSwapWitness" in witness) {
+    const raw = witness.BridgeAndSwapWitness.data;
+    const swapMsg = msg as APIGaslessSwapAndBridgeDepositResponse;
+    // Unwrap protobuf-style objects to plain primitives.
+    const transferType = typeof raw.transferType === "number" ? raw.transferType : raw.transferType.long;
+    const enableProportionalAdjustment =
+      typeof raw.enableProportionalAdjustment === "boolean"
+        ? raw.enableProportionalAdjustment
+        : raw.enableProportionalAdjustment.boolean;
     return [
       {
-        depositFlowType: "bridge",
+        depositFlowType: "swapAndBridge",
         originChainId,
         depositId: BigNumber.from(depositId),
         requestId,
         signature,
         permitType,
-        // permit type for this branch is erc3009 | Permit2Permit.
+        // permit type for this branch is erc3009 | Permit2SwapAndBridgePermit | EIP-2612 witness.
         // Cast required because data is still the union type after narrowing witness.
-        permit: data.permit as GaslessDepositMessage["permit"],
+        permit: data.permit as SwapAndBridgeGaslessDepositMessage["permit"],
+        permitApprovalSignature: swapMsg.permitApprovalSignature,
+        permitApprovalDeadline: swapMsg.permitApprovalDeadline,
         targetAddress,
-        inputAmount,
-        baseDepositData,
-        submissionFees,
-        spokePool,
-        nonce,
+        depositData: raw.depositData,
+        submissionFees: raw.submissionFees,
+        swapToken: raw.swapToken,
+        exchange: raw.exchange,
+        transferType,
+        swapTokenAmount: raw.swapTokenAmount,
+        minExpectedInputTokenAmount: raw.minExpectedInputTokenAmount,
+        routerCalldata: raw.routerCalldata,
+        enableProportionalAdjustment,
+        spokePool: raw.spokePool,
+        nonce: raw.nonce,
         integratorId,
         metadata,
       },
     ];
-  });
+  }
+
+  const { inputAmount, baseDepositData, submissionFees, spokePool, nonce } = witness.BridgeWitness.data;
+  return [
+    {
+      depositFlowType: "bridge",
+      originChainId,
+      depositId: BigNumber.from(depositId),
+      requestId,
+      signature,
+      permitType,
+      // permit type for this branch is erc3009 | Permit2Permit.
+      // Cast required because data is still the union type after narrowing witness.
+      permit: data.permit as GaslessDepositMessage["permit"],
+      targetAddress,
+      inputAmount,
+      baseDepositData,
+      submissionFees,
+      spokePool,
+      nonce,
+      integratorId,
+      metadata,
+    },
+  ];
 }
 
 // Previous SpokePoolPeriphery generations, by chain. Most EVM chains share one CREATE2
