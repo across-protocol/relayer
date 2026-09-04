@@ -40,8 +40,14 @@ const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
 
 // Pending-nonce backlog (pending - confirmed count) at which a fresh submission assumes
 // head-of-line blocking and replaces at the confirmed nonce, rather than appending behind the
-// in-flight queue. Must sit above the 1 - 3 depth produced by ordinary concurrent bursts.
+// in-flight queue. Must sit above the depth that ordinary concurrent submission produces.
 const NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT = 4;
+
+// Services that fan a single signer out over concurrent requests sit far deeper than the
+// single-process bots the default was tuned for, so on mainnet that depth is routine, not stuck.
+const NONCE_BACKLOG_REPLACE_THRESHOLDS: { [chainId: number]: number } = {
+  [CHAIN_IDs.MAINNET]: 10,
+};
 
 // Default TVM fee limit in SUN (1 TRX = 1,000,000 SUN). 100 TRX is a reasonable default for
 // contract interactions on TRON.
@@ -394,9 +400,17 @@ async function _runTransaction(
       // append behind it. A deep backlog implies the confirmed-nonce transaction is stuck;
       // replace it (fee scaling engages via retry on rejection).
       const backlog = Math.max((pending ?? confirmed) - confirmed, 0);
+      // Resolved most-specific-first, so a chain-keyed default outranks the fleet-wide env override:
+      // setting NONCE_BACKLOG_REPLACE_THRESHOLD everywhere must not silently flatten a chain that was
+      // deliberately tuned. Per-chain env still overrides both.
+      // nb. || (not ?? or a destructuring default): both leave a declared-but-empty override as "",
+      // which parses as 0 and makes every submission replace at the confirmed nonce — the behaviour
+      // this threshold exists to prevent.
+      const { NONCE_BACKLOG_REPLACE_THRESHOLD } = process.env;
       const backlogThreshold = Number(
-        process.env[`NONCE_BACKLOG_REPLACE_THRESHOLD_${chainId}`] ??
-          process.env.NONCE_BACKLOG_REPLACE_THRESHOLD ??
+        process.env[`NONCE_BACKLOG_REPLACE_THRESHOLD_${chainId}`] ||
+          NONCE_BACKLOG_REPLACE_THRESHOLDS[chainId] ||
+          NONCE_BACKLOG_REPLACE_THRESHOLD ||
           NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT
       );
       replacing = backlog >= backlogThreshold;
