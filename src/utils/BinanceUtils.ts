@@ -8,6 +8,7 @@ import Binance, {
 } from "binance-api-node";
 export type { BinanceApi };
 import minimist from "minimist";
+import { is, number, type } from "superstruct";
 import { JsonFragment } from "@ethersproject/abi";
 import { Contract, providers, utils as ethersUtils } from "ethers";
 import { getGckmsConfig, retrieveGckmsKeys, isDefined, assert, CHAIN_IDs, truncate } from "./";
@@ -38,15 +39,21 @@ export const BINANCE_WITHDRAW_RECV_WINDOW_MS = 5_000;
 // signal as terminal for the call: another attempt is what escalates a throttle into a ban, and the
 // caller is scheduled to run again anyway.
 const BINANCE_RATE_LIMIT_CODES = new Set([-1003, -1015]);
+const BINANCE_RATE_LIMIT_STATUSES = new Set([429, 418]);
+
+// The two error shapes binance-api-node produces: a JSON API error carrying `code`, and a non-JSON proxy
+// error that retains the HTTP `response`. `type()` over `object()` so the rest of the error -- message,
+// stack, url -- is ignored rather than rejected. Matched independently, so a malformed field in one shape
+// cannot mask a valid signal in the other.
+const BinanceApiErrorSS = type({ code: number() });
+const BinanceHttpErrorSS = type({ response: type({ status: number() }) });
 
 /** @returns true if `err` is a Binance rate-limit response, which must not be retried. */
 export function isBinanceRateLimitError(err: unknown): boolean {
-  const { code, response } = (err ?? {}) as { code?: unknown; response?: { status?: number } };
-  return (
-    (typeof code === "number" && BINANCE_RATE_LIMIT_CODES.has(code)) ||
-    response?.status === 429 ||
-    response?.status === 418
-  );
+  if (is(err, BinanceApiErrorSS) && BINANCE_RATE_LIMIT_CODES.has(err.code)) {
+    return true;
+  }
+  return is(err, BinanceHttpErrorSS) && BINANCE_RATE_LIMIT_STATUSES.has(err.response.status);
 }
 
 /**

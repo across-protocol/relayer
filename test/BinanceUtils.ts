@@ -439,11 +439,31 @@ describe("BinanceUtils: rate-limit handling", function () {
     expect(isBinanceRateLimitError({ response: { status: 418 } })).to.be.true;
   });
 
+  it("identifies a rate limit on a real binance-api-node error object", function () {
+    // The JSON branch of binance-api-node's `sendResult` sets `code`/`url` on an Error and drops the
+    // response, so the fields under test are not plain-object properties.
+    expect(isBinanceRateLimitError(Object.assign(new Error("Too many requests"), { code: -1003 }))).to.be.true;
+  });
+
   it("leaves other failures retryable", function () {
     expect(isBinanceRateLimitError(undefined)).to.be.false;
+    expect(isBinanceRateLimitError(null)).to.be.false;
+    expect(isBinanceRateLimitError("429")).to.be.false;
     expect(isBinanceRateLimitError(new Error("boom"))).to.be.false;
     expect(isBinanceRateLimitError({ code: -1021 })).to.be.false; // Clock skew.
     expect(isBinanceRateLimitError({ response: { status: 502 } })).to.be.false;
+  });
+
+  it("does not accept a rate-limit signal in the wrong type", function () {
+    expect(isBinanceRateLimitError({ code: "-1003" })).to.be.false;
+    expect(isBinanceRateLimitError({ response: { status: "429" } })).to.be.false;
+    expect(isBinanceRateLimitError({ response: "429" })).to.be.false;
+  });
+
+  it("matches each error shape independently", function () {
+    // A malformed `code` must not mask a valid status, or vice versa.
+    expect(isBinanceRateLimitError({ code: "-1003", response: { status: 429 } })).to.be.true;
+    expect(isBinanceRateLimitError({ code: -1003, response: "unparseable" })).to.be.true;
   });
 
   it("does not retry a rate-limit response", async function () {
