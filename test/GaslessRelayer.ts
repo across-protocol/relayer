@@ -95,6 +95,9 @@ class TestableGaslessRelayer extends GaslessRelayer {
   public getMessageState(depositNonce: string): MessageState {
     return this.messageState[depositNonce];
   }
+  public getFillLock(): { [key: string]: string } {
+    return this.fillLock;
+  }
   public testFillImmediate(
     deposit: Pick<RelayData, "originChainId" | "outputToken" | "outputAmount"> & {
       destinationChainId: number;
@@ -827,6 +830,42 @@ describe("GaslessRelayer", function () {
   it("Expired deposit -> ERROR", async function () {
     const msg = makeTestDepositMessage({ fillDeadline: getCurrentTime() - 100 });
     await expectErrorScenario(relayer, msg);
+  });
+
+  it("Deposit naming a token absent from the token map -> ERROR", async function () {
+    // The pinned token map lags the API, so a deposit can legitimately name a token it doesn't know.
+    // That must be rejected like any other invalid pair rather than thrown out of the batch.
+    const msg = makeTestDepositMessage({ outputToken: "0x" + "99".repeat(20) });
+    await expectErrorScenario(relayer, msg);
+  });
+
+  describe("per-message error isolation", function () {
+    it("marks a throwing message ERROR, releases its lock, and still completes its neighbours", async function () {
+      const amounts = { inputAmount: "20000000", outputAmount: "19000000" };
+      const receipt = makeReceipt();
+      const failing = makeTestDepositMessage(amounts);
+      // Distinct depositId so the two messages occupy separate deposit keys. They deliberately share an
+      // authorizer and origin chain, so they contend for a single fill lock.
+      const healthy = { ...makeTestDepositMessage(amounts), depositId: toBN(43) };
+
+      relayer.queryGaslessApiFn = async () => [failing, healthy];
+      relayer.initiateDepositFn = async (msg) => {
+        if (msg.depositId.eq(failing.depositId)) {
+          throw new Error("simulated submission failure");
+        }
+        return receipt;
+      };
+      relayer.extractDepositFromReceiptFn = () => makeFakeDepositEvent(amounts);
+      relayer.initiateFillFn = async () => receipt;
+
+      await relayer.runEvaluateApiSignatures();
+
+      expect(relayer.getMessageState(depositNonceFor(relayer, failing))).to.equal(MessageState.ERROR);
+      // The healthy message must not be collateral damage of its neighbour throwing.
+      expect(relayer.getMessageState(depositNonceFor(relayer, healthy))).to.equal(MessageState.FILLED);
+      // A leaked lock would wedge every later deposit from the same authorizer on this chain.
+      expect(relayer.getFillLock()).to.deep.equal({});
+    });
   });
 
   describe("Permit2 flow", function () {

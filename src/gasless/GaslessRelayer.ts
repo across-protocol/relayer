@@ -627,7 +627,7 @@ export class GaslessRelayer {
       } = extractGaslessDepositFields(depositMessage);
 
       const depositKey = this._getDepositKeyFromMessage(depositMessage);
-      const fillKey = `${authorizer}:${originChainId}`;
+      const fillKey = this._getFillLockKeyFromMessage(depositMessage);
 
       const at = "GaslessRelayer#evaluateApiSignatures";
       const log = (level: "debug" | "info" | "warn", message: string, args: Record<string, unknown> = {}) =>
@@ -914,8 +914,39 @@ export class GaslessRelayer {
       return !isDefined(this.messageState[depositKey]);
     };
 
+    // forEachAsync is Promise.all, so an unhandled rejection from one message would skip every other
+    // message this tick and leave the thrower non-terminal, re-queued on each subsequent poll. Contain
+    // each message at the batch boundary instead: mark only the thrower ERROR, and release the fill lock
+    // it was holding so later deposits from the same authorizer aren't wedged behind it.
+    const processDepositMessageSafely = async (depositMessage: AnyGaslessDepositMessage) => {
+      const depositKey = this._getDepositKeyFromMessage(depositMessage);
+      const fillKey = this._getFillLockKeyFromMessage(depositMessage);
+      try {
+        await processDepositMessage(depositMessage);
+      } catch (error) {
+        this.logger.error({
+          at: "GaslessRelayer#evaluateApiSignatures",
+          message: "Failed to process deposit; skipping this message",
+          // The state the message died in, not the ERROR it is about to be set to.
+          state: stateToStr(this._getState(depositKey)),
+          originChainId: depositMessage.originChainId,
+          depositId: depositMessage.depositId,
+          requestId: depositMessage.requestId,
+          fillKey,
+          error: error instanceof Error ? error.message : String(error),
+        });
+        this._setState(depositKey, MessageState.ERROR);
+      } finally {
+        // Only if this message is the holder: a throw from the lock-wait branch leaves the lock owned by
+        // another message, and releasing it there would let two fills for one authorizer overlap.
+        if (this.fillLock[fillKey] === depositKey) {
+          delete this.fillLock[fillKey];
+        }
+      }
+    };
+
     const apiMessages = await this._queryGaslessApi();
-    await forEachAsync(apiMessages.filter(messageFilter), processDepositMessage);
+    await forEachAsync(apiMessages.filter(messageFilter), processDepositMessageSafely);
   }
 
   /*
@@ -1388,6 +1419,13 @@ export class GaslessRelayer {
   protected _getDepositKeyFromMessage(depositMessage: AnyGaslessDepositMessage): string {
     const { inputToken } = extractGaslessDepositFields(depositMessage);
     return this._getDepositKey(inputToken.toNative(), depositMessage.originChainId, depositMessage.depositId);
+  }
+
+  /*
+   * @notice Identifies the fill lock serialising a single authorizer's fills on one origin chain.
+   */
+  protected _getFillLockKeyFromMessage(depositMessage: AnyGaslessDepositMessage): string {
+    return `${getGaslessAuthorizerAddress(depositMessage)}:${depositMessage.originChainId}`;
   }
 
   /*
