@@ -5,6 +5,7 @@ import {
   EvmAddress,
   PUBLIC_NETWORKS,
   assert,
+  bnOne,
   isDefined,
   CHAIN_IDs,
   EventSearchConfig,
@@ -111,6 +112,19 @@ export function formatToAddress(receiver: EvmAddress): string {
 }
 
 /**
+ * The factor between a token's local decimals (LD) and the shared decimals an OFT path operates in. Amounts in
+ * local decimals must be a multiple of it to survive contract-side rounding, and a limit an implementation
+ * expresses in local decimals rather than shared decimals is scaled by it.
+ * @param tokenDecimals decimals of the token we're sending
+ * @param sharedDecimals queried from the OFT contract. Shared decimals between OFT tokens on different chains
+ * @returns The conversion rate, or 1 when the token carries no more precision than the path's shared decimals
+ */
+export function getDecimalConversionRate(tokenDecimals: number, sharedDecimals: number): BigNumber {
+  const decimalDifference = tokenDecimals - sharedDecimals;
+  return decimalDifference > 0 ? BigNumber.from(10).pow(decimalDifference) : bnOne;
+}
+
+/**
  * Rounds the token amount down to the correct precision for OFT transfer.
  * The last (tokenDecimals - sharedDecimals) digits must be zero to prevent contract-side rounding.
  * @param amount amount to round
@@ -119,13 +133,8 @@ export function formatToAddress(receiver: EvmAddress): string {
  * @returns The amount rounded down to the correct precision
  */
 export function roundAmountToSend(amount: BigNumber, tokenDecimals: number, sharedDecimals: number): BigNumber {
-  const decimalDifference = tokenDecimals - sharedDecimals;
-  if (decimalDifference > 0) {
-    const divisor = BigNumber.from(10).pow(decimalDifference);
-    const remainder = amount.mod(divisor);
-    return amount.sub(remainder);
-  }
-  return amount;
+  const divisor = getDecimalConversionRate(tokenDecimals, sharedDecimals);
+  return amount.sub(amount.mod(divisor));
 }
 
 /**

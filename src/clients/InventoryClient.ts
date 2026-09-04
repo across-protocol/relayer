@@ -1012,9 +1012,14 @@ export class InventoryClient {
 
     // Next, evaluate if we have enough tokens on L1 to actually do these rebalances.
     for (const rebalance of rebalancesRequired) {
-      // Bridges backed by an external venue (e.g. Binance) enforce a per-transfer maximum and reject over-cap
-      // sends one-shot, so clamp the requested amount and let successive runs chunk an over-cap deficit. An
-      // unavailable venue is surfaced when the transfer is sent, not here.
+      // Bridges backed by an external venue (e.g. Binance) enforce a per-transfer maximum, and bridges whose
+      // capacity is metered per destination (e.g. OFT) expose their remaining capacity the same way; both
+      // reject over-cap sends one-shot, so clamp the requested amount and let successive runs chunk an
+      // over-cap deficit. An unavailable venue is surfaced when the transfer is sent, not here.
+      // @dev This figure is not reserved across rebalances: two rebalances sharing one metered path each clamp
+      // against the same pre-transfer capacity, so the second can still exceed it and revert (as it did before
+      // this clamp existed). Reserving needs the hook to distinguish a per-transfer ceiling, which must not be
+      // decremented, from a shared pool, which must. See src/clients/README.md.
       const maxTransferAmount = await this.adapterManager
         .getMaxL1ToL2TransferAmount(rebalance.chainId, rebalance.l1Token)
         .catch(() => undefined);
@@ -1026,6 +1031,15 @@ export class InventoryClient {
           maxTransferAmount,
         });
         rebalance.amount = maxTransferAmount;
+      }
+      // A bridge reporting zero capacity can't take any part of the deficit this run, and a zero-amount
+      // transfer would pay full per-message costs to move nothing. Retry on a later run instead.
+      if (rebalance.amount.eq(bnZero)) {
+        this.log("Skipping rebalance: bridge reports no remaining transfer capacity", {
+          chainId: rebalance.chainId,
+          l2Token: rebalance.l2Token,
+        });
+        continue;
       }
       const { balance, amount, l1Token, l2Token, chainId } = rebalance;
 
