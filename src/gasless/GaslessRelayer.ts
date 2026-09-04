@@ -74,6 +74,7 @@ import {
   normalizeIntegratorId,
   restructureGaslessDeposits,
   resolveTokenInfoForLog,
+  sortGaslessDepositsOldestFirst,
   validateDeposit,
 } from "../utils/GaslessUtils";
 
@@ -915,7 +916,8 @@ export class GaslessRelayer {
     };
 
     const apiMessages = await this._queryGaslessApi();
-    await forEachAsync(apiMessages.filter(messageFilter), processDepositMessage);
+    // Oldest-first: dispatch order decides which of a user's pending orders wins the fillLock.
+    await forEachAsync(sortGaslessDepositsOldestFirst(apiMessages.filter(messageFilter)), processDepositMessage);
   }
 
   /*

@@ -16,6 +16,15 @@ CCTP deposits (and swap-and-bridge that uses a non-default `spokePool`) end in `
 
 Integrator and address filtering run inside `_queryGaslessApi` immediately after API responses are restructured — discarded messages never enter the state machine.
 
+### Batch ordering
+
+`evaluateApiSignatures` sorts each poll batch oldest-first on `submittedAt`
+(`GaslessUtils#sortGaslessDepositsOldestFirst`); the API's feed is unordered. This matters because
+messages are dispatched concurrently and each runs synchronously as far as the per-authorizer
+`fillLock` (`{authorizer}:{originChainId}`), so the first dispatched takes the lock and the rest
+spin. Messages with no usable `submittedAt` sort last, but still run in the same batch — they lose
+lock races, not service.
+
 ### Deposit log token resolution (`resolveTokenInfoForLog`)
 
 Before submitting the origin deposit in `GaslessRelayer#initiateDeposit`, the bot formats a Slack-facing log line with the user amount token’s symbol and decimals. For `swapAndBridge`, that token is the signed `swapToken` (often a long-tail asset missing from the static `TOKEN_SYMBOLS_MAP`). Resolution is **log-only** and must never throw: a failure here used to reject `initiateDeposit` and silently drop the deposit before submission (ACB-552).
