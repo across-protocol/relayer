@@ -19,9 +19,11 @@ import {
   getOutstandingBinanceDeposits,
   submitBinanceOrder,
   submitBinanceWithdrawal,
+  isBinanceRateLimitError,
   isCompletedBinanceWithdrawal,
   isFailedBinanceWithdrawal,
   isSameBinanceCoin,
+  retryBinanceRequest,
   isTerminalBinanceWithdrawal,
   supportsBinanceIntermediateBridgeToken,
   toBNWei,
@@ -428,3 +430,41 @@ function makeWethUsdcSymbol() {
     ],
   };
 }
+
+describe("BinanceUtils: rate-limit handling", function () {
+  it("identifies Binance rate-limit responses", function () {
+    expect(isBinanceRateLimitError({ code: -1003 })).to.be.true;
+    expect(isBinanceRateLimitError({ code: -1015 })).to.be.true;
+    expect(isBinanceRateLimitError({ response: { status: 429 } })).to.be.true;
+    expect(isBinanceRateLimitError({ response: { status: 418 } })).to.be.true;
+  });
+
+  it("leaves other failures retryable", function () {
+    expect(isBinanceRateLimitError(undefined)).to.be.false;
+    expect(isBinanceRateLimitError(new Error("boom"))).to.be.false;
+    expect(isBinanceRateLimitError({ code: -1021 })).to.be.false; // Clock skew.
+    expect(isBinanceRateLimitError({ response: { status: 502 } })).to.be.false;
+  });
+
+  it("does not retry a rate-limit response", async function () {
+    let calls = 0;
+    const fn = async () => {
+      calls++;
+      throw { code: -1003 };
+    };
+    await expect(retryBinanceRequest(fn, 3, 0)).to.be.rejected;
+    expect(calls).to.equal(1);
+  });
+
+  it("still retries other failures", async function () {
+    let calls = 0;
+    const fn = async () => {
+      if (++calls < 3) {
+        throw new Error("transient");
+      }
+      return "ok";
+    };
+    expect(await retryBinanceRequest(fn, 3, 0)).to.equal("ok");
+    expect(calls).to.equal(3);
+  });
+});
