@@ -40,8 +40,14 @@ const TRANSACTION_SUBMISSION_RETRIES_DEFAULT = 3;
 
 // Pending-nonce backlog (pending - confirmed count) at which a fresh submission assumes
 // head-of-line blocking and replaces at the confirmed nonce, rather than appending behind the
-// in-flight queue. Must sit above the 1 - 3 depth produced by ordinary concurrent bursts.
+// in-flight queue. Must sit above the depth that ordinary concurrent submission produces.
 const NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT = 4;
+
+// Services that fan a single signer out over concurrent requests sit far deeper than the
+// single-process bots the default was tuned for, so on mainnet that depth is routine, not stuck.
+const NONCE_BACKLOG_REPLACE_THRESHOLDS: { [chainId: number]: number } = {
+  [CHAIN_IDs.MAINNET]: 10,
+};
 
 // Default TVM fee limit in SUN (1 TRX = 1,000,000 SUN). 100 TRX is a reasonable default for
 // contract interactions on TRON.
@@ -397,6 +403,7 @@ async function _runTransaction(
       const backlogThreshold = Number(
         process.env[`NONCE_BACKLOG_REPLACE_THRESHOLD_${chainId}`] ??
           process.env.NONCE_BACKLOG_REPLACE_THRESHOLD ??
+          NONCE_BACKLOG_REPLACE_THRESHOLDS[chainId] ??
           NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT
       );
       replacing = backlog >= backlogThreshold;
