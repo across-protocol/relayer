@@ -1330,3 +1330,81 @@ describe("DepositAddressHandler refund-only key persistence", function () {
     expect([...internals().refundOnlyDepositKeys]).to.deep.equal([depositKey]);
   });
 });
+
+describe("DepositAddressHandler handover guards", function () {
+  let handler: DepositAddressHandler;
+  let debugStub: sinon.SinonStub;
+  const originChainId = 42161;
+  const depositKey = `${DEPOSIT_ADDRESS}:${"0x" + "3".repeat(64)}`;
+
+  type Internals = {
+    abortController: AbortController;
+    evaluateDepositAddresses: () => Promise<void>;
+    initiateDepositV3: (m: DepositAddressMessageV3) => Promise<void>;
+    observedExecutedDeposits: Record<number, Set<string>>;
+    executedDepositTxHashes: Set<string>;
+  };
+
+  function internals(): Internals {
+    return handler as unknown as Internals;
+  }
+
+  function abandonedToSuccessor(): boolean {
+    return debugStub.args.some(([info]) => String(info?.message).startsWith("Handover signalled"));
+  }
+
+  beforeEach(function () {
+    const config = { relayerOriginChains: [originChainId] } as unknown as DepositAddressHandlerConfig;
+    debugStub = sinon.stub();
+    const logger = { debug: debugStub, warn: sinon.stub() } as unknown as winston.Logger;
+    handler = new DepositAddressHandler(logger, config, {} as unknown as Signer, []);
+    (handler as unknown as { observedExecutedDeposits: Record<number, Set<string>> }).observedExecutedDeposits = {
+      [originChainId]: new Set<string>(),
+    };
+    (handler as unknown as { getDepositAddressBalance: sinon.SinonStub }).getDepositAddressBalance = sinon
+      .stub()
+      .resolves(toBN("5000"));
+  });
+
+  afterEach(() => sinon.restore());
+
+  it("skips message processing when handover lands during the indexer query", async function () {
+    const processStub = sinon.stub().resolves();
+    Object.assign(handler, {
+      processExecution: processStub,
+      _queryIndexerApi: async () => {
+        internals().abortController.abort();
+        return [depositMessageV3()];
+      },
+    });
+
+    await internals().evaluateDepositAddresses();
+
+    expect(processStub.notCalled).to.equal(true);
+    expect(abandonedToSuccessor()).to.equal(true);
+  });
+
+  it("does not submit a v3 execute once handover is signalled", async function () {
+    // Handover lands while the execute endpoint call is in flight. The guard must return before the
+    // submission: reaching sendAndConfirmTransaction here would require a live provider.
+    Object.assign(handler, {
+      _getExecuteTx: async () => {
+        internals().abortController.abort();
+        return {
+          depositAddress: DEPOSIT_ADDRESS,
+          executeTx: { ecosystem: "evm", chainId: originChainId, to: TOKEN, data: "0x", value: "0" },
+          signer: SIGNER,
+          signatureDeadline: getCurrentTime() + 600,
+          isPlaceholder: false,
+        };
+      },
+    });
+
+    await internals().initiateDepositV3(depositMessageV3());
+
+    expect(internals().executedDepositTxHashes.size).to.equal(0);
+    // Nothing was submitted, so the in-flight lock must be released for the successor instance.
+    expect(internals().observedExecutedDeposits[originChainId].has(depositKey)).to.equal(false);
+    expect(abandonedToSuccessor()).to.equal(true);
+  });
+});

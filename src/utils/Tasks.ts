@@ -57,6 +57,55 @@ export function scheduleTask(
 }
 
 /**
+ * Tracks every in-flight invocation of a recurring task so that shutdown can wait for them.
+ * `scheduleTask` is fixed-rate (`setInterval`), so an invocation which outruns its interval overlaps
+ * with its successors; retaining only the newest promise would let teardown proceed while an older
+ * invocation is still running (e.g. still submitting transactions through clients about to close).
+ * @param task Task to wrap. Pass the returned `run` to `scheduleTask` in the task's place.
+ * @returns `run`, which invokes and tracks `task`, and `drain` (see below).
+ */
+export function trackInFlight(task: () => Promise<unknown>): {
+  run: () => Promise<unknown>;
+  drain: (timeoutSeconds: number) => Promise<boolean>;
+} {
+  const inFlight = new Set<Promise<unknown>>();
+
+  return {
+    run: () => {
+      const invocation = task();
+      inFlight.add(invocation);
+      // Rejections are the caller's business (see fireAndForget's onError); swallow them here so
+      // that tracking an invocation can never itself raise an unhandled rejection.
+      void invocation.catch(() => undefined).finally(() => inFlight.delete(invocation));
+      return invocation;
+    },
+
+    /**
+     * Waits for all currently in-flight invocations to settle.
+     * @returns true if they all settled, false if `timeoutSeconds` expired with any still running.
+     */
+    drain: async (timeoutSeconds: number): Promise<boolean> => {
+      if (inFlight.size === 0) {
+        return true;
+      }
+      const settled = Promise.all([...inFlight].map((invocation) => invocation.catch(() => undefined))).then(
+        () => true
+      );
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const expiry = new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), timeoutSeconds * 1000);
+      });
+      try {
+        return await Promise.race([settled, expiry]);
+      } finally {
+        // Don't keep the event loop alive past shutdown once the race is decided.
+        clearTimeout(timer);
+      }
+    },
+  };
+}
+
+/**
  * Schedule a recurring task using recursive setTimeout, ensuring calls never overlap.
  * The next invocation is scheduled only after the current one completes (or fails).
  * Failures are logged as warnings and never prevent rescheduling.

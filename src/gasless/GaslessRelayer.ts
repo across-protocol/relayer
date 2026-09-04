@@ -7,6 +7,7 @@ import {
   delay,
   Signer,
   scheduleTask,
+  trackInFlight,
   forEachAsync,
   Provider,
   getCurrentTime,
@@ -110,7 +111,14 @@ const stateToStr = (state: MessageState) => MESSAGE_STATES[state] ?? "UNKNOWN";
  * Independent relayer bot which processes EIP-3009 signatures into deposits and corresponding fills.
  */
 export class GaslessRelayer {
-  private abortController = new AbortController();
+  protected readonly abortController = new AbortController();
+  // pollAndExecute() ticks in flight. A tick outliving apiPollingInterval overlaps with its
+  // successors, so all of them are tracked: waitForDisconnect() drains every one (bounded) before
+  // the caller tears down the shared Redis clients.
+  private readonly pollTicks = trackInFlight(() => this.evaluateApiSignatures());
+  // Post-abort settle window for the in-flight ticks. The state machines observe the abort at ~1s
+  // granularity, so this only needs to cover one iteration plus a straggling provider call.
+  protected shutdownDrainSeconds = 5;
   private _instanceCoordinator?: InstanceCoordinator;
   private initialized = false;
 
@@ -301,17 +309,24 @@ export class GaslessRelayer {
    * @notice Polls the Across gasless API and starts background deposit/fill tasks.
    */
   public pollAndExecute(): void {
-    scheduleTask(
-      () => this.evaluateApiSignatures(),
-      this.config.apiPollingInterval,
-      this.abortController.signal,
-      (err) =>
-        this.logger.error({
+    scheduleTask(this.pollTicks.run, this.config.apiPollingInterval, this.abortController.signal, (err) => {
+      const error = err instanceof Error ? err.message : String(err);
+      // After abort (handover or shutdown), Redis teardown makes in-flight provider calls fail
+      // with client-closed errors. The successor instance owns the batch by then, so don't page.
+      if (this.abortController.signal.aborted) {
+        this.logger.debug({
           at: "GaslessRelayer#pollAndExecute",
-          message: "evaluateApiSignatures failed; batch skipped this tick",
-          error: err instanceof Error ? err.message : String(err),
-        })
-    );
+          message: "evaluateApiSignatures failed during shutdown; batch abandoned to successor instance.",
+          error,
+        });
+        return;
+      }
+      this.logger.error({
+        at: "GaslessRelayer#pollAndExecute",
+        message: "evaluateApiSignatures failed; batch skipped this tick",
+        error,
+      });
+    });
   }
 
   /*
@@ -322,6 +337,16 @@ export class GaslessRelayer {
     // Wait for the instance coordinator to receive a handover signal. Once one is received (or we expire), abort.
     await this.instanceCoordinator.subscribe();
     this.abortController.abort();
+
+    // Give every in-flight tick a bounded window to observe the abort and settle before the caller
+    // disconnects the shared Redis clients out from under it.
+    if (!(await this.pollTicks.drain(this.shutdownDrainSeconds))) {
+      this.logger.warn({
+        at: "GaslessRelayer#waitForDisconnect",
+        message: "Proceeding to disconnect with a poll tick still in flight.",
+        shutdownDrainSeconds: this.shutdownDrainSeconds,
+      });
+    }
   }
 
   /**
@@ -736,7 +761,18 @@ export class GaslessRelayer {
               }
             }
 
+            // Simulation above can span a handover. Don't submit a deposit the successor instance
+            // now owns: the loop condition below exits on abort, so nothing here would await it.
+            if (this.abortController.signal.aborted) {
+              break;
+            }
+
             depositReceiptPromise = this.initiateDeposit(depositMessage);
+            // DEPOSIT_CONFIRM is what awaits this promise, and the loop can exit before reaching it
+            // (abort, or an expiry observed mid-flight). Observe the rejection now so an abandoned
+            // submission can't take the process down with an unhandled rejection; the await in
+            // DEPOSIT_CONFIRM still sees it.
+            void depositReceiptPromise.catch(() => undefined);
             const nextState = fillImmediate ? MessageState.FILL_PENDING : MessageState.DEPOSIT_CONFIRM;
             setState(nextState);
             break;
@@ -873,11 +909,21 @@ export class GaslessRelayer {
             break;
           }
         }
-      } while (!terminalStates.includes(getState()));
+      } while (!terminalStates.includes(getState()) && !this.abortController.signal.aborted);
+
+      // A deposit launched in DEPOSIT_SUBMIT is only settled by DEPOSIT_CONFIRM, which an aborted
+      // (or expired) loop never reaches. Settle it here, still holding the fill lock, so this tick
+      // does not resolve — letting the caller disconnect Redis — mid-submission.
+      await depositReceiptPromise?.catch(() => undefined);
+
       delete this.fillLock[fillKey];
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
-      log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
+      if (terminalStates.includes(getState())) {
+        log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
+      } else {
+        log("debug", `Abandoned ${origin} depositId ${depositId} after ${delta} seconds (shutdown in progress).`);
+      }
     };
 
     const messageFilter = (deposit: AnyGaslessDepositMessage): boolean => {
@@ -915,6 +961,9 @@ export class GaslessRelayer {
     };
 
     const apiMessages = await this._queryGaslessApi();
+    if (this.abortController.signal.aborted) {
+      return;
+    }
     await forEachAsync(apiMessages.filter(messageFilter), processDepositMessage);
   }
 

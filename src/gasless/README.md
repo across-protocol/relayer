@@ -11,6 +11,7 @@ Full env parsing lives in `GaslessRelayerConfig.ts`. Runtime state machine is in
 1. **Initialize** — query `API_GASLESS_ENDPOINT`, index recent on-chain deposits/fills, mark already-complete API messages with a terminal state (`FILLED` or `DONE`).
 2. **Poll** — on `API_POLLING_INTERVAL`, call `_queryGaslessApi`, filter messages, run the per-deposit state machine in `evaluateApiSignatures`.
 3. **Per message** — `INITIAL` → validate → `DEPOSIT_SUBMIT` → `DEPOSIT_CONFIRM` → (`FILL_PENDING` →) `FILLED` or `DONE`.
+4. **Handover** — `waitForDisconnect` aborts the poll schedule, then drains every in-flight tick (bounded, 5s) before the caller closes the shared Redis clients. Ticks cooperate with that drain: the state machine exits at its next loop boundary once aborted, and no new deposit is submitted after the abort, so the successor instance owns the batch uncontested.
 
 CCTP deposits (and swap-and-bridge that uses a non-default `spokePool`) end in `DONE`. Standard bridge deposits submit a fill and end in `FILLED`, unless fills are disabled (see below).
 

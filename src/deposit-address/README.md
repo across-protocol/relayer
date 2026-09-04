@@ -19,6 +19,10 @@ The deposit-address handler polls the across-indexer for ERC-20 transfers that h
    warning log to aid diagnosis when the alert fires. Pings stop on handover/shutdown with the
    rest of the handler.
 5. Handover via Redis (`InstanceCoordinator`) — exits cleanly when another instance takes over.
+   `waitForDisconnect` aborts the poll schedule, then drains every in-flight tick (bounded, 5s)
+   before the cleanup below closes the shared Redis clients. Ticks cooperate with that drain by
+   checking the abort signal after the indexer query and before each on-chain submission — extend
+   any new submission site with the same guard, or it can outlive teardown and race the successor.
 
 Poll-loop failures are never silent: `pollAndExecute` passes an error handler to `scheduleTask`, so
 a rejected `evaluateDepositAddresses` tick (which skips that whole batch) is logged at error level
