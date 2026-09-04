@@ -400,11 +400,13 @@ async function _runTransaction(
       // append behind it. A deep backlog implies the confirmed-nonce transaction is stuck;
       // replace it (fee scaling engages via retry on rejection).
       const backlog = Math.max((pending ?? confirmed) - confirmed, 0);
+      // nb. || (not ??) on the env lookups: a declared-but-empty override parses as 0, which would
+      // make every submission replace at the confirmed nonce — the behaviour this threshold exists
+      // to prevent. Fall through to the configured default instead.
       const backlogThreshold = Number(
-        process.env[`NONCE_BACKLOG_REPLACE_THRESHOLD_${chainId}`] ??
-          process.env.NONCE_BACKLOG_REPLACE_THRESHOLD ??
-          NONCE_BACKLOG_REPLACE_THRESHOLDS[chainId] ??
-          NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT
+        process.env[`NONCE_BACKLOG_REPLACE_THRESHOLD_${chainId}`] ||
+          process.env.NONCE_BACKLOG_REPLACE_THRESHOLD ||
+          (NONCE_BACKLOG_REPLACE_THRESHOLDS[chainId] ?? NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT)
       );
       replacing = backlog >= backlogThreshold;
       nonce = replacing ? confirmed : confirmed + backlog;
