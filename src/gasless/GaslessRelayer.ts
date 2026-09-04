@@ -163,6 +163,10 @@ export class GaslessRelayer {
   protected fillLock: { [key: string]: string } = {};
   /** requestIds already error-logged for an unservable periphery target (avoids per-poll log spam). */
   protected unservableTargetsLogged = new Set<string>();
+  /** requestIds dropped as unprocessable. The API re-supplies them, so this also bounds the logging. */
+  protected droppedMessages = new Set<string>();
+  /** requestIds with an unresolved in-flight failure; cleared when the message next completes. */
+  protected deferredMessages = new Set<string>();
 
   private api: AcrossSwapApiClient;
   private _signerAddress?: EvmAddress;
@@ -608,7 +612,7 @@ export class GaslessRelayer {
    * @notice Polls the API and creates deposits/fills for all messages which are missing deposits/fills.
    */
   protected async evaluateApiSignatures(): Promise<void> {
-    const processDepositMessage = async (depositMessage: AnyGaslessDepositMessage) => {
+    const _processDepositMessage = async (depositMessage: AnyGaslessDepositMessage) => {
       const isSwap = depositMessage.depositFlowType === "swapAndBridge";
       const { originChainId, depositId, spokePool } = depositMessage;
       const authorizer = getGaslessAuthorizerAddress(depositMessage);
@@ -875,9 +879,22 @@ export class GaslessRelayer {
         }
       } while (!terminalStates.includes(getState()));
       delete this.fillLock[fillKey];
+      this.deferredMessages.delete(depositMessage.requestId);
       const tEnd = performance.now();
       const delta = (tEnd - tStart) / 1000;
       log("info", `Processed ${origin} depositId ${depositId} in ${delta} seconds.`);
+    };
+
+    // One message must not be able to abort the poll: an escaping error skips every other message
+    // this tick, and repeats every tick, since the API keeps re-supplying it. Payload derivations
+    // are already checked at ingestion (_isProcessable), so a failure here is operational -- shared
+    // with every other message during an outage, hence deferred rather than dropped.
+    const processDepositMessage = async (depositMessage: AnyGaslessDepositMessage) => {
+      try {
+        await _processDepositMessage(depositMessage);
+      } catch (err) {
+        this._deferMessage(depositMessage, err);
+      }
     };
 
     const messageFilter = (deposit: AnyGaslessDepositMessage): boolean => {
@@ -1135,7 +1152,11 @@ export class GaslessRelayer {
     if (!isDefined(apiResponseData)) {
       return retriesRemaining > 0 ? this._queryGaslessApi(--retriesRemaining) : [];
     }
-    const deposits = restructureGaslessDeposits(apiResponseData.deposits, this.logger);
+    // Drop unparseable messages here, at ingestion, so that every consumer -- initialize()'s
+    // observation pass as much as the steady-state poll -- only ever sees processable messages.
+    const deposits = restructureGaslessDeposits(apiResponseData.deposits, this.logger).filter((deposit) =>
+      this._isProcessable(deposit)
+    );
     return this._filterDepositsByAddress(this._filterDepositsByIntegratorId(deposits));
   }
 
@@ -1388,6 +1409,87 @@ export class GaslessRelayer {
   protected _getDepositKeyFromMessage(depositMessage: AnyGaslessDepositMessage): string {
     const { inputToken } = extractGaslessDepositFields(depositMessage);
     return this._getDepositKey(inputToken.toNative(), depositMessage.originChainId, depositMessage.depositId);
+  }
+
+  /*
+   * @notice Returns true when every derivation the pipeline performs on a message's payload succeeds.
+   * @dev Pure functions of the message, so a failure is deterministic and the message is dropped
+   * rather than retried. Nothing here touches a provider: an RPC failure is not the message's fault.
+   */
+  protected _isProcessable(depositMessage: AnyGaslessDepositMessage): boolean {
+    try {
+      getGaslessAuthorizerAddress(depositMessage);
+      getGaslessPermitNonce(depositMessage);
+      // Covers extractGaslessDepositFields(), which every consumer of a message goes through.
+      this._getDepositKeyFromMessage(depositMessage);
+      if (depositMessage.depositFlowType === "swapAndBridge") {
+        // updateObservedCctpDeposits() keys swaps on the signed swapToken.
+        toAddressType(depositMessage.swapToken, depositMessage.originChainId);
+      }
+      return true;
+    } catch (err) {
+      this._dropMessage(depositMessage, err);
+      return false;
+    }
+  }
+
+  /*
+   * @notice Releases a message that failed in flight, leaving it retryable. Logged once per streak.
+   * @dev Hands the fill lock back, else the depositor's later deposits strand on a dead owner.
+   */
+  protected _deferMessage(depositMessage: AnyGaslessDepositMessage, err: unknown): void {
+    const { requestId, depositId, originChainId } = depositMessage;
+    const depositKey = this._getDepositKeyFromMessage(depositMessage);
+
+    const fillKey = `${getGaslessAuthorizerAddress(depositMessage)}:${originChainId}`;
+    if (this.fillLock[fillKey] === depositKey) {
+      delete this.fillLock[fillKey];
+    }
+
+    // Rewind to unclaimed only while nothing can be on chain yet: initiateDeposit() is invoked and
+    // the state advanced in the same tick, so INITIAL/DEPOSIT_SUBMIT precedes any submission. Past
+    // that, leave the state where it stopped -- re-running from INITIAL could double-submit.
+    const retryable = [MessageState.INITIAL, MessageState.DEPOSIT_SUBMIT].includes(this._getState(depositKey));
+    if (retryable) {
+      delete this.messageState[depositKey];
+    }
+
+    if (this.deferredMessages.has(requestId)) {
+      return;
+    }
+    this.deferredMessages.add(requestId);
+
+    this.logger.warn({
+      at: "GaslessRelayer#_deferMessage",
+      message: "Failed to process gasless deposit message.",
+      requestId,
+      depositId,
+      originChainId,
+      retryable,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  /*
+   * @notice Permanently drops a malformed message, logging it once.
+   * @dev Only called before a message is claimed, so there is no state or lock to hand back. Keyed on
+   * requestId, which a malformed message still has when its deposit key won't parse.
+   */
+  protected _dropMessage(depositMessage: AnyGaslessDepositMessage, err: unknown): void {
+    const { requestId, depositId, originChainId } = depositMessage;
+    if (this.droppedMessages.has(requestId)) {
+      return;
+    }
+    this.droppedMessages.add(requestId);
+
+    this.logger.error({
+      at: "GaslessRelayer#_dropMessage",
+      message: "Dropping unprocessable gasless deposit message 🚮",
+      requestId,
+      depositId,
+      originChainId,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 
   /*
