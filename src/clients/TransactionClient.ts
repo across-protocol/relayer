@@ -403,12 +403,14 @@ async function _runTransaction(
       // Resolved most-specific-first, so a chain-keyed default outranks the fleet-wide env override:
       // setting NONCE_BACKLOG_REPLACE_THRESHOLD everywhere must not silently flatten a chain that was
       // deliberately tuned. Per-chain env still overrides both.
-      // nb. || (not ??): a declared-but-empty override parses as 0, which would make every submission
-      // replace at the confirmed nonce — the behaviour this threshold exists to prevent.
+      // nb. || (not ?? or a destructuring default): both leave a declared-but-empty override as "",
+      // which parses as 0 and makes every submission replace at the confirmed nonce — the behaviour
+      // this threshold exists to prevent.
+      const { NONCE_BACKLOG_REPLACE_THRESHOLD } = process.env;
       const backlogThreshold = Number(
         process.env[`NONCE_BACKLOG_REPLACE_THRESHOLD_${chainId}`] ||
           NONCE_BACKLOG_REPLACE_THRESHOLDS[chainId] ||
-          process.env.NONCE_BACKLOG_REPLACE_THRESHOLD ||
+          NONCE_BACKLOG_REPLACE_THRESHOLD ||
           NONCE_BACKLOG_REPLACE_THRESHOLD_DEFAULT
       );
       replacing = backlog >= backlogThreshold;
