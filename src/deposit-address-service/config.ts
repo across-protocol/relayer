@@ -101,6 +101,22 @@ export class DepositAddressServiceConfig {
 
   readonly confirmBudgetMs: number;
 
+  /**
+   * Gates announcing `withdraw_executed` over Pub/Sub. Reuses `ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER`,
+   * the variable the polling bot already reads, so both can run during migration without new config.
+   *
+   * Off means a settled withdrawal is recorded but never announced, and the record says so — the timestamp
+   * stays unset, so turning the gate on later lets a redelivery announce it after the fact.
+   * `ENABLE_DEPOSIT_ADDRESS_DEPOSIT_PUBLISHER` is dead config here: the service never publishes deposits.
+   */
+  readonly withdrawPublisherEnabled: boolean;
+
+  /** GCP project hosting the lifecycle topic. Required when {@link withdrawPublisherEnabled}. */
+  readonly pubSubGcpProjectId: string;
+
+  /** Short topic name, e.g. `topic-deposit-address-execution`. Required when {@link withdrawPublisherEnabled}. */
+  readonly pubSubWithdrawTopic: string;
+
   constructor(env: ProcessEnv) {
     this.port = readInteger("PORT", env.PORT, DEFAULT_PORT, MAX_PORT);
     this.executionEnabled = readBoolean(env.EXECUTION_ENABLED);
@@ -136,6 +152,23 @@ export class DepositAddressServiceConfig {
       DEFAULT_CONFIRM_BUDGET_MS,
       LOCK_TTL_MS - 1
     );
+
+    this.withdrawPublisherEnabled = readBoolean(env.ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER);
+    this.pubSubGcpProjectId = env.PUBSUB_GCP_PROJECT_ID?.trim() ?? "";
+    this.pubSubWithdrawTopic = env.PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC?.trim() ?? "";
+    // A gate that is on with nothing to publish to is the "running with something other than what was
+    // configured" case this file refuses everywhere else — and here it would be invisible until a refund
+    // settled and went unannounced.
+    if (this.withdrawPublisherEnabled) {
+      for (const [name, value] of [
+        ["PUBSUB_GCP_PROJECT_ID", this.pubSubGcpProjectId],
+        ["PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC", this.pubSubWithdrawTopic],
+      ] as const) {
+        if (value.length === 0) {
+          throw new Error(`${name} is required when ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER is set`);
+        }
+      }
+    }
 
     // The load-bearing relation, asserted rather than left as a comment.
     //

@@ -49,6 +49,26 @@ describe("DepositAddressServiceConfig", function () {
     );
   });
 
+  it("refuses a withdraw-publisher gate with nothing behind it", function () {
+    // A settled withdrawal has no on-chain provenance event, so an enabled-but-unwired publisher is only
+    // discovered when a refund goes unannounced. Off, the two are irrelevant and unvalidated.
+    expect(new DepositAddressServiceConfig({}).withdrawPublisherEnabled).to.equal(false);
+    for (const env of [
+      { ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER: "true" },
+      { ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER: "true", PUBSUB_GCP_PROJECT_ID: "p" },
+      { ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER: "true", PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC: "t" },
+    ]) {
+      expect(() => new DepositAddressServiceConfig(env), JSON.stringify(env)).to.throw(/is required when/);
+    }
+
+    const config = new DepositAddressServiceConfig({
+      ENABLE_DEPOSIT_ADDRESS_WITHDRAW_PUBLISHER: "true",
+      PUBSUB_GCP_PROJECT_ID: "p",
+      PUBSUB_DEPOSIT_ADDRESS_WITHDRAW_TOPIC: "t",
+    });
+    expect(config.pubSubWithdrawTopic).to.equal("t");
+  });
+
   it("requires the drain timeout strictly below Cloud Run's SIGKILL grace period", function () {
     // A drain running until the SIGKILL instant races the kill, so 10s is as useless as 25s.
     expect(new DepositAddressServiceConfig({}).shutdownDrainTimeoutMs).to.equal(8_000);
