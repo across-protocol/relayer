@@ -72,6 +72,36 @@ export class ExecutionDisabledError extends DepositAddressServiceError {
 }
 
 /**
+ * A durable state record exists but cannot be decoded. Distinct from an ordinary dependency failure:
+ * deterministic, and it clears only when an operator repairs or deletes the key. Still retriable, so the
+ * message is preserved and the transfer stays blocked — a record we cannot read may describe a transfer
+ * already swept.
+ */
+export class CorruptTransferStateError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "CORRUPT_TRANSFER_STATE";
+}
+
+/**
+ * A critical write was not acknowledged by Redis. Retriable, and it must stop the caller: awaiting a
+ * confirmation while believing a broadcast hash is durable is the one unrecoverable direction.
+ */
+export class StatePersistenceError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "STATE_PERSISTENCE_FAILED";
+}
+
+/**
+ * A transition that would lose funds-safety information — writing `broadcast_pending` over a terminal
+ * outcome. Retriable so nothing is discarded, but it means a caller reached a write without the state
+ * read that every path is supposed to begin with.
+ */
+export class IllegalStateTransitionError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "ILLEGAL_STATE_TRANSITION";
+}
+
+/**
  * The application deadline passed before a fund-moving step could start. NACK: a redelivery gets a fresh
  * budget, and refusing late is what keeps the un-renewed lock safe.
  */
