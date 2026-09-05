@@ -76,8 +76,10 @@ export async function resolvePendingTransaction(
     case "confirmed": {
       // Has a blockNumber by construction: classifyReceipt only answers "confirmed" when one is present.
       const confirmed = receipt;
-      const metadataEmitted = hasMetadataEvent(confirmed);
-      if (!metadataEmitted) {
+      // Only an execute carries the provenance event. Withdrawals have no on-chain metadata — they are
+      // announced over Pub/Sub instead — so checking them here would warn on every successful refund.
+      const metadataEmitted = operation === "deposit" ? hasMetadataEvent(confirmed) : undefined;
+      if (metadataEmitted === false) {
         logger.warn({
           at: "DepositAddressService#resolvePendingTransaction",
           message: "Execute confirmed without the expected provenance metadata event.",
@@ -94,7 +96,14 @@ export async function resolvePendingTransaction(
         completedAtMs: Date.now(),
       };
       await store.recordTerminal(transferId, terminal);
-      return { outcome: terminal.status, fields: { ...fields, blockNumber: confirmed.blockNumber, metadataEmitted } };
+      return {
+        outcome: terminal.status,
+        fields: {
+          ...fields,
+          blockNumber: confirmed.blockNumber,
+          ...(operation === "deposit" && { metadataEmitted }),
+        },
+      };
     }
 
     case "reverted":

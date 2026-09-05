@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import { Infer, create, enums, integer, literal, min, string, type, union } from "superstruct";
+import { Infer, create, enums, integer, literal, min, optional, string, type, union } from "superstruct";
 import { RedisCacheInterface } from "../cache/Redis";
 import { TransactionReceipt } from "../utils";
 import { isDefined } from "../utils/TypeGuards";
@@ -65,9 +65,14 @@ const WithdrawExecuted = type({
   completedAtMs: timestampMs(),
 });
 
+/**
+ * `code` is optional because the sign-withdraw client posts through `_postOrThrow`, which discards the API's
+ * error code — the handler classifies on the HTTP status alone, exactly as the polling bot does, and records
+ * no code. The enum stays for the day that call is switched to `_postOrThrowWithErrorCode` for diagnostics.
+ */
 const WithdrawFailed = type({
   status: literal("withdraw_failed"),
-  code: enums(["GAS_EXCEEDS_REFUND", "UNPRICEABLE_REFUND_TOKEN"]),
+  code: optional(enums(["GAS_EXCEEDS_REFUND", "UNPRICEABLE_REFUND_TOKEN"])),
   reason: string(),
   recordedAtMs: timestampMs(),
 });

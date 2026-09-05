@@ -1,10 +1,12 @@
-import { DepositAddressExecuteResponse } from "../clients/AcrossSwapApiClient";
-import { DepositAddressMessageV3 } from "../interfaces/DepositAddress";
+import { DepositAddressExecuteResponse, DepositAddressSignWithdrawResponse } from "../clients/AcrossSwapApiClient";
+import { CounterfactualMaterialV3, DepositAddressMessageV3 } from "../interfaces/DepositAddress";
 import { chainIsEvm, chainIsTvm, getEthersCompatibleAddress } from "../utils";
 import { isDefined } from "../utils/TypeGuards";
 import {
   InvalidExecuteResponseError,
   InvalidIntegratorIdError,
+  InvalidWithdrawResponseError,
+  MissingWithdrawMaterialsError,
   OriginChainDisabledError,
   UnsupportedChainFamilyError,
   UnsupportedNamespaceError,
@@ -132,6 +134,68 @@ export function assertValidExecuteResponse(
   if (signatureDeadline < nowSeconds + SIGNATURE_DEADLINE_BUFFER_SECONDS) {
     throw new InvalidExecuteResponseError(
       `signature deadline ${signatureDeadline} is within ${SIGNATURE_DEADLINE_BUFFER_SECONDS}s of expiry`
+    );
+  }
+}
+
+/**
+ * v3 withdrawals are **EVM-only — stricter than the deposit path**, which accepts any namespace native to
+ * the chain family. The polling bot requires both namespaces to be exactly `evm`, and the sign-withdraw
+ * response's `ecosystem` is the type-level literal `"evm"`, so a Tron-native message that the deposit path
+ * would execute still has no withdraw route. Deterministic, so ACK.
+ */
+export function assertEvmWithdrawNamespaces(message: DepositAddressMessageV3): void {
+  const { depositAddressNamespace, refundAddress } = message;
+  if (depositAddressNamespace !== "evm" || refundAddress.namespace !== "evm") {
+    throw new UnsupportedNamespaceError(
+      `v3 withdrawals are EVM-only; got depositAddress=${depositAddressNamespace} ` +
+        `refundAddress=${refundAddress.namespace}`
+    );
+  }
+}
+
+/**
+ * Returns the withdraw leaf the sign-withdraw request is built from. The `merkleProof` and
+ * `implementationAddress` checks are subsumed by the message schema today; they stay because the polling
+ * bot checks them and a schema loosening must not silently reach the request builder.
+ */
+export function assertWithdrawMaterials(message: DepositAddressMessageV3): CounterfactualMaterialV3 {
+  const withdrawLeaf = message.counterfactualMaterials.find((leaf) => leaf.kind === "withdraw");
+  if (
+    !isDefined(withdrawLeaf) ||
+    !isDefined(withdrawLeaf.merkleProof) ||
+    !isDefined(withdrawLeaf.implementationAddress)
+  ) {
+    throw new MissingWithdrawMaterialsError(
+      `message for ${message.depositAddress} carries no usable withdraw leaf in counterfactualMaterials`
+    );
+  }
+  return withdrawLeaf;
+}
+
+/**
+ * Sanity-checks a sign-withdraw response before submission. Deliberately **not** `assertValidExecuteResponse`
+ * with a different verb: there is no `isPlaceholder`, no API-re-derived address to compare (the request
+ * *supplies* the address), and `ecosystem` is a type-level literal — only the chain and deadline checks apply.
+ *
+ * The chain to match is the **refund** chain, `erc20Transfer.chainId` — where the funds landed. For a
+ * `mis_route` that differs from the route's origin chain, which is exactly the case this path exists for.
+ *
+ * @param nowSeconds Unix seconds, passed in so this stays pure and the deadline check is testable.
+ */
+export function assertValidWithdrawResponse(
+  response: DepositAddressSignWithdrawResponse,
+  refundChainId: number,
+  nowSeconds: number
+): void {
+  if (response.signedWithdrawTx.chainId !== refundChainId) {
+    throw new InvalidWithdrawResponseError(
+      `signed withdraw chainId ${response.signedWithdrawTx.chainId} does not match refund chain ${refundChainId}`
+    );
+  }
+  if (response.deadline < nowSeconds + SIGNATURE_DEADLINE_BUFFER_SECONDS) {
+    throw new InvalidWithdrawResponseError(
+      `signature deadline ${response.deadline} is within ${SIGNATURE_DEADLINE_BUFFER_SECONDS}s of expiry`
     );
   }
 }
