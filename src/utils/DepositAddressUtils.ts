@@ -99,9 +99,12 @@ export function isNativeTokenSentinel(token: string): boolean {
 /**
  * Returns a unique key for a deposit so we can track if it was already executed (e.g. in observedExecutedDeposits).
  * Accepts any message version — the key only depends on the shared deposit-address/transfer envelope.
+ * logIndex disambiguates multiple transfers to the same address within one transaction, which would
+ * otherwise collide and leave all but one unswept.
  */
 export function getDepositKey(depositMessage: AnyDepositAddressMessage): string {
-  return `${depositMessage.depositAddress}:${depositMessage.erc20Transfer.transactionHash}`;
+  const { transactionHash, logIndex } = depositMessage.erc20Transfer;
+  return `${depositMessage.depositAddress}:${transactionHash}:${logIndex}`;
 }
 
 /**

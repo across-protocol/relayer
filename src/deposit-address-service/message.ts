@@ -75,9 +75,8 @@ export interface ParsedTransfer {
 
 /**
  * The indexer row's durable identity, and the tuple `DepositAddressExecutionConsumer` already keys
- * lookups on. Deliberately finer than the polling bot's `getDepositKey`, which is
- * `depositAddress:transactionHash` and so collides when one transaction makes two transfers to the same
- * address.
+ * lookups on. Same granularity as the polling bot's `getDepositKey`
+ * (`depositAddress:transactionHash:logIndex`), but chain-qualified instead of address-qualified.
  *
  * Normalised, because the same transfer must always produce the same id: `chainId` arrives as a string,
  * and hash casing varies. No prefix normalisation — format is consistent per chain (EVM `0x`, Tron
