@@ -110,6 +110,142 @@ export class DeadlineExceededError extends DepositAddressServiceError {
   readonly code = "APPLICATION_DEADLINE_EXCEEDED";
 }
 
+/**
+ * Another consumer holds this transfer's lock, or ours lapsed before the point of no return. NACK: the other
+ * consumer will finish or its lock will expire, and either way a later delivery can proceed.
+ */
+export class LockContentionError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "LOCK_CONTENTION";
+}
+
+/**
+ * A `mis_route` transfer, which routes to a refund withdraw that does not exist yet.
+ *
+ * NACK rather than ACK so the transfer is not discarded. Permanently-retriable would normally be the no-DLQ
+ * trap; it is unreachable while `EXECUTION_ENABLED` is false, and the withdrawal PR removes this branch.
+ */
+export class WithdrawRouteNotImplementedError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "WITHDRAW_ROUTE_NOT_IMPLEMENTED";
+}
+
+/**
+ * The origin chain's family has no v3 execute path at all — not EVM, not TVM. ACK: this is a property of the
+ * code, not of configuration, so no redelivery can change it while this build is deployed.
+ */
+export class UnsupportedChainFamilyError extends DepositAddressServiceError {
+  readonly retriable = false;
+  readonly code = "UNSUPPORTED_CHAIN_FAMILY";
+}
+
+/**
+ * The origin chain is absent from `RELAYER_ORIGIN_CHAINS`. **NACK, unlike an unsupported family** — this is an
+ * operator switch, so the transfer becomes executable again the moment the chain is re-enabled, and ACKing
+ * would destroy the only delivery for funds that are still sitting on the deposit address.
+ *
+ * The polling bot simply skipped and revisited the row on its next poll, so ACKing here would be a parity
+ * regression rather than a design choice. Same shape as {@link ExecutionDisabledError}, and the same
+ * corollary: a chain disabled for long enough should stop being *published* to this service, not be
+ * published and then retried.
+ */
+export class OriginChainDisabledError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "ORIGIN_CHAIN_DISABLED";
+}
+
+/**
+ * A namespace that is not native to the origin chain's family (e.g. `tron` on an EVM chain). A data
+ * anomaly, deterministic, so ACK. Note zkSync-family chains are EVM here, so a `zksync`-namespaced message
+ * is dropped — the same outcome the polling bot produces.
+ */
+export class UnsupportedNamespaceError extends DepositAddressServiceError {
+  readonly retriable = false;
+  readonly code = "UNSUPPORTED_NAMESPACE";
+}
+
+/**
+ * Missing or malformed `integratorId`. ACK, because guessing one would derive — and execute at — a
+ * different, unfunded address, and no funded v3 address exists that predates the integrator.
+ */
+export class InvalidIntegratorIdError extends DepositAddressServiceError {
+  readonly retriable = false;
+  readonly code = "INVALID_INTEGRATOR_ID";
+}
+
+/**
+ * The funding transfer is no longer canonical: its receipt exists but at a different block than the message
+ * claims. Deterministic — a reorged transfer does not come back — so ACK.
+ *
+ * An *absent* receipt is deliberately not this error: it cannot be told apart from our RPC lagging the
+ * indexer, and re-reading a receipt is harmless, so that case raises {@link TransientDependencyError}.
+ */
+export class NonCanonicalTransferError extends DepositAddressServiceError {
+  readonly retriable = false;
+  readonly code = "NON_CANONICAL_TRANSFER";
+}
+
+/**
+ * The deposit address does not hold enough of the input token. **ACK, deliberately**: the balance may never
+ * recover, and without a dead-letter topic a NACK would retry every 60s for the whole retention period with
+ * nothing to eject it.
+ *
+ * The usual objection — that our RPC might merely lag the indexer — is handled by ordering, not by retrying:
+ * the canonicality guard runs first and NACKs when the funding receipt is not yet visible. So reaching here
+ * means the funds genuinely left the address.
+ */
+export class InsufficientBalanceError extends DepositAddressServiceError {
+  readonly retriable = false;
+  readonly code = "INSUFFICIENT_BALANCE";
+}
+
+/**
+ * The execute response failed validation — re-derived address mismatch, wrong chain or ecosystem,
+ * placeholder derivation, or a signature deadline too close to expiry. NACK: the calldata is perishable, so
+ * a fresh response on the next delivery may well pass.
+ */
+export class InvalidExecuteResponseError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "INVALID_EXECUTE_RESPONSE";
+}
+
+/**
+ * The execute endpoint rejected the amount as below the minimum deposit.
+ *
+ * Terminal at the API — the amount is whatever landed on the address, so no retry changes it — but NACK
+ * here rather than ACK, because the correct handling is a refund withdraw and that path does not exist yet.
+ * A permanently-retriable condition would normally be the no-DLQ trap; it is unreachable while
+ * `EXECUTION_ENABLED` is false, and the withdrawal PR replaces this throw with the fallback at its call
+ * site.
+ */
+export class BelowMinimumDepositError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "AMOUNT_BELOW_MINIMUM";
+}
+
+/**
+ * A broadcast transaction reverted on-chain. NACK: nothing moved, the `broadcast_pending` record has been
+ * cleared, and a later delivery may succeed against different state.
+ */
+export class BroadcastRevertedError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "BROADCAST_REVERTED";
+}
+
+/**
+ * The chain has not said what became of a broadcast transaction, so its `broadcast_pending` record is
+ * **retained** and the transfer stays blocked. NACK; a later delivery looks again.
+ *
+ * "Unresolved" is a statement about our knowledge, not about the transaction: it may be unmined, dropped,
+ * replaced at its nonce, already mined behind a lagging RPC node, or reorged out. Those are treated
+ * identically because retaining is safe in all of them and clearing is unrecoverable in some — the funds may
+ * already have moved.
+ */
+export class UnresolvedBroadcastError extends DepositAddressServiceError {
+  readonly retriable = true;
+  readonly code = "UNRESOLVED_BROADCAST";
+}
+
 /** RPC error, quote-api timeout or 5xx, Redis unavailable — may clear on its own, so NACK. */
 export class TransientDependencyError extends DepositAddressServiceError {
   readonly retriable = true;

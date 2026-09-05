@@ -126,7 +126,8 @@ describe("TransferStore lock", function () {
   it("uses a TTL, so a dead consumer does not block the transfer forever", async function () {
     const { redis, ttls } = fakeRedis();
     await new TransferStore(redis).acquireLock(TRANSFER);
-    expect(ttls.get(LOCK_KEY)).to.equal(600_000);
+    // Covers the application deadline plus the confirmation that runs after it; see LOCK_TTL_MS.
+    expect(ttls.get(LOCK_KEY)).to.equal(900_000);
   });
 });
 
